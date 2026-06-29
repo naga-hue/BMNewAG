@@ -1,0 +1,672 @@
+import React from 'react';
+import { 
+  Building2, 
+  ShieldCheck, 
+  FileWarning, 
+  AlertTriangle, 
+  Globe, 
+  CheckCircle2, 
+  Clock, 
+  Info,
+  CalendarDays,
+  CalendarCheck,
+  Receipt
+} from 'lucide-react';
+
+const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
+
+export default function Dashboard({ 
+  companies = [], 
+  onSelectCompany,
+  staff = [],
+  leaveRequests = [],
+  holidays = [],
+  contracts = [],
+  vendors = []
+}) {
+  // Current date anchor: June 29, 2026
+  const CURRENT_DATE = new Date('2026-06-29');
+
+  // Helper to compile core document/insurance alerts
+  const getComplianceAlerts = (company) => {
+    const alerts = [];
+    
+    // Check registration document
+    const hasRegDoc = company.documents.some(d => d.type === 'registration');
+    if (!hasRegDoc) {
+      alerts.push({
+        id: `${company.id}-no-reg`,
+        company,
+        type: 'critical',
+        title: 'Registration Document Missing',
+        desc: `No Certificate of Incorporation found for ${company.name}.`
+      });
+    }
+
+    // Check tax document
+    const hasTaxDoc = company.documents.some(d => d.type === 'vat');
+    if (company.vatNumber && !hasTaxDoc) {
+      const taxLabel = company.country === 'India' ? 'GSTIN' : company.country === 'United States' ? 'EIN' : company.country === 'United Arab Emirates' ? 'TRN' : 'VAT';
+      alerts.push({
+        id: `${company.id}-no-tax`,
+        company,
+        type: 'warning',
+        title: `${taxLabel} Certificate Missing`,
+        desc: `Tax code is recorded (${company.vatNumber}) but certificate upload is missing.`
+      });
+    }
+
+    // Check insurance status
+    if (!company.hasInsurance || !company.insurance) {
+      alerts.push({
+        id: `${company.id}-no-ins`,
+        company,
+        type: 'critical',
+        title: 'No Insurance Details Recorded',
+        desc: `${company.name} has no commercial liability coverage on file.`
+      });
+    } else {
+      // Check insurance document
+      const hasInsDoc = company.documents.some(d => d.type === 'insurance');
+      if (!hasInsDoc) {
+        alerts.push({
+          id: `${company.id}-no-ins-doc`,
+          company,
+          type: 'warning',
+          title: 'Insurance Policy Certificate Missing',
+          desc: `Insurance details are filled but policy document upload is missing.`
+        });
+      }
+
+      // Check insurance expiry
+      const expiry = new Date(company.insurance.expiryDate);
+      const diffTime = expiry - CURRENT_DATE;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays < 0) {
+        alerts.push({
+          id: `${company.id}-ins-expired`,
+          company,
+          type: 'critical',
+          title: 'Insurance Expired',
+          desc: `Policy ${company.insurance.policyNumber} expired on ${company.insurance.expiryDate}.`
+        });
+      } else if (diffDays <= 90) {
+        alerts.push({
+          id: `${company.id}-ins-expiring`,
+          company,
+          type: 'expiring',
+          title: 'Insurance Expiring Soon',
+          desc: `Policy expires in ${diffDays} days (${company.insurance.expiryDate}).`
+        });
+      }
+    }
+
+    return alerts;
+  };
+
+  // Compile all doc/insurance alerts
+  const docAlerts = companies.flatMap(getComplianceAlerts);
+
+  // Compile all statutory compliance tasks
+  const allStatutoryTasks = companies.flatMap(c => {
+    if (!c.complianceTasks) return [];
+    return c.complianceTasks.map(t => ({
+      ...t,
+      company: c
+    }));
+  });
+
+  // Filter for pending statutory tasks
+  const pendingStatutoryTasks = allStatutoryTasks
+    .filter(t => t.status === 'pending')
+    .map(t => {
+      const dueDate = new Date(t.dueDate);
+      const diffTime = dueDate - CURRENT_DATE;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return {
+        ...t,
+        daysLeft: diffDays,
+        isOverdue: diffDays < 0
+      };
+    })
+    .sort((a, b) => a.daysLeft - b.daysLeft);
+
+  const overdueStatutoryCount = pendingStatutoryTasks.filter(t => t.isOverdue).length;
+
+  // Group metrics
+  const totalCompanies = companies.length;
+  const insuredCompanies = companies.filter(c => c.hasInsurance && c.insurance).length;
+  
+  // Calculate aggregate critical compliance risks (overdue filings + missing core records)
+  const criticalComplianceCount = companies.filter(c => {
+    const hasRegDoc = c.documents.some(d => d.type === 'registration');
+    let hasExpiredInsurance = false;
+    if (c.hasInsurance && c.insurance) {
+      const expiry = new Date(c.insurance.expiryDate);
+      hasExpiredInsurance = (expiry - CURRENT_DATE) < 0;
+    }
+    
+    // Check if company has any overdue compliance tasks
+    const hasOverdueTasks = c.complianceTasks && c.complianceTasks.some(t => {
+      if (t.status !== 'pending') return false;
+      const due = new Date(t.dueDate);
+      return (due - CURRENT_DATE) < 0;
+    });
+
+    return !hasRegDoc || hasExpiredInsurance || hasOverdueTasks;
+  }).length;
+
+  // Upcoming due dates count (filings & insurances expiring in 30 days)
+  const immediateActionsCount = pendingStatutoryTasks.filter(t => t.daysLeft >= 0 && t.daysLeft <= 30).length + 
+    companies.filter(c => {
+      if (!c.hasInsurance || !c.insurance) return false;
+      const expiry = new Date(c.insurance.expiryDate);
+      const diffDays = Math.ceil((expiry - CURRENT_DATE) / (1000 * 60 * 60 * 24));
+      return diffDays >= 0 && diffDays <= 30;
+    }).length;
+
+  // Country breakdown
+  const countryCounts = companies.reduce((acc, c) => {
+    acc[c.country] = (acc[c.country] || 0) + 1;
+    return acc;
+  }, {});
+
+  const countryListData = Object.entries(countryCounts).map(([name, count]) => ({
+    name,
+    count,
+    percentage: Math.round((count / totalCompanies) * 100)
+  })).sort((a, b) => b.count - a.count);
+
+  // Compile Operational events (Next 30 days)
+  const getUpcomingEvents = () => {
+    const events = [];
+    
+    const getDaysDiff = (targetDateStr) => {
+      if (!targetDateStr) return 999;
+      const target = new Date(targetDateStr);
+      target.setHours(0, 0, 0, 0);
+      const todayVal = new Date(CURRENT_DATE);
+      todayVal.setHours(0, 0, 0, 0);
+      
+      const diff = target - todayVal;
+      return Math.ceil(diff / (1000 * 60 * 60 * 24));
+    };
+
+    // 1. Birthdays & Anniversaries
+    staff.forEach(s => {
+      // Birthdays
+      if (s.dateOfBirth) {
+        const dob = new Date(s.dateOfBirth);
+        let bday = new Date(CURRENT_DATE.getFullYear(), dob.getMonth(), dob.getDate());
+        if (bday < CURRENT_DATE) {
+          bday = new Date(CURRENT_DATE.getFullYear() + 1, dob.getMonth(), dob.getDate());
+        }
+        const diff = getDaysDiff(bday.toISOString().split('T')[0]);
+        if (diff >= 0 && diff <= 30) {
+          events.push({
+            id: `bday-${s.id}`,
+            type: 'birthday',
+            title: `🎂 Birthday: ${s.fullName}`,
+            dateStr: bday.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+            diffDays: diff,
+            dept: s.department,
+            company: companies.find(c => c.id === s.companyId)?.name || ''
+          });
+        }
+      }
+
+      // Anniversaries
+      if (s.startDate) {
+        const start = new Date(s.startDate);
+        let anniv = new Date(CURRENT_DATE.getFullYear(), start.getMonth(), start.getDate());
+        let annivYear = CURRENT_DATE.getFullYear();
+        if (anniv < CURRENT_DATE) {
+          anniv = new Date(CURRENT_DATE.getFullYear() + 1, start.getMonth(), start.getDate());
+          annivYear = CURRENT_DATE.getFullYear() + 1;
+        }
+        const years = annivYear - start.getFullYear();
+        const diff = getDaysDiff(anniv.toISOString().split('T')[0]);
+        if (diff >= 0 && diff <= 30 && years > 0) {
+          const ordinal = years === 1 ? '1st' : years === 2 ? '2nd' : years === 3 ? '3rd' : `${years}th`;
+          events.push({
+            id: `anniv-${s.id}`,
+            type: 'anniversary',
+            title: `👔 Work Anniversary: ${s.fullName} (${ordinal})`,
+            dateStr: anniv.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+            diffDays: diff,
+            dept: s.department,
+            company: companies.find(c => c.id === s.companyId)?.name || ''
+          });
+        }
+      }
+    });
+
+    // 2. Approved Leaves
+    leaveRequests
+      .filter(r => r.status === 'approved')
+      .forEach(r => {
+        const start = new Date(r.startDate);
+        const end = new Date(r.endDate);
+        const diff = getDaysDiff(r.startDate);
+        
+        const staffObj = staff.find(s => s.id === r.staffId);
+        if (!staffObj) return;
+
+        const isActive = CURRENT_DATE >= new Date(start.getFullYear(), start.getMonth(), start.getDate()) &&
+                         CURRENT_DATE <= new Date(end.getFullYear(), end.getMonth(), end.getDate());
+
+        if (isActive) {
+          events.push({
+            id: `leave-active-${r.id}`,
+            type: 'leave',
+            title: `🌴 On Leave Now: ${staffObj.fullName}`,
+            dateStr: `Active (ends ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})`,
+            diffDays: 0,
+            dept: staffObj.department,
+            company: companies.find(c => c.id === staffObj.companyId)?.name || ''
+          });
+        } else if (diff >= 0 && diff <= 30) {
+          events.push({
+            id: `leave-upcoming-${r.id}`,
+            type: 'leave',
+            title: `🌴 Upcoming Leave: ${staffObj.fullName}`,
+            dateStr: start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+            diffDays: diff,
+            dept: staffObj.department,
+            company: companies.find(c => c.id === staffObj.companyId)?.name || ''
+          });
+        }
+      });
+
+    // 3. Holidays
+    holidays.forEach(h => {
+      if (h.date) {
+        const diff = getDaysDiff(h.date);
+        if (diff >= 0 && diff <= 30) {
+          events.push({
+            id: `holiday-${h.id}`,
+            type: 'holiday',
+            title: `🏖️ Public Holiday: ${h.name} (${h.country || 'Global'})`,
+            dateStr: new Date(h.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+            diffDays: diff,
+            dept: '',
+            company: ''
+          });
+        }
+      }
+    });
+
+    // 4. Payment dues to vendors
+    contracts.forEach(c => {
+      if (c.paymentDueDate) {
+        const diff = getDaysDiff(c.paymentDueDate);
+        // Include payments due within 30 days or overdue
+        if (diff <= 30) {
+          const matchedVendor = vendors.find(v => v.id === c.vendorId);
+          const rawCost = c.unitCost * c.quantityPurchased;
+          const taxFactor = 1 + ((c.taxRate || 0) / 100);
+          const cost = rawCost * taxFactor;
+          const symbol = symbolMap[c.currency] || '£';
+
+          events.push({
+            id: `pay-${c.id}`,
+            type: 'payment',
+            title: `💰 Payment Due: ${c.name} (${matchedVendor ? matchedVendor.name : 'Vendor'})`,
+            dateStr: new Date(c.paymentDueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+            costStr: `${symbol}${cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            diffDays: diff,
+            isOverdue: diff < 0,
+            dept: '',
+            company: companies.find(comp => comp.id === c.companyId)?.name || ''
+          });
+        }
+      }
+    });
+
+    // 5. Contract renewals
+    contracts.forEach(c => {
+      const renewalTarget = c.renewalDate || c.endDate;
+      if (renewalTarget) {
+        const diff = getDaysDiff(renewalTarget);
+        if (diff <= 30) {
+          const matchedVendor = vendors.find(v => v.id === c.vendorId);
+          events.push({
+            id: `renew-${c.id}`,
+            type: 'renewal',
+            title: `🔄 Contract Renewal: ${c.name} (${matchedVendor ? matchedVendor.name : 'Vendor'})`,
+            dateStr: new Date(renewalTarget).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+            diffDays: diff,
+            isOverdue: diff < 0,
+            dept: '',
+            company: companies.find(comp => comp.id === c.companyId)?.name || ''
+          });
+        }
+      }
+    });
+
+    return events.sort((a, b) => a.diffDays - b.diffDays);
+  };
+
+  const allEvents = getUpcomingEvents();
+  const next7DaysEvents = allEvents.filter(evt => evt.diffDays <= 7 || evt.isOverdue);
+  const next30DaysEvents = allEvents.filter(evt => evt.diffDays > 7 && evt.diffDays <= 30);
+
+  const renderEventRow = (evt) => {
+    const bgColors = {
+      birthday: { bg: 'rgba(236, 72, 153, 0.08)', border: 'rgba(236, 72, 153, 0.2)', text: '#ec4899' },
+      anniversary: { bg: 'rgba(99, 102, 241, 0.08)', border: 'rgba(99, 102, 241, 0.2)', text: '#818cf8' },
+      leave: { bg: 'rgba(245, 158, 11, 0.08)', border: 'rgba(245, 158, 11, 0.2)', text: '#f59e0b' },
+      holiday: { bg: 'rgba(16, 185, 129, 0.08)', border: 'rgba(16, 185, 129, 0.2)', text: '#10b981' },
+      payment: { bg: 'rgba(244, 63, 94, 0.08)', border: 'rgba(244, 63, 94, 0.2)', text: '#f43f5e' },
+      renewal: { bg: 'rgba(147, 51, 234, 0.08)', border: 'rgba(147, 51, 234, 0.2)', text: '#a855f7' }
+    };
+    const c = bgColors[evt.type] || { bg: 'rgba(255,255,255,0.03)', border: 'var(--border-color)', text: 'var(--text-primary)' };
+
+    return (
+      <div 
+        key={evt.id} 
+        style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          padding: '10px 14px', 
+          backgroundColor: 'var(--bg-secondary)', 
+          border: '1px solid var(--border-color)', 
+          borderLeft: `4px solid ${c.text}`,
+          borderRadius: '6px',
+          fontSize: '12px'
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <span style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {evt.title}
+            {evt.isOverdue && (
+              <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--danger)', backgroundColor: 'rgba(239,68,68,0.1)', padding: '1px 5px', borderRadius: '3px' }}>
+                OVERDUE
+              </span>
+            )}
+          </span>
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+            {evt.company && `${evt.company} `}{evt.dept && `• ${evt.dept}`}
+          </span>
+        </div>
+
+        <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+          <span style={{ fontWeight: 700, color: c.text }}>{evt.dateStr}</span>
+          {evt.costStr ? (
+            <span style={{ fontWeight: 600, fontSize: '11px', color: 'var(--text-primary)' }}>{evt.costStr}</span>
+          ) : (
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+              {evt.diffDays === 0 ? 'today' : evt.diffDays === 1 ? 'tomorrow' : `in ${evt.diffDays} days`}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+      
+      {/* Metrics Row */}
+      <div className="metrics-grid">
+        
+        <div className="metric-card" style={{ '--card-accent': 'var(--primary)', '--card-accent-light': 'var(--primary-light)' }}>
+          <div className="metric-info">
+            <h3>Total Entities</h3>
+            <div className="metric-value">{totalCompanies}</div>
+            <div className="metric-trend trend-neutral">
+              <Globe size={14} /> Active globally
+            </div>
+          </div>
+          <div className="metric-icon-wrapper">
+            <Building2 size={24} />
+          </div>
+        </div>
+
+        <div className="metric-card" style={{ '--card-accent': 'var(--success)', '--card-accent-light': 'var(--success-light)' }}>
+          <div className="metric-info">
+            <h3>Insured Companies</h3>
+            <div className="metric-value">{insuredCompanies} <span style={{ fontSize: '16px', color: 'var(--text-secondary)' }}>/ {totalCompanies}</span></div>
+            <div className="metric-trend trend-up">
+              <ShieldCheck size={14} /> Active policies
+            </div>
+          </div>
+          <div className="metric-icon-wrapper">
+            <ShieldCheck size={24} />
+          </div>
+        </div>
+
+        <div className="metric-card" style={{ '--card-accent': 'var(--danger)', '--card-accent-light': 'var(--danger-light)' }}>
+          <div className="metric-info">
+            <h3>Critical Risks</h3>
+            <div className="metric-value">{criticalComplianceCount}</div>
+            <div className="metric-trend" style={{ color: criticalComplianceCount > 0 ? 'var(--danger)' : 'var(--success)' }}>
+              <FileWarning size={14} /> Overdue filings/docs
+            </div>
+          </div>
+          <div className="metric-icon-wrapper">
+            <FileWarning size={24} />
+          </div>
+        </div>
+
+        <div className="metric-card" style={{ '--card-accent': 'var(--warning)', '--card-accent-light': 'var(--warning-light)' }}>
+          <div className="metric-info">
+            <h3>Due &lt; 30 Days</h3>
+            <div className="metric-value">{immediateActionsCount}</div>
+            <div className="metric-trend" style={{ color: immediateActionsCount > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>
+              <Clock size={14} /> Action items
+            </div>
+          </div>
+          <div className="metric-icon-wrapper">
+            <Clock size={24} />
+          </div>
+        </div>
+
+      </div>
+
+      {/* Analytics Cockpit Layout */}
+      <div className="analytics-section" style={{ gridTemplateColumns: '1.2fr 1.2fr 1fr' }}>
+        
+        {/* Compliance & Document Alerts Panel */}
+        <div className="chart-card">
+          <div className="chart-header">
+            <h2 className="chart-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertTriangle size={20} style={{ color: 'var(--danger)' }} /> Document & Coverage Alerts
+            </h2>
+            <span style={{ fontSize: '12px', background: 'var(--bg-secondary)', padding: '4px 10px', borderRadius: '12px', fontWeight: 600 }}>
+              {docAlerts.length} Alerts
+            </span>
+          </div>
+
+          {docAlerts.length === 0 ? (
+            <div className="empty-state">
+              <CheckCircle2 size={48} className="empty-state-icon" style={{ color: 'var(--success)' }} />
+              <div>All insurance certificates and registration certificates are up to date.</div>
+            </div>
+          ) : (
+            <div className="alerts-list" style={{ maxHeight: '350px', overflowY: 'auto' }}>
+              {docAlerts.map(alert => (
+                <div 
+                  key={alert.id} 
+                  className={`alert-item ${alert.type}`}
+                  onClick={() => onSelectCompany(alert.company)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <div style={{ marginTop: '2px' }}>
+                    {alert.type === 'critical' ? (
+                      <AlertTriangle size={18} style={{ color: 'var(--danger)' }} />
+                    ) : (
+                      <Info size={18} style={{ color: alert.type === 'expiring' ? 'var(--warning)' : 'var(--info)' }} />
+                    )}
+                  </div>
+                  <div className="alert-content">
+                    <div className="alert-title">{alert.title}</div>
+                    <div className="alert-desc">{alert.desc}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                      <span className={`country-badge country-${alert.company.country.toLowerCase().replace(/[^a-z]/g, '')}`} style={{ fontSize: '9px', padding: '2px 6px' }}>
+                        {alert.company.name}
+                      </span>
+                      <span className="alert-time">View Profile</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Statutory Compliance Calendar Timeline */}
+        <div className="chart-card">
+          <div className="chart-header">
+            <h2 className="chart-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <CalendarDays size={20} style={{ color: 'var(--accent)' }} /> Statutory Filing Timeline
+            </h2>
+            {overdueStatutoryCount > 0 && (
+              <span style={{ fontSize: '11px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', padding: '4px 10px', borderRadius: '12px', fontWeight: 600 }}>
+                {overdueStatutoryCount} Overdue
+              </span>
+            )}
+          </div>
+
+          {pendingStatutoryTasks.length === 0 ? (
+            <div className="empty-state">
+              <CalendarCheck size={48} className="empty-state-icon" style={{ color: 'var(--success)' }} />
+              <div>No pending statutory filings!</div>
+            </div>
+          ) : (
+            <div className="alerts-list" style={{ maxHeight: '350px', overflowY: 'auto' }}>
+              {pendingStatutoryTasks.map(task => (
+                <div 
+                  key={task.id} 
+                  className={`alert-item ${task.isOverdue ? 'critical' : task.daysLeft <= 30 ? 'expiring' : ''}`}
+                  onClick={() => onSelectCompany(task.company)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <div style={{ marginTop: '2px' }}>
+                    {task.isOverdue ? (
+                      <AlertTriangle size={18} style={{ color: 'var(--danger)' }} />
+                    ) : (
+                      <CalendarDays size={18} style={{ color: task.daysLeft <= 30 ? 'var(--warning)' : 'var(--primary)' }} />
+                    )}
+                  </div>
+                  <div className="alert-content">
+                    <div className="alert-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>{task.name}</span>
+                      <span style={{ 
+                        fontSize: '11px', 
+                        fontWeight: 600, 
+                        color: task.isOverdue ? 'var(--danger)' : task.daysLeft <= 30 ? 'var(--warning)' : 'var(--text-secondary)'
+                      }}>
+                        {task.isOverdue ? 'OVERDUE' : `In ${task.daysLeft} days`}
+                      </span>
+                    </div>
+                    <div className="alert-desc" style={{ fontSize: '12px', margin: '4px 0' }}>
+                      Due Date: <strong>{task.dueDate}</strong> &bull; {task.notes}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                      <span className={`country-badge country-${task.company.country.toLowerCase().replace(/[^a-z]/g, '')}`} style={{ fontSize: '9px', padding: '2px 6px' }}>
+                        {task.company.name}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Filings Calendar</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Country Breakdown (Geographical distribution) */}
+        <div className="chart-card">
+          <div className="chart-header">
+            <h2 className="chart-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Globe size={20} style={{ color: 'var(--primary)' }} /> Entity Network
+            </h2>
+          </div>
+          <div className="distribution-list">
+            {countryListData.map(country => (
+              <div className="distribution-item" key={country.name}>
+                <div className="dist-label-row">
+                  <span>{country.name}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    {country.count} {country.count === 1 ? 'entity' : 'entities'}
+                  </span>
+                </div>
+                <div className="dist-bar-bg">
+                  <div 
+                    className="dist-bar-fill" 
+                    style={{ 
+                      width: `${country.percentage}%`,
+                      background: country.name === 'United Kingdom' ? 'linear-gradient(90deg, #6366f1, #4f46e5)' :
+                                  country.name === 'United States' ? 'linear-gradient(90deg, #0ea5e9, #0284c7)' :
+                                  country.name === 'United Arab Emirates' ? 'linear-gradient(90deg, #10b981, #059669)' :
+                                  'linear-gradient(90deg, #f59e0b, #d97706)'
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </div>
+
+      {/* Upcoming Operational Planner Agenda */}
+      <div className="chart-card" style={{ width: '100%' }}>
+        <div className="chart-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>
+          <h2 className="chart-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <CalendarDays size={20} style={{ color: 'var(--primary)' }} /> Upcoming Operational Timeline & Agenda
+          </h2>
+          <span style={{ fontSize: '11px', background: 'rgba(99, 102, 241, 0.15)', color: 'var(--primary)', padding: '4px 10px', borderRadius: '12px', fontWeight: 600 }}>
+            Next 30 Days Planner
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+          
+          {/* Next 7 Days Column */}
+          <div style={{ flex: 1, minWidth: '300px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--danger)', borderBottom: '2px solid rgba(239, 68, 68, 0.2)', paddingBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Immediate Agenda (Next 7 Days)</span>
+              <span style={{ fontSize: '11px', background: 'rgba(239, 68, 68, 0.1)', padding: '2px 8px', borderRadius: '10px', color: 'var(--danger)' }}>
+                {next7DaysEvents.length} items
+              </span>
+            </h3>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
+              {next7DaysEvents.map(evt => renderEventRow(evt))}
+              {next7DaysEvents.length === 0 && (
+                <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                  No operational actions in the next 7 days.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Next 30 Days Column */}
+          <div style={{ flex: 1, minWidth: '300px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--warning)', borderBottom: '2px solid rgba(245, 158, 11, 0.2)', paddingBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Upcoming Agenda (8 to 30 Days)</span>
+              <span style={{ fontSize: '11px', background: 'rgba(245, 158, 11, 0.1)', padding: '2px 8px', borderRadius: '10px', color: 'var(--warning)' }}>
+                {next30DaysEvents.length} items
+              </span>
+            </h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
+              {next30DaysEvents.map(evt => renderEventRow(evt))}
+              {next30DaysEvents.length === 0 && (
+                <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                  No upcoming actions scheduled.
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  );
+}

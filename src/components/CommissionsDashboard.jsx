@@ -845,7 +845,6 @@ export default function CommissionsDashboard({
 
                   return sortedAssignmentsStaff.map(s => {
                     const employer = companies.find(c => c.id === s.companyId);
-                    const companyPolicies = commissionPolicies.filter(p => p.companyId === s.companyId);
 
                     return (
                       <tr key={s.id}>
@@ -860,9 +859,14 @@ export default function CommissionsDashboard({
                             style={{ width: '100%', maxWidth: '280px', padding: '6px' }}
                           >
                             <option value="">-- No Incentive Plan --</option>
-                            {companyPolicies.map(p => (
-                              <option key={p.id} value={p.id}>{p.name}</option>
-                            ))}
+                            {commissionPolicies.map(p => {
+                              const pComp = companies.find(c => c.id === p.companyId);
+                              return (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} ({pComp ? pComp.name : 'Group-wide'})
+                                </option>
+                              );
+                            })}
                           </select>
                         </td>
                       </tr>

@@ -47,6 +47,7 @@ import PlacementsDashboard from './components/PlacementsDashboard';
 import ExpensesDashboard from './components/ExpensesDashboard';
 import LogsDashboard from './components/LogsDashboard';
 import ReportsDashboard from './components/ReportsDashboard';
+import RBACDashboard from './components/RBACDashboard';
 import { initialNominalCodes, initialExpenses } from './mockExpenses';
 
 export default function App() {

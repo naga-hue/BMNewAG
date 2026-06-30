@@ -2027,6 +2027,8 @@ export default function App() {
               placements={scopedPlacements}
               expenses={scopedExpenses}
               nominalCodes={nominalCodes}
+              vendors={vendors}
+              onSaveVendor={handleSaveVendor}
               onSaveExpense={handleSaveExpense}
               onDeleteExpense={handleDeleteExpense}
               onSaveNominalCode={handleSaveNominalCode}

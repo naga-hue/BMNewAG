@@ -49,7 +49,7 @@ export default function VendorsDashboard({
   onDeleteAssetAssignment,
   onShowToast 
 }) {
-  const [activeSubTab, setActiveSubTab] = useState('contracts'); // contracts, allocations, forecast
+  const [activeSubTab, setActiveSubTab] = useState('vendors'); // vendors, contracts, allocations, forecast
 
   // Editing trackers
   const [editingVendorId, setEditingVendorId] = useState(null);
@@ -328,7 +328,6 @@ export default function VendorsDashboard({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      
       {/* Sub-tab Navigation */}
       <div style={{ 
         display: 'flex', 
@@ -340,7 +339,8 @@ export default function VendorsDashboard({
         gap: '4px'
       }}>
         {[
-          { key: 'contracts', label: 'Vendors & Agreements' },
+          { key: 'vendors', label: 'Vendor Directory' },
+          { key: 'contracts', label: 'Contracts & Leases' },
           { key: 'allocations', label: 'License Allocations' },
           { key: 'forecast', label: 'Expense Forecasting' }
         ].map(t => (
@@ -365,46 +365,27 @@ export default function VendorsDashboard({
       </div>
 
       {/* ==============================================================
-          SUB-TAB 1: VENDORS & AGREEMENTS
+          SUB-TAB 1: VENDOR REGISTER DIRECTORY
           ============================================================== */}
-      {activeSubTab === 'contracts' && (
+      {activeSubTab === 'vendors' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Vendors, Rentals & Contracts</h2>
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Manage landlord agreements, software licenses, payment terms, and invoice schedules.</p>
+              <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Vendor Directory & Partners</h2>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Register service providers, software vendors, and office landlords.</p>
             </div>
             
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button className="btn-secondary" onClick={() => {
-                setEditingVendorId(null);
-                setVendorName('');
-                setVendorEmail('');
-                setVendorPhone('');
-                setVendorDesc('');
-                setShowVendorForm(prev => !prev);
-                setShowContractForm(false);
-              }}>
-                <Plus size={16} /> Add Vendor Partner
-              </button>
-              <button className="btn-primary" onClick={() => {
-                setEditingContractId(null);
-                setContractName('');
-                setUnitCost('');
-                setQuantityPurchased('1');
-                setTaxRate('20.0');
-                setStartDate('');
-                setEndDate('');
-                setRenewalDate('');
-                setPaymentDueDate('');
-                setPaymentReminderDate('');
-                setShowContractForm(prev => !prev);
-                setShowVendorForm(false);
-              }}>
-                <Plus size={16} /> Register Contract
-              </button>
-            </div>
+            <button className="btn-primary" onClick={() => {
+              setEditingVendorId(null);
+              setVendorName('');
+              setVendorEmail('');
+              setVendorPhone('');
+              setVendorDesc('');
+              setShowVendorForm(prev => !prev);
+            }}>
+              <Plus size={16} /> Add Vendor Partner
+            </button>
           </div>
 
           {/* Create / Edit Vendor Form */}
@@ -450,7 +431,7 @@ export default function VendorsDashboard({
                   <input 
                     type="email" 
                     className="form-input" 
-                    placeholder="billing@vendor.com"
+                    placeholder="e.g. billing@microsoft.com"
                     value={vendorEmail}
                     onChange={(e) => setVendorEmail(e.target.value)}
                   />
@@ -461,7 +442,7 @@ export default function VendorsDashboard({
                   <input 
                     type="text" 
                     className="form-input" 
-                    placeholder="+1 (800) ..."
+                    placeholder="e.g. +353 1 1234567"
                     value={vendorPhone}
                     onChange={(e) => setVendorPhone(e.target.value)}
                   />
@@ -469,7 +450,7 @@ export default function VendorsDashboard({
               </div>
 
               <div className="form-group">
-                <label className="form-label">Description / Scope of Service</label>
+                <label className="form-label">Notes & Description</label>
                 <textarea 
                   className="form-input" 
                   rows="2"
@@ -494,6 +475,85 @@ export default function VendorsDashboard({
             </form>
           )}
 
+          {/* Vendors Directory Section */}
+          <div className="detail-section" style={{ padding: '16px' }}>
+            <div className="section-title" style={{ fontSize: '14px', marginBottom: '12px' }}>
+              <Building2 size={16} /> Vendor Partners Directory ({vendors.length})
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+              {vendors.map(v => (
+                <div key={v.id} style={{ 
+                  flex: '1 1 300px', 
+                  backgroundColor: 'var(--bg-sidebar)', 
+                  border: '1px solid var(--border-color)', 
+                  padding: '12px', 
+                  borderRadius: '6px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start'
+                }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontWeight: 600, fontSize: '13px' }}>{v.name}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600, textTransform: 'uppercase' }}>{v.category}</span>
+                    <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                      {v.contactEmail && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Mail size={10} />{v.contactEmail}</span>
+                      )}
+                      {v.phone && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Phone size={10} />{v.phone}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button className="btn-icon" onClick={() => handleEditVendor(v)} title="Edit Vendor">
+                      <Edit3 size={11} />
+                    </button>
+                    <button className="btn-icon delete" onClick={() => {
+                      if (window.confirm(`Are you sure you want to delete vendor "${v.name}"?`)) {
+                        onDeleteVendor(v.id);
+                        onShowToast(`Deleted vendor "${v.name}"`, "info");
+                      }
+                    }} title="Delete Vendor">
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==============================================================
+          SUB-TAB 2: CONTRACTS & LEASES
+          ============================================================== */}
+      {activeSubTab === 'contracts' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Contracts & Landlord Leases</h2>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Manage software license pools, landlord leases, payment schedules, and currency settings.</p>
+            </div>
+            
+            <button className="btn-primary" onClick={() => {
+              setEditingContractId(null);
+              setContractName('');
+              setUnitCost('');
+              setQuantityPurchased('1');
+              setTaxRate('20.0');
+              setStartDate('');
+              setEndDate('');
+              setRenewalDate('');
+              setPaymentDueDate('');
+              setPaymentReminderDate('');
+              setShowContractForm(prev => !prev);
+            }}>
+              <Plus size={16} /> Register Contract
+            </button>
+          </div>
+
           {/* Create / Edit Contract Form */}
           {showContractForm && (
             <form onSubmit={handleContractSubmit} className="detail-section" style={{ border: '1px solid var(--primary)', animation: 'fadeIn 0.2s' }}>
@@ -514,8 +574,8 @@ export default function VendorsDashboard({
                   />
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Vendor <span>*</span></label>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">Vendor Partner <span>*</span></label>
                   <select 
                     className="select-filter"
                     value={contractVendorId}
@@ -523,7 +583,7 @@ export default function VendorsDashboard({
                     style={{ width: '100%', padding: '10px' }}
                     required
                   >
-                    <option value="">-- Choose Vendor --</option>
+                    <option value="">-- Select Vendor --</option>
                     {vendors.map(v => (
                       <option key={v.id} value={v.id}>{v.name} ({v.category})</option>
                     ))}
@@ -533,7 +593,7 @@ export default function VendorsDashboard({
 
               <div className="form-group-row">
                 <div className="form-group">
-                  <label className="form-label">Billed To (paying Company) <span>*</span></label>
+                  <label className="form-label">Billing Entity (Company) <span>*</span></label>
                   <select 
                     className="select-filter"
                     value={contractCompanyId}
@@ -543,105 +603,104 @@ export default function VendorsDashboard({
                   >
                     <option value="">-- Select Company --</option>
                     {companies.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} ({c.country})</option>
+                      <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Billing Interval <span>*</span></label>
-                  <select 
-                    className="select-filter"
-                    value={costInterval}
-                    onChange={(e) => setCostInterval(e.target.value)}
-                    style={{ width: '100%', padding: '10px' }}
-                  >
-                    <option value="monthly">Monthly Recurring</option>
-                    <option value="annual">Annual Recurring</option>
-                    <option value="one_time">One-Time Purchase</option>
-                  </select>
-                </div>
+                <div className="form-group-row" style={{ flex: 1, gap: '10px' }}>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">Billing Frequency <span>*</span></label>
+                    <select 
+                      className="select-filter"
+                      value={costInterval}
+                      onChange={(e) => setCostInterval(e.target.value)}
+                      style={{ width: '100%', padding: '10px' }}
+                    >
+                      <option value="monthly">Monthly Recurring</option>
+                      <option value="annual">Annual Recurring</option>
+                    </select>
+                  </div>
 
-                <div className="form-group">
-                  <label className="form-label">Currency <span>*</span></label>
-                  <select 
-                    className="select-filter"
-                    value={contractCurrency}
-                    onChange={(e) => setContractCurrency(e.target.value)}
-                    style={{ width: '100%', padding: '10px' }}
-                  >
-                    {CURRENCIES.map(c => (
-                      <option key={c.code} value={c.code}>{c.code}</option>
-                    ))}
-                  </select>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">Contract Currency <span>*</span></label>
+                    <select 
+                      className="select-filter"
+                      value={contractCurrency}
+                      onChange={(e) => setContractCurrency(e.target.value)}
+                      style={{ width: '100%', padding: '10px' }}
+                    >
+                      {CURRENCIES.map(curr => (
+                        <option key={curr.code} value={curr.code}>{curr.code} ({curr.symbol})</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 
               <div className="form-group-row">
                 <div className="form-group">
-                  <label className="form-label">Unit Cost (excluding tax) <span>*</span></label>
+                  <label className="form-label">Unit Cost (excl. Tax) <span>*</span></label>
                   <input 
                     type="number" 
-                    step="0.01" 
                     className="form-input" 
-                    placeholder="e.g. 10" 
+                    placeholder="0.00"
+                    step="0.01"
                     value={unitCost}
                     onChange={(e) => setUnitCost(e.target.value)}
-                    required 
+                    required
                   />
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Quantity Purchased <span>*</span></label>
+                  <label className="form-label">Quantity / Seats Purchased <span>*</span></label>
                   <input 
                     type="number" 
                     className="form-input" 
                     value={quantityPurchased}
                     onChange={(e) => setQuantityPurchased(e.target.value)}
-                    required 
+                    min="1"
+                    required
                   />
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">VAT / GST / Sales Tax Rate (%)</label>
+                  <label className="form-label">VAT / Tax Rate (%) <span>*</span></label>
                   <input 
                     type="number" 
-                    step="0.1" 
-                    min="0"
-                    max="100"
                     className="form-input" 
-                    placeholder="e.g. 20" 
+                    step="0.1"
                     value={taxRate}
                     onChange={(e) => setTaxRate(e.target.value)}
+                    required
                   />
                 </div>
               </div>
 
               <div className="form-group-row">
                 <div className="form-group">
-                  <label className="form-label">Start Date <span>*</span></label>
+                  <label className="form-label">Agreement Start Date <span>*</span></label>
                   <input 
                     type="date" 
                     className="form-input" 
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    required 
+                    required
                   />
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">End Date <span>*</span></label>
+                  <label className="form-label">Agreement End Date</label>
                   <input 
                     type="date" 
                     className="form-input" 
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    required 
                   />
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Renewal Review Date</label>
+                  <label className="form-label">Contract Renewal Date</label>
                   <input 
                     type="date" 
                     className="form-input" 
@@ -726,44 +785,6 @@ export default function VendorsDashboard({
               </div>
             </form>
           )}
-
-          {/* Vendors Directory Section */}
-          <div className="detail-section" style={{ padding: '16px' }}>
-            <div className="section-title" style={{ fontSize: '14px', marginBottom: '12px' }}>
-              <Building2 size={16} /> Vendor Partners Directory ({vendors.length})
-            </div>
-
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-              {vendors.map(v => (
-                <div key={v.id} style={{ 
-                  flex: '1 1 300px', 
-                  backgroundColor: 'var(--bg-sidebar)', 
-                  border: '1px solid var(--border-color)', 
-                  padding: '12px', 
-                  borderRadius: '6px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start'
-                }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span style={{ fontWeight: 600, fontSize: '13px' }}>{v.name}</span>
-                    <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600, textTransform: 'uppercase' }}>{v.category}</span>
-                    <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                      {v.contactEmail && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Mail size={10} />{v.contactEmail}</span>
-                      )}
-                      {v.phone && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Phone size={10} />{v.phone}</span>
-                      )}
-                    </div>
-                  </div>
-                  <button className="btn-icon" onClick={() => handleEditVendor(v)} title="Edit Vendor">
-                    <Edit3 size={11} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
 
           {/* Contracts grid */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

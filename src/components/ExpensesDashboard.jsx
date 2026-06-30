@@ -145,6 +145,22 @@ export default function ExpensesDashboard({
   const [linkedPlacementId, setLinkedPlacementId] = useState('');
   const [showPlacementSelector, setShowPlacementSelector] = useState(false);
 
+  // Recipient linkage states (manual entry)
+  const [recipientType, setRecipientType] = useState('other'); // vendor, staff, other
+  const [recipientId, setRecipientId] = useState('');
+
+  // Target Allocation Modal states
+  const [allocatingRowId, setAllocatingRowId] = useState(null); // row.id or 'manual'
+  const [allocationSearch, setAllocationSearch] = useState('');
+  const [allocatingType, setAllocatingType] = useState('company');
+  const [allocatingTarget, setAllocatingTarget] = useState('');
+  const [allocatingStaffIds, setAllocatingStaffIds] = useState([]);
+
+  // Quick Vendor Registration Modal states
+  const [quickVendorRowId, setQuickVendorRowId] = useState(null);
+  const [quickVendorName, setQuickVendorName] = useState('');
+  const [quickVendorCategory, setQuickVendorCategory] = useState('Software License');
+
   // Bank Statement Categorizer states
   const [csvFile, setCsvFile] = useState(null);
   const [csvHeaders, setCsvHeaders] = useState([]);
@@ -170,6 +186,8 @@ export default function ExpensesDashboard({
     setDescription(exp.description || '');
     setInvoiceUrl(exp.invoiceUrl || '#');
     setAllocationType(exp.allocationType || 'company');
+    setRecipientType(exp.recipientType || 'other');
+    setRecipientId(exp.recipientId || '');
 
     if (exp.allocationType === 'staff') {
       setSelectedStaffIds(Array.isArray(exp.allocationTarget) ? exp.allocationTarget : []);
@@ -226,6 +244,8 @@ export default function ExpensesDashboard({
       taxRate: Number(taxRate) || 0,
       description: description.trim(),
       invoiceUrl: resolvedInvoiceUrl,
+      recipientType,
+      recipientId,
       allocationType,
       allocationTarget: target,
       linkedPlacementId: linkedPlacementId || null
@@ -266,6 +286,8 @@ export default function ExpensesDashboard({
       setDescription('');
       setInvoiceFile(null);
       setInvoiceUrl('#');
+      setRecipientType('other');
+      setRecipientId('');
       setAllocationType('company');
       setAllocationTarget('');
       setSelectedStaffIds([]);
@@ -376,11 +398,12 @@ export default function ExpensesDashboard({
       const mappingsList = [
         { key: 'date', labels: ['date', 'transaction date', 'booking date', 'val date'] },
         { key: 'payee', labels: ['description', 'payee', 'beneficiary', 'details', 'name'] },
-        { key: 'amount', labels: ['amount', 'value', 'transaction amount', 'net amount', 'price'] }
+        { key: 'amount', labels: ['amount', 'value', 'transaction amount', 'net amount', 'price'] },
+        { key: 'reference', labels: ['reference', 'memo', 'ref', 'narrative', 'payment reference'] }
       ];
 
       mappingsList.forEach(m => {
-        const idx = headers.findIndex(h => m.labels.some(lbl => h.toLowerCase() === lbl.toLowerCase()));
+        const idx = headers.findIndex(h => h && m.labels.some(lbl => h.toLowerCase() === lbl.toLowerCase()));
         if (idx > -1) initialMap[m.key] = headers[idx];
       });
 
@@ -399,11 +422,13 @@ export default function ExpensesDashboard({
     const dateColIdx = csvHeaders.indexOf(columnMappings.date);
     const payeeColIdx = csvHeaders.indexOf(columnMappings.payee);
     const amountColIdx = csvHeaders.indexOf(columnMappings.amount);
+    const refColIdx = columnMappings.reference ? csvHeaders.indexOf(columnMappings.reference) : -1;
 
     const parsedRows = csvRows.map((row, idx) => {
       const dateVal = row[dateColIdx] || '';
       const payeeVal = row[payeeColIdx] || '';
       const amtVal = Number(String(row[amountColIdx]).replace(/[^0-9.-]/g, '')) || 0;
+      const refVal = refColIdx > -1 ? row[refColIdx] || '' : '';
       
       const parts = dateVal.split(/[-/]/);
       let yyyymm = new Date().toISOString().substring(0, 7);
@@ -418,6 +443,7 @@ export default function ExpensesDashboard({
         date: dateVal,
         plMonth: yyyymm,
         payee: payeeVal,
+        reference: refVal,
         amount: amtVal,
         nominalCode: '',
         allocationType: 'company',
@@ -460,7 +486,7 @@ export default function ExpensesDashboard({
           id: `exp-stmt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
           date: row.date,
           plMonth: row.plMonth,
-          payee: row.payee,
+          payee: row.payee + (row.reference ? ` [Ref: ${row.reference}]` : ''),
           nominalCode: row.nominalCode,
           amount: Math.abs(row.amount), // gross amount is absolute
           currency: "GBP",
@@ -660,7 +686,7 @@ export default function ExpensesDashboard({
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Payee / Recipient <span>*</span></label>
+                  <label className="form-label">Payee / Recipient Name <span>*</span></label>
                   <input 
                     type="text" 
                     className="form-input" 
@@ -669,6 +695,45 @@ export default function ExpensesDashboard({
                     onChange={(e) => setPayee(e.target.value)}
                     required
                   />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Link to Registered Vendor or Staff</label>
+                  <select
+                    className="select-filter"
+                    value={recipientType !== 'other' ? `${recipientType}:${recipientId}` : 'other'}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === 'other') {
+                        setRecipientType('other');
+                        setRecipientId('');
+                      } else {
+                        const [type, id] = val.split(':');
+                        setRecipientType(type);
+                        setRecipientId(id);
+                        if (type === 'vendor') {
+                          const v = vendors.find(item => item.id === id);
+                          if (v) setPayee(v.name);
+                        } else if (type === 'staff') {
+                          const s = staff.find(item => item.id === id);
+                          if (s) setPayee(s.fullName);
+                        }
+                      }
+                    }}
+                    style={{ width: '100%', padding: '10px' }}
+                  >
+                    <option value="other">-- No Linkage / General Payee --</option>
+                    <optgroup label="Registered Vendors">
+                      {vendors.map(v => (
+                        <option key={v.id} value={`vendor:${v.id}`}>{v.name} ({v.category})</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Staff / Consultants">
+                      {staff.map(s => (
+                        <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
+                      ))}
+                    </optgroup>
+                  </select>
                 </div>
               </div>
 
@@ -741,89 +806,51 @@ export default function ExpensesDashboard({
 
               {/* Allocation target section */}
               <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
-                <div className="form-group-row">
-                  <div className="form-group">
-                    <label className="form-label">Cost Allocation Basis <span>*</span></label>
-                    <select
-                      className="select-filter"
-                      value={allocationType}
-                      onChange={(e) => {
-                        setAllocationType(e.target.value);
-                        setAllocationTarget('');
-                        setSelectedStaffIds([]);
-                      }}
-                      style={{ width: '100%', padding: '10px' }}
-                    >
-                      <option value="company">Corporate / Employer Entity</option>
-                      <option value="department">Business Department Cost Center</option>
-                      <option value="staff">Specific Recruiters / Staff (Split Cost)</option>
-                    </select>
-                  </div>
-
-                  {allocationType === 'company' && (
-                    <div className="form-group" style={{ animation: 'fadeIn 0.2s' }}>
-                      <label className="form-label">Employer Entity Target <span>*</span></label>
-                      <select
-                        className="select-filter"
-                        value={allocationTarget}
-                        onChange={(e) => setAllocationTarget(e.target.value)}
-                        style={{ width: '100%', padding: '10px' }}
-                        required
-                      >
-                        <option value="">-- Choose Company --</option>
-                        {companies.map(c => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {allocationType === 'department' && (
-                    <div className="form-group" style={{ animation: 'fadeIn 0.2s' }}>
-                      <label className="form-label">Department Cost Center <span>*</span></label>
-                      <select
-                        className="select-filter"
-                        value={allocationTarget}
-                        onChange={(e) => setAllocationTarget(e.target.value)}
-                        style={{ width: '100%', padding: '10px' }}
-                        required
-                      >
-                        <option value="">-- Choose Department --</option>
-                        {DEPARTMENTS.map(d => (
-                          <option key={d} value={d}>{d}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
-
-                {allocationType === 'staff' && (
-                  <div className="form-group" style={{ marginTop: '12px', animation: 'fadeIn 0.2s' }}>
-                    <label className="form-label">Select Recruiters sharing this cost (equally divided) <span>*</span></label>
-                    <div style={{ 
-                      display: 'grid', 
-                      gridTemplateColumns: 'repeat(3, 1fr)', 
-                      gap: '8px', 
-                      maxHeight: '150px', 
-                      overflowY: 'auto',
+                <div className="form-group">
+                  <label className="form-label">Cost Allocation Target <span>*</span></label>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setAllocatingRowId('manual');
+                      setAllocatingType(allocationType);
+                      setAllocatingTarget(allocationTarget);
+                      setAllocatingStaffIds(selectedStaffIds);
+                      setAllocationSearch('');
+                    }}
+                    style={{ 
+                      padding: '10px', 
+                      width: '100%', 
+                      textAlign: 'left',
+                      fontSize: '13px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      borderRadius: 'var(--radius-sm)',
                       border: '1px solid var(--border-color)',
-                      padding: '12px',
-                      borderRadius: '6px',
-                      backgroundColor: 'var(--bg-secondary)'
-                    }}>
-                      {staff.map(member => (
-                        <label key={member.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer' }}>
-                          <input 
-                            type="checkbox"
-                            checked={selectedStaffIds.includes(member.id)}
-                            onChange={() => handleToggleStaffAllocation(member.id)}
-                          />
-                          <span>{member.fullName}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                      backgroundColor: 'var(--bg-secondary)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>
+                      {(() => {
+                        if (allocationType === 'company') {
+                          const comp = companies.find(c => c.id === allocationTarget);
+                          return `🏢 Company Target: ${comp ? comp.name : 'Click to select Company'}`;
+                        }
+                        if (allocationType === 'department') {
+                          return `📂 Department Cost Center: ${allocationTarget || 'Click to select Department'}`;
+                        }
+                        if (allocationType === 'staff') {
+                          const count = selectedStaffIds?.length || 0;
+                          return `👥 Staff Cost splits: ${count} recruiter${count !== 1 ? 's' : ''} selected`;
+                        }
+                        return '🎯 Click to Select Target Allocation...';
+                      })()}
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 600 }}>Modify Target</span>
+                  </button>
+                </div>
               </div>
 
               {/* Linked Credit to Placement Sales Receipt */}
@@ -1126,7 +1153,8 @@ export default function ExpensesDashboard({
                 {[
                   { key: 'date', label: 'Transaction Date *' },
                   { key: 'payee', label: 'Payee / Description *' },
-                  { key: 'amount', label: 'Value Amount *' }
+                  { key: 'amount', label: 'Value Amount *' },
+                  { key: 'reference', label: 'Reference / Memo (Optional)' }
                 ].map(item => (
                   <div key={item.key} className="form-group">
                     <label className="form-label">{item.label}</label>
@@ -1172,11 +1200,11 @@ export default function ExpensesDashboard({
                     <tr>
                       <th>Status</th>
                       <th>Date</th>
-                      <th>Description</th>
+                      <th>Description & Ref</th>
                       <th style={{ textAlign: 'right' }}>Amount</th>
                       <th>P&L Month</th>
                       <th>Nominal Category</th>
-                      <th>Allocation basis</th>
+                      <th>Recipient Linkage</th>
                       <th>Target Allocation</th>
                       <th>Link credit sales</th>
                     </tr>
@@ -1194,7 +1222,14 @@ export default function ExpensesDashboard({
                           )}
                         </td>
                         <td>{row.date}</td>
-                        <td style={{ fontWeight: 600 }}>{row.payee}</td>
+                        <td style={{ fontWeight: 600 }}>
+                          {row.payee}
+                          {row.reference && (
+                            <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 'normal', marginTop: '2px' }}>
+                              Ref: {row.reference}
+                            </div>
+                          )}
+                        </td>
                         <td style={{ textAlign: 'right', fontWeight: 700, color: row.amount < 0 ? 'var(--danger)' : 'var(--success)' }}>
                           £{row.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </td>
@@ -1225,69 +1260,83 @@ export default function ExpensesDashboard({
                           </select>
                         </td>
 
-                        {/* Allocation type */}
+                        {/* Recipient Linkage (Vendor/Staff) */}
                         <td>
                           <select
-                            value={row.allocationType}
-                            onChange={(e) => handleUpdateCategorizedRow(row.id, 'allocationType', e.target.value)}
+                            value={row.recipientType !== 'other' ? `${row.recipientType}:${row.recipientId}` : 'other'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'other') {
+                                handleUpdateCategorizedRow(row.id, 'recipientType', 'other');
+                                handleUpdateCategorizedRow(row.id, 'recipientId', '');
+                              } else if (val === 'register_vendor') {
+                                setQuickVendorRowId(row.id);
+                                setQuickVendorName(row.payee);
+                                setQuickVendorCategory('Software License');
+                              } else {
+                                const [type, id] = val.split(':');
+                                handleUpdateCategorizedRow(row.id, 'recipientType', type);
+                                handleUpdateCategorizedRow(row.id, 'recipientId', id);
+                              }
+                            }}
                             disabled={row.committed}
-                            style={{ padding: '4px', fontSize: '11px', width: '100px' }}
+                            style={{ padding: '4px', fontSize: '11px', width: '150px' }}
                           >
-                            <option value="company">Company</option>
-                            <option value="department">Department</option>
-                            <option value="staff">Staff splits</option>
+                            <option value="other">-- General Recipient --</option>
+                            <option value="register_vendor" style={{ color: 'var(--primary)', fontWeight: 'bold' }}>
+                              ➕ Register "{row.payee}"...
+                            </option>
+                            <optgroup label="Registered Vendors">
+                              {vendors.map(v => (
+                                <option key={v.id} value={`vendor:${v.id}`}>{v.name}</option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="Staff / Consultants">
+                              {staff.map(s => (
+                                <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
+                              ))}
+                            </optgroup>
                           </select>
                         </td>
 
-                        {/* Target Selector */}
+                        {/* Target Selector Button */}
                         <td>
-                          {row.allocationType === 'company' && (
-                            <select
-                              value={row.allocationTarget}
-                              onChange={(e) => handleUpdateCategorizedRow(row.id, 'allocationTarget', e.target.value)}
-                              disabled={row.committed}
-                              style={{ padding: '4px', fontSize: '11px', width: '120px' }}
-                            >
-                              {companies.map(c => (
-                                <option key={c.id} value={c.id}>{c.name}</option>
-                              ))}
-                            </select>
-                          )}
-
-                          {row.allocationType === 'department' && (
-                            <select
-                              value={row.allocationTarget}
-                              onChange={(e) => handleUpdateCategorizedRow(row.id, 'allocationTarget', e.target.value)}
-                              disabled={row.committed}
-                              style={{ padding: '4px', fontSize: '11px', width: '120px' }}
-                            >
-                              {DEPARTMENTS.map(d => (
-                                <option key={d} value={d}>{d}</option>
-                              ))}
-                            </select>
-                          )}
-
-                          {row.allocationType === 'staff' && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', border: '1px solid var(--border-color)', padding: '2px', borderRadius: '4px', maxHeight: '50px', overflowY: 'auto', width: '120px' }}>
-                              {staff.map(member => (
-                                <label key={member.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '9px', cursor: 'pointer' }}>
-                                  <input 
-                                    type="checkbox"
-                                    checked={row.selectedStaffIds?.includes(member.id)}
-                                    onChange={(e) => {
-                                      const ids = row.selectedStaffIds || [];
-                                      const updatedIds = e.target.checked 
-                                        ? [...ids, member.id] 
-                                        : ids.filter(id => id !== member.id);
-                                      handleUpdateCategorizedRow(row.id, 'selectedStaffIds', updatedIds);
-                                    }}
-                                    disabled={row.committed}
-                                  />
-                                  <span>{member.fullName}</span>
-                                </label>
-                              ))}
-                            </div>
-                          )}
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => {
+                              setAllocatingRowId(row.id);
+                              setAllocatingType(row.allocationType || 'company');
+                              setAllocatingTarget(row.allocationTarget || '');
+                              setAllocatingStaffIds(row.selectedStaffIds || []);
+                              setAllocationSearch('');
+                            }}
+                            disabled={row.committed}
+                            style={{ 
+                              padding: '4px 8px', 
+                              fontSize: '11px', 
+                              width: '130px', 
+                              whiteSpace: 'nowrap', 
+                              overflow: 'hidden', 
+                              textOverflow: 'ellipsis',
+                              textAlign: 'left'
+                            }}
+                          >
+                            {(() => {
+                              if (row.allocationType === 'company') {
+                                const comp = companies.find(c => c.id === row.allocationTarget);
+                                return `🏢 ${comp ? comp.name : 'Choose Company'}`;
+                              }
+                              if (row.allocationType === 'department') {
+                                return `📂 Dept: ${row.allocationTarget || 'Choose Dept'}`;
+                              }
+                              if (row.allocationType === 'staff') {
+                                const count = row.selectedStaffIds?.length || 0;
+                                return `👥 ${count} staff split${count !== 1 ? 's' : ''}`;
+                              }
+                              return '🎯 Click to Allocate';
+                            })()}
+                          </button>
                         </td>
 
                         {/* Link Credit to placement sales invoice */}
@@ -1424,6 +1473,404 @@ export default function ExpensesDashboard({
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* ==============================================================
+          MODAL: TARGET ALLOCATION MULTI-SELECT DESK
+          ============================================================== */}
+      {allocatingRowId !== null && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          animation: 'fadeIn 0.2s'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            width: '90%',
+            maxWidth: '550px',
+            padding: '24px',
+            boxShadow: 'var(--shadow-lg)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>Select Target Allocation Cost Center</h3>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Assign where this expense amount should be routed.
+                </span>
+              </div>
+              <button 
+                type="button" 
+                className="btn-icon" 
+                onClick={() => setAllocatingRowId(null)}
+                style={{ border: 'none', background: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Switch Tabs for Company, Department, Staff */}
+            <div style={{
+              display: 'flex',
+              backgroundColor: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px',
+              padding: '2px',
+              width: '100%',
+              gap: '2px'
+            }}>
+              {[
+                { key: 'company', label: '🏢 Companies' },
+                { key: 'department', label: '📂 Departments' },
+                { key: 'staff', label: '👥 Staff Splits' }
+              ].map(t => (
+                <button
+                  type="button"
+                  key={t.key}
+                  onClick={() => setAllocatingType(t.key)}
+                  style={{
+                    flex: 1,
+                    background: allocatingType === t.key ? 'var(--bg-sidebar)' : 'none',
+                    border: 'none',
+                    color: allocatingType === t.key ? 'var(--accent)' : 'var(--text-secondary)',
+                    padding: '8px',
+                    borderRadius: '4px',
+                    fontWeight: 600,
+                    fontSize: '12px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Search filter box */}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="Search targets by name..."
+                value={allocationSearch}
+                onChange={(e) => setAllocationSearch(e.target.value)}
+                style={{ fontSize: '12px', padding: '8px' }}
+              />
+            </div>
+
+            {/* List Container */}
+            <div style={{ 
+              maxHeight: '250px', 
+              overflowY: 'auto', 
+              border: '1px solid var(--border-color)', 
+              borderRadius: '6px', 
+              backgroundColor: 'var(--bg-sidebar)',
+              padding: '8px'
+            }}>
+              {allocatingType === 'company' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {companies
+                    .filter(c => c.name.toLowerCase().includes(allocationSearch.toLowerCase()))
+                    .map(c => (
+                      <label 
+                        key={c.id} 
+                        style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'space-between',
+                          padding: '8px', 
+                          borderRadius: '4px', 
+                          cursor: 'pointer',
+                          backgroundColor: allocatingTarget === c.id ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
+                          border: allocatingTarget === c.id ? '1px solid var(--primary)' : '1px solid transparent'
+                        }}
+                      >
+                        <span style={{ fontSize: '12px', fontWeight: allocatingTarget === c.id ? 600 : 'normal' }}>{c.name}</span>
+                        <input 
+                          type="radio" 
+                          name="allocating-company"
+                          checked={allocatingTarget === c.id} 
+                          onChange={() => setAllocatingTarget(c.id)}
+                        />
+                      </label>
+                    ))}
+                  {companies.filter(c => c.name.toLowerCase().includes(allocationSearch.toLowerCase())).length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>No matching companies.</div>
+                  )}
+                </div>
+              )}
+
+              {allocatingType === 'department' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {DEPARTMENTS
+                    .filter(d => d.toLowerCase().includes(allocationSearch.toLowerCase()))
+                    .map(d => (
+                      <label 
+                        key={d} 
+                        style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'space-between',
+                          padding: '8px', 
+                          borderRadius: '4px', 
+                          cursor: 'pointer',
+                          backgroundColor: allocatingTarget === d ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
+                          border: allocatingTarget === d ? '1px solid var(--primary)' : '1px solid transparent'
+                        }}
+                      >
+                        <span style={{ fontSize: '12px', fontWeight: allocatingTarget === d ? 600 : 'normal' }}>{d}</span>
+                        <input 
+                          type="radio" 
+                          name="allocating-department"
+                          checked={allocatingTarget === d} 
+                          onChange={() => setAllocatingTarget(d)}
+                        />
+                      </label>
+                    ))}
+                  {DEPARTMENTS.filter(d => d.toLowerCase().includes(allocationSearch.toLowerCase())).length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>No matching departments.</div>
+                  )}
+                </div>
+              )}
+
+              {allocatingType === 'staff' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', paddingLeft: '4px' }}>
+                    Select one or more staff members to split cost:
+                  </span>
+                  {staff
+                    .filter(s => s.fullName.toLowerCase().includes(allocationSearch.toLowerCase()))
+                    .map(s => {
+                      const isChecked = allocatingStaffIds.includes(s.id);
+                      return (
+                        <label 
+                          key={s.id} 
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'space-between',
+                            padding: '8px', 
+                            borderRadius: '4px', 
+                            cursor: 'pointer',
+                            backgroundColor: isChecked ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
+                            border: isChecked ? '1px solid var(--primary)' : '1px solid transparent'
+                          }}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '12px', fontWeight: isChecked ? 600 : 'normal' }}>{s.fullName}</span>
+                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{s.department || 'No Dept'}</span>
+                          </div>
+                          <input 
+                            type="checkbox" 
+                            checked={isChecked} 
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setAllocatingStaffIds(prev => [...prev, s.id]);
+                              } else {
+                                setAllocatingStaffIds(prev => prev.filter(id => id !== s.id));
+                              }
+                            }}
+                          />
+                        </label>
+                      );
+                    })}
+                  {staff.filter(s => s.fullName.toLowerCase().includes(allocationSearch.toLowerCase())).length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>No matching staff members.</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer buttons */}
+            <div style={{ display: 'flex', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+              <button 
+                type="button" 
+                className="btn-primary" 
+                style={{ flex: 1 }}
+                onClick={() => {
+                  let finalTarget = allocatingTarget;
+                  if (allocatingType === 'staff') {
+                    if (allocatingStaffIds.length === 0) {
+                      onShowToast("Please select at least one staff member.", "warning");
+                      return;
+                    }
+                    finalTarget = allocatingStaffIds;
+                  } else {
+                    if (!finalTarget) {
+                      if (allocatingType === 'company') finalTarget = companies[0]?.id || '';
+                      if (allocatingType === 'department') finalTarget = DEPARTMENTS[0];
+                    }
+                  }
+
+                  if (allocatingRowId === 'manual') {
+                    setAllocationType(allocatingType);
+                    if (allocatingType === 'staff') {
+                      setSelectedStaffIds(allocatingStaffIds);
+                      setAllocationTarget('');
+                    } else {
+                      setAllocationTarget(finalTarget);
+                      setSelectedStaffIds([]);
+                    }
+                  } else {
+                    handleUpdateCategorizedRow(allocatingRowId, 'allocationType', allocatingType);
+                    if (allocatingType === 'staff') {
+                      handleUpdateCategorizedRow(allocatingRowId, 'selectedStaffIds', allocatingStaffIds);
+                      handleUpdateCategorizedRow(allocatingRowId, 'allocationTarget', '');
+                    } else {
+                      handleUpdateCategorizedRow(allocatingRowId, 'allocationTarget', finalTarget);
+                      handleUpdateCategorizedRow(allocatingRowId, 'selectedStaffIds', []);
+                    }
+                  }
+                  setAllocatingRowId(null);
+                }}
+              >
+                Apply Allocation
+              </button>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                style={{ flex: 1 }}
+                onClick={() => setAllocatingRowId(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==============================================================
+          MODAL: QUICK REGISTER VENDOR PARTNER
+          ============================================================== */}
+      {quickVendorRowId !== null && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          animation: 'fadeIn 0.2s'
+        }}>
+          <form 
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!quickVendorName.trim()) return;
+              try {
+                const newVendorId = `vendor-${Date.now()}`;
+                const newVendor = {
+                  id: newVendorId,
+                  name: quickVendorName.trim(),
+                  category: quickVendorCategory,
+                  contactEmail: '',
+                  phone: '',
+                  notes: 'Auto-registered from bank statement importer categorizer Desk.'
+                };
+                await onSaveVendor(newVendor);
+                
+                if (quickVendorRowId === 'manual') {
+                  setRecipientType('vendor');
+                  setRecipientId(newVendorId);
+                  setPayee(newVendor.name);
+                } else {
+                  handleUpdateCategorizedRow(quickVendorRowId, 'recipientType', 'vendor');
+                  handleUpdateCategorizedRow(quickVendorRowId, 'recipientId', newVendorId);
+                }
+                
+                onShowToast(`Successfully registered vendor "${quickVendorName}"!`, "success");
+                setQuickVendorRowId(null);
+              } catch (err) {
+                onShowToast(`Error registering vendor: ${err.message}`, "warning");
+              }
+            }}
+            style={{
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '12px',
+              width: '90%',
+              maxWidth: '450px',
+              padding: '24px',
+              boxShadow: 'var(--shadow-lg)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>Register New Vendor Partner</h3>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Add this supplier to your database.
+                </span>
+              </div>
+              <button 
+                type="button" 
+                className="btn-icon" 
+                onClick={() => setQuickVendorRowId(null)}
+                style={{ border: 'none', background: 'none', color: 'var(--text-secondary)' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Vendor Company Name <span>*</span></label>
+              <input 
+                type="text" 
+                className="form-input" 
+                value={quickVendorName}
+                onChange={(e) => setQuickVendorName(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Category <span>*</span></label>
+              <select
+                className="select-filter"
+                value={quickVendorCategory}
+                onChange={(e) => setQuickVendorCategory(e.target.value)}
+                style={{ width: '100%', padding: '10px' }}
+              >
+                <option value="Software License">Software Licenses (Office, CRM, etc.)</option>
+                <option value="Office Rental">Office Rentals & Landlords</option>
+                <option value="Telecom">Telecom & Phone Systems</option>
+                <option value="AI Service">AI Services (OpenAI, Anthropic)</option>
+                <option value="Other">Other Vendors</option>
+              </select>
+            </div>
+
+            {/* Footer buttons */}
+            <div style={{ display: 'flex', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+              <button type="submit" className="btn-primary" style={{ flex: 1 }}>
+                Register Vendor Partner
+              </button>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                style={{ flex: 1 }}
+                onClick={() => setQuickVendorRowId(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

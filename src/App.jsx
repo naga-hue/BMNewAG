@@ -937,10 +937,10 @@ export default function App() {
   // Companies filter logic
   const filteredCompanies = scopedCompanies.filter(c => {
     const matchesSearch = 
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.legalName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.registrationNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (c.pointOfContact && c.pointOfContact.name.toLowerCase().includes(searchQuery.toLowerCase()));
+      (c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.legalName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.registrationNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.pointOfContact && c.pointOfContact.name && c.pointOfContact.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesCountry = countryFilter === 'All' || c.country === countryFilter;
 
@@ -977,10 +977,10 @@ export default function App() {
   // Staff filter logic
   const filteredStaff = scopedStaff.filter(s => {
     const matchesSearch = 
-      s.fullName.toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
-      s.jobTitle.toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
-      s.personalEmail.toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
-      s.businessEmail.toLowerCase().includes(staffSearchQuery.toLowerCase());
+      (s.fullName || '').toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
+      (s.jobTitle || '').toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
+      (s.personalEmail || '').toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
+      (s.businessEmail || '').toLowerCase().includes(staffSearchQuery.toLowerCase());
 
     const matchesCompany = staffCompanyFilter === 'All' || s.companyId === staffCompanyFilter;
     const matchesDept = staffDeptFilter === 'All' || s.department === staffDeptFilter;
@@ -1002,7 +1002,7 @@ export default function App() {
   const totalStaffCount = staff.length;
   
   // Recruitment Consultants count
-  const consultantsCount = staff.filter(s => s.department === 'Recruitment' || s.jobTitle.toLowerCase().includes('consultant')).length;
+  const consultantsCount = staff.filter(s => s.department === 'Recruitment' || (s.jobTitle || '').toLowerCase().includes('consultant')).length;
 
   // Audit missing contracts
   const missingContractsCount = staff.filter(s => 

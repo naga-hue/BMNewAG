@@ -56,6 +56,20 @@ export default function App() {
     return 'dark'; // default to dark
   });
 
+  // Default Super Admin User configuration
+  const DEFAULT_ADMIN_USER = {
+    id: 'super-admin',
+    fullName: 'Naga Kandasamy',
+    businessEmail: 'naga@globalrecruiters.ae',
+    permissions: {
+      role: 'admin',
+      dataScope: 'all',
+      allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors', 'logs', 'reports', 'rbac']
+    }
+  };
+
+  const [currentUser, setCurrentUser] = useState(DEFAULT_ADMIN_USER);
+
   // Database lists
   const [companies, setCompanies] = useState([]);
   const [staff, setStaff] = useState([]);

@@ -406,17 +406,18 @@ export default function PlacementsDashboard({
       const initialMap = {};
       const requiredMappings = [
         { key: 'placementId', labels: ['Placement ID', 'Import Key', 'id'] },
-        { key: 'invoiceNumber', labels: ['Invoice Number', 'Invoice #'] },
+        { key: 'invoiceNumber', labels: ['Invoice Number', 'Invoice #', 'InvoiceNo'] },
         { key: 'clientCompany', labels: ['Client Company', 'Client', 'Company'] },
-        { key: 'candidateName', labels: ['Candidate', 'Candidate Name'] },
-        { key: 'startDate', labels: ['Start Date', 'Start'] },
-        { key: 'scoredDate', labels: ['Scored Month', 'Scored Date', 'Confirm Date'] },
-        { key: 'grossBillAmount', labels: ['Gross Bill Amount', 'Gross', 'Bill Amount'] },
-        { key: 'dnsRebateAmount', labels: ['DNS/Rebate Amount', 'Deduction', 'Rebate'] },
+        { key: 'candidateName', labels: ['Candidate', 'Candidate Name', 'CandidateName'] },
+        { key: 'startDate', labels: ['Start Date', 'Start', 'StartDate', 'Joining Date'] },
+        { key: 'scoredDate', labels: ['Scored Month', 'Scored Date', 'Confirm Date', 'ScoredMonth', 'ScoredDate'] },
+        { key: 'grossBillAmount', labels: ['Gross Bill Amount', 'Gross', 'Bill Amount', 'GrossBillAmount'] },
+        { key: 'dnsRebateAmount', labels: ['DNS/Rebate Amount', 'Deduction', 'Rebate', 'DNSRebateAmount', 'DNS/Rebate'] },
+        { key: 'netScoreValue', labels: ['Net Score Value', 'Net Score', 'NetScoreValue'] },
         { key: 'status', labels: ['Status', 'State'] },
         { key: 'source', labels: ['Source', 'Candidate Source'] },
         { key: 'consultants', labels: ['Consultants', 'Recruiter', 'Owner'] },
-        { key: 'splitsJson', labels: ['Split Details JSON', 'Splits JSON'] },
+        { key: 'splitsJson', labels: ['Split Details JSON', 'Splits JSON', 'SplitDetailsJSON'] },
         { key: 'clientPaymentStatus', labels: ['Client Payment Status', 'Payment Status', 'Paid Status'] },
         { key: 'clientPaidDate', labels: ['Client Paid Date', 'Payment Date', 'Date Paid'] }
       ];
@@ -483,7 +484,8 @@ export default function PlacementsDashboard({
       const deductionsVal = getVal('dnsRebateAmount') || '0';
       const deductions = Number(deductionsVal.replace(/[^0-9.]/g, '')) || 0;
       
-      const net = Math.max(0, gross - deductions);
+      const netVal = getVal('netScoreValue') || '';
+      const net = netVal !== '' ? (Number(netVal.replace(/[^0-9.]/g, '')) || 0) : Math.max(0, gross - deductions);
 
       // Parse status
       let status = (getVal('status') || 'active').toLowerCase().trim();

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { toGBP } from '../utils/currency';
 import { 
   Building2, 
   Plus, 
@@ -270,7 +271,6 @@ export default function VendorsDashboard({
       const renewalsList = [];
 
       contracts
-        .filter(c => c.currency === forecastCurrency)
         .forEach(c => {
           const cStart = new Date(c.startDate);
           const cEnd = new Date(c.endDate);
@@ -278,14 +278,16 @@ export default function VendorsDashboard({
 
           if (cStart <= new Date(year, monthIndex + 1, 0) && cEnd >= currentMonthDate) {
             
-            // Calculate base monthly cost (excluding tax)
+            // Calculate base monthly cost (excluding tax) converted to GBP
             let monthlyTotal = 0;
+            const unitCostGBP = toGBP(c.unitCost, c.currency);
+            
             if (c.costInterval === 'monthly') {
-              monthlyTotal = c.unitCost * c.quantityPurchased;
+              monthlyTotal = unitCostGBP * c.quantityPurchased;
             } else if (c.costInterval === 'annual') {
-              monthlyTotal = (c.unitCost * c.quantityPurchased) / 12;
+              monthlyTotal = (unitCostGBP * c.quantityPurchased) / 12;
             } else if (c.costInterval === 'one_time' && cEnd.getMonth() === monthIndex && cEnd.getFullYear() === year) {
-              monthlyTotal = c.unitCost * c.quantityPurchased;
+              monthlyTotal = unitCostGBP * c.quantityPurchased;
             }
 
             const taxFactor = 1 + (Number(c.taxRate || 0) / 100);
@@ -296,7 +298,7 @@ export default function VendorsDashboard({
             } else {
               const assignedSeats = assetAssignments.filter(a => a.contractId === c.id).length;
               const unusedSeats = Math.max(0, c.quantityPurchased - assignedSeats);
-              const costPerSeatWithTax = c.unitCost * taxFactor;
+              const costPerSeatWithTax = unitCostGBP * taxFactor;
               
               assignedCosts += assignedSeats * costPerSeatWithTax;
               unusedCosts += unusedSeats * costPerSeatWithTax;
@@ -770,7 +772,8 @@ export default function VendorsDashboard({
               const matchedCompany = companies.find(c => c.id === contract.companyId);
               const symbol = symbolMap[contract.currency] || '£';
               
-              const rawCost = contract.unitCost * contract.quantityPurchased;
+              const unitCostGBP = toGBP(contract.unitCost, contract.currency);
+              const rawCost = unitCostGBP * contract.quantityPurchased;
               const taxRateVal = contract.taxRate || 0;
               const taxAmount = (rawCost * taxRateVal) / 100;
               const totalWithTax = rawCost + taxAmount;
@@ -839,15 +842,19 @@ export default function VendorsDashboard({
 
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', textAlign: 'right' }}>
                       <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--success)' }}>
-                        {symbol}{monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 
+                        {contract.currency === 'GBP' ? (
+                          `£${monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        ) : (
+                          `£${monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${symbol}${((contract.costInterval === 'monthly' ? (contract.unitCost * contract.quantityPurchased * (1 + (contract.taxRate || 0)/100)) : (contract.unitCost * contract.quantityPurchased * (1 + (contract.taxRate || 0)/100)) / 12)).toLocaleString(undefined, { maximumFractionDigits: 0 })}/mo)`
+                        )}
                         <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'normal' }}> / mo (incl. tax)</span>
                       </span>
                       
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        <div>Subtotal: {symbol}{rawCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                        <div>Subtotal: £{rawCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {contract.currency !== 'GBP' && `(${symbol}${(contract.unitCost * contract.quantityPurchased).toLocaleString(undefined, { maximumFractionDigits: 2 })})`}</div>
                         {taxRateVal > 0 && (
                           <div style={{ color: 'var(--warning)' }}>
-                            Tax ({taxRateVal}%): +{symbol}{taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            Tax ({taxRateVal}%): +£{taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {contract.currency !== 'GBP' && `(+${symbol}${((contract.unitCost * contract.quantityPurchased * taxRateVal) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })})`}
                           </div>
                         )}
                       </div>

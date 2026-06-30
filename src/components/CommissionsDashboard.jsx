@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { toGBP, formatGBP } from '../utils/currency';
 import { 
   TrendingUp, 
   Plus, 
@@ -203,9 +204,12 @@ export default function CommissionsDashboard({
       return sum;
     };
 
-    // Helper to apply slabs to a billing amount
+    // Helper to apply slabs to a billing amount (normalized to GBP)
     const getPolicyCommission = (billingAmt) => {
-      const thresh = Number(policy.monthlyThreshold) || 0;
+      const policyCompany = companies.find(c => c.id === policy.companyId);
+      const policyCurrency = policyCompany ? policyCompany.currency : 'GBP';
+      
+      const thresh = toGBP(policy.monthlyThreshold, policyCurrency);
       const commissionable = Math.max(0, billingAmt - thresh);
       const slabs = policy.slabs || [];
       let earned = 0;
@@ -213,8 +217,8 @@ export default function CommissionsDashboard({
 
       if (commissionable > 0) {
         for (const slab of slabs) {
-          const min = Number(slab.minAmount) || 0;
-          const max = Number(slab.maxAmount) || 999999;
+          const min = toGBP(slab.minAmount, policyCurrency);
+          const max = toGBP(slab.maxAmount, policyCurrency);
           const rate = Number(slab.rate) || 0;
           const slabCap = max - min;
 
@@ -665,7 +669,7 @@ export default function CommissionsDashboard({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-secondary)', padding: '10px', borderRadius: '6px', marginBottom: '12px' }}>
                     <div>Type: <strong style={{ textTransform: 'capitalize' }}>{p.type === 'manager' ? 'Manager Team-Billing' : 'Recruiter'} plan</strong></div>
                     <div>Unlocks: <strong>{p.effectiveFrom === 'day_one' ? 'Day One' : 'After 1 year service'}</strong></div>
-                    <div>Monthly Threshold: <strong>{symbol}{Number(p.monthlyThreshold).toLocaleString()}</strong></div>
+                    <div>Monthly Threshold: <strong>{symbol}{Number(p.monthlyThreshold).toLocaleString()}{matchedComp?.currency !== 'GBP' && ` (approx. ${formatGBP(toGBP(p.monthlyThreshold, matchedComp?.currency))})`}</strong></div>
                   </div>
 
                   {/* Slabs summary */}

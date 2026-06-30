@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { toGBP } from '../utils/currency';
 import { 
   Building2, 
   Plus, 
@@ -1024,7 +1025,11 @@ export default function ExpensesDashboard({
                       </td>
                       <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{exp.taxRate}%</td>
                       <td style={{ textAlign: 'right', fontWeight: 700, color: exp.nominalCode.includes('Wages') || exp.nominalCode.includes('Rent') ? 'var(--danger)' : 'var(--text-primary)' }}>
-                        {symbol}{exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        {exp.currency === 'GBP' ? (
+                          `£${exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        ) : (
+                          `£${toGBP(exp.amount, exp.currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${symbol}${exp.amount.toLocaleString()})`
+                        )}
                       </td>
                       <td>
                         {matchedPl ? (

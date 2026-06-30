@@ -50,6 +50,7 @@ import ExpensesDashboard from './components/ExpensesDashboard';
 import LogsDashboard from './components/LogsDashboard';
 import ReportsDashboard from './components/ReportsDashboard';
 import RBACDashboard from './components/RBACDashboard';
+import { toGBP, formatGBP } from './utils/currency';
 import { initialNominalCodes, initialExpenses } from './mockExpenses';
 
 export default function App() {
@@ -921,29 +922,12 @@ export default function App() {
     !s.documents || !s.documents.some(d => d.type === 'appointment')
   ).length;
 
-  // Payroll Cost summary grouped by currency
+  // Payroll Cost summary normalized to GBP
   const getPayrollSummaryStr = () => {
-    const currencyCosts = staff.reduce((acc, s) => {
-      acc[s.currency] = (acc[s.currency] || 0) + s.salary;
-      return acc;
-    }, {});
-
-    const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
-    
-    const summaryParts = Object.entries(currencyCosts).map(([curr, sum]) => {
-      const symbol = symbolMap[curr] || '';
-      let formattedSum = '';
-      if (sum >= 1000000 && curr === 'INR') {
-        formattedSum = `${(sum / 100000).toFixed(1)}L`; // Lakhs for INR
-      } else if (sum >= 1000) {
-        formattedSum = `${(sum / 1000).toFixed(0)}K`;
-      } else {
-        formattedSum = sum.toString();
-      }
-      return `${symbol}${formattedSum}`;
-    });
-
-    return summaryParts.length > 0 ? summaryParts.join(' | ') : 'No payroll logs';
+    const totalGBP = staff.reduce((sum, s) => {
+      return sum + toGBP(s.salary, s.currency);
+    }, 0);
+    return formatGBP(totalGBP);
   };
 
   return (
@@ -1625,7 +1609,11 @@ export default function App() {
                           <div className="entity-meta-item">
                             <span className="meta-label">Annual Pay:</span>
                             <span style={{ fontWeight: 600, color: 'var(--success)' }}>
-                              {compSymbol}{Number(s.salary).toLocaleString()} ({s.currency})
+                              {s.currency === 'GBP' ? (
+                                `£${Number(s.salary).toLocaleString()}`
+                              ) : (
+                                `£${Math.round(toGBP(s.salary, s.currency)).toLocaleString()} (${compSymbol}${Number(s.salary).toLocaleString()} ${s.currency})`
+                              )}
                             </span>
                           </div>
                           <div className="entity-meta-item">
@@ -1701,7 +1689,11 @@ export default function App() {
                             <td>{employer ? employer.name : 'Unknown'}</td>
                             <td>{s.department}</td>
                             <td style={{ fontWeight: 600, color: 'var(--success)' }}>
-                              {compSymbol}{Number(s.salary).toLocaleString()} {s.currency}
+                              {s.currency === 'GBP' ? (
+                                `£${Number(s.salary).toLocaleString()}`
+                              ) : (
+                                `£${Math.round(toGBP(s.salary, s.currency)).toLocaleString()} (${compSymbol}${Number(s.salary).toLocaleString()} ${s.currency})`
+                              )}
                             </td>
                             <td>{s.businessEmail}</td>
                             <td>{s.businessPhone}</td>

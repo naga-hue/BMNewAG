@@ -594,6 +594,26 @@ export default function ExpensesDashboard({
     }
   };
 
+  const handleResetExpenses = async () => {
+    if (expenses.length === 0) {
+      onShowToast("Ledger is already empty.", "info");
+      return;
+    }
+
+    if (!window.confirm("🚨 DANGER ZONE: This will permanently delete ALL expense records in the database. This action cannot be undone!\n\nAre you absolutely sure you want to proceed?")) {
+      return;
+    }
+
+    try {
+      for (const exp of expenses) {
+        await onDeleteExpense(exp.id);
+      }
+      onShowToast("All expense ledger entries have been successfully reset.", "success");
+    } catch (err) {
+      onShowToast(`Error resetting expenses: ${err.message}`, "warning");
+    }
+  };
+
   // Filter nominal codes & placements lists
   const unpaidPlacements = placements.filter(p => p.clientPaymentStatus !== 'paid' && p.netScoreValue > 0);
 
@@ -699,26 +719,36 @@ export default function ExpensesDashboard({
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Log company overheads, software licenses, staff payrolls, and track cost center allocations.</p>
             </div>
             
-            <button className="btn-primary" onClick={() => {
-              setEditingExpenseId(null);
-              setDate('');
-              setPlMonth('');
-              setPayee('');
-              setNominalCode('');
-              setAmount('');
-              setCurrency('GBP');
-              setTaxRate('20');
-              setDescription('');
-              setInvoiceFile(null);
-              setInvoiceUrl('#');
-              setAllocationType('company');
-              setAllocationTarget(companies[0]?.id || '');
-              setSelectedStaffIds([]);
-              setLinkedPlacementId('');
-              setShowForm(prev => !prev);
-            }}>
-              <Plus size={16} /> {showForm ? 'Close Form' : 'Log Expense'}
-            </button>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button 
+                type="button" 
+                className="btn-danger" 
+                onClick={handleResetExpenses}
+                style={{ padding: '8px 16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Trash2 size={16} /> Reset Ledger
+              </button>
+              <button className="btn-primary" onClick={() => {
+                setEditingExpenseId(null);
+                setDate('');
+                setPlMonth('');
+                setPayee('');
+                setNominalCode('');
+                setAmount('');
+                setCurrency('GBP');
+                setTaxRate('20');
+                setDescription('');
+                setInvoiceFile(null);
+                setInvoiceUrl('#');
+                setAllocationType('company');
+                setAllocationTarget(companies[0]?.id || '');
+                setSelectedStaffIds([]);
+                setLinkedPlacementId('');
+                setShowForm(prev => !prev);
+              }}>
+                <Plus size={16} /> {showForm ? 'Close Form' : 'Log Expense'}
+              </button>
+            </div>
           </div>
 
           {/* Log Expense Form */}

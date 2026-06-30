@@ -488,6 +488,7 @@ export default function ExpensesDashboard({
         nominalCode: '',
         recipientType: autoRecType,
         recipientId: autoRecId,
+        taxRate: 0, // default to 0% (Exempt)
         allocationType: 'company',
         allocationTarget: companies[0]?.id || '',
         selectedStaffIds: [],
@@ -532,7 +533,9 @@ export default function ExpensesDashboard({
           nominalCode: row.nominalCode,
           amount: Math.abs(row.amount), // gross amount is absolute
           currency: "GBP",
-          taxRate: 20, // default tax
+          taxRate: row.taxRate !== undefined ? row.taxRate : 0,
+          recipientType: row.recipientType || 'other',
+          recipientId: row.recipientId || '',
           invoiceUrl: "#",
           allocationType: row.allocationType,
           allocationTarget: target,
@@ -580,6 +583,16 @@ export default function ExpensesDashboard({
 
   // Filter nominal codes & placements lists
   const unpaidPlacements = placements.filter(p => p.clientPaymentStatus !== 'paid' && p.netScoreValue > 0);
+
+  const sortedPlacementsForMapping = useMemo(() => {
+    return [...placements]
+      .filter(p => p.netScoreValue > 0)
+      .sort((a, b) => {
+        const aPaid = a.clientPaymentStatus === 'paid' ? 1 : 0;
+        const bPaid = b.clientPaymentStatus === 'paid' ? 1 : 0;
+        return aPaid - bPaid;
+      });
+  }, [placements]);
 
   // Filter Ledger transactions list
   const filteredExpenses = (expenses || []).filter(exp => {
@@ -1248,7 +1261,9 @@ export default function ExpensesDashboard({
                       <th>Nominal Category</th>
                       <th>Recipient Linkage</th>
                       <th>Target Allocation</th>
+                      <th>VAT Rate</th>
                       <th>Link credit sales</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1381,6 +1396,20 @@ export default function ExpensesDashboard({
                           </button>
                         </td>
 
+                        {/* VAT Rate Selector */}
+                        <td>
+                          <select
+                            value={row.taxRate !== undefined ? row.taxRate : 0}
+                            onChange={(e) => handleUpdateCategorizedRow(row.id, 'taxRate', Number(e.target.value))}
+                            disabled={row.committed}
+                            style={{ padding: '4px', fontSize: '11px', width: '85px' }}
+                          >
+                            <option value="0">0% (Exempt)</option>
+                            <option value="20">20% (Std)</option>
+                            <option value="5">5% (Red)</option>
+                          </select>
+                        </td>
+
                         {/* Link Credit to placement sales invoice */}
                         <td>
                           {row.isCredit ? (
@@ -1388,18 +1417,34 @@ export default function ExpensesDashboard({
                               value={row.linkedPlacementId}
                               onChange={(e) => handleUpdateCategorizedRow(row.id, 'linkedPlacementId', e.target.value)}
                               disabled={row.committed}
-                              style={{ padding: '4px', fontSize: '11px', width: '130px', borderColor: 'var(--success)' }}
+                              style={{ padding: '4px', fontSize: '11px', width: '150px', borderColor: 'var(--success)' }}
                             >
                               <option value="">-- No Link --</option>
-                              {unpaidPlacements.map(p => (
+                              {sortedPlacementsForMapping.map(p => (
                                 <option key={p.id} value={p.id}>
-                                  {p.placementId} ({p.clientCompany})
+                                  {p.placementId} ({p.clientCompany}) {p.clientPaymentStatus === 'paid' ? '✅' : '⏳'}
                                 </option>
                               ))}
                             </select>
                           ) : (
                             <span style={{ color: 'var(--text-muted)' }}>Debit</span>
                           )}
+                        </td>
+
+                        {/* Delete Row Action */}
+                        <td>
+                          <button
+                            type="button"
+                            className="btn-danger"
+                            onClick={() => {
+                              setCategorizedRows(prev => prev.filter(r => r.id !== row.id));
+                            }}
+                            disabled={row.committed}
+                            style={{ padding: '4px 8px', fontSize: '10px' }}
+                            title="Remove this row"
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </td>
                       </tr>
                     ))}

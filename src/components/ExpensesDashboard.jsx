@@ -1565,9 +1565,9 @@ export default function ExpensesDashboard({
                   onClick={() => setAllocatingType(t.key)}
                   style={{
                     flex: 1,
-                    background: allocatingType === t.key ? 'var(--bg-sidebar)' : 'none',
+                    background: allocatingType === t.key ? 'var(--bg-primary)' : 'none',
                     border: 'none',
-                    color: allocatingType === t.key ? 'var(--accent)' : 'var(--text-secondary)',
+                    color: allocatingType === t.key ? 'var(--primary)' : 'var(--text-secondary)',
                     padding: '8px',
                     borderRadius: '4px',
                     fontWeight: 600,
@@ -1598,7 +1598,7 @@ export default function ExpensesDashboard({
               overflowY: 'auto', 
               border: '1px solid var(--border-color)', 
               borderRadius: '6px', 
-              backgroundColor: 'var(--bg-sidebar)',
+              backgroundColor: 'var(--bg-secondary)',
               padding: '8px'
             }}>
               {allocatingType === 'company' && (

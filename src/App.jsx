@@ -24,7 +24,8 @@ import {
   ShieldCheck,
   FileWarning,
   Laptop,
-  History
+  History,
+  Key
 } from 'lucide-react';
 
 import { initialCompanies } from './mockData';

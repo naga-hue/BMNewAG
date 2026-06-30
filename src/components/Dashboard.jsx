@@ -239,46 +239,58 @@ export default function Dashboard({
       // Birthdays
       if (s.dateOfBirth) {
         const dob = new Date(s.dateOfBirth);
-        let bday = new Date(CURRENT_DATE.getFullYear(), dob.getMonth(), dob.getDate());
-        if (bday < CURRENT_DATE) {
-          bday = new Date(CURRENT_DATE.getFullYear() + 1, dob.getMonth(), dob.getDate());
-        }
-        const diff = getDaysDiff(bday.toISOString().split('T')[0]);
-        if (diff >= 0 && diff <= 30) {
-          events.push({
-            id: `bday-${s.id}`,
-            type: 'birthday',
-            title: `🎂 Birthday: ${s.fullName}`,
-            dateStr: bday.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-            diffDays: diff,
-            dept: s.department,
-            company: companies.find(c => c.id === s.companyId)?.name || ''
-          });
+        if (!isNaN(dob.getTime())) {
+          let bday = new Date(CURRENT_DATE.getFullYear(), dob.getMonth(), dob.getDate());
+          if (!isNaN(bday.getTime())) {
+            if (bday < CURRENT_DATE) {
+              bday = new Date(CURRENT_DATE.getFullYear() + 1, dob.getMonth(), dob.getDate());
+            }
+            if (!isNaN(bday.getTime())) {
+              const diff = getDaysDiff(bday.toISOString().split('T')[0]);
+              if (diff >= 0 && diff <= 30) {
+                events.push({
+                  id: `bday-${s.id}`,
+                  type: 'birthday',
+                  title: `🎂 Birthday: ${s.fullName}`,
+                  dateStr: bday.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+                  diffDays: diff,
+                  dept: s.department,
+                  company: companies.find(c => c.id === s.companyId)?.name || ''
+                });
+              }
+            }
+          }
         }
       }
 
       // Anniversaries
       if (s.startDate) {
         const start = new Date(s.startDate);
-        let anniv = new Date(CURRENT_DATE.getFullYear(), start.getMonth(), start.getDate());
-        let annivYear = CURRENT_DATE.getFullYear();
-        if (anniv < CURRENT_DATE) {
-          anniv = new Date(CURRENT_DATE.getFullYear() + 1, start.getMonth(), start.getDate());
-          annivYear = CURRENT_DATE.getFullYear() + 1;
-        }
-        const years = annivYear - start.getFullYear();
-        const diff = getDaysDiff(anniv.toISOString().split('T')[0]);
-        if (diff >= 0 && diff <= 30 && years > 0) {
-          const ordinal = years === 1 ? '1st' : years === 2 ? '2nd' : years === 3 ? '3rd' : `${years}th`;
-          events.push({
-            id: `anniv-${s.id}`,
-            type: 'anniversary',
-            title: `👔 Work Anniversary: ${s.fullName} (${ordinal})`,
-            dateStr: anniv.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-            diffDays: diff,
-            dept: s.department,
-            company: companies.find(c => c.id === s.companyId)?.name || ''
-          });
+        if (!isNaN(start.getTime())) {
+          let anniv = new Date(CURRENT_DATE.getFullYear(), start.getMonth(), start.getDate());
+          if (!isNaN(anniv.getTime())) {
+            let annivYear = CURRENT_DATE.getFullYear();
+            if (anniv < CURRENT_DATE) {
+              anniv = new Date(CURRENT_DATE.getFullYear() + 1, start.getMonth(), start.getDate());
+              annivYear = CURRENT_DATE.getFullYear() + 1;
+            }
+            if (!isNaN(anniv.getTime())) {
+              const years = annivYear - start.getFullYear();
+              const diff = getDaysDiff(anniv.toISOString().split('T')[0]);
+              if (diff >= 0 && diff <= 30 && years > 0) {
+                const ordinal = years === 1 ? '1st' : years === 2 ? '2nd' : years === 3 ? '3rd' : `${years}th`;
+                events.push({
+                  id: `anniv-${s.id}`,
+                  type: 'anniversary',
+                  title: `👔 Work Anniversary: ${s.fullName} (${ordinal})`,
+                  dateStr: anniv.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+                  diffDays: diff,
+                  dept: s.department,
+                  company: companies.find(c => c.id === s.companyId)?.name || ''
+                });
+              }
+            }
+          }
         }
       }
     });

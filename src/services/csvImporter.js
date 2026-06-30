@@ -44,19 +44,19 @@ export function mapHeaders(headerRow) {
   const map = {};
   
   const headerMappings = {
-    fullName: ['fullname', 'name', 'staffname', 'employee'],
-    personalEmail: ['personalemail', 'email', 'personalemailaddress'],
-    personalPhone: ['personalphone', 'phone', 'telephone', 'mobile'],
-    dateOfBirth: ['dateofbirth', 'dob', 'birthdate'],
-    address: ['address', 'homeaddress', 'livingaddress', 'residentialaddress'],
-    companyName: ['employercompany', 'company', 'employer', 'companyname'],
-    department: ['department', 'dept', 'businessunit', 'division'],
-    jobTitle: ['jobtitle', 'title', 'designation', 'role'],
-    startDate: ['officialstartdate', 'startdate', 'joiningdate', 'start'],
-    salary: ['annualsalary', 'salary', 'basepay', 'remuneration'],
-    currency: ['currency', 'cur', 'salcurrency'],
-    businessEmail: ['businessemail', 'workemail', 'corporateemail'],
-    businessPhone: ['businessphone', 'workphone', 'corporatephone']
+    fullName: ['fullname', 'name', 'staffname', 'employee', 'personalfullname'],
+    personalEmail: ['personalemail', 'email', 'personalemailaddress', 'personalemail', 'personalpersonalemail'],
+    personalPhone: ['personalphone', 'phone', 'telephone', 'mobile', 'personalphone'],
+    dateOfBirth: ['dateofbirth', 'dob', 'birthdate', 'personaldateofbirth'],
+    address: ['address', 'homeaddress', 'livingaddress', 'residentialaddress', 'personaladdress'],
+    companyName: ['employercompany', 'company', 'employer', 'companyname', 'employmentcompanyid'],
+    department: ['department', 'dept', 'businessunit', 'division', 'employmentdepartment'],
+    jobTitle: ['jobtitle', 'title', 'designation', 'role', 'employmentjobtitle', 'employmentrole'],
+    startDate: ['officialstartdate', 'startdate', 'joiningdate', 'start', 'employmentstartdate'],
+    salary: ['annualsalary', 'salary', 'basepay', 'remuneration', 'paydefaultsalaryamount'],
+    currency: ['currency', 'cur', 'salcurrency', 'paysalarycurrency'],
+    businessEmail: ['businessemail', 'workemail', 'corporateemail', 'businessworkemail'],
+    businessPhone: ['businessphone', 'workphone', 'corporatephone', 'businessworkphone']
   };
 
   for (const [key, aliases] of Object.entries(headerMappings)) {
@@ -94,19 +94,33 @@ export function validateStaffRow(row, headerMap, companies, leavePolicies, index
   const errors = [];
   const warnings = [];
 
-  // 1. Required fields checks
-  if (!parsed.fullName) errors.push("Full Name is required");
+  // 1. Required fields checks with smart fallbacks
+  if (!parsed.fullName) {
+    errors.push("Full Name is required");
+  }
+
   if (!parsed.personalEmail) {
-    errors.push("Personal Email is required");
+    const fallbackEmail = parsed.fullName 
+      ? `${parsed.fullName.toLowerCase().replace(/[^a-z]/g, '')}@humres.co.uk`
+      : `staff-${index + 1}@humres.co.uk`;
+    parsed.personalEmail = fallbackEmail;
+    warnings.push(`Email missing; defaulted to "${fallbackEmail}"`);
   } else if (!/\S+@\S+\.\S+/.test(parsed.personalEmail)) {
     errors.push("Invalid Personal Email format");
   }
-  if (!parsed.jobTitle) errors.push("Job Title is required");
-  if (!parsed.startDate) {
-    errors.push("Official Start Date is required");
+
+  if (!parsed.jobTitle) {
+    parsed.jobTitle = "Consultant";
+    warnings.push('Job Title missing; defaulted to "Consultant"');
   }
 
-  // 2. Company Resolution
+  if (!parsed.startDate) {
+    const today = new Date().toISOString().split('T')[0];
+    parsed.startDate = today;
+    warnings.push(`Start Date missing; defaulted to today (${today})`);
+  }
+
+  // 2. Company Resolution (supports direct ID matching or name matching)
   let resolvedCompanyId = '';
   if (!parsed.companyName) {
     const firstComp = companies[0];
@@ -118,21 +132,29 @@ export function validateStaffRow(row, headerMap, companies, leavePolicies, index
       errors.push("No companies registered in the system to assign");
     }
   } else {
-    const match = companies.find(c => 
-      c.name.trim().toLowerCase() === parsed.companyName.toLowerCase() ||
-      c.name.trim().toLowerCase().includes(parsed.companyName.toLowerCase())
-    );
-    if (match) {
-      resolvedCompanyId = match.id;
-      parsed.companyName = match.name; // normalize name
+    // Try matching by ID first
+    const matchById = companies.find(c => c.id === parsed.companyName);
+    if (matchById) {
+      resolvedCompanyId = matchById.id;
+      parsed.companyName = matchById.name;
     } else {
-      const firstComp = companies[0];
-      if (firstComp) {
-        resolvedCompanyId = firstComp.id;
-        warnings.push(`Company "${parsed.companyName}" not found; defaulted to "${firstComp.name}"`);
-        parsed.companyName = firstComp.name;
+      // Match by name
+      const matchByName = companies.find(c => 
+        c.name.trim().toLowerCase() === parsed.companyName.toLowerCase() ||
+        c.name.trim().toLowerCase().includes(parsed.companyName.toLowerCase())
+      );
+      if (matchByName) {
+        resolvedCompanyId = matchByName.id;
+        parsed.companyName = matchByName.name;
       } else {
-        errors.push(`Company "${parsed.companyName}" not found and no default available`);
+        const firstComp = companies[0];
+        if (firstComp) {
+          resolvedCompanyId = firstComp.id;
+          warnings.push(`Company "${parsed.companyName}" not found; defaulted to "${firstComp.name}"`);
+          parsed.companyName = firstComp.name;
+        } else {
+          errors.push(`Company "${parsed.companyName}" not found and no default available`);
+        }
       }
     }
   }

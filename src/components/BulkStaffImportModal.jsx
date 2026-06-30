@@ -114,8 +114,8 @@ export default function BulkStaffImportModal({ isOpen, onClose, onImportComplete
         const headerMap = mapHeaders(headerRow);
         
         // Check if we mapped the absolute minimum columns
-        if (!headerMap.fullName || !headerMap.personalEmail) {
-          throw new Error("Unable to identify required column headers. Please download and use the provided template.");
+        if (!headerMap.fullName) {
+          throw new Error("Unable to identify required column headers (Full Name). Please make sure the 'personal.fullName' or 'Full Name' column is present.");
         }
 
         const rows = csvLines.slice(1);

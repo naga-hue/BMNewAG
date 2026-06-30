@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { toGBP } from '../utils/currency';
 import { 
   Building2, 
@@ -57,6 +57,26 @@ export default function ExpensesDashboard({
   onShowToast
 }) {
   const [activeSubTab, setActiveSubTab] = useState('ledger'); // ledger, statement, settings
+
+  // Compile list of unique departments from both company profiles and active staff records
+  const allAvailableDepts = useMemo(() => {
+    const depts = [];
+    companies.forEach(c => {
+      (c.departments || []).forEach(d => {
+        const name = d.name || d;
+        if (name && !depts.includes(name)) depts.push(name);
+      });
+    });
+    staff.forEach(s => {
+      if (s.department && !depts.includes(s.department)) {
+        depts.push(s.department);
+      }
+    });
+    if (depts.length === 0) {
+      return DEPARTMENTS;
+    }
+    return depts.sort();
+  }, [companies, staff]);
 
   // Normalize nominal codes to handle any legacy string arrays gracefully
   const activeNominalCodes = (nominalCodes || []).map(c => {
@@ -1636,7 +1656,7 @@ export default function ExpensesDashboard({
 
               {allocatingType === 'department' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {DEPARTMENTS
+                  {allAvailableDepts
                     .filter(d => d.toLowerCase().includes(allocationSearch.toLowerCase()))
                     .map(d => (
                       <label 
@@ -1661,7 +1681,7 @@ export default function ExpensesDashboard({
                         />
                       </label>
                     ))}
-                  {DEPARTMENTS.filter(d => d.toLowerCase().includes(allocationSearch.toLowerCase())).length === 0 && (
+                  {allAvailableDepts.filter(d => d.toLowerCase().includes(allocationSearch.toLowerCase())).length === 0 && (
                     <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>No matching departments.</div>
                   )}
                 </div>
@@ -1732,7 +1752,7 @@ export default function ExpensesDashboard({
                   } else {
                     if (!finalTarget) {
                       if (allocatingType === 'company') finalTarget = companies[0]?.id || '';
-                      if (allocatingType === 'department') finalTarget = DEPARTMENTS[0];
+                      if (allocatingType === 'department') finalTarget = allAvailableDepts[0] || '';
                     }
                   }
 

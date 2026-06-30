@@ -195,6 +195,12 @@ export default function ExpensesDashboard({
   const [linkingRowId, setLinkingRowId] = useState(null);
   const [linkingPlacementId, setLinkingPlacementId] = useState('');
   const [placementSearch, setPlacementSearch] = useState('');
+  const [matrixYear, setMatrixYear] = useState('2026');
+  const [matrixExpandedKeys, setMatrixExpandedKeys] = useState({});
+  const [drilldownMonthIdx, setDrilldownMonthIdx] = useState(null);
+  const [drilldownRowId, setDrilldownRowId] = useState(null);
+  const [drilldownRowType, setDrilldownRowType] = useState('');
+  const [drilldownTargetVal, setDrilldownTargetVal] = useState('');
 
   // Nominal Code setting states
   const [newNominalCodeId, setNewNominalCodeId] = useState('');
@@ -658,6 +664,7 @@ export default function ExpensesDashboard({
         {[
           { key: 'ledger', label: 'Expenses Ledger Log' },
           { key: 'statement', label: 'Bank Statement Import & Categorizer' },
+          { key: 'matrix', label: 'YTD Expenses Allocation Matrix' },
           { key: 'settings', label: 'Nominal Codes Setup' }
         ].map(t => (
           <button
@@ -1561,7 +1568,493 @@ export default function ExpensesDashboard({
       )}
 
       {/* ==============================================================
-          SUB-TAB 3: NOMINAL SETTINGS
+          SUB-TAB 3: YTD EXPENSES ALLOCATION MATRIX
+          ============================================================== */}
+      {activeSubTab === 'matrix' && (() => {
+        // 1. Calculate the overhead spread for each active recruiter for the selected year
+        const staffOverheadMap = {};
+        const staffTransactionsMap = {};
+        staff.forEach(s => {
+          staffOverheadMap[s.id] = Array(12).fill(0);
+          staffTransactionsMap[s.id] = Array.from({ length: 12 }, () => []);
+        });
+
+        const yearExpenses = (expenses || []).filter(e => e.plMonth && e.plMonth.startsWith(matrixYear));
+
+        for (let mIdx = 0; mIdx < 12; mIdx++) {
+          const monthKey = `${matrixYear}-${String(mIdx + 1).padStart(2, '0')}`;
+          const activeStaff = staff.filter(s => s.startDate && s.startDate.substring(0, 7) <= monthKey);
+          const activeStaffIds = activeStaff.map(s => s.id);
+          const monthExpenses = yearExpenses.filter(e => e.plMonth === monthKey);
+
+          monthExpenses.forEach(exp => {
+            const gbpAmt = toGBP(exp.amount, exp.currency);
+
+            if (exp.allocationType === 'company') {
+              const compStaff = activeStaff.filter(s => s.companyId === exp.allocationTarget);
+              const compHead = compStaff.length || 1;
+              compStaff.forEach(s => {
+                staffOverheadMap[s.id][mIdx] += gbpAmt / compHead;
+                staffTransactionsMap[s.id][mIdx].push({ ...exp, apportionedShare: gbpAmt / compHead, shareReason: 'Company Apportionment' });
+              });
+            } else if (exp.allocationType === 'department') {
+              const deptStaff = activeStaff.filter(s => s.department === exp.allocationTarget);
+              const deptHead = deptStaff.length || 1;
+              deptStaff.forEach(s => {
+                staffOverheadMap[s.id][mIdx] += gbpAmt / deptHead;
+                staffTransactionsMap[s.id][mIdx].push({ ...exp, apportionedShare: gbpAmt / deptHead, shareReason: 'Department Apportionment' });
+              });
+            } else if (exp.allocationType === 'staff') {
+              const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
+              if (targets.length > 0) {
+                const perStaffShare = gbpAmt / targets.length;
+                targets.forEach(staffId => {
+                  if (activeStaffIds.includes(staffId)) {
+                    staffOverheadMap[staffId][mIdx] += perStaffShare;
+                    staffTransactionsMap[staffId][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: 'Direct Staff Split' });
+                  }
+                });
+              }
+            } else {
+              // Group-wide overhead
+              const groupHead = activeStaff.length || 1;
+              activeStaff.forEach(s => {
+                staffOverheadMap[s.id][mIdx] += gbpAmt / groupHead;
+                staffTransactionsMap[s.id][mIdx].push({ ...exp, apportionedShare: gbpAmt / groupHead, shareReason: 'Group-wide Allocation' });
+              });
+            }
+          });
+        }
+
+        // 2. Build the hierarchical tree data structure
+        const computedMatrixData = [];
+        companies.forEach(company => {
+          const companyStaff = staff.filter(s => s.companyId === company.id);
+          const companyDepts = Array.from(new Set(companyStaff.map(s => s.department).filter(Boolean))).sort();
+
+          const companyMonths = Array(12).fill(0);
+          const companyTransactionsByMonth = Array.from({ length: 12 }, () => []);
+          const deptRows = [];
+
+          companyDepts.forEach(dept => {
+            const deptStaff = companyStaff.filter(s => s.department === dept);
+            const deptMonths = Array(12).fill(0);
+            const deptTransactionsByMonth = Array.from({ length: 12 }, () => []);
+            const staffRows = [];
+
+            deptStaff.forEach(member => {
+              const memberMonths = staffOverheadMap[member.id] || Array(12).fill(0);
+              const memberTransactionsByMonth = staffTransactionsMap[member.id] || Array.from({ length: 12 }, () => []);
+              const memberTotal = memberMonths.reduce((a, b) => a + b, 0);
+
+              staffRows.push({
+                id: `member-${company.id}-${dept}-${member.id}`,
+                name: member.fullName,
+                subtitle: member.jobTitle,
+                type: 'member',
+                targetVal: member.fullName,
+                months: memberMonths,
+                transactionsByMonth: memberTransactionsByMonth,
+                total: memberTotal
+              });
+
+              for (let m = 0; m < 12; m++) {
+                deptMonths[m] += memberMonths[m];
+                deptTransactionsByMonth[m].push(...memberTransactionsByMonth[m]);
+              }
+            });
+
+            const deptTotal = deptMonths.reduce((a, b) => a + b, 0);
+            deptRows.push({
+              id: `dept-${company.id}-${dept}`,
+              name: dept,
+              type: 'department',
+              targetVal: dept,
+              months: deptMonths,
+              transactionsByMonth: deptTransactionsByMonth,
+              total: deptTotal,
+              children: staffRows
+            });
+
+            for (let m = 0; m < 12; m++) {
+              companyMonths[m] += deptMonths[m];
+              companyTransactionsByMonth[m].push(...deptTransactionsByMonth[m]);
+            }
+          });
+
+          const companyTotal = companyMonths.reduce((a, b) => a + b, 0);
+          computedMatrixData.push({
+            id: `company-${company.id}`,
+            name: company.name,
+            type: 'company',
+            targetVal: company.name,
+            months: companyMonths,
+            transactionsByMonth: companyTransactionsByMonth,
+            total: companyTotal,
+            children: deptRows
+          });
+        });
+
+        // 3. Compute col totals
+        const colTotals = Array(12).fill(0);
+        let grandTotal = 0;
+        for (let m = 0; m < 12; m++) {
+          const monthKey = `${matrixYear}-${String(m + 1).padStart(2, '0')}`;
+          const monthExpenses = yearExpenses.filter(e => e.plMonth === monthKey);
+          colTotals[m] = monthExpenses.reduce((sum, e) => sum + toGBP(e.amount, e.currency), 0);
+          grandTotal += colTotals[m];
+        }
+
+        // 4. Flatten based on expand states
+        const flatRowsForMatrix = [];
+        computedMatrixData.forEach(compRow => {
+          flatRowsForMatrix.push(compRow);
+          if (matrixExpandedKeys[compRow.id]) {
+            compRow.children.forEach(deptRow => {
+              flatRowsForMatrix.push(deptRow);
+              if (matrixExpandedKeys[deptRow.id]) {
+                deptRow.children.forEach(memberRow => {
+                  flatRowsForMatrix.push(memberRow);
+                });
+              }
+            });
+          }
+        });
+
+        const toggleKey = (key) => {
+          setMatrixExpandedKeys(prev => ({
+            ...prev,
+            [key]: !prev[key]
+          }));
+        };
+
+        const expandAll = () => {
+          const newKeys = {};
+          computedMatrixData.forEach(compRow => {
+            newKeys[compRow.id] = true;
+            compRow.children.forEach(deptRow => {
+              newKeys[deptRow.id] = true;
+            });
+          });
+          setMatrixExpandedKeys(newKeys);
+        };
+
+        const collapseAll = () => {
+          setMatrixExpandedKeys({});
+        };
+
+        const monthNamesAbbr = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', animation: 'fadeIn 0.2s' }}>
+            
+            {/* Header controls */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+              <div>
+                <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>YTD Expenses & Shared Apportionments Matrix</h3>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Apportioned overhead costs distributed dynamically down to departments and individuals</span>
+              </div>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <select
+                  className="select-filter"
+                  value={matrixYear}
+                  onChange={(e) => setMatrixYear(e.target.value)}
+                  style={{ padding: '6px', fontSize: '13px', width: '100px' }}
+                >
+                  <option value="2025">2025</option>
+                  <option value="2026">2026</option>
+                  <option value="2027">2027</option>
+                </select>
+                <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={expandAll}>
+                  Expand All
+                </button>
+                <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={collapseAll}>
+                  Collapse All
+                </button>
+              </div>
+            </div>
+
+            {/* Matrix Table */}
+            <div className="table-container" style={{ overflowX: 'auto' }}>
+              <table className="entity-table dense" style={{ minWidth: '1200px', fontSize: '11px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                    <th style={{ width: '280px' }}>Corporate / Cost Center Hierarchy</th>
+                    {monthNamesAbbr.map(m => (
+                      <th key={m} style={{ textAlign: 'right', width: '75px' }}>{m}</th>
+                    ))}
+                    <th style={{ textAlign: 'right', width: '100px', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)' }}>YTD Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {flatRowsForMatrix.length === 0 ? (
+                    <tr>
+                      <td colSpan="14" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                        No corporate entities configured.
+                      </td>
+                    </tr>
+                  ) : (
+                    flatRowsForMatrix.map(row => {
+                      const isCompany = row.type === 'company';
+                      const isDept = row.type === 'department';
+                      const isMember = row.type === 'member';
+
+                      const paddingLeft = isCompany ? '12px' : isDept ? '32px' : '52px';
+                      const hasChildren = isCompany || isDept;
+                      const isExpanded = matrixExpandedKeys[row.id];
+
+                      return (
+                        <tr 
+                          key={row.id}
+                          style={{ 
+                            backgroundColor: isCompany ? 'rgba(255,255,255,0.01)' : 'transparent',
+                            borderBottom: isCompany ? '1px solid var(--border-color)' : '1px dashed rgba(255,255,255,0.04)'
+                          }}
+                        >
+                          <td style={{ 
+                            paddingLeft, 
+                            fontWeight: isCompany ? 700 : isDept ? 600 : 400,
+                            color: isCompany ? 'var(--text-primary)' : isDept ? 'var(--text-secondary)' : 'var(--text-muted)'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              {hasChildren ? (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleKey(row.id)}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--text-secondary)',
+                                    cursor: 'pointer',
+                                    fontSize: '9px',
+                                    padding: '2px',
+                                    width: '14px',
+                                    textAlign: 'center',
+                                    display: 'inline-block'
+                                  }}
+                                >
+                                  {isExpanded ? '▼' : '▶'}
+                                </button>
+                              ) : (
+                                <span style={{ width: '14px', display: 'inline-block', textAlign: 'center', opacity: 0.3 }}>•</span>
+                              )}
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span>{row.name}</span>
+                                {isMember && row.subtitle && (
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>{row.subtitle}</span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+
+                          {row.months.map((val, mIdx) => {
+                            const cellVal = parseFloat(val.toFixed(2));
+                            return (
+                              <td key={mIdx} style={{ textAlign: 'right' }}>
+                                {cellVal > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setDrilldownMonthIdx(mIdx);
+                                      setDrilldownRowId(row.id);
+                                      setDrilldownRowType(row.type);
+                                      setDrilldownTargetVal(row.name);
+                                    }}
+                                    style={{
+                                      background: isCompany ? 'rgba(239, 68, 68, 0.08)' : isDept ? 'rgba(245, 158, 11, 0.08)' : 'rgba(99, 102, 241, 0.08)',
+                                      border: isCompany ? '1px solid rgba(239, 68, 68, 0.2)' : isDept ? '1px solid rgba(245, 158, 11, 0.2)' : '1px solid rgba(99, 102, 241, 0.2)',
+                                      borderRadius: '4px',
+                                      color: isCompany ? 'var(--danger)' : isDept ? 'var(--warning)' : 'var(--accent)',
+                                      fontSize: '11px',
+                                      fontWeight: 700,
+                                      padding: '2px 6px',
+                                      cursor: 'pointer',
+                                      width: '100%',
+                                      textAlign: 'right',
+                                      transition: 'all 0.2s'
+                                    }}
+                                    title="Click to view details"
+                                  >
+                                    £{Math.round(cellVal).toLocaleString()}
+                                  </button>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', opacity: 0.3 }}>—</span>
+                                )}
+                              </td>
+                            );
+                          })}
+
+                          <td style={{ 
+                            textAlign: 'right', 
+                            fontWeight: 700, 
+                            backgroundColor: 'rgba(255,255,255,0.01)', 
+                            color: isCompany ? 'var(--danger)' : isDept ? 'var(--warning)' : 'var(--accent)'
+                          }}>
+                            £{Math.round(row.total).toLocaleString()}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+
+                  {/* Column totals footer */}
+                  <tr style={{ fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.03)', borderTop: '2px solid var(--border-color)' }}>
+                    <td style={{ paddingLeft: '12px' }}>Monthly Totals (Group Expenses)</td>
+                    {colTotals.map((tot, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', color: 'var(--danger)' }}>
+                        £{Math.round(tot).toLocaleString()}
+                      </td>
+                    ))}
+                    <td style={{ textAlign: 'right', color: 'var(--danger)', fontSize: '13px' }}>
+                      £{Math.round(grandTotal).toLocaleString()}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Expenses Drill-down Modal overlay */}
+            {drilldownMonthIdx !== null && drilldownRowId !== null && (
+              <div style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                zIndex: 9999,
+                animation: 'fadeIn 0.2s'
+              }}>
+                <div style={{
+                  backgroundColor: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  width: '90%',
+                  maxWidth: '850px',
+                  padding: '24px',
+                  boxShadow: 'var(--shadow-xl)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '16px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                    <div>
+                      <h3 style={{ fontSize: '15px', fontWeight: 600 }}>
+                        🏦 Expenses Drill-down: {drilldownTargetVal}
+                      </h3>
+                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Period: {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][drilldownMonthIdx]} {matrixYear}
+                      </span>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setDrilldownMonthIdx(null);
+                        setDrilldownRowId(null);
+                        setDrilldownRowType('');
+                        setDrilldownTargetVal('');
+                      }}
+                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* List Table */}
+                  <div style={{ maxHeight: '350px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                    <table className="entity-table dense" style={{ fontSize: '11px', width: '100%' }}>
+                      <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1 }}>
+                        <tr>
+                          <th>Date</th>
+                          <th>Payee / Vendor</th>
+                          <th>Nominal Category</th>
+                          <th style={{ textAlign: 'right' }}>Total Cost (Gross)</th>
+                          <th style={{ textAlign: 'right' }}>Your Share / Apportionment</th>
+                          <th>Apportionment Rule</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const matchedRow = flatRowsForMatrix.find(r => r.id === drilldownRowId);
+                          if (!matchedRow) return null;
+
+                          // De-duplicate transactions
+                          const uniq = [];
+                          const seen = new Set();
+                          (matchedRow.transactionsByMonth[drilldownMonthIdx] || []).forEach(t => {
+                            if (!seen.has(t.id)) {
+                              seen.add(t.id);
+                              uniq.push(t);
+                            }
+                          });
+
+                          if (uniq.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan="6" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
+                                  No expenses allocated in this month.
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          return uniq.map(t => (
+                            <tr key={t.id}>
+                              <td>{t.date}</td>
+                              <td style={{ fontWeight: 600 }}>{t.payee}</td>
+                              <td>{t.nominalCode}</td>
+                              <td style={{ textAlign: 'right' }}>
+                                £{toGBP(t.amount, t.currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>
+                                £{toGBP(t.apportionedShare || t.amount, t.currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td>
+                                <span style={{
+                                  fontSize: '9px',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  fontWeight: 600,
+                                  backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                                  color: 'var(--danger)'
+                                }}>
+                                  {t.shareReason || 'Direct Cost'}
+                                </span>
+                              </td>
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                    <button 
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => {
+                        setDrilldownMonthIdx(null);
+                        setDrilldownRowId(null);
+                        setDrilldownRowType('');
+                        setDrilldownTargetVal('');
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        );
+      })()}
+
+      {/* ==============================================================
+          SUB-TAB 4: NOMINAL SETTINGS
           ============================================================== */}
       {activeSubTab === 'settings' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>

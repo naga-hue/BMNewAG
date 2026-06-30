@@ -196,24 +196,40 @@ export function validateStaffRow(row, headerMap, companies, leavePolicies, index
   // 5. Date Parsing and Formatting
   const parseDate = (dStr) => {
     if (!dStr) return '';
-    if (dStr.includes('/')) {
-      const parts = dStr.split('/');
+    const clean = dStr.trim();
+    if (clean.includes('/') || clean.includes('-')) {
+      const parts = clean.split(/[\/\-]/);
       if (parts.length === 3) {
-        if (parts[2].length === 4) {
-          const day = parts[0].padStart(2, '0');
-          const month = parts[1].padStart(2, '0');
-          const year = parts[2];
-          return `${year}-${month}-${day}`;
+        let day = parseInt(parts[0], 10);
+        let month = parseInt(parts[1], 10);
+        let year = parseInt(parts[2], 10);
+        
+        if (parts[0].length === 4) {
+          year = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10);
+          day = parseInt(parts[2], 10);
+        }
+        
+        if (year < 100) {
+          year = 2000 + year; // Convert 26 to 2026
+        }
+        
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         }
       }
     }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dStr)) {
-      return dStr;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
+      return clean;
     }
     try {
-      const d = new Date(dStr);
+      const d = new Date(clean);
       if (!isNaN(d.getTime())) {
-        return d.toISOString().split('T')[0];
+        let yr = d.getFullYear();
+        if (yr < 1970 && yr > 1900) {
+          yr = yr + 100;
+        }
+        return `${yr}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       }
     } catch (e) {}
     return '';

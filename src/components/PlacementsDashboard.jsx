@@ -407,10 +407,13 @@ export default function PlacementsDashboard({
       const requiredMappings = [
         { key: 'placementId', labels: ['Placement ID', 'Import Key', 'id'] },
         { key: 'invoiceNumber', labels: ['Invoice Number', 'Invoice #', 'InvoiceNo'] },
+        { key: 'internalCompany', labels: ['Internal Company', 'InternalCompany', 'Entity'] },
         { key: 'clientCompany', labels: ['Client Company', 'Client', 'Company'] },
         { key: 'candidateName', labels: ['Candidate', 'Candidate Name', 'CandidateName'] },
         { key: 'startDate', labels: ['Start Date', 'Start', 'StartDate', 'Joining Date'] },
         { key: 'scoredDate', labels: ['Scored Month', 'Scored Date', 'Confirm Date', 'ScoredMonth', 'ScoredDate'] },
+        { key: 'scoredWeek', labels: ['Scored Week', 'ScoredWeek'] },
+        { key: 'dnsWeek', labels: ['DNS Week', 'DNSWeek'] },
         { key: 'grossBillAmount', labels: ['Gross Bill Amount', 'Gross', 'Bill Amount', 'GrossBillAmount'] },
         { key: 'dnsRebateAmount', labels: ['DNS/Rebate Amount', 'Deduction', 'Rebate', 'DNSRebateAmount', 'DNS/Rebate'] },
         { key: 'netScoreValue', labels: ['Net Score Value', 'Net Score', 'NetScoreValue'] },
@@ -450,6 +453,56 @@ export default function PlacementsDashboard({
     setImportStep(3);
   };
 
+  const parseFlexibleDate = (dateStr) => {
+    if (!dateStr || dateStr.trim() === '') return '';
+    const clean = dateStr.trim();
+    
+    // Check if it's already YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
+      return clean;
+    }
+    
+    // Try splitting by slash or dash
+    const parts = clean.split(/[\/\-]/);
+    if (parts.length === 3) {
+      let day = parseInt(parts[0], 10);
+      let month = parseInt(parts[1], 10);
+      let year = parseInt(parts[2], 10);
+      
+      // Check if the first part is a 4-digit year (YYYY-MM-DD format with slashes)
+      if (parts[0].length === 4) {
+        year = parseInt(parts[0], 10);
+        month = parseInt(parts[1], 10);
+        day = parseInt(parts[2], 10);
+      }
+      
+      if (year < 100) {
+        year = 2000 + year; // Convert 26 to 2026
+      }
+      
+      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+        const formattedMonth = String(month).padStart(2, '0');
+        const formattedDay = String(day).padStart(2, '0');
+        return `${year}-${formattedMonth}-${formattedDay}`;
+      }
+    }
+    
+    // Fallback to native parsing
+    try {
+      const d = new Date(clean);
+      if (!isNaN(d.getTime())) {
+        let yr = d.getFullYear();
+        if (yr < 1970 && yr > 1900) {
+          // If year is 1926, change to 2026
+          yr = yr + 100;
+        }
+        return `${yr}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      }
+    } catch (e) {}
+    
+    return '';
+  };
+
   const validateMappedRows = () => {
     const parsed = [];
     const unmatchedNames = new Set();
@@ -465,17 +518,25 @@ export default function PlacementsDashboard({
       const pId = getVal('placementId') || `PL-IMP-${idx}-${Date.now()}`;
       const candidate = getVal('candidateName');
       const client = getVal('clientCompany');
-      const start = getVal('startDate');
+      const internalCompany = getVal('internalCompany');
+      const scoredWeek = getVal('scoredWeek');
+      const dnsWeek = getVal('dnsWeek');
       
-      let scored = getVal('scoredDate') || getVal('startDate') || '';
-      if (scored && scored.includes(' ')) {
-        const parts = scored.split(' ');
+      const start = parseFlexibleDate(getVal('startDate'));
+      
+      let scoredRaw = getVal('scoredDate') || getVal('startDate') || '';
+      let scored = parseFlexibleDate(scoredRaw);
+      if (!scored && scoredRaw.includes(' ')) {
+        const parts = scoredRaw.split(' ');
         if (parts.length >= 2) {
           const monthsMap = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
           const month = monthsMap[parts[0].toLowerCase().substring(0, 3)] || 0;
           const year = Number(parts[1]) || 2026;
           scored = new Date(year, month, 15).toISOString().split('T')[0];
         }
+      }
+      if (!scored) {
+        scored = start;
       }
 
       const grossVal = getVal('grossBillAmount') || '0';
@@ -495,14 +556,15 @@ export default function PlacementsDashboard({
 
       // Parse Client Payment details
       let clientPaidStatus = (getVal('clientPaymentStatus') || 'unpaid').toLowerCase().trim();
-      if (clientPaidStatus.includes('paid') || clientPaidStatus.includes('yes') || clientPaidStatus.includes('true')) {
+      if (clientPaidStatus.includes('paid') || clientPaidStatus.includes('yes') || clientPaidStatus.includes('true') || clientPaidStatus.includes('received')) {
         clientPaidStatus = 'paid';
       } else {
         clientPaidStatus = 'unpaid';
       }
       
+      const clientPaidDateRaw = getVal('clientPaidDate') || new Date().toISOString().split('T')[0];
       const clientPaidDate = clientPaidStatus === 'paid' 
-        ? (getVal('clientPaidDate') || new Date().toISOString().split('T')[0]) 
+        ? (parseFlexibleDate(clientPaidDateRaw) || new Date().toISOString().split('T')[0]) 
         : null;
 
       // Parse splits
@@ -593,10 +655,13 @@ export default function PlacementsDashboard({
         id: `place-imp-${idx}-${Date.now()}`,
         placementId: pId,
         invoiceNumber: getVal('invoiceNumber') || `INV-IMP-${idx}`,
+        internalCompany,
         clientCompany: client,
         candidateName: candidate,
         startDate: start,
         scoredDate: scored,
+        scoredWeek,
+        dnsWeek,
         dnsDate: status === 'dns' ? start : null,
         status,
         source: getVal('source') || 'LinkedIn',
@@ -681,10 +746,13 @@ export default function PlacementsDashboard({
           id: p.id,
           placementId: p.placementId,
           invoiceNumber: p.invoiceNumber,
+          internalCompany: p.internalCompany || '',
           clientCompany: p.clientCompany,
           candidateName: p.candidateName,
           startDate: p.startDate,
           scoredDate: p.scoredDate,
+          scoredWeek: p.scoredWeek || '',
+          dnsWeek: p.dnsWeek || '',
           dnsDate: p.dnsDate,
           status: p.status,
           source: p.source,

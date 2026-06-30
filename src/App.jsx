@@ -955,14 +955,24 @@ export default function App() {
 
   const sortedCompanies = sortCompaniesList(filteredCompanies);
 
-  // Compile list of unique departments across all companies for filtering
-  const allAvailableDepts = scopedCompanies.reduce((acc, c) => {
-    (c.departments || []).forEach(d => {
-      const deptName = d.name || d;
-      if (deptName && !acc.includes(deptName)) acc.push(deptName);
+  // Compile list of unique departments from both company profiles and active staff records
+  const allAvailableDepts = (() => {
+    const depts = [];
+    // Add from company profiles
+    scopedCompanies.forEach(c => {
+      (c.departments || []).forEach(d => {
+        const name = d.name || d;
+        if (name && !depts.includes(name)) depts.push(name);
+      });
     });
-    return acc;
-  }, []).sort();
+    // Add from staff profiles
+    staff.forEach(s => {
+      if (s.department && !depts.includes(s.department)) {
+        depts.push(s.department);
+      }
+    });
+    return depts.sort();
+  })();
 
   // Staff filter logic
   const filteredStaff = scopedStaff.filter(s => {
@@ -1701,7 +1711,7 @@ export default function App() {
                       style={{ padding: '6px 12px', fontSize: '13px' }}
                     >
                       <option value="">-- Choose Department --</option>
-                      {Array.from(new Set(staff.map(s => s.department).filter(Boolean))).sort().map(d => (
+                      {allAvailableDepts.map(d => (
                         <option key={d} value={d}>{d}</option>
                       ))}
                       <option value="NEW_DEPT">+ Add Custom Department...</option>

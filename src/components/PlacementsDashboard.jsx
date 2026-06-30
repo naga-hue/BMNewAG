@@ -55,6 +55,26 @@ export default function PlacementsDashboard({
   const [consultantFilter, setConsultantFilter] = useState('all');
   const [startMonthFilter, setStartMonthFilter] = useState('all');
   const [internalCompanyFilter, setInternalCompanyFilter] = useState('all');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
+
+  // Compile list of unique departments from both company profiles and active staff records
+  const allAvailableDepts = (() => {
+    const depts = [];
+    // Add from company profiles
+    companies.forEach(c => {
+      (c.departments || []).forEach(d => {
+        const name = d.name || d;
+        if (name && !depts.includes(name)) depts.push(name);
+      });
+    });
+    // Add from staff profiles
+    staff.forEach(s => {
+      if (s.department && !depts.includes(s.department)) {
+        depts.push(s.department);
+      }
+    });
+    return depts.sort();
+  })();
 
   // Manual placement logger states
   const [showLogForm, setShowLogForm] = useState(false);
@@ -936,6 +956,14 @@ export default function PlacementsDashboard({
       if (!p.internalCompany || p.internalCompany !== internalCompanyFilter) return false;
     }
 
+    if (departmentFilter !== 'all') {
+      const matchDept = p.splits?.some(s => {
+        const staffObj = staff.find(member => member.id === s.staffId);
+        return staffObj?.department === departmentFilter;
+      });
+      if (!matchDept) return false;
+    }
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchPId = p.placementId.toLowerCase().includes(q);
@@ -1374,6 +1402,18 @@ export default function PlacementsDashboard({
                 <option value="all">All Internal Companies</option>
                 {companies.map(c => (
                   <option key={c.id} value={c.name}>{c.name}</option>
+                ))}
+              </select>
+
+              {/* Department Filter */}
+              <select 
+                className="select-filter"
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+              >
+                <option value="all">All Departments</option>
+                {allAvailableDepts.map(d => (
+                  <option key={d} value={d}>{d}</option>
                 ))}
               </select>
             </div>
@@ -1978,7 +2018,8 @@ export default function PlacementsDashboard({
 
                   companies.forEach(company => {
                     const companyStaff = staff.filter(s => s.companyId === company.id);
-                    const companyDepts = Array.from(new Set(companyStaff.map(s => s.department).filter(Boolean))).sort();
+                    const configuredDepts = (company.departments || []).map(d => d.name || d);
+                    const companyDepts = Array.from(new Set([...configuredDepts, ...companyStaff.map(s => s.department).filter(Boolean)])).sort();
                     
                     const companyMonths = Array(12).fill(0);
                     const companyPlacementsByMonth = Array.from({ length: 12 }, () => []);

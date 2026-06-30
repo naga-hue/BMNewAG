@@ -32,6 +32,25 @@ export default function CommissionsDashboard({
   onUpdateStaff,
   onShowToast 
 }) {
+  // Compile list of unique departments from both company profiles and active staff records
+  const allAvailableDepts = (() => {
+    const depts = [];
+    // Add from company profiles
+    companies.forEach(c => {
+      (c.departments || []).forEach(d => {
+        const name = d.name || d;
+        if (name && !depts.includes(name)) depts.push(name);
+      });
+    });
+    // Add from staff profiles
+    staff.forEach(s => {
+      if (s.department && !depts.includes(s.department)) {
+        depts.push(s.department);
+      }
+    });
+    return depts.sort();
+  })();
+
   const [activeSubTab, setActiveSubTab] = useState('policies'); // policies, assignments, payroll
 
   // Form states - Scheme creator
@@ -752,7 +771,7 @@ export default function CommissionsDashboard({
                 onChange={(e) => setDeptFilter(e.target.value)}
               >
                 <option value="all">All Departments</option>
-                {Array.from(new Set(staff.map(s => s.department).filter(Boolean))).sort().map(d => (
+                {allAvailableDepts.map(d => (
                   <option key={d} value={d}>{d}</option>
                 ))}
               </select>
@@ -957,7 +976,7 @@ export default function CommissionsDashboard({
                 onChange={(e) => setDeptFilter(e.target.value)}
               >
                 <option value="all">All Departments</option>
-                {Array.from(new Set(staff.map(s => s.department).filter(Boolean))).sort().map(d => (
+                {allAvailableDepts.map(d => (
                   <option key={d} value={d}>{d}</option>
                 ))}
               </select>

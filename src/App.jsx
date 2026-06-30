@@ -25,7 +25,8 @@ import {
   FileWarning,
   Laptop,
   History,
-  Key
+  Key,
+  Upload
 } from 'lucide-react';
 
 import { initialCompanies } from './mockData';
@@ -40,6 +41,7 @@ import CompanyDetail from './components/CompanyDetail';
 import CompanyForm from './components/CompanyForm';
 import StaffDetail from './components/StaffDetail';
 import StaffForm from './components/StaffForm';
+import BulkStaffImportModal from './components/BulkStaffImportModal';
 import LeavesDashboard from './components/LeavesDashboard';
 import CommissionsDashboard from './components/CommissionsDashboard';
 import VendorsDashboard from './components/VendorsDashboard';
@@ -101,6 +103,7 @@ export default function App() {
   const [isStaffDetailOpen, setIsStaffDetailOpen] = useState(false);
   const [isStaffFormOpen, setIsStaffFormOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
 
   // Company Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -459,6 +462,18 @@ export default function App() {
     } catch (err) {
       console.error("Save staff error:", err);
       handleShowToast(`Error saving staff details: ${err.message}`, 'warning');
+    }
+  };
+
+  const handleBulkImportStaff = async (staffProfiles) => {
+    try {
+      for (const profile of staffProfiles) {
+        await firebaseService.saveStaff(profile);
+        logActivity("Staff", "CREATE", `Bulk imported staff profile for "${profile.fullName}"`);
+      }
+    } catch (err) {
+      console.error("Bulk import staff error:", err);
+      throw err;
     }
   };
 
@@ -1213,9 +1228,18 @@ export default function App() {
             </button>
 
             {activeTab === 'staff' ? (
-              <button className="btn-primary" onClick={handleOpenStaffCreate}>
-                <Plus size={16} /> Onboard Staff
-              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button 
+                  className="btn-secondary" 
+                  onClick={() => setIsBulkImportOpen(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '13px' }}
+                >
+                  <Upload size={14} /> Bulk Import (Excel/CSV)
+                </button>
+                <button className="btn-primary" onClick={handleOpenStaffCreate}>
+                  <Plus size={16} /> Onboard Staff
+                </button>
+              </div>
             ) : activeTab === 'directory' || activeTab === 'dashboard' ? (
               <button className="btn-primary" onClick={handleOpenCreate}>
                 <Plus size={16} /> Register Entity
@@ -1882,6 +1906,16 @@ export default function App() {
         staffList={staff}
         leavePolicies={leavePolicies}
         commissionPolicies={commissionPolicies}
+      />
+
+      {/* Bulk Staff Import Wizard */}
+      <BulkStaffImportModal 
+        isOpen={isBulkImportOpen}
+        onClose={() => setIsBulkImportOpen(false)}
+        onImportComplete={handleBulkImportStaff}
+        companies={companies}
+        leavePolicies={leavePolicies}
+        onShowToast={handleShowToast}
       />
 
       {/* Micro-interaction Toasts list */}

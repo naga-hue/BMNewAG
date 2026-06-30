@@ -457,11 +457,6 @@ export default function PlacementsDashboard({
     if (!dateStr || dateStr.trim() === '') return '';
     const clean = dateStr.trim();
     
-    // Check if it's already YYYY-MM-DD
-    if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
-      return clean;
-    }
-    
     // Try splitting by slash or dash
     const parts = clean.split(/[\/\-]/);
     if (parts.length === 3) {
@@ -469,15 +464,31 @@ export default function PlacementsDashboard({
       let month = parseInt(parts[1], 10);
       let year = parseInt(parts[2], 10);
       
-      // Check if the first part is a 4-digit year (YYYY-MM-DD format with slashes)
+      // Check if the first part is a 4-digit year (e.g. YYYY-MM-DD or YYYY-DD-MM)
       if (parts[0].length === 4) {
         year = parseInt(parts[0], 10);
-        month = parseInt(parts[1], 10);
-        day = parseInt(parts[2], 10);
-      }
-      
-      if (year < 100) {
-        year = 2000 + year; // Convert 26 to 2026
+        const p1 = parseInt(parts[1], 10);
+        const p2 = parseInt(parts[2], 10);
+        if (p1 > 12) {
+          // It's YYYY-DD-MM (e.g. 2026-13-07)
+          month = p2;
+          day = p1;
+        } else {
+          // Standard YYYY-MM-DD
+          month = p1;
+          day = p2;
+        }
+      } else {
+        // Standard D/M/YY or M/D/YY (default UK D/M/YY)
+        if (year < 100) {
+          year = 2000 + year; // Convert 26 to 2026
+        }
+        // Swap if month is > 12 (e.g. 13/07/26)
+        if (month > 12) {
+          const tmp = month;
+          month = day;
+          day = tmp;
+        }
       }
       
       if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
@@ -493,7 +504,6 @@ export default function PlacementsDashboard({
       if (!isNaN(d.getTime())) {
         let yr = d.getFullYear();
         if (yr < 1970 && yr > 1900) {
-          // If year is 1926, change to 2026
           yr = yr + 100;
         }
         return `${yr}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -610,6 +620,29 @@ export default function PlacementsDashboard({
         }
       }
 
+      // Validation checks
+      const isValidDate = (dStr) => {
+        if (!dStr) return false;
+        const d = new Date(dStr);
+        return !isNaN(d.getTime());
+      };
+
+      if (!client || client.trim() === '') {
+        rowIssues.push("Client Company is missing.");
+      }
+      if (!candidate || candidate.trim() === '') {
+        rowIssues.push("Candidate Name is missing.");
+      }
+      if (!start || !isValidDate(start)) {
+        rowIssues.push("Official Start Date is missing or invalid (must be DD/MM/YYYY or YYYY-MM-DD).");
+      }
+      if (scored && !isValidDate(scored)) {
+        rowIssues.push("Scored Date is invalid.");
+      }
+      if (isNaN(gross) || gross <= 0) {
+        rowIssues.push("Gross Bill Amount must be greater than 0.");
+      }
+
       // Attempt to resolve staff ids
       const mappedSplits = finalSplits.map(s => {
         const sName = String(s.name || '').trim().toLowerCase();
@@ -672,7 +705,7 @@ export default function PlacementsDashboard({
         clientPaymentStatus: clientPaidStatus,
         clientPaidDate,
         issues: rowIssues,
-        isValid: !hasUnresolved && sum === 100,
+        isValid: !hasUnresolved && sum === 100 && rowIssues.length === 0,
         importKey: `batch-${csvFile?.name || 'csv'}`
       });
     });

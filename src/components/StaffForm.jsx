@@ -142,7 +142,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
     if (!staffMember && matchingComms.length > 0 && !matchingComms.some(p => p.id === commissionPolicyId)) {
       setCommissionPolicyId(matchingComms[0].id);
     }
-  }, [companyId, leavePolicies, commissionPolicies, companies, companyDepts, selectedCompanyObj, department, staffMember]);
+  }, [companyId, companies, leavePolicies, commissionPolicies, staffMember]);
 
   if (!isOpen) return null;
 

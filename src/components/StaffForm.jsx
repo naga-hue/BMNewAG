@@ -23,6 +23,7 @@ const CURRENCIES = [
 
 export default function StaffForm({ staffMember, companies, isOpen, onClose, onSave, onShowToast, staffList = [], leavePolicies = [], commissionPolicies = [] }) {
   const [currentStep, setCurrentStep] = useState(1);
+  const [errors, setErrors] = useState({});
   
   // Step 1: Personal details state
   const [fullName, setFullName] = useState('');
@@ -165,10 +166,44 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
   };
 
   const handleNext = () => {
-    if (canGoNext()) {
+    const errs = {};
+    if (currentStep === 1) {
+      if (!fullName.trim()) errs.fullName = "Full Name";
+      if (!dateOfBirth) errs.dateOfBirth = "Date of Birth";
+      if (!address.trim()) errs.address = "Home Address";
+      if (!personalEmail) {
+        errs.personalEmail = "Personal Email";
+      } else if (!/\S+@\S+\.\S+/.test(personalEmail)) {
+        errs.personalEmail = "Valid Personal Email";
+      }
+      if (!personalPhone.trim()) errs.personalPhone = "Personal Phone";
+    }
+    else if (currentStep === 2) {
+      if (!companyId) errs.companyId = "Employer Company";
+      if (!department) errs.department = "Department / BU";
+      if (!jobTitle.trim()) errs.jobTitle = "Job Title / Designation";
+      if (!startDate) errs.startDate = "Official Start Date";
+    }
+    else if (currentStep === 3) {
+      if (!salary || Number(salary) <= 0) errs.salary = "Salary package";
+      if (!currency) errs.currency = "Currency selection";
+    }
+    else if (currentStep === 4) {
+      if (!businessEmail) {
+        errs.businessEmail = "Business Email";
+      } else if (!/\S+@\S+\.\S+/.test(businessEmail)) {
+        errs.businessEmail = "Valid Business Email";
+      }
+      if (!businessPhone.trim()) errs.businessPhone = "Work Phone";
+    }
+
+    if (Object.keys(errs).length === 0) {
+      setErrors({});
       setCurrentStep(prev => prev + 1);
     } else {
-      onShowToast("Please enter all required details correctly before proceeding.", "warning");
+      setErrors(errs);
+      const missingFields = Object.values(errs).join(", ");
+      onShowToast(`Please complete the required fields: ${missingFields}`, "warning");
     }
   };
 
@@ -351,13 +386,17 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                     <select 
                       className="select-filter"
                       value={companyId}
-                      onChange={(e) => setCompanyId(e.target.value)}
-                      style={{ width: '100%', padding: '10px' }}
+                      onChange={(e) => {
+                        setCompanyId(e.target.value);
+                        if (errors.companyId) setErrors(prev => ({ ...prev, companyId: null }));
+                      }}
+                      style={{ width: '100%', padding: '10px', borderColor: errors.companyId ? 'var(--danger)' : 'var(--border-color)' }}
                     >
                       {companies.map(c => (
                         <option key={c.id} value={c.id}>{c.name} ({c.country})</option>
                       ))}
                     </select>
+                    {errors.companyId && <span style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '2px' }}>{errors.companyId}</span>}
                   </div>
 
                   <div className="form-group">
@@ -366,8 +405,11 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                       <select 
                         className="select-filter"
                         value={department}
-                        onChange={(e) => setDepartment(e.target.value)}
-                        style={{ width: '100%', padding: '10px' }}
+                        onChange={(e) => {
+                          setDepartment(e.target.value);
+                          if (errors.department) setErrors(prev => ({ ...prev, department: null }));
+                        }}
+                        style={{ width: '100%', padding: '10px', borderColor: errors.department ? 'var(--danger)' : 'var(--border-color)' }}
                       >
                         {companyDepts.map((d, index) => (
                           <option key={index} value={d}>{d}</option>
@@ -378,6 +420,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                         No departments found for this company. Please define departments in Company Profile first.
                       </div>
                     )}
+                    {errors.department && <span style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '2px' }}>{errors.department}</span>}
                   </div>
                 </div>
 
@@ -388,9 +431,14 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                     className="form-input"
                     placeholder="e.g. Recruitment Consultant"
                     value={jobTitle}
-                    onChange={(e) => setJobTitle(e.target.value)}
+                    onChange={(e) => {
+                      setJobTitle(e.target.value);
+                      if (errors.jobTitle) setErrors(prev => ({ ...prev, jobTitle: null }));
+                    }}
+                    style={{ borderColor: errors.jobTitle ? 'var(--danger)' : 'var(--border-color)' }}
                     required
                   />
+                  {errors.jobTitle && <span style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '2px' }}>{errors.jobTitle}</span>}
                 </div>
 
                 <div className="form-group">
@@ -399,9 +447,14 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                     type="date" 
                     className="form-input"
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    onChange={(e) => {
+                      setStartDate(e.target.value);
+                      if (errors.startDate) setErrors(prev => ({ ...prev, startDate: null }));
+                    }}
+                    style={{ borderColor: errors.startDate ? 'var(--danger)' : 'var(--border-color)' }}
                     required
                   />
+                  {errors.startDate && <span style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '2px' }}>{errors.startDate}</span>}
                 </div>
 
                 <div className="form-group" style={{ marginTop: '8px' }}>

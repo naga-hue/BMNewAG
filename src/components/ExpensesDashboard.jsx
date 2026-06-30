@@ -192,6 +192,9 @@ export default function ExpensesDashboard({
   const [importStep, setImportStep] = useState(1); // 1: upload, 2: map cols, 3: row categorizer
   const [statementCompanyId, setStatementCompanyId] = useState('');
   const [statementAccountRef, setStatementAccountRef] = useState('Main Current Account');
+  const [linkingRowId, setLinkingRowId] = useState(null);
+  const [linkingPlacementId, setLinkingPlacementId] = useState('');
+  const [placementSearch, setPlacementSearch] = useState('');
 
   // Nominal Code setting states
   const [newNominalCodeId, setNewNominalCodeId] = useState('');
@@ -1490,19 +1493,35 @@ export default function ExpensesDashboard({
                         {/* Link Credit to placement sales invoice */}
                         <td>
                           {row.isCredit ? (
-                            <select
-                              value={row.linkedPlacementId}
-                              onChange={(e) => handleUpdateCategorizedRow(row.id, 'linkedPlacementId', e.target.value)}
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              onClick={() => {
+                                setLinkingRowId(row.id);
+                                setLinkingPlacementId(row.linkedPlacementId || '');
+                                setPlacementSearch('');
+                              }}
                               disabled={row.committed}
-                              style={{ padding: '4px', fontSize: '11px', width: '150px', borderColor: 'var(--success)' }}
+                              style={{ 
+                                padding: '4px 8px', 
+                                fontSize: '11px', 
+                                width: '150px', 
+                                whiteSpace: 'nowrap', 
+                                overflow: 'hidden', 
+                                textOverflow: 'ellipsis',
+                                textAlign: 'left',
+                                border: row.linkedPlacementId ? '1px solid var(--success)' : '1px solid var(--border-color)',
+                                color: row.linkedPlacementId ? 'var(--success)' : 'var(--text-primary)'
+                              }}
                             >
-                              <option value="">-- No Link --</option>
-                              {sortedPlacementsForMapping.map(p => (
-                                <option key={p.id} value={p.id}>
-                                  {p.placementId} ({p.clientCompany}) {p.clientPaymentStatus === 'paid' ? '✅' : '⏳'}
-                                </option>
-                              ))}
-                            </select>
+                              {(() => {
+                                if (row.linkedPlacementId) {
+                                  const p = placements.find(x => x.id === row.linkedPlacementId);
+                                  return p ? `🔗 ${p.placementId} (${p.clientCompany})` : '🔗 Link Placement';
+                                }
+                                return '🔗 Link Placement';
+                              })()}
+                            </button>
                           ) : (
                             <span style={{ color: 'var(--text-muted)' }}>Debit</span>
                           )}
@@ -1909,6 +1928,174 @@ export default function ExpensesDashboard({
                 onClick={() => setAllocatingRowId(null)}
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sales Placement Linking Selector Modal */}
+      {linkingRowId !== null && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          animation: 'fadeIn 0.2s'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            width: '90%',
+            maxWidth: '750px',
+            padding: '24px',
+            boxShadow: 'var(--shadow-xl)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                🔗 Select Sales Placement / Invoice to Link Credit
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setLinkingRowId(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <input
+              type="text"
+              className="form-input"
+              value={placementSearch}
+              onChange={(e) => setPlacementSearch(e.target.value)}
+              placeholder="Search by candidate name, client company, or placement ID..."
+              style={{ fontSize: '13px', padding: '10px' }}
+            />
+
+            {/* Placements Table */}
+            <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+              <table className="entity-table dense" style={{ fontSize: '11px', width: '100%' }}>
+                <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1 }}>
+                  <tr>
+                    <th>Placement ID</th>
+                    <th>Client Company</th>
+                    <th>Candidate</th>
+                    <th style={{ textAlign: 'right' }}>Gross Fee</th>
+                    <th>Start Date</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: 'center' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {placements
+                    .filter(p => {
+                      if (p.netScoreValue <= 0) return false;
+                      const term = placementSearch.toLowerCase();
+                      return (
+                        (p.placementId || '').toLowerCase().includes(term) ||
+                        (p.clientCompany || '').toLowerCase().includes(term) ||
+                        (p.candidateName || '').toLowerCase().includes(term)
+                      );
+                    })
+                    .map(p => {
+                      const isSelected = linkingPlacementId === p.id;
+                      return (
+                        <tr 
+                          key={p.id} 
+                          onClick={() => setLinkingPlacementId(isSelected ? '' : p.id)}
+                          style={{ 
+                            cursor: 'pointer',
+                            backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
+                            borderLeft: isSelected ? '3px solid var(--primary)' : '3px solid transparent'
+                          }}
+                        >
+                          <td style={{ fontWeight: 600 }}>{p.placementId}</td>
+                          <td>{p.clientCompany}</td>
+                          <td style={{ fontWeight: 500 }}>{p.candidateName}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                            £{p.grossFee?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td>{p.startDate}</td>
+                          <td>
+                            <span style={{
+                              fontSize: '9px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontWeight: 600,
+                              backgroundColor: p.clientPaymentStatus === 'paid' ? 'var(--success-light)' : 'var(--warning-light)',
+                              color: p.clientPaymentStatus === 'paid' ? 'var(--success)' : 'var(--warning)'
+                            }}>
+                              {p.clientPaymentStatus === 'paid' ? 'Paid' : 'Unpaid'}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              className={isSelected ? "btn-primary" : "btn-secondary"}
+                              style={{ padding: '2px 8px', fontSize: '10px' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUpdateCategorizedRow(linkingRowId, 'linkedPlacementId', p.id);
+                                setLinkingRowId(null);
+                              }}
+                            >
+                              Select
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  {placements.filter(p => {
+                    if (p.netScoreValue <= 0) return false;
+                    const term = placementSearch.toLowerCase();
+                    return (
+                      (p.placementId || '').toLowerCase().includes(term) ||
+                      (p.clientCompany || '').toLowerCase().includes(term) ||
+                      (p.candidateName || '').toLowerCase().includes(term)
+                    );
+                  }).length === 0 && (
+                    <tr>
+                      <td colSpan="7" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
+                        No placements found matching your search.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+              <button 
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  handleUpdateCategorizedRow(linkingRowId, 'linkedPlacementId', '');
+                  setLinkingRowId(null);
+                }}
+              >
+                Clear Link
+              </button>
+              <button 
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  handleUpdateCategorizedRow(linkingRowId, 'linkedPlacementId', linkingPlacementId);
+                  setLinkingRowId(null);
+                }}
+              >
+                Save Link
               </button>
             </div>
           </div>

@@ -88,6 +88,7 @@ export default function PlacementsDashboard({
 
   // Matrix & Drill-down states
   const [matrixYear, setMatrixYear] = useState('2026');
+  const [matrixViewType, setMatrixViewType] = useState('count'); // count or value
   const [selectedCellPlacements, setSelectedCellPlacements] = useState(null);
   const [showDrilldownModal, setShowDrilldownModal] = useState(false);
   const [drilldownClient, setDrilldownClient] = useState('');
@@ -1831,22 +1832,75 @@ export default function PlacementsDashboard({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <h2 style={{ fontSize: '18px', fontWeight: 600 }}>YTD Placements & Split Count Matrix</h2>
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Track placement split counts hierarchically by internal company, department, and recruiters.</p>
+              <h2 style={{ fontSize: '18px', fontWeight: 600 }}>
+                {matrixViewType === 'value' ? 'YTD Placements & Fee Billing Value Matrix' : 'YTD Placements & Split Count Matrix'}
+              </h2>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                {matrixViewType === 'value' 
+                  ? 'Track placement split net fee values hierarchically by internal company, department, and recruiters.' 
+                  : 'Track placement split counts hierarchically by internal company, department, and recruiters.'}
+              </p>
             </div>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600 }}>Calendar Year:</span>
-              <select 
-                className="select-filter"
-                value={matrixYear}
-                onChange={(e) => setMatrixYear(e.target.value)}
-                style={{ padding: '6px 12px' }}
-              >
-                <option value="2025">2025</option>
-                <option value="2026">2026</option>
-                <option value="2027">2027</option>
-              </select>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              {/* Toggle switch between Split Count and Fee Billing Value */}
+              <div style={{ 
+                display: 'flex', 
+                backgroundColor: 'var(--bg-secondary)', 
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '2px',
+                gap: '2px'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setMatrixViewType('count')}
+                  style={{
+                    background: matrixViewType === 'count' ? 'var(--bg-sidebar)' : 'none',
+                    border: 'none',
+                    color: matrixViewType === 'count' ? 'var(--accent)' : 'var(--text-secondary)',
+                    padding: '6px 12px',
+                    borderRadius: 'var(--radius-xs)',
+                    fontWeight: 600,
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Split Counts
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMatrixViewType('value')}
+                  style={{
+                    background: matrixViewType === 'value' ? 'var(--bg-sidebar)' : 'none',
+                    border: 'none',
+                    color: matrixViewType === 'value' ? 'var(--accent)' : 'var(--text-secondary)',
+                    padding: '6px 12px',
+                    borderRadius: 'var(--radius-xs)',
+                    fontWeight: 600,
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Fee Values (£)
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600 }}>Calendar Year:</span>
+                <select 
+                  className="select-filter"
+                  value={matrixYear}
+                  onChange={(e) => setMatrixYear(e.target.value)}
+                  style={{ padding: '6px 12px' }}
+                >
+                  <option value="2025">2025</option>
+                  <option value="2026">2026</option>
+                  <option value="2027">2027</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -1894,7 +1948,9 @@ export default function PlacementsDashboard({
                           const monthIdx = pStart.getMonth();
                           const splitObj = p.splits?.find(sp => sp.staffId === member.id);
                           if (splitObj) {
-                            const weight = (Number(splitObj.percentage) || 100) / 100;
+                            const weight = matrixViewType === 'value'
+                              ? (Number(p.netScoreValue) || 0) * (Number(splitObj.percentage) || 100) / 100
+                              : (Number(splitObj.percentage) || 100) / 100;
                             memberMonths[monthIdx] += weight;
                             memberPlacementsByMonth[monthIdx].push({
                               ...p,
@@ -1960,11 +2016,14 @@ export default function PlacementsDashboard({
                     if (pStart.getFullYear() !== year) return;
                     const monthIdx = pStart.getMonth();
                     
-                    // Sum splits for validation
-                    const totalWeight = p.splits?.reduce((sum, s) => sum + ((Number(s.percentage) || 100) / 100), 0) || 0;
-                    const weight = totalWeight > 0 ? totalWeight : 1.0;
-                    colTotals[monthIdx] += weight;
-                    grandTotal += weight;
+                    const value = matrixViewType === 'value'
+                      ? (Number(p.netScoreValue) || 0)
+                      : (() => {
+                          const totalWeight = p.splits?.reduce((sum, s) => sum + ((Number(s.percentage) || 100) / 100), 0) || 0;
+                          return totalWeight > 0 ? totalWeight : 1.0;
+                        })();
+                    colTotals[monthIdx] += value;
+                    grandTotal += value;
                   });
 
                   // Flatten rows based on expanded states
@@ -2086,7 +2145,9 @@ export default function PlacementsDashboard({
                                       }}
                                       title="Click to view details"
                                     >
-                                      {displayVal}
+                                      {matrixViewType === 'value' 
+                                        ? `£${Math.round(displayVal).toLocaleString()}` 
+                                        : displayVal}
                                     </button>
                                   ) : (
                                     <span style={{ color: 'var(--text-muted)', opacity: 0.3 }}>—</span>
@@ -2101,7 +2162,9 @@ export default function PlacementsDashboard({
                               backgroundColor: 'rgba(255,255,255,0.01)', 
                               color: isCompany ? 'var(--accent)' : isDept ? 'var(--warning)' : 'var(--success)'
                             }}>
-                              {parseFloat(row.total.toFixed(2))}
+                              {matrixViewType === 'value' 
+                                ? `£${Math.round(row.total).toLocaleString()}` 
+                                : parseFloat(row.total.toFixed(2))}
                             </td>
                           </tr>
                         );
@@ -2109,14 +2172,18 @@ export default function PlacementsDashboard({
 
                       {/* Column totals footer */}
                       <tr style={{ fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.03)', borderTop: '2px solid var(--border-color)' }}>
-                        <td style={{ paddingLeft: '12px' }}>Monthly Totals (Placements)</td>
+                        <td style={{ paddingLeft: '12px' }}>Monthly Totals ({matrixViewType === 'value' ? 'Fee Values' : 'Placements'})</td>
                         {colTotals.map((tot, idx) => (
                           <td key={idx} style={{ textAlign: 'right', color: 'var(--success)' }}>
-                            {parseFloat(tot.toFixed(2))}
+                            {matrixViewType === 'value' 
+                              ? `£${Math.round(tot).toLocaleString()}` 
+                              : parseFloat(tot.toFixed(2))}
                           </td>
                         ))}
                         <td style={{ textAlign: 'right', color: 'var(--accent)', fontSize: '13px' }}>
-                          {parseFloat(grandTotal.toFixed(2))}
+                          {matrixViewType === 'value' 
+                            ? `£${Math.round(grandTotal).toLocaleString()}` 
+                            : parseFloat(grandTotal.toFixed(2))}
                         </td>
                       </tr>
                     </>

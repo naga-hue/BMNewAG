@@ -190,6 +190,8 @@ export default function ExpensesDashboard({
   const [columnMappings, setColumnMappings] = useState({});
   const [categorizedRows, setCategorizedRows] = useState([]);
   const [importStep, setImportStep] = useState(1); // 1: upload, 2: map cols, 3: row categorizer
+  const [statementCompanyId, setStatementCompanyId] = useState('');
+  const [statementAccountRef, setStatementAccountRef] = useState('Main Current Account');
 
   // Nominal Code setting states
   const [newNominalCodeId, setNewNominalCodeId] = useState('');
@@ -539,7 +541,9 @@ export default function ExpensesDashboard({
           invoiceUrl: "#",
           allocationType: row.allocationType,
           allocationTarget: target,
-          linkedPlacementId: row.linkedPlacementId || null
+          linkedPlacementId: row.linkedPlacementId || null,
+          bankCompanyId: statementCompanyId || companies[0]?.id || '',
+          bankAccountRef: statementAccountRef || 'Main Current Account'
         };
 
         await onSaveExpense(expenseData);
@@ -1053,6 +1057,7 @@ export default function ExpensesDashboard({
                   <th onClick={() => handleHeaderClick('payee')} style={{ cursor: 'pointer', userSelect: 'none' }}>
                     Payee / Vendor {renderSortIndicator('payee')}
                   </th>
+                  <th>Bank Account / Source</th>
                   <th onClick={() => handleHeaderClick('nominalCode')} style={{ cursor: 'pointer', userSelect: 'none' }}>
                     Nominal Bracket {renderSortIndicator('nominalCode')}
                   </th>
@@ -1090,6 +1095,16 @@ export default function ExpensesDashboard({
                       <td>{exp.date}</td>
                       <td style={{ fontWeight: 600 }}>{exp.plMonth}</td>
                       <td style={{ fontWeight: 600 }}>{exp.payee}</td>
+                      <td>
+                        {exp.bankCompanyId ? (
+                          <div style={{ fontSize: '11px' }}>
+                            <div>{companies.find(c => c.id === exp.bankCompanyId)?.name || 'Company'}</div>
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{exp.bankAccountRef || 'Main Account'}</div>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Manual Entry</span>
+                        )}
+                      </td>
                       <td style={{ fontSize: '11px' }}>{exp.nominalCode}</td>
                       <td>
                         <span style={{ 
@@ -1228,6 +1243,52 @@ export default function ExpensesDashboard({
                 ))}
               </div>
 
+              {/* Target Bank Account and Reference Form */}
+              <div 
+                style={{ 
+                  backgroundColor: 'var(--bg-secondary)', 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: 'var(--radius-md)', 
+                  padding: '16px', 
+                  marginTop: '20px', 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: '12px' 
+                }}
+              >
+                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent)' }}>
+                  🏦 Bank Account & Statement Reference
+                </div>
+                <div className="form-group-row">
+                  <div className="form-group">
+                    <label className="form-label">Select Company Bank Account *</label>
+                    <select
+                      className="select-filter"
+                      value={statementCompanyId || (companies[0] ? companies[0].id : '')}
+                      onChange={(e) => setStatementCompanyId(e.target.value)}
+                      style={{ width: '100%', padding: '8px' }}
+                      required
+                    >
+                      {companies.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Account Name / Statement Label *</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={statementAccountRef}
+                      onChange={(e) => setStatementAccountRef(e.target.value)}
+                      placeholder="e.g. HSBC Current, Starling Main, Cash Account"
+                      style={{ padding: '8px', fontSize: '13px' }}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
                 <button type="button" className="btn-primary" onClick={handleApplyBankMappings}>
                   Validate & Parse Rows
@@ -1247,6 +1308,22 @@ export default function ExpensesDashboard({
                 <button className="btn-primary" onClick={handleCommitBankImports}>
                   Commit Mapped Rows ({categorizedRows.filter(r => r.nominalCode && !r.committed).length} rows)
                 </button>
+              </div>
+
+              <div 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px', 
+                  backgroundColor: 'var(--bg-secondary)', 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: '6px', 
+                  padding: '8px 12px', 
+                  fontSize: '12px',
+                  color: 'var(--text-secondary)'
+                }}
+              >
+                <span>🏦 <strong>Target Account:</strong> {companies.find(c => c.id === (statementCompanyId || (companies[0] ? companies[0].id : '')))?.name || 'Company'} — <em>{statementAccountRef}</em></span>
               </div>
 
               <div className="table-container" style={{ maxHeight: '450px', overflowY: 'auto' }}>

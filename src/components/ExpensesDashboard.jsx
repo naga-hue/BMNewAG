@@ -47,6 +47,8 @@ export default function ExpensesDashboard({
   placements = [],
   expenses = [],
   nominalCodes = [],
+  vendors = [],
+  onSaveVendor,
   onSaveExpense,
   onDeleteExpense,
   onSaveNominalCode,
@@ -438,6 +440,24 @@ export default function ExpensesDashboard({
         yyyymm = `${year}-${String(month).padStart(2, '0')}`;
       }
 
+      // Auto-detect recipient matching vendor name or staff member name
+      let autoRecType = 'other';
+      let autoRecId = '';
+      const cleanPayee = payeeVal.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleanPayee) {
+        const matchedVendor = vendors.find(v => v.name.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanPayee) || cleanPayee.includes(v.name.toLowerCase().replace(/[^a-z0-9]/g, '')));
+        if (matchedVendor) {
+          autoRecType = 'vendor';
+          autoRecId = matchedVendor.id;
+        } else {
+          const matchedStaff = staff.find(s => s.fullName.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanPayee) || cleanPayee.includes(s.fullName.toLowerCase().replace(/[^a-z0-9]/g, '')));
+          if (matchedStaff) {
+            autoRecType = 'staff';
+            autoRecId = matchedStaff.id;
+          }
+        }
+      }
+
       return {
         id: `stmt-row-${idx}-${Date.now()}`,
         date: dateVal,
@@ -446,6 +466,8 @@ export default function ExpensesDashboard({
         reference: refVal,
         amount: amtVal,
         nominalCode: '',
+        recipientType: autoRecType,
+        recipientId: autoRecId,
         allocationType: 'company',
         allocationTarget: companies[0]?.id || '',
         selectedStaffIds: [],

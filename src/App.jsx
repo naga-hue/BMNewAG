@@ -777,7 +777,7 @@ export default function App() {
   };
 
   // Companies filter logic
-  const filteredCompanies = companies.filter(c => {
+  const filteredCompanies = scopedCompanies.filter(c => {
     const matchesSearch = 
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.legalName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -798,7 +798,7 @@ export default function App() {
   const sortedCompanies = sortCompaniesList(filteredCompanies);
 
   // Compile list of unique departments across all companies for filtering
-  const allAvailableDepts = companies.reduce((acc, c) => {
+  const allAvailableDepts = scopedCompanies.reduce((acc, c) => {
     (c.departments || []).forEach(d => {
       const deptName = d.name || d;
       if (deptName && !acc.includes(deptName)) acc.push(deptName);
@@ -807,7 +807,7 @@ export default function App() {
   }, []).sort();
 
   // Staff filter logic
-  const filteredStaff = staff.filter(s => {
+  const filteredStaff = scopedStaff.filter(s => {
     const matchesSearch = 
       s.fullName.toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
       s.jobTitle.toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
@@ -866,6 +866,55 @@ export default function App() {
     return summaryParts.length > 0 ? summaryParts.join(' | ') : 'No payroll logs';
   };
 
+  // Get scoped lists based on currentUser permissions
+  const getScopedData = () => {
+    const role = currentUser.permissions?.role || 'admin';
+    const scope = currentUser.permissions?.dataScope || 'all';
+    const dept = currentUser.department;
+    const userId = currentUser.id;
+
+    if (role === 'admin' || scope === 'all') {
+      return {
+        scopedCompanies: companies,
+        scopedStaff: staff,
+        scopedLeaves: leaveRequests,
+        scopedPlacements: placements,
+        scopedExpenses: expenses
+      };
+    }
+
+    if (role === 'manager' || scope === 'department') {
+      // Find staff in manager's department
+      const deptStaffIds = staff.filter(s => s.department === dept).map(s => s.id);
+      
+      return {
+        scopedCompanies: companies,
+        scopedStaff: staff.filter(s => s.department === dept || s.id === userId),
+        scopedLeaves: leaveRequests.filter(r => deptStaffIds.includes(r.staffId)),
+        scopedPlacements: placements.filter(p => p.splits && p.splits.some(sp => deptStaffIds.includes(sp.staffId))),
+        scopedExpenses: expenses.filter(e => 
+          e.allocationTarget === dept || 
+          (Array.isArray(e.allocationTarget) && e.allocationTarget.some(t => deptStaffIds.includes(t)))
+        )
+      };
+    }
+
+    // Consultant / Recruiter (scope: 'self')
+    return {
+      scopedCompanies: companies, // They can view companies in directory
+      scopedStaff: staff.filter(s => s.id === userId),
+      scopedLeaves: leaveRequests.filter(r => r.staffId === userId),
+      scopedPlacements: placements.filter(p => p.splits && p.splits.some(sp => sp.staffId === userId)),
+      scopedExpenses: expenses.filter(e => 
+        e.allocationType === 'staff' && 
+        Array.isArray(e.allocationTarget) && 
+        e.allocationTarget.includes(userId)
+      )
+    };
+  };
+
+  const { scopedCompanies, scopedStaff, scopedLeaves, scopedPlacements, scopedExpenses } = getScopedData();
+
   return (
     <div className="app-container">
       
@@ -891,109 +940,139 @@ export default function App() {
                   <span>Group Dashboard</span>
                 </div>
               </li>
-              <li>
-                <div 
-                  className={`nav-item ${activeTab === 'directory' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('directory')}
-                >
-                  <Building2 size={18} />
-                  <span>Company Directory</span>
-                </div>
-              </li>
-              <li>
-                <div 
-                  className={`nav-item ${activeTab === 'staff' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('staff')}
-                >
-                  <Users size={18} />
-                  <span>Staff & Consultants</span>
-                </div>
-              </li>
-              <li>
-                <div 
-                  className={`nav-item ${activeTab === 'leaves' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('leaves')}
-                >
-                  <Calendar size={18} />
-                  <span>Leaves & Holidays</span>
-                  {leaveRequests.filter(r => r.status === 'pending').length > 0 && (
-                    <span style={{ 
-                      marginLeft: 'auto', 
-                      background: 'var(--warning)', 
-                      color: '#000', 
-                      fontSize: '10px', 
-                      padding: '2px 6px', 
-                      borderRadius: '8px',
-                      fontWeight: 700
-                    }}>
-                      {leaveRequests.filter(r => r.status === 'pending').length}
-                    </span>
-                  )}
-                </div>
-              </li>
-              <li>
-                <div 
-                  className={`nav-item ${activeTab === 'commissions' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('commissions')}
-                >
-                  <TrendingUp size={18} />
-                  <span>Commission Plans</span>
-                </div>
-              </li>
-              <li>
-                <div 
-                  className={`nav-item ${activeTab === 'vendors' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('vendors')}
-                >
-                  <Laptop size={18} />
-                  <span>Vendors & Assets</span>
-                </div>
-              </li>
               
-              <li>
-                <div 
-                  className={`nav-item ${activeTab === 'placements' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('placements')}
-                >
-                  <TrendingUp size={18} />
-                  <span>Sales & Placements</span>
-                </div>
-              </li>
-              <li>
-                <div 
-                  className={`nav-item ${activeTab === 'expenses' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('expenses')}
-                >
-                  <Receipt size={18} />
-                  <span>Expense Ledger</span>
-                </div>
-              </li>
-              <li>
-                <div 
-                  className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('logs')}
-                >
-                  <History size={18} />
-                  <span>Audit Trail Logs</span>
-                </div>
-              </li>
-              <li>
-                <div 
-                  className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('reports')}
-                >
-                  <PieChart size={18} />
-                  <span>Profit & Loss / Reports</span>
-                </div>
-              </li>
+              {currentUser.permissions.allowedModules.includes('directory') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'directory' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('directory')}
+                  >
+                    <Building2 size={18} />
+                    <span>Company Directory</span>
+                  </div>
+                </li>
+              )}
 
-              {/* Locked Future Modules roadmap */}
-              <li style={{ marginTop: '24px', paddingLeft: '16px', fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>
-                Future Modules
-              </li>
-              <li style={{ paddingLeft: '16px', fontSize: '11px', color: '#475569', fontStyle: 'italic' }}>
-                All modules fully active
-              </li>
+              {currentUser.permissions.allowedModules.includes('staff') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'staff' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('staff')}
+                  >
+                    <Users size={18} />
+                    <span>Staff & Consultants</span>
+                  </div>
+                </li>
+              )}
+
+              {currentUser.permissions.allowedModules.includes('leaves') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'leaves' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('leaves')}
+                  >
+                    <Calendar size={18} />
+                    <span>Leaves & Holidays</span>
+                    {currentUser.permissions.role !== 'recruiter' && leaveRequests.filter(r => r.status === 'pending').length > 0 && (
+                      <span style={{ 
+                        marginLeft: 'auto', 
+                        background: 'var(--warning)', 
+                        color: '#000', 
+                        fontSize: '10px', 
+                        padding: '2px 6px', 
+                        borderRadius: '8px',
+                        fontWeight: 700
+                      }}>
+                        {leaveRequests.filter(r => r.status === 'pending').length}
+                      </span>
+                    )}
+                  </div>
+                </li>
+              )}
+
+              {currentUser.permissions.allowedModules.includes('commissions') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'commissions' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('commissions')}
+                  >
+                    <TrendingUp size={18} />
+                    <span>Commission Plans</span>
+                  </div>
+                </li>
+              )}
+
+              {currentUser.permissions.allowedModules.includes('vendors') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'vendors' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('vendors')}
+                  >
+                    <Laptop size={18} />
+                    <span>Vendors & Assets</span>
+                  </div>
+                </li>
+              )}
+
+              {currentUser.permissions.allowedModules.includes('placements') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'placements' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('placements')}
+                  >
+                    <TrendingUp size={18} />
+                    <span>Sales & Placements</span>
+                  </div>
+                </li>
+              )}
+
+              {currentUser.permissions.allowedModules.includes('expenses') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'expenses' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('expenses')}
+                  >
+                    <Receipt size={18} />
+                    <span>Expense Ledger</span>
+                  </div>
+                </li>
+              )}
+
+              {currentUser.permissions.allowedModules.includes('logs') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('logs')}
+                  >
+                    <History size={18} />
+                    <span>Audit Trail Logs</span>
+                  </div>
+                </li>
+              )}
+
+              {currentUser.permissions.allowedModules.includes('reports') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('reports')}
+                  >
+                    <PieChart size={18} />
+                    <span>Profit & Loss / Reports</span>
+                  </div>
+                </li>
+              )}
+
+              {currentUser.permissions.role === 'admin' && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'rbac' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('rbac')}
+                  >
+                    <Key size={18} />
+                    <span>User Access & Roles</span>
+                  </div>
+                </li>
+              )}
             </ul>
           </nav>
         </div>
@@ -1026,10 +1105,14 @@ export default function App() {
           </div>
 
           <div className="user-profile">
-            <div className="avatar">JD</div>
+            <div className="avatar">
+              {currentUser.fullName ? currentUser.fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'SU'}
+            </div>
             <div>
-              <div className="username">Group Director</div>
-              <div className="user-role">Super Admin</div>
+              <div className="username">{currentUser.fullName}</div>
+              <div className="user-role" style={{ textTransform: 'capitalize' }}>
+                {currentUser.permissions?.role || 'User'}
+              </div>
             </div>
           </div>
         </div>
@@ -1051,11 +1134,59 @@ export default function App() {
                activeTab === 'expenses' ? 'Expenses & Bank Statement Categorizer' :
                activeTab === 'logs' ? 'System Audit Trail Logs' :
                activeTab === 'reports' ? 'Profit & Loss / Group Reports' :
+               activeTab === 'rbac' ? 'User Access & Roles Control' :
                activeTab === 'placements' ? 'Sales & Placements Dashboard' : 'Vendors & Asset Management'}
             </h1>
           </div>
           
           <div className="header-actions">
+            {/* Active User Switcher Dropdown */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '8px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500 }}>Active Session:</span>
+              <select
+                className="select-filter"
+                value={currentUser.id}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === 'super-admin') {
+                    setCurrentUser(DEFAULT_ADMIN_USER);
+                    setActiveTab('dashboard');
+                  } else {
+                    const selectedMember = staff.find(st => st.id === val);
+                    if (selectedMember) {
+                      const updatedPermissions = selectedMember.permissions || {
+                        role: selectedMember.department === 'Finance' || selectedMember.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
+                        dataScope: selectedMember.department === 'Finance' || selectedMember.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
+                        allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors']
+                      };
+                      setCurrentUser({
+                        ...selectedMember,
+                        permissions: updatedPermissions
+                      });
+                      setActiveTab('dashboard');
+                    }
+                  }
+                }}
+                style={{ 
+                  padding: '4px 8px', 
+                  fontSize: '12px', 
+                  minWidth: '180px', 
+                  backgroundColor: 'var(--bg-secondary)', 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: 'var(--radius-md)', 
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="super-admin">Super Admin (All Access)</option>
+                {staff.map(st => (
+                  <option key={st.id} value={st.id}>
+                    {st.fullName} ({st.permissions?.role || 'Recruiter'})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <button 
               className="btn-theme-toggle" 
               onClick={toggleTheme} 
@@ -1083,10 +1214,10 @@ export default function App() {
           {/* TAB 1: Dashboard */}
           {activeTab === 'dashboard' && (
             <Dashboard 
-              companies={companies} 
+              companies={scopedCompanies} 
               onSelectCompany={handleSelectCompany} 
-              staff={staff}
-              leaveRequests={leaveRequests}
+              staff={scopedStaff}
+              leaveRequests={scopedLeaves}
               holidays={holidays}
               contracts={contracts}
               vendors={vendors}
@@ -1573,9 +1704,9 @@ export default function App() {
           {activeTab === 'leaves' && (
             <LeavesDashboard 
               companies={companies}
-              staff={staff}
+              staff={scopedStaff}
               leavePolicies={leavePolicies}
-              leaveRequests={leaveRequests}
+              leaveRequests={scopedLeaves}
               holidays={holidays}
               onSavePolicy={handleSaveLeavePolicy}
               onDeletePolicy={handleDeleteLeavePolicy}
@@ -1591,9 +1722,9 @@ export default function App() {
           {activeTab === 'commissions' && (
             <CommissionsDashboard 
               companies={companies}
-              staff={staff}
+              staff={scopedStaff}
               commissionPolicies={commissionPolicies}
-              placements={placements}
+              placements={scopedPlacements}
               onSavePolicy={handleSaveCommissionPolicy}
               onDeletePolicy={handleDeleteCommissionPolicy}
               onUpdateStaff={handleSaveStaff}
@@ -1605,7 +1736,7 @@ export default function App() {
           {activeTab === 'vendors' && (
             <VendorsDashboard 
               companies={companies}
-              staff={staff}
+              staff={scopedStaff}
               vendors={vendors}
               contracts={contracts}
               assetAssignments={assetAssignments}
@@ -1623,8 +1754,8 @@ export default function App() {
           {activeTab === 'placements' && (
             <PlacementsDashboard 
               companies={companies}
-              staff={staff}
-              placements={placements}
+              staff={scopedStaff}
+              placements={scopedPlacements}
               onSavePlacement={handleSavePlacement}
               onDeletePlacement={handleDeletePlacement}
               onSavePlacementsBatch={handleSavePlacementsBatch}
@@ -1636,9 +1767,9 @@ export default function App() {
           {activeTab === 'expenses' && (
             <ExpensesDashboard 
               companies={companies}
-              staff={staff}
-              placements={placements}
-              expenses={expenses}
+              staff={scopedStaff}
+              placements={scopedPlacements}
+              expenses={scopedExpenses}
               nominalCodes={nominalCodes}
               onSaveExpense={handleSaveExpense}
               onDeleteExpense={handleDeleteExpense}
@@ -1662,10 +1793,20 @@ export default function App() {
           {activeTab === 'reports' && (
             <ReportsDashboard 
               companies={companies}
-              staff={staff}
-              placements={placements}
-              expenses={expenses}
+              staff={scopedStaff}
+              placements={scopedPlacements}
+              expenses={scopedExpenses}
               commissionPolicies={commissionPolicies}
+              onShowToast={handleShowToast}
+            />
+          )}
+
+          {/* TAB 11: User Access & Roles Control Panel */}
+          {activeTab === 'rbac' && currentUser.permissions.role === 'admin' && (
+            <RBACDashboard 
+              staff={staff}
+              companies={companies}
+              onUpdateStaff={handleSaveStaff}
               onShowToast={handleShowToast}
             />
           )}

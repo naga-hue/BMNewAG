@@ -108,6 +108,47 @@ export default function Dashboard({
   // Compile all doc/insurance alerts
   const docAlerts = companies.flatMap(getComplianceAlerts);
 
+  // Calculate birthdays and work anniversaries in the current calendar month
+  const currentMonthIndex = CURRENT_DATE.getMonth();
+  const currentMonthName = CURRENT_DATE.toLocaleDateString(undefined, { month: 'long' });
+  const celebrationsList = [];
+
+  staff.forEach(s => {
+    if (s.dateOfBirth) {
+      const dob = new Date(s.dateOfBirth);
+      if (dob.getMonth() === currentMonthIndex) {
+        celebrationsList.push({
+          id: `bday-card-${s.id}`,
+          type: 'birthday',
+          fullName: s.fullName,
+          dateStr: dob.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
+          day: dob.getDate(),
+          detail: `🎂 Birthday (Turns ${CURRENT_DATE.getFullYear() - dob.getFullYear()})`
+        });
+      }
+    }
+
+    if (s.startDate) {
+      const start = new Date(s.startDate);
+      if (start.getMonth() === currentMonthIndex) {
+        const years = CURRENT_DATE.getFullYear() - start.getFullYear();
+        if (years > 0) {
+          const ordinal = years === 1 ? '1st' : years === 2 ? '2nd' : years === 3 ? '3rd' : `${years}th`;
+          celebrationsList.push({
+            id: `anniv-card-${s.id}`,
+            type: 'anniversary',
+            fullName: s.fullName,
+            dateStr: start.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
+            day: start.getDate(),
+            detail: `👔 ${ordinal} Work Anniversary`
+          });
+        }
+      }
+    }
+  });
+
+  const currentMonthCelebrations = celebrationsList.sort((a, b) => a.day - b.day);
+
   // Compile all statutory compliance tasks
   const allStatutoryTasks = companies.flatMap(c => {
     if (!c.complianceTasks) return [];
@@ -578,37 +619,70 @@ export default function Dashboard({
           )}
         </div>
 
-        {/* Country Breakdown (Geographical distribution) */}
+        {/* Celebrations & Anniversaries Card */}
         <div className="chart-card">
           <div className="chart-header">
             <h2 className="chart-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Globe size={20} style={{ color: 'var(--primary)' }} /> Entity Network
+              <span role="img" aria-label="celebration-icon" style={{ fontSize: '18px' }}>🎉</span> Celebrations & Anniversaries
             </h2>
+            <span style={{ fontSize: '11px', background: 'rgba(236, 72, 153, 0.15)', color: '#ec4899', padding: '4px 10px', borderRadius: '12px', fontWeight: 600 }}>
+              {currentMonthName}
+            </span>
           </div>
-          <div className="distribution-list">
-            {countryListData.map(country => (
-              <div className="distribution-item" key={country.name}>
-                <div className="dist-label-row">
-                  <span>{country.name}</span>
-                  <span style={{ color: 'var(--text-secondary)' }}>
-                    {country.count} {country.count === 1 ? 'entity' : 'entities'}
-                  </span>
-                </div>
-                <div className="dist-bar-bg">
+
+          {currentMonthCelebrations.length === 0 ? (
+            <div className="empty-state">
+              <span role="img" aria-label="empty-icon" style={{ fontSize: '36px', marginBottom: '10px' }}>📅</span>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No events for {currentMonthName}</div>
+            </div>
+          ) : (
+            <div className="alerts-list" style={{ maxHeight: '350px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {currentMonthCelebrations.map(c => {
+                const isBirthday = c.type === 'birthday';
+                return (
                   <div 
-                    className="dist-bar-fill" 
+                    key={c.id} 
                     style={{ 
-                      width: `${country.percentage}%`,
-                      background: country.name === 'United Kingdom' ? 'linear-gradient(90deg, #6366f1, #4f46e5)' :
-                                  country.name === 'United States' ? 'linear-gradient(90deg, #0ea5e9, #0284c7)' :
-                                  country.name === 'United Arab Emirates' ? 'linear-gradient(90deg, #10b981, #059669)' :
-                                  'linear-gradient(90deg, #f59e0b, #d97706)'
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '12px', 
+                      backgroundColor: 'var(--bg-secondary)', 
+                      border: '1px solid var(--border-color)', 
+                      borderLeft: `4px solid ${isBirthday ? '#ec4899' : '#818cf8'}`,
+                      borderRadius: '6px',
+                      padding: '8px 12px'
                     }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+                  >
+                    <div style={{ 
+                      fontSize: '18px', 
+                      width: '32px', 
+                      height: '32px', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      backgroundColor: isBirthday ? 'rgba(236, 72, 153, 0.08)' : 'rgba(99, 102, 241, 0.08)',
+                      borderRadius: '50%'
+                    }}>
+                      {isBirthday ? '🎂' : '👔'}
+                    </div>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '12px' }}>
+                        {c.fullName}
+                      </span>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                        {c.detail}
+                      </span>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: isBirthday ? '#ec4899' : '#818cf8' }}>
+                        {c.dateStr}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
       </div>

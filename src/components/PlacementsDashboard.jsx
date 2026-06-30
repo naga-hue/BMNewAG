@@ -209,6 +209,8 @@ export default function PlacementsDashboard({
       source: sourceInput,
       grossBillAmount: gross,
       dnsRebateAmount: deductions,
+      dnsAmount: statusInput === 'dns' ? gross : 0,
+      rebateAmount: statusInput === 'rebate' || (statusInput !== 'dns' && deductions > 0) ? deductions : 0,
       netScoreValue: netScore,
       splits: cleanSplits,
       clientPaymentStatus: clientPaymentStatusInput,
@@ -594,39 +596,62 @@ export default function PlacementsDashboard({
           
           const parsedJson = JSON.parse(cleanJsonStr);
           if (Array.isArray(parsedJson)) {
-            finalSplits = parsedJson.map(item => {
+            let specifiedCount = 0;
+            const itemsParsed = parsedJson.map(item => {
               const name = item.consultant || item.Consultant || item.name || item.fullName || item.recruiter || item.recruiterName || '';
-              
               let percentageVal = item.share || item.percent || item.percentage || item.value || item.split;
-              let percentage = 100;
+              let pct = null;
               if (percentageVal !== undefined && percentageVal !== null) {
                 const cleanedPct = String(percentageVal).replace('%', '').trim();
                 const num = Number(cleanedPct);
                 if (!isNaN(num) && num > 0) {
-                  percentage = num;
+                  pct = num;
+                  specifiedCount++;
                 }
               }
-              
-              return {
-                name: name.trim(),
-                percentage
-              };
+              return { name: name.trim(), pct };
             });
+
+            if (specifiedCount === 0 && itemsParsed.length > 0) {
+              const share = Math.round(100 / itemsParsed.length);
+              finalSplits = itemsParsed.map((item, idx) => ({
+                name: item.name,
+                percentage: idx === itemsParsed.length - 1 ? (100 - (share * (itemsParsed.length - 1))) : share
+              }));
+            } else {
+              finalSplits = itemsParsed.map(item => ({
+                name: item.name,
+                percentage: item.pct !== null ? item.pct : 100
+              }));
+            }
           } else {
-            finalSplits = Object.entries(parsedJson).map(([name, percent]) => {
-              let percentage = 100;
+            const entries = Object.entries(parsedJson);
+            let specifiedCount = 0;
+            const itemsParsed = entries.map(([name, percent]) => {
+              let pct = null;
               if (percent !== undefined && percent !== null) {
                 const cleanedPct = String(percent).replace('%', '').trim();
                 const num = Number(cleanedPct);
                 if (!isNaN(num) && num > 0) {
-                  percentage = num;
+                  pct = num;
+                  specifiedCount++;
                 }
               }
-              return {
-                name: name.trim(),
-                percentage
-              };
+              return { name: name.trim(), pct };
             });
+
+            if (specifiedCount === 0 && itemsParsed.length > 0) {
+              const share = Math.round(100 / itemsParsed.length);
+              finalSplits = itemsParsed.map((item, idx) => ({
+                name: item.name,
+                percentage: idx === itemsParsed.length - 1 ? (100 - (share * (itemsParsed.length - 1))) : share
+              }));
+            } else {
+              finalSplits = itemsParsed.map(item => ({
+                name: item.name,
+                percentage: item.pct !== null ? item.pct : 100
+              }));
+            }
           }
         } catch (err) {
           rowIssues.push("Could not parse split JSON field. Falling back to consultant list.");
@@ -731,6 +756,8 @@ export default function PlacementsDashboard({
         source: getVal('source') || 'LinkedIn',
         grossBillAmount: gross,
         dnsRebateAmount: deductions,
+        dnsAmount: status === 'dns' ? gross : 0,
+        rebateAmount: status === 'rebate' || (status !== 'dns' && deductions > 0) ? deductions : 0,
         netScoreValue: net,
         splits: mappedSplits,
         clientPaymentStatus: clientPaidStatus,
@@ -822,6 +849,8 @@ export default function PlacementsDashboard({
           source: p.source,
           grossBillAmount: p.grossBillAmount,
           dnsRebateAmount: p.dnsRebateAmount,
+          dnsAmount: p.dnsAmount || (p.status === 'dns' ? p.grossBillAmount : 0),
+          rebateAmount: p.rebateAmount || (p.status === 'rebate' || (p.status !== 'dns' && p.dnsRebateAmount > 0) ? p.dnsRebateAmount : 0),
           netScoreValue: p.netScoreValue,
           splits: finalSplits,
           clientPaymentStatus: p.clientPaymentStatus,
@@ -905,6 +934,21 @@ export default function PlacementsDashboard({
 
   const sortedPlacements = sortPlacements(filteredPlacements);
 
+  const totalGross = placements.reduce((acc, p) => acc + (p.grossBillAmount || 0), 0);
+  const totalDns = placements.reduce((acc, p) => {
+    if (p.status === 'dns') {
+      return acc + (p.grossBillAmount || 0);
+    }
+    return acc + (p.dnsAmount || 0);
+  }, 0);
+  const totalRebate = placements.reduce((acc, p) => {
+    if (p.status === 'rebate' || (p.status !== 'dns' && p.dnsRebateAmount > 0)) {
+      return acc + (p.dnsRebateAmount || 0);
+    }
+    return acc + (p.rebateAmount || 0);
+  }, 0);
+  const totalNet = placements.reduce((acc, p) => acc + (p.netScoreValue || 0), 0);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
@@ -975,6 +1019,26 @@ export default function PlacementsDashboard({
             }}>
               <Plus size={16} /> {showLogForm ? 'Close Log Form' : 'Log Placement'}
             </button>
+          </div>
+
+          {/* Placements billing calculations metrics summary grid */}
+          <div className="metrics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+            <div className="metric-card" style={{ padding: '20px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Gross Placed Volume</div>
+              <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)' }}>£{totalGross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            </div>
+            <div className="metric-card" style={{ padding: '20px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>DNS Lost Volume</div>
+              <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--danger)' }}>-£{totalDns.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            </div>
+            <div className="metric-card" style={{ padding: '20px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Rebate Deductions</div>
+              <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--warning)' }}>-£{totalRebate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            </div>
+            <div className="metric-card" style={{ padding: '20px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Net Fee Volume</div>
+              <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--success)' }}>£{totalNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            </div>
           </div>
 
           {/* Log Placement Form */}
@@ -1366,8 +1430,20 @@ export default function PlacementsDashboard({
                       </td>
 
                       <td style={{ textAlign: 'right', fontWeight: 600 }}>£{p.grossBillAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                      <td style={{ textAlign: 'right', color: p.dnsRebateAmount > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
-                        {p.dnsRebateAmount > 0 ? `-£${p.dnsRebateAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}
+                      <td style={{ textAlign: 'right', color: p.status === 'dns' || p.dnsRebateAmount > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                        {p.status === 'dns' ? (
+                          <div>
+                            <div style={{ fontWeight: 600 }}>-£{p.grossBillAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                            <div style={{ fontSize: '9px', color: 'var(--danger)' }}>DNS Full Loss</div>
+                          </div>
+                        ) : p.dnsRebateAmount > 0 ? (
+                          <div>
+                            <div style={{ fontWeight: 600 }}>-£{p.dnsRebateAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                            <div style={{ fontSize: '9px', color: 'var(--warning)' }}>Rebate Adjustment</div>
+                          </div>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
                         £{p.netScoreValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}

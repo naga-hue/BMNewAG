@@ -175,6 +175,55 @@ export default function App() {
   // Firebase connection flag
   const isCloudConnected = firebaseService.isConfigured();
 
+  // Get scoped lists based on currentUser permissions
+  const getScopedData = () => {
+    const role = currentUser.permissions?.role || 'admin';
+    const scope = currentUser.permissions?.dataScope || 'all';
+    const dept = currentUser.department;
+    const userId = currentUser.id;
+
+    if (role === 'admin' || scope === 'all') {
+      return {
+        scopedCompanies: companies,
+        scopedStaff: staff,
+        scopedLeaves: leaveRequests,
+        scopedPlacements: placements,
+        scopedExpenses: expenses
+      };
+    }
+
+    if (role === 'manager' || scope === 'department') {
+      // Find staff in manager's department
+      const deptStaffIds = staff.filter(s => s.department === dept).map(s => s.id);
+      
+      return {
+        scopedCompanies: companies,
+        scopedStaff: staff.filter(s => s.department === dept || s.id === userId),
+        scopedLeaves: leaveRequests.filter(r => deptStaffIds.includes(r.staffId)),
+        scopedPlacements: placements.filter(p => p.splits && p.splits.some(sp => deptStaffIds.includes(sp.staffId))),
+        scopedExpenses: expenses.filter(e => 
+          e.allocationTarget === dept || 
+          (Array.isArray(e.allocationTarget) && e.allocationTarget.some(t => deptStaffIds.includes(t)))
+        )
+      };
+    }
+
+    // Consultant / Recruiter (scope: 'self')
+    return {
+      scopedCompanies: companies, // They can view companies in directory
+      scopedStaff: staff.filter(s => s.id === userId),
+      scopedLeaves: leaveRequests.filter(r => r.staffId === userId),
+      scopedPlacements: placements.filter(p => p.splits && p.splits.some(sp => sp.staffId === userId)),
+      scopedExpenses: expenses.filter(e => 
+        e.allocationType === 'staff' && 
+        Array.isArray(e.allocationTarget) && 
+        e.allocationTarget.includes(userId)
+      )
+    };
+  };
+
+  const { scopedCompanies, scopedStaff, scopedLeaves, scopedPlacements, scopedExpenses } = getScopedData();
+
   // Sync companies from Firebase Service (with LocalStorage fallback)
   useEffect(() => {
     const unsubscribe = firebaseService.subscribeCompanies((updatedList) => {
@@ -865,55 +914,6 @@ export default function App() {
 
     return summaryParts.length > 0 ? summaryParts.join(' | ') : 'No payroll logs';
   };
-
-  // Get scoped lists based on currentUser permissions
-  const getScopedData = () => {
-    const role = currentUser.permissions?.role || 'admin';
-    const scope = currentUser.permissions?.dataScope || 'all';
-    const dept = currentUser.department;
-    const userId = currentUser.id;
-
-    if (role === 'admin' || scope === 'all') {
-      return {
-        scopedCompanies: companies,
-        scopedStaff: staff,
-        scopedLeaves: leaveRequests,
-        scopedPlacements: placements,
-        scopedExpenses: expenses
-      };
-    }
-
-    if (role === 'manager' || scope === 'department') {
-      // Find staff in manager's department
-      const deptStaffIds = staff.filter(s => s.department === dept).map(s => s.id);
-      
-      return {
-        scopedCompanies: companies,
-        scopedStaff: staff.filter(s => s.department === dept || s.id === userId),
-        scopedLeaves: leaveRequests.filter(r => deptStaffIds.includes(r.staffId)),
-        scopedPlacements: placements.filter(p => p.splits && p.splits.some(sp => deptStaffIds.includes(sp.staffId))),
-        scopedExpenses: expenses.filter(e => 
-          e.allocationTarget === dept || 
-          (Array.isArray(e.allocationTarget) && e.allocationTarget.some(t => deptStaffIds.includes(t)))
-        )
-      };
-    }
-
-    // Consultant / Recruiter (scope: 'self')
-    return {
-      scopedCompanies: companies, // They can view companies in directory
-      scopedStaff: staff.filter(s => s.id === userId),
-      scopedLeaves: leaveRequests.filter(r => r.staffId === userId),
-      scopedPlacements: placements.filter(p => p.splits && p.splits.some(sp => sp.staffId === userId)),
-      scopedExpenses: expenses.filter(e => 
-        e.allocationType === 'staff' && 
-        Array.isArray(e.allocationTarget) && 
-        e.allocationTarget.includes(userId)
-      )
-    };
-  };
-
-  const { scopedCompanies, scopedStaff, scopedLeaves, scopedPlacements, scopedExpenses } = getScopedData();
 
   return (
     <div className="app-container">

@@ -44,6 +44,7 @@ export default function PlacementsDashboard({
   onSavePlacement,
   onDeletePlacement,
   onSavePlacementsBatch,
+  onClearAllPlacements,
   onShowToast
 }) {
   const [activeSubTab, setActiveSubTab] = useState('registry'); // registry, import, leaderboard
@@ -1433,9 +1434,22 @@ export default function PlacementsDashboard({
       {activeSubTab === 'import' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
-          <div>
-            <h2 style={{ fontSize: '18px', fontWeight: 600 }}>CRM Placement Spreadsheet Importer</h2>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Upload your placement CSV records directly from your CRM, map headers, resolve recruiter roster names, and batch upload.</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h2 style={{ fontSize: '18px', fontWeight: 600 }}>CRM Placement Spreadsheet Importer</h2>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Upload your placement CSV records directly from your CRM, map headers, resolve recruiter roster names, and batch upload.</p>
+            </div>
+            {onClearAllPlacements && (
+              <button 
+                type="button" 
+                className="btn-danger" 
+                onClick={onClearAllPlacements}
+                style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}
+              >
+                <Trash2 size={14} />
+                Clear Database
+              </button>
+            )}
           </div>
 
           {importStep === 1 && (

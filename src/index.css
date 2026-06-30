@@ -224,6 +224,8 @@ button, input, select, textarea {
   flex-direction: column;
   background-color: var(--bg-primary);
   transition: background-color var(--transition-normal);
+  min-width: 0;
+  max-width: calc(100vw - var(--sidebar-width));
 }
 
 /* Header */
@@ -865,6 +867,8 @@ button, input, select, textarea {
   display: flex;
   flex-direction: column;
   gap: 32px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Detail Section Grid */

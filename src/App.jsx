@@ -736,6 +736,46 @@ export default function App() {
     }
   };
 
+  const handleClearAllPlacements = async () => {
+    if (!window.confirm("WARNING: This will permanently delete ALL placement sales records from the database. This action cannot be undone.\n\nAre you absolutely sure?")) {
+      return;
+    }
+    const entered = window.prompt("Type 'DELETE' in all capital letters to confirm database purge:");
+    if (entered !== 'DELETE') {
+      handleShowToast("Database clear aborted. Confirmation mismatch.", "warning");
+      return;
+    }
+
+    try {
+      await firebaseService.clearPlacements(placements);
+      logActivity("System", "DELETE", `Purged placement database containing ${placements.length} sales records.`);
+      handleShowToast("Successfully deleted all placement records!", "success");
+    } catch (err) {
+      console.error("Clear placements error:", err);
+      handleShowToast(`Error clearing placements: ${err.message}`, "warning");
+    }
+  };
+
+  const handleClearAllStaff = async () => {
+    if (!window.confirm("WARNING: This will permanently delete ALL staff records from the database. This action cannot be undone.\n\nAre you absolutely sure?")) {
+      return;
+    }
+    const entered = window.prompt("Type 'DELETE' in all capital letters to confirm database purge:");
+    if (entered !== 'DELETE') {
+      handleShowToast("Database clear aborted. Confirmation mismatch.", "warning");
+      return;
+    }
+
+    try {
+      await firebaseService.clearStaff(staff);
+      logActivity("System", "DELETE", `Purged staff directory database containing ${staff.length} staff records.`);
+      handleShowToast("Successfully deleted all staff records!", "success");
+    } catch (err) {
+      console.error("Clear staff error:", err);
+      handleShowToast(`Error clearing staff: ${err.message}`, "warning");
+    }
+  };
+
   /* ==========================================
      EXPENSES CALLBACKS
      ========================================== */
@@ -1213,6 +1253,13 @@ export default function App() {
 
             {activeTab === 'staff' ? (
               <div style={{ display: 'flex', gap: '8px' }}>
+                <button 
+                  className="btn-danger" 
+                  onClick={handleClearAllStaff}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '13px' }}
+                >
+                  <Trash2 size={14} /> Clear Directory
+                </button>
                 <button 
                   className="btn-secondary" 
                   onClick={() => setIsBulkImportOpen(true)}
@@ -1791,6 +1838,7 @@ export default function App() {
               onSavePlacement={handleSavePlacement}
               onDeletePlacement={handleDeletePlacement}
               onSavePlacementsBatch={handleSavePlacementsBatch}
+              onClearAllPlacements={handleClearAllPlacements}
               onShowToast={handleShowToast}
             />
           )}

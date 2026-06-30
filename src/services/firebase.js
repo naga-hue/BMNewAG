@@ -239,6 +239,19 @@ export const firebaseService = {
     }
   },
 
+  async clearStaff(staffList = []) {
+    if (isConfigured && db) {
+      for (const s of staffList) {
+        const docRef = doc(db, 'staff', s.id);
+        await deleteDoc(docRef);
+      }
+      return true;
+    } else {
+      localStorage.setItem('bm-staff', JSON.stringify([]));
+      return true;
+    }
+  },
+
   async uploadStaffFile(staffId, file, docType) {
     const fileSizeStr = file.size > 1024 * 1024 
       ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
@@ -797,6 +810,19 @@ export const firebaseService = {
         const list = JSON.parse(local).filter(p => p.id !== placementId);
         localStorage.setItem('bm-placements', JSON.stringify(list));
       }
+      return true;
+    }
+  },
+
+  async clearPlacements(placementsList = []) {
+    if (isConfigured && db) {
+      for (const p of placementsList) {
+        const docRef = doc(db, 'placements', p.id);
+        await deleteDoc(docRef);
+      }
+      return true;
+    } else {
+      localStorage.setItem('bm-placements', JSON.stringify([]));
       return true;
     }
   },

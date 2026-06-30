@@ -105,6 +105,9 @@ export default function App() {
   const [isStaffFormOpen, setIsStaffFormOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [selectedStaffIds, setSelectedStaffIds] = useState([]);
+  const [bulkDeptSelect, setBulkDeptSelect] = useState('');
+  const [customBulkDept, setCustomBulkDept] = useState('');
 
   // Company Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -773,6 +776,40 @@ export default function App() {
     } catch (err) {
       console.error("Clear staff error:", err);
       handleShowToast(`Error clearing staff: ${err.message}`, "warning");
+    }
+  };
+
+  const handleBulkAssignDepartment = async () => {
+    const finalDept = bulkDeptSelect === 'NEW_DEPT' ? customBulkDept : bulkDeptSelect;
+    if (!finalDept) return;
+
+    if (!window.confirm(`Are you sure you want to assign the department "${finalDept}" to the ${selectedStaffIds.length} selected staff profiles?`)) {
+      return;
+    }
+
+    try {
+      // Loop and update each selected staff member in Firestore/LocalStorage
+      for (const id of selectedStaffIds) {
+        const member = staff.find(s => s.id === id);
+        if (member) {
+          const updatedMember = {
+            ...member,
+            department: finalDept
+          };
+          await firebaseService.saveStaff(updatedMember);
+        }
+      }
+      
+      logActivity("Staff", "UPDATE", `Bulk assigned department "${finalDept}" to ${selectedStaffIds.length} staff profiles.`);
+      handleShowToast(`Successfully updated department to "${finalDept}" for ${selectedStaffIds.length} profiles!`, "success");
+      
+      // Reset states
+      setSelectedStaffIds([]);
+      setBulkDeptSelect('');
+      setCustomBulkDept('');
+    } catch (err) {
+      console.error("Bulk assign department error:", err);
+      handleShowToast(`Error updating departments: ${err.message}`, "warning");
     }
   };
 
@@ -1615,6 +1652,88 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Bulk actions department assignment toolbar */}
+              {selectedStaffIds.length > 0 && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                  border: '1px solid rgba(99, 102, 241, 0.25)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '12px 20px',
+                  marginBottom: '16px',
+                  animation: 'fadeIn var(--transition-fast)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent)' }}>
+                      Selected {selectedStaffIds.length} {selectedStaffIds.length === 1 ? 'profile' : 'profiles'}
+                    </span>
+                    <button 
+                      type="button"
+                      className="btn-secondary" 
+                      onClick={() => setSelectedStaffIds([])}
+                      style={{ padding: '4px 8px', fontSize: '11px' }}
+                    >
+                      Deselect All
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Assign to Department:</span>
+                    
+                    <select 
+                      className="select-filter"
+                      value={bulkDeptSelect}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setBulkDeptSelect(val);
+                        if (val === 'NEW_DEPT') {
+                          const custom = window.prompt("Enter new department name:");
+                          if (custom && custom.trim() !== '') {
+                            setCustomBulkDept(custom.trim());
+                            setBulkDeptSelect('NEW_DEPT');
+                          } else {
+                            setBulkDeptSelect('');
+                          }
+                        }
+                      }}
+                      style={{ padding: '6px 12px', fontSize: '13px' }}
+                    >
+                      <option value="">-- Choose Department --</option>
+                      {Array.from(new Set(staff.map(s => s.department).filter(Boolean))).sort().map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                      <option value="NEW_DEPT">+ Add Custom Department...</option>
+                    </select>
+
+                    {bulkDeptSelect === 'NEW_DEPT' && customBulkDept && (
+                      <span style={{ 
+                        fontSize: '12px', 
+                        fontWeight: 600, 
+                        color: 'var(--accent)',
+                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid rgba(99, 102, 241, 0.2)'
+                      }}>
+                        Custom: "{customBulkDept}"
+                      </span>
+                    )}
+
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={!bulkDeptSelect || (bulkDeptSelect === 'NEW_DEPT' && !customBulkDept)}
+                      onClick={handleBulkAssignDepartment}
+                      style={{ padding: '6px 16px', fontSize: '13px' }}
+                    >
+                      Apply Department
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Staff list cards visual rendering */}
               {filteredStaff.length === 0 ? (
                 <div className="empty-state">
@@ -1639,9 +1758,28 @@ export default function App() {
                         style={{ height: '260px' }}
                       >
                         <div className="entity-card-header">
-                          <div className="entity-title-group">
-                            <span className="entity-name">{s.fullName}</span>
-                            <span className="entity-legal-name">{s.jobTitle}</span>
+                          <div className="entity-title-group" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <div 
+                              onClick={(e) => e.stopPropagation()} 
+                              style={{ display: 'flex', alignItems: 'center' }}
+                            >
+                              <input 
+                                type="checkbox" 
+                                checked={selectedStaffIds.includes(s.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedStaffIds(prev => [...prev, s.id]);
+                                  } else {
+                                    setSelectedStaffIds(prev => prev.filter(id => id !== s.id));
+                                  }
+                                }}
+                                style={{ cursor: 'pointer', transform: 'scale(1.1)' }}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span className="entity-name">{s.fullName}</span>
+                              <span className="entity-legal-name">{s.jobTitle}</span>
+                            </div>
                           </div>
                           <span className={`country-badge country-${employer ? employer.country.toLowerCase().replace(/[^a-z]/g, '') : 'uk'}`}>
                             {s.department}
@@ -1703,6 +1841,20 @@ export default function App() {
                   <table className="entity-table dense">
                     <thead>
                       <tr>
+                        <th style={{ width: '40px', paddingLeft: '12px' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={selectedStaffIds.length === sortedStaff.length && sortedStaff.length > 0}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedStaffIds(sortedStaff.map(s => s.id));
+                              } else {
+                                setSelectedStaffIds([]);
+                              }
+                            }}
+                            style={{ cursor: 'pointer' }}
+                          />
+                        </th>
                         <th onClick={() => handleStaffHeaderClick('fullName')} style={{ cursor: 'pointer', userSelect: 'none' }}>
                           Staff Full Name {renderStaffSortIndicator('fullName')}
                         </th>
@@ -1731,6 +1883,20 @@ export default function App() {
                         
                         return (
                           <tr key={s.id} onClick={() => handleSelectStaff(s)}>
+                            <td onClick={(e) => e.stopPropagation()} style={{ paddingLeft: '12px' }}>
+                              <input 
+                                type="checkbox" 
+                                checked={selectedStaffIds.includes(s.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedStaffIds(prev => [...prev, s.id]);
+                                  } else {
+                                    setSelectedStaffIds(prev => prev.filter(id => id !== s.id));
+                                  }
+                                }}
+                                style={{ cursor: 'pointer' }}
+                              />
+                            </td>
                             <td className="entity-table-name">{s.fullName}</td>
                             <td>{s.jobTitle}</td>
                             <td>{employer ? employer.name : 'Unknown'}</td>

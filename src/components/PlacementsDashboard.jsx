@@ -52,6 +52,9 @@ export default function PlacementsDashboard({
   // Registry states
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // all, active, dns, rebate
+  const [consultantFilter, setConsultantFilter] = useState('all');
+  const [startMonthFilter, setStartMonthFilter] = useState('all');
+  const [internalCompanyFilter, setInternalCompanyFilter] = useState('all');
 
   // Manual placement logger states
   const [showLogForm, setShowLogForm] = useState(false);
@@ -918,6 +921,21 @@ export default function PlacementsDashboard({
   const filteredPlacements = placements.filter(p => {
     if (statusFilter !== 'all' && p.status !== statusFilter) return false;
 
+    if (consultantFilter !== 'all') {
+      const hasConsultant = p.splits?.some(s => s.staffId === consultantFilter);
+      if (!hasConsultant) return false;
+    }
+
+    if (startMonthFilter !== 'all') {
+      if (!p.startDate) return false;
+      const pStart = new Date(p.startDate);
+      if (pStart.getMonth() !== Number(startMonthFilter)) return false;
+    }
+
+    if (internalCompanyFilter !== 'all') {
+      if (!p.internalCompany || p.internalCompany !== internalCompanyFilter) return false;
+    }
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchPId = p.placementId.toLowerCase().includes(q);
@@ -935,20 +953,20 @@ export default function PlacementsDashboard({
 
   const sortedPlacements = sortPlacements(filteredPlacements);
 
-  const totalGross = placements.reduce((acc, p) => acc + (p.grossBillAmount || 0), 0);
-  const totalDns = placements.reduce((acc, p) => {
+  const totalGross = filteredPlacements.reduce((acc, p) => acc + (p.grossBillAmount || 0), 0);
+  const totalDns = filteredPlacements.reduce((acc, p) => {
     if (p.status === 'dns') {
       return acc + (p.grossBillAmount || 0);
     }
     return acc + (p.dnsAmount || 0);
   }, 0);
-  const totalRebate = placements.reduce((acc, p) => {
+  const totalRebate = filteredPlacements.reduce((acc, p) => {
     if (p.status === 'rebate' || (p.status !== 'dns' && p.dnsRebateAmount > 0)) {
       return acc + (p.dnsRebateAmount || 0);
     }
     return acc + (p.rebateAmount || 0);
   }, 0);
-  const totalNet = placements.reduce((acc, p) => acc + (p.netScoreValue || 0), 0);
+  const totalNet = filteredPlacements.reduce((acc, p) => acc + (p.netScoreValue || 0), 0);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -1321,6 +1339,42 @@ export default function PlacementsDashboard({
                 <option value="active">Active Placements Only</option>
                 <option value="dns">Did Not Start (DNS)</option>
                 <option value="rebate">Rebated Placements</option>
+              </select>
+
+              {/* Consultant/Recruiter Filter */}
+              <select 
+                className="select-filter"
+                value={consultantFilter}
+                onChange={(e) => setConsultantFilter(e.target.value)}
+              >
+                <option value="all">All Consultants</option>
+                {staff.map(s => (
+                  <option key={s.id} value={s.id}>{s.fullName}</option>
+                ))}
+              </select>
+
+              {/* Start Month Filter */}
+              <select 
+                className="select-filter"
+                value={startMonthFilter}
+                onChange={(e) => setStartMonthFilter(e.target.value)}
+              >
+                <option value="all">All Start Months</option>
+                {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((m, idx) => (
+                  <option key={idx} value={idx}>{m}</option>
+                ))}
+              </select>
+
+              {/* Internal Company Filter */}
+              <select 
+                className="select-filter"
+                value={internalCompanyFilter}
+                onChange={(e) => setInternalCompanyFilter(e.target.value)}
+              >
+                <option value="all">All Internal Companies</option>
+                {companies.map(c => (
+                  <option key={c.id} value={c.name}>{c.name}</option>
+                ))}
               </select>
             </div>
           </div>

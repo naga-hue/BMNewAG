@@ -1167,7 +1167,13 @@ export default function PlacementsDashboard({
                     type="date" 
                     className="form-input" 
                     value={startDateInput}
-                    onChange={(e) => setStartDateInput(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setStartDateInput(val);
+                      if (!scoredDateInput || scoredDateInput === startDateInput) {
+                        setScoredDateInput(val);
+                      }
+                    }}
                     required
                   />
                 </div>

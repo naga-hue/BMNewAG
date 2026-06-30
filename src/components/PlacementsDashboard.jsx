@@ -586,17 +586,47 @@ export default function PlacementsDashboard({
 
       if (splitsJsonStr && splitsJsonStr.trim() !== '') {
         try {
-          const parsedJson = JSON.parse(splitsJsonStr.replace(/""/g, '"'));
+          let cleanJsonStr = splitsJsonStr.replace(/""/g, '"').trim();
+          // Safe conversion of single quotes to double quotes for standard JSON compatibility
+          if (cleanJsonStr.includes("'")) {
+            cleanJsonStr = cleanJsonStr.replace(/'/g, '"');
+          }
+          
+          const parsedJson = JSON.parse(cleanJsonStr);
           if (Array.isArray(parsedJson)) {
-            finalSplits = parsedJson.map(item => ({
-              name: item.name || item.fullName || item.recruiter || '',
-              percentage: Number(item.percent || item.percentage) || 100
-            }));
+            finalSplits = parsedJson.map(item => {
+              const name = item.consultant || item.Consultant || item.name || item.fullName || item.recruiter || item.recruiterName || '';
+              
+              let percentageVal = item.share || item.percent || item.percentage || item.value || item.split;
+              let percentage = 100;
+              if (percentageVal !== undefined && percentageVal !== null) {
+                const cleanedPct = String(percentageVal).replace('%', '').trim();
+                const num = Number(cleanedPct);
+                if (!isNaN(num) && num > 0) {
+                  percentage = num;
+                }
+              }
+              
+              return {
+                name: name.trim(),
+                percentage
+              };
+            });
           } else {
-            finalSplits = Object.entries(parsedJson).map(([name, percent]) => ({
-              name,
-              percentage: Number(percent) || 100
-            }));
+            finalSplits = Object.entries(parsedJson).map(([name, percent]) => {
+              let percentage = 100;
+              if (percent !== undefined && percent !== null) {
+                const cleanedPct = String(percent).replace('%', '').trim();
+                const num = Number(cleanedPct);
+                if (!isNaN(num) && num > 0) {
+                  percentage = num;
+                }
+              }
+              return {
+                name: name.trim(),
+                percentage
+              };
+            });
           }
         } catch (err) {
           rowIssues.push("Could not parse split JSON field. Falling back to consultant list.");

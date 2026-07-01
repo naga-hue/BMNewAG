@@ -123,6 +123,7 @@ export default function App() {
   const [staffSearchQuery, setStaffSearchQuery] = useState('');
   const [staffCompanyFilter, setStaffCompanyFilter] = useState('All');
   const [staffDeptFilter, setStaffDeptFilter] = useState('All');
+  const [staffStatusFilter, setStaffStatusFilter] = useState('active');
   const [staffViewMode, setStaffViewMode] = useState('grid'); // grid or list
 
   // Company Sorting
@@ -1020,13 +1021,20 @@ export default function App() {
     const matchesCompany = staffCompanyFilter === 'All' || s.companyId === staffCompanyFilter;
     const matchesDept = staffDeptFilter === 'All' || s.department === staffDeptFilter;
 
+    let matchesStatus = true;
+    if (staffStatusFilter === 'active') {
+      matchesStatus = s.status !== 'exited';
+    } else if (staffStatusFilter === 'exited') {
+      matchesStatus = s.status === 'exited';
+    }
+
     let matchesCountry = true;
     if (staffCompanyFilter === 'All' && countryFilter !== 'All') {
       const parentComp = companies.find(c => c.id === s.companyId);
       matchesCountry = parentComp && parentComp.country === countryFilter; // respects global country if set, or we filter locally
     }
 
-    return matchesSearch && matchesCompany && matchesDept && matchesCountry;
+    return matchesSearch && matchesCompany && matchesDept && matchesStatus && matchesCountry;
   });
 
   const sortedStaff = sortStaffList(filteredStaff);
@@ -1833,6 +1841,17 @@ export default function App() {
                       <option key={index} value={d}>{d}</option>
                     ))}
                   </select>
+
+                  <select 
+                    className="select-filter"
+                    value={staffStatusFilter}
+                    onChange={(e) => setStaffStatusFilter(e.target.value)}
+                    style={{ minWidth: '130px' }}
+                  >
+                    <option value="active">Active Status</option>
+                    <option value="exited">Exited Status</option>
+                    <option value="all">All Statuses</option>
+                  </select>
                 </div>
 
                 <div className="view-toggle-group">
@@ -1956,7 +1975,7 @@ export default function App() {
                         key={s.id} 
                         className="entity-card" 
                         onClick={() => handleSelectStaff(s)}
-                        style={{ height: '260px' }}
+                        style={{ minHeight: '260px', height: 'auto' }}
                       >
                         <div className="entity-card-header">
                           <div className="entity-title-group" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -1978,7 +1997,14 @@ export default function App() {
                               />
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
-                              <span className="entity-name">{s.fullName}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span className="entity-name">{s.fullName}</span>
+                                {s.status === 'exited' && (
+                                  <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--danger)', backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                                    Exited
+                                  </span>
+                                )}
+                              </div>
                               <span className="entity-legal-name">{s.jobTitle}</span>
                             </div>
                           </div>
@@ -2006,6 +2032,14 @@ export default function App() {
                             <span className="meta-label">Work Email:</span>
                             <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{s.businessEmail}</span>
                           </div>
+                          {s.status === 'exited' && (
+                            <div className="entity-meta-item">
+                              <span className="meta-label" style={{ color: 'var(--danger)' }}>Exit Date:</span>
+                              <span style={{ fontWeight: 600, color: 'var(--danger)' }}>
+                                {s.exitDate} {s.noticePeriod ? `(${s.noticePeriod})` : ''}
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         <div className="entity-card-footer">
@@ -2098,7 +2132,16 @@ export default function App() {
                                 style={{ cursor: 'pointer' }}
                               />
                             </td>
-                            <td className="entity-table-name">{s.fullName}</td>
+                            <td className="entity-table-name" style={{ fontWeight: 600 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                {s.fullName}
+                                {s.status === 'exited' && (
+                                  <span style={{ fontSize: '8px', fontWeight: 700, color: 'var(--danger)', backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: '1px 4px', borderRadius: '3px', border: '1px solid rgba(239, 68, 68, 0.15)' }}>
+                                    Exited
+                                  </span>
+                                )}
+                              </div>
+                            </td>
                             <td>{s.jobTitle}</td>
                             <td>{employer ? employer.name : 'Unknown'}</td>
                             <td>{s.department}</td>

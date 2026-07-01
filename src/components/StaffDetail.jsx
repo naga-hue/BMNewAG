@@ -553,7 +553,14 @@ export default function StaffDetail({
             <span className="country-badge country-us" style={{ width: 'fit-content', marginBottom: '8px', background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>
               {staffMember.jobTitle}
             </span>
-            <h2>{staffMember.fullName}</h2>
+            <h2>
+              {staffMember.fullName}
+              {staffMember.status === 'exited' && (
+                <span style={{ marginLeft: '10px', fontSize: '11px', fontWeight: 700, color: 'var(--danger)', backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.2)', verticalAlign: 'middle' }}>
+                  Exited
+                </span>
+              )}
+            </h2>
             <span className="entity-legal-name" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#94a3b8' }}>
               <Building2 size={12} />
               {companyName} ({companyCountry}) &bull; {staffMember.department}
@@ -748,6 +755,39 @@ export default function StaffDetail({
                       </span>
                     )}
                   </div>
+                  <div className="detail-item">
+                    <span className="detail-label">Employment Status</span>
+                    <span className="detail-value" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ 
+                        fontSize: '11px', 
+                        fontWeight: 700, 
+                        color: staffMember.status === 'exited' ? 'var(--danger)' : 'var(--success)',
+                        backgroundColor: staffMember.status === 'exited' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                        padding: '2px 8px', 
+                        borderRadius: '4px',
+                        border: staffMember.status === 'exited' ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid rgba(16, 185, 129, 0.2)'
+                      }}>
+                        {staffMember.status === 'exited' ? 'Exited / Inactive' : 'Active'}
+                      </span>
+                    </span>
+                  </div>
+                  {staffMember.status === 'exited' && (
+                    <>
+                      <div className="detail-item">
+                        <span className="detail-label">Date of Exit</span>
+                        <span className="detail-value" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--danger)', fontWeight: 600 }}>
+                          <Calendar size={14} />
+                          {staffMember.exitDate}
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="detail-label">Notice Period Served</span>
+                        <span className="detail-value" style={{ fontWeight: 600 }}>
+                          {staffMember.noticePeriod || 'None'}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 

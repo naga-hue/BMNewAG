@@ -40,6 +40,9 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
   const [reportingManagerId, setReportingManagerId] = useState('');
   const [leavePolicyId, setLeavePolicyId] = useState('');
   const [commissionPolicyId, setCommissionPolicyId] = useState('');
+  const [status, setStatus] = useState('active');
+  const [exitDate, setExitDate] = useState('');
+  const [noticePeriod, setNoticePeriod] = useState('');
 
   // Step 3: Compensation details state
   const [salary, setSalary] = useState('');
@@ -102,6 +105,9 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setReportingManagerId(staffMember.reportingManagerId || '');
       setLeavePolicyId(staffMember.leavePolicyId || '');
       setCommissionPolicyId(staffMember.commissionPolicyId || '');
+      setStatus(staffMember.status || 'active');
+      setExitDate(normalizeDateForInput(staffMember.exitDate || ''));
+      setNoticePeriod(staffMember.noticePeriod || '');
       
       setSalary(staffMember.salary || '');
       setCurrency(staffMember.currency || 'GBP');
@@ -126,6 +132,9 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setReportingManagerId('');
       setLeavePolicyId('');
       setCommissionPolicyId('');
+      setStatus('active');
+      setExitDate('');
+      setNoticePeriod('');
       
       setSalary('');
       setCurrency(companies[0] ? (
@@ -182,7 +191,8 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       return fullName.trim() !== '' && dateOfBirth !== '' && address.trim() !== '' && isEmailValid && personalPhone.trim() !== '';
     }
     if (currentStep === 2) {
-      return companyId !== '' && department !== '' && jobTitle.trim() !== '' && startDate !== '';
+      const isExitValid = status !== 'exited' || exitDate !== '';
+      return companyId !== '' && department !== '' && jobTitle.trim() !== '' && startDate !== '' && isExitValid;
     }
     if (currentStep === 3) {
       return salary !== '' && Number(salary) > 0 && currency !== '';
@@ -290,6 +300,9 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       reportingManagerId,
       leavePolicyId,
       commissionPolicyId,
+      status,
+      exitDate: status === 'exited' ? exitDate : '',
+      noticePeriod: status === 'exited' ? noticePeriod : '',
       documents
     };
 
@@ -521,6 +534,46 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                       ))
                     }
                   </select>
+                </div>
+
+                <div className="form-group-row" style={{ marginTop: '8px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Employment Status</label>
+                    <select 
+                      className="select-filter"
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value)}
+                      style={{ width: '100%', padding: '10px' }}
+                    >
+                      <option value="active">Active Staff Member</option>
+                      <option value="exited">Exited Staff Member</option>
+                    </select>
+                  </div>
+                  
+                  {status === 'exited' && (
+                    <>
+                      <div className="form-group">
+                        <label className="form-label">Date of Exit <span>*</span></label>
+                        <input 
+                          type="date" 
+                          className="form-input"
+                          value={exitDate}
+                          onChange={(e) => setExitDate(e.target.value)}
+                          required={status === 'exited'}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Notice Period Served</label>
+                        <input 
+                          type="text" 
+                          className="form-input"
+                          placeholder="e.g. 1 month, 3 months, 30 days"
+                          value={noticePeriod}
+                          onChange={(e) => setNoticePeriod(e.target.value)}
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}

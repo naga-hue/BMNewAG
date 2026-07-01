@@ -62,6 +62,7 @@ export default function CommissionsDashboard({
   const [assignDeptFilter, setAssignDeptFilter] = useState('all');
   const [assignSortBy, setAssignSortBy] = useState('fullName');
   const [assignSortOrder, setAssignSortOrder] = useState('asc');
+  const [selectedBreakdownRow, setSelectedBreakdownRow] = useState(null);
 
   // Form states - Scheme creator
   const [name, setName] = useState('');
@@ -1203,7 +1204,13 @@ export default function CommissionsDashboard({
                   return (
                     <tr key={row.member.id}>
                       <td>
-                        <div style={{ fontWeight: 600 }}>{row.member.fullName}</div>
+                        <div 
+                          style={{ fontWeight: 600, color: 'var(--accent)', cursor: 'pointer', textDecoration: 'none' }}
+                          onClick={() => setSelectedBreakdownRow(row)}
+                          title="Click to view detailed calculations"
+                        >
+                          {row.member.fullName} 🔍
+                        </div>
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{row.member.jobTitle}</div>
                       </td>
                       <td style={{ fontSize: '11px' }}>{row.policy ? row.policy.name : '—'}</td>
@@ -1265,7 +1272,15 @@ export default function CommissionsDashboard({
                         )}
                       </td>
                       <td>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+                          <button 
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => setSelectedBreakdownRow(row)}
+                            style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '3px' }}
+                          >
+                            🔍 Breakdown
+                          </button>
                           {row.calc.totalPayout > 0 && (
                             row.isPaid ? (
                               <button 
@@ -1302,6 +1317,279 @@ export default function CommissionsDashboard({
             </table>
           </div>
 
+        </div>
+      )}
+
+      {/* Commission Calculation Breakdown Modal */}
+      {selectedBreakdownRow !== null && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          animation: 'fadeIn 0.2s'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            width: '95%',
+            maxWidth: '850px',
+            padding: '24px',
+            boxShadow: 'var(--shadow-xl)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            maxHeight: '85vh',
+            overflowY: 'auto'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>
+                  🔍 Commission Calculation Breakdown
+                </h3>
+                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Recruiter: <strong>{selectedBreakdownRow.member.fullName}</strong> ({selectedBreakdownRow.member.jobTitle}) &bull; Payroll Month: <strong>{payrollMonth}</strong>
+                </span>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setSelectedBreakdownRow(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Summary Metrics Row */}
+            {(() => {
+              const matchedComp = companies.find(c => c.id === selectedBreakdownRow.member.companyId);
+              const symbol = matchedComp ? (symbolMap[matchedComp.currency] || '£') : '£';
+              const policy = selectedBreakdownRow.policy;
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  
+                  {/* Scheme Summary Details */}
+                  <div style={{ padding: '12px', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', fontSize: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div>
+                        <strong>Assigned Incentive Scheme</strong>: {policy ? policy.name : 'No Policy Assigned'}
+                      </div>
+                      <div>
+                        <strong>Scheme Type</strong>: {policy ? (policy.type === 'recruiter' ? 'Recruiter Tiered Bracket Plan' : 'Manager / Override Plan') : 'N/A'}
+                      </div>
+                      <div>
+                        <strong>Threshold Met Requirement</strong>: {policy ? (policy.thresholdAmount > 0 ? `${symbol}${policy.thresholdAmount.toLocaleString()} monthly billing threshold applies` : 'No base threshold (First Year / Starter exception)') : 'N/A'}
+                      </div>
+                      <div>
+                        <strong>Calculated Brackets</strong>: {policy?.tiers ? policy.tiers.map((t, idx) => `[Tier ${idx+1}: ${symbol}${(t.minVal/1000).toFixed(0)}k-${t.maxVal === Infinity ? '∞' : (t.maxVal/1000).toFixed(0) + 'k'} @ ${t.rate}%]`).join(' ') : 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Financial Counters */}
+                  <div className="metrics-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+                    <div className="metric-card" style={{ padding: '12px', '--card-accent': 'var(--primary)' }}>
+                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Gross Cycle Billings</span>
+                      <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--primary)', marginTop: '4px' }}>
+                        {symbol}{selectedBreakdownRow.calc.billing.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                    <div className="metric-card" style={{ padding: '12px', '--card-accent': 'var(--warning)' }}>
+                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Base Earned Comm.</span>
+                      <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--warning)', marginTop: '4px' }}>
+                        {symbol}{selectedBreakdownRow.calc.baseEarned.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                    <div className="metric-card" style={{ padding: '12px', '--card-accent': 'var(--danger)' }}>
+                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Withheld (Unpaid Invoice)</span>
+                      <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--danger)', marginTop: '4px' }}>
+                        {selectedBreakdownRow.calc.withheld > 0 ? `-${symbol}${selectedBreakdownRow.calc.withheld.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}
+                      </div>
+                    </div>
+                    <div className="metric-card" style={{ padding: '12px', '--card-accent': 'var(--success)' }}>
+                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Released (Priors Paid)</span>
+                      <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--success)', marginTop: '4px' }}>
+                        {selectedBreakdownRow.calc.released > 0 ? `+${symbol}${selectedBreakdownRow.calc.released.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Net Payout Message */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-secondary)', padding: '12px 16px', borderRadius: '6px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600 }}>Net Payable Commission this Period:</span>
+                    <span style={{ fontSize: '20px', fontWeight: 800, color: 'var(--success)' }}>
+                      {symbol}{selectedBreakdownRow.calc.totalPayout.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+
+                  {/* Table 1: Placements inside Current Cycle */}
+                  <div>
+                    <h4 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      📂 Current Cycle Placements ({selectedBreakdownRow.calc.currentPlacements?.length || 0})
+                    </h4>
+                    <div className="table-container" style={{ border: '1px solid var(--border-color)', borderRadius: '6px', maxHeight: '160px', overflowY: 'auto' }}>
+                      <table className="entity-table dense" style={{ fontSize: '10px', width: '100%' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                            <th>Candidate</th>
+                            <th>Client Company</th>
+                            <th>Start Date</th>
+                            <th style={{ textAlign: 'right' }}>My Split Share</th>
+                            <th>Invoice Status</th>
+                            <th style={{ textAlign: 'right' }}>Commission Share</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedBreakdownRow.calc.currentPlacements?.map(p => (
+                            <tr key={p.id}>
+                              <td style={{ fontWeight: 600 }}>{p.candidateName}</td>
+                              <td>{p.clientCompany}</td>
+                              <td>{p.startDate}</td>
+                              <td style={{ textAlign: 'right' }}>{symbol}{p.myBillingShare.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                              <td>
+                                <span style={{
+                                  padding: '2px 6px',
+                                  borderRadius: '3px',
+                                  fontSize: '9px',
+                                  fontWeight: 600,
+                                  backgroundColor: p.isPaid ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                  color: p.isPaid ? 'var(--success)' : 'var(--danger)'
+                                }}>
+                                  {p.isPaid ? 'Settled (Paid)' : 'Awaiting Payment'}
+                                </span>
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                                {symbol}{p.myCommShare.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              </td>
+                              <td>
+                                <span style={{ color: p.isPaid ? 'var(--success)' : 'var(--danger)', fontSize: '9px', fontWeight: 600 }}>
+                                  {p.isPaid ? 'Payout Included' : 'Withheld (Awaiting Cash)'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                          {(!selectedBreakdownRow.calc.currentPlacements || selectedBreakdownRow.calc.currentPlacements.length === 0) && (
+                            <tr>
+                              <td colSpan="7" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-secondary)' }}>
+                                No cycle placements recorded starting in this period.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Table 2: Released Prior Placements */}
+                  <div>
+                    <h4 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--success)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      💸 Released Prior Placements (Settled Invoices) ({selectedBreakdownRow.calc.releasedPlacements?.length || 0})
+                    </h4>
+                    <div className="table-container" style={{ border: '1px solid var(--border-color)', borderRadius: '6px', maxHeight: '160px', overflowY: 'auto' }}>
+                      <table className="entity-table dense" style={{ fontSize: '10px', width: '100%' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                            <th>Candidate</th>
+                            <th>Client Company</th>
+                            <th>Start Date</th>
+                            <th>Invoice Settled Date</th>
+                            <th style={{ textAlign: 'right' }}>Billing Share</th>
+                            <th style={{ textAlign: 'right' }}>Released Commission</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedBreakdownRow.calc.releasedPlacements?.map(p => (
+                            <tr key={p.id}>
+                              <td style={{ fontWeight: 600 }}>{p.candidateName}</td>
+                              <td>{p.clientCompany}</td>
+                              <td>{p.startDate}</td>
+                              <td>{p.clientPaidDate || 'Recent'}</td>
+                              <td style={{ textAlign: 'right' }}>{symbol}{p.myBillingShare.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--success)' }}>
+                                +{symbol}{p.myCommShare.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          ))}
+                          {(!selectedBreakdownRow.calc.releasedPlacements || selectedBreakdownRow.calc.releasedPlacements.length === 0) && (
+                            <tr>
+                              <td colSpan="6" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-secondary)' }}>
+                                No prior withheld invoices were paid/released this month.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Table 3: Pending Withheld Placements */}
+                  <div>
+                    <h4 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--danger)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      ⏳ Outstanding Withheld Placements (Awaiting Client Payment) ({selectedBreakdownRow.calc.historicalWithheld?.length || 0})
+                    </h4>
+                    <div className="table-container" style={{ border: '1px solid var(--border-color)', borderRadius: '6px', maxHeight: '160px', overflowY: 'auto' }}>
+                      <table className="entity-table dense" style={{ fontSize: '10px', width: '100%' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                            <th>Candidate</th>
+                            <th>Client Company</th>
+                            <th>Start Date</th>
+                            <th style={{ textAlign: 'right' }}>Billing Share</th>
+                            <th style={{ textAlign: 'right' }}>Withheld Commission</th>
+                            <th>Action Needed</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedBreakdownRow.calc.historicalWithheld?.map(p => (
+                            <tr key={p.id}>
+                              <td style={{ fontWeight: 600 }}>{p.candidateName}</td>
+                              <td>{p.clientCompany}</td>
+                              <td>{p.startDate}</td>
+                              <td style={{ textAlign: 'right' }}>{symbol}{p.myBillingShare.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>
+                                {symbol}{p.myCommShare.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              </td>
+                              <td style={{ color: 'var(--text-muted)' }}>
+                                Awaiting Client Invoice Settlement
+                              </td>
+                            </tr>
+                          ))}
+                          {(!selectedBreakdownRow.calc.historicalWithheld || selectedBreakdownRow.calc.historicalWithheld.length === 0) && (
+                            <tr>
+                              <td colSpan="6" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-secondary)' }}>
+                                No outstanding withheld commissions.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                </div>
+              );
+            })()}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+              <button 
+                type="button"
+                className="btn-primary"
+                onClick={() => setSelectedBreakdownRow(null)}
+                style={{ minWidth: '100px' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

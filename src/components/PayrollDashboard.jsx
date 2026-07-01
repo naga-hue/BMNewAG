@@ -51,46 +51,163 @@ export default function PayrollDashboard({
   // FX Rates representation
   const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
 
+  // Helper to calculate exact cash-received commission payout (matching Incentive Commissions ledger)
+  const calculateCashReceivedCommission = (member, policy, monthStr, staffList, companiesList, placementsList) => {
+    if (!policy) return 0;
+
+    const getMonthsOfService = (startStr, dateStr) => {
+      if (!startStr) return 999;
+      try {
+        const [startYear, startMonth] = startStr.substring(0, 7).split('-').map(Number);
+        const [payYear, payMonth] = dateStr.split('-').map(Number);
+        return (payYear - startYear) * 12 + (payMonth - startMonth);
+      } catch (e) {
+        return 999;
+      }
+    };
+
+    const monthsOfService = getMonthsOfService(member.startDate, monthStr);
+    const isStarterWaiverActive = policy.starterWaiveThreshold && monthsOfService < 12;
+    const isLocked = policy.effectiveFrom === 'one_year_service' && monthsOfService < 12 && !isStarterWaiverActive;
+
+    if (isLocked) return 0;
+
+    const [payYear, payMonth] = monthStr.split('-').map(Number);
+    
+    // Placements evaluated are those starting in the PREVIOUS month
+    let cycleYear = payYear;
+    let cycleMonth = payMonth - 1;
+    if (cycleMonth === 0) {
+      cycleMonth = 12;
+      cycleYear = payYear - 1;
+    }
+
+    const teamMembers = staffList.filter(s => s.reportingManagerId === member.id);
+    const targetStaffIds = policy.type === 'manager' 
+      ? [member.id, ...teamMembers.map(s => s.id)]
+      : [member.id];
+
+    // Helper to calculate total recruiter split billing for a specific start month
+    const getRecruiterBillingForStartMonth = (yearVal, monthVal) => {
+      let sum = 0;
+      placementsList.forEach(p => {
+        if (!p.startDate) return;
+        const pStart = new Date(p.startDate);
+        if (pStart.getFullYear() === yearVal && (pStart.getMonth() + 1) === monthVal) {
+          p.splits?.forEach(s => {
+            if (targetStaffIds.includes(s.staffId)) {
+              sum += (p.netScoreValue * s.percentage) / 100;
+            }
+          });
+        }
+      });
+      return sum;
+    };
+
+    // Helper to apply slabs to a billing amount (normalized to GBP)
+    const getPolicyCommission = (billingAmt) => {
+      const policyCompany = companiesList.find(c => c.id === policy.companyId);
+      const policyCurrency = policyCompany ? policyCompany.currency : 'GBP';
+      
+      const thresh = isStarterWaiverActive ? 0 : toGBP(policy.monthlyThreshold, policyCurrency);
+      const commissionable = Math.max(0, billingAmt - thresh);
+      const slabs = policy.slabs || [];
+      let earned = 0;
+      let remaining = commissionable;
+
+      if (commissionable > 0) {
+        for (const slab of slabs) {
+          const min = toGBP(slab.minAmount, policyCurrency);
+          const max = toGBP(slab.maxAmount, policyCurrency);
+          const rate = Number(slab.rate) || 0;
+          const slabCap = max - min;
+
+          if (remaining <= 0) break;
+          const applicable = Math.min(remaining, slabCap);
+          earned += (applicable * rate) / 100;
+          remaining -= applicable;
+        }
+      }
+      return earned;
+    };
+
+    // 1. Current Cycle calculations (starts in previous month)
+    const currentCycleBilling = getRecruiterBillingForStartMonth(cycleYear, cycleMonth);
+    const baseEarned = getPolicyCommission(currentCycleBilling);
+
+    let totalPaidNow = 0;
+
+    placementsList.forEach(p => {
+      if (!p.startDate) return;
+      const pStart = new Date(p.startDate);
+      if (pStart.getFullYear() === cycleYear && (pStart.getMonth() + 1) === cycleMonth) {
+        const mySplits = p.splits?.filter(s => targetStaffIds.includes(s.staffId)) || [];
+        if (mySplits.length > 0) {
+          const totalSplitPct = mySplits.reduce((acc, s) => acc + s.percentage, 0);
+          const myBillingShare = (p.netScoreValue * totalSplitPct) / 100;
+          
+          const myCommShare = currentCycleBilling > 0 
+            ? (myBillingShare / currentCycleBilling) * baseEarned 
+            : 0;
+
+          const isPaid = p.clientPaymentStatus === 'paid';
+          if (isPaid) {
+            totalPaidNow += myCommShare;
+          }
+        }
+      }
+    });
+
+    // 2. Releases from Prior Withholds (starts before the previous month)
+    let totalReleased = 0;
+
+    placementsList.forEach(p => {
+      if (!p.startDate) return;
+      const pStart = new Date(p.startDate);
+      const pStartYear = pStart.getFullYear();
+      const pStartMonth = pStart.getMonth() + 1;
+
+      const isPriorStart = pStartYear < cycleYear || (pStartYear === cycleYear && pStartMonth < cycleMonth);
+
+      if (isPriorStart) {
+        const mySplits = p.splits?.filter(s => targetStaffIds.includes(s.staffId)) || [];
+        if (mySplits.length > 0) {
+          const totalSplitPct = mySplits.reduce((acc, s) => acc + s.percentage, 0);
+          const myBillingShare = (p.netScoreValue * totalSplitPct) / 100;
+
+          const histCycleBilling = getRecruiterBillingForStartMonth(pStartYear, pStartMonth);
+          const histBaseEarned = getPolicyCommission(histCycleBilling);
+
+          const myCommShare = histCycleBilling > 0 
+            ? (myBillingShare / histCycleBilling) * histBaseEarned 
+            : 0;
+
+          if (myCommShare > 0) {
+            const isPaid = p.clientPaymentStatus === 'paid';
+            
+            let paidInCurrentMonth = false;
+            if (p.clientPaidDate) {
+              const pPaidDate = new Date(p.clientPaidDate);
+              paidInCurrentMonth = pPaidDate.getFullYear() === payYear && (pPaidDate.getMonth() + 1) === payMonth;
+            }
+
+            if (isPaid && paidInCurrentMonth) {
+              totalReleased += myCommShare;
+            }
+          }
+        }
+      }
+    });
+
+    return totalPaidNow + totalReleased;
+  };
+
   // Helper to calculate commission on placements starting in a specific month
   const calculateCommissionForRecruiter = (recruiterId, monthKey) => {
     const member = staff.find(s => s.id === recruiterId);
     if (!member) return 0;
-
-    const memberPlacements = placements.filter(p => {
-      if (!p.startDate) return false;
-      const startMonth = p.startDate.substring(0, 7);
-      if (startMonth !== monthKey) return false;
-      return p.splits?.some(s => s.staffId === recruiterId);
-    });
-
-    const totalBillings = memberPlacements.reduce((sum, p) => {
-      const splitObj = p.splits.find(s => s.staffId === recruiterId);
-      const share = splitObj ? (Number(p.netScoreValue) * splitObj.percentage) / 100 : 0;
-      return sum + toGBP(share, 'GBP');
-    }, 0);
-
     const policy = commissionPolicies.find(p => p.id === member.commissionPolicyId);
-    if (!policy) return 0;
-
-    const threshold = Number(policy.monthlyThreshold) || 0;
-    if (totalBillings <= threshold) return 0;
-
-    const netCommissionable = totalBillings - threshold;
-    let earned = 0;
-    const slabs = policy.slabs || [];
-
-    slabs.forEach(slab => {
-      const min = Number(slab.minAmount) || 0;
-      const max = Number(slab.maxAmount) || 999999;
-      const rate = Number(slab.rate) || 0;
-
-      if (netCommissionable > min) {
-        const taxablePortion = Math.min(netCommissionable - min, max - min);
-        earned += (taxablePortion * rate) / 100;
-      }
-    });
-
-    return earned;
+    return calculateCashReceivedCommission(member, policy, monthKey, staff, companies, placements);
   };
 
   // Get active departments

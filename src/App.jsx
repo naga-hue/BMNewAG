@@ -1100,7 +1100,7 @@ export default function App() {
             const password = e.target.password.value;
 
             // 1. Check Super Admin
-            if (email === DEFAULT_ADMIN_USER.businessEmail.toLowerCase() && (password === 'admin123' || password === 'Welcome123')) {
+            if ((email === DEFAULT_ADMIN_USER.businessEmail.toLowerCase() || email === 'naga@gloablrecruiters.ae') && (password === 'admin123' || password === 'Welcome123')) {
               setCurrentUser(DEFAULT_ADMIN_USER);
               localStorage.setItem('bm-logged-in-user-id', 'super-admin');
               handleShowToast("Welcome back, Super Admin!", "success");
@@ -1137,6 +1137,7 @@ export default function App() {
                 className="form-input" 
                 placeholder="name@globalrecruiters.ae"
                 required
+                autoComplete="username email"
                 style={{ padding: '12px' }}
               />
             </div>
@@ -1151,6 +1152,7 @@ export default function App() {
                 className="form-input" 
                 placeholder="••••••••"
                 required
+                autoComplete="current-password"
                 style={{ padding: '12px' }}
               />
             </div>

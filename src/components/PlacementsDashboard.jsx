@@ -984,7 +984,7 @@ export default function PlacementsDashboard({
   // Compute matching split ratio weight helper
   const getPlacementSplitWeight = (p) => {
     // If no filters are active, return full 100% weight (1.0)
-    if (consultantFilter === 'all' && deptFilter === 'all' && companyFilter === 'all') {
+    if (consultantFilter === 'all' && departmentFilter === 'all' && internalCompanyFilter === 'all') {
       return 1.0;
     }
 
@@ -998,8 +998,8 @@ export default function PlacementsDashboard({
       const rec = staff.find(st => st.id === s.staffId);
 
       if (consultantFilter !== 'all' && s.staffId !== consultantFilter) match = false;
-      if (deptFilter !== 'all' && (!rec || rec.department !== deptFilter)) match = false;
-      if (companyFilter !== 'all' && (!rec || rec.companyId !== companyFilter)) match = false;
+      if (departmentFilter !== 'all' && (!rec || rec.department !== departmentFilter)) match = false;
+      if (internalCompanyFilter !== 'all' && (!rec || rec.companyId !== internalCompanyFilter)) match = false;
 
       if (match) {
         matchingPercentage += Number(s.percentage) || 0;

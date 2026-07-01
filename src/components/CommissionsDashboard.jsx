@@ -53,6 +53,12 @@ export default function CommissionsDashboard({
 
   const [activeSubTab, setActiveSubTab] = useState('policies'); // policies, assignments, payroll
 
+  const [editingPolicyId, setEditingPolicyId] = useState(null);
+  const [assigningSchemeId, setAssigningSchemeId] = useState(null);
+  const [assigningSchemeName, setAssigningSchemeName] = useState('');
+  const [assigningStaffSearch, setAssigningStaffSearch] = useState('');
+  const [assigningSelectedStaffIds, setAssigningSelectedStaffIds] = useState([]);
+
   // Form states - Scheme creator
   const [name, setName] = useState('');
   const [companyId, setCompanyId] = useState(companies[0]?.id || '');
@@ -128,7 +134,7 @@ export default function CommissionsDashboard({
     const sortedSlabs = [...slabs].sort((a, b) => a.minAmount - b.minAmount);
 
     const newPolicy = {
-      id: `comm-${Date.now()}`,
+      id: editingPolicyId || `comm-${Date.now()}`,
       name: name.trim(),
       companyId,
       type,
@@ -141,7 +147,12 @@ export default function CommissionsDashboard({
 
     try {
       await onSavePolicy(newPolicy);
-      onShowToast(`Successfully created commission scheme "${name}"`, "success");
+      onShowToast(
+        editingPolicyId 
+          ? `Successfully updated commission scheme "${name}"`
+          : `Successfully created commission scheme "${name}"`, 
+        "success"
+      );
       
       // Reset form
       setName('');
@@ -155,6 +166,7 @@ export default function CommissionsDashboard({
         { minAmount: 10000, maxAmount: 15000, rate: 15 },
         { minAmount: 15000, maxAmount: 999999, rate: 20 }
       ]);
+      setEditingPolicyId(null);
       setShowForm(false);
     } catch (err) {
       onShowToast(`Error saving scheme: ${err.message}`, "warning");
@@ -508,8 +520,22 @@ export default function CommissionsDashboard({
               <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Commission Scheme Configurator</h2>
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Manage tiered brackets, thresholds, and override bonuses across the group.</p>
             </div>
-            <button className="btn-primary" onClick={() => setShowForm(prev => !prev)}>
-              <Plus size={16} /> Create Incentive Plan
+            <button className="btn-primary" onClick={() => {
+              setEditingPolicyId(null);
+              setName('');
+              setDescription('');
+              setType('individual');
+              setEffectiveFrom('day_one');
+              setMonthlyThreshold('3000');
+              setTeamOverridePercent('2.5');
+              setSlabs([
+                { minAmount: 0, maxAmount: 10000, rate: 10 },
+                { minAmount: 10000, maxAmount: 15000, rate: 15 },
+                { minAmount: 15000, maxAmount: 999999, rate: 20 }
+              ]);
+              setShowForm(prev => !prev);
+            }}>
+              <Plus size={16} /> {showForm ? 'Close Form' : 'Create Incentive Plan'}
             </button>
           </div>
 
@@ -517,7 +543,7 @@ export default function CommissionsDashboard({
           {showForm && (
             <form onSubmit={handlePolicySubmit} className="detail-section" style={{ border: '1px solid var(--primary)', animation: 'fadeIn 0.2s' }}>
               <div className="section-title" style={{ fontSize: '13px', color: 'var(--primary)' }}>
-                <Plus size={14} /> Create Corporate Incentive Plan
+                <Plus size={14} /> {editingPolicyId ? 'Modify Corporate Incentive Plan' : 'Create Corporate Incentive Plan'}
               </div>
 
               <div className="form-group-row">
@@ -657,7 +683,7 @@ export default function CommissionsDashboard({
               </div>
 
               <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
-                Save Commission Scheme
+                {editingPolicyId ? 'Update Commission Scheme' : 'Save Commission Scheme'}
               </button>
             </form>
           )}
@@ -713,25 +739,63 @@ export default function CommissionsDashboard({
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Users size={12} /> {mappedStaffCount} Assigned
-                    </span>
-                    <button 
-                      className="btn-icon delete" 
+                    <button
+                      type="button"
+                      className="btn-secondary"
                       onClick={() => {
-                        if (mappedStaffCount > 0) {
-                          onShowToast("Cannot delete scheme. Staff profiles are currently mapped to this commission scheme.", "warning");
-                          return;
-                        }
-                        if (window.confirm(`Are you sure you want to delete scheme "${p.name}"?`)) {
-                          onDeletePolicy(p.id);
-                          onShowToast(`Deleted scheme "${p.name}"`, "info");
-                        }
+                        setAssigningSchemeId(p.id);
+                        setAssigningSchemeName(p.name);
+                        setAssigningStaffSearch('');
+                        const currentMappedIds = staff.filter(s => s.commissionPolicyId === p.id).map(s => s.id);
+                        setAssigningSelectedStaffIds(currentMappedIds);
                       }}
-                      title="Delete Policy"
+                      style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
                     >
-                      <Trash2 size={14} />
+                      <Users size={12} /> {mappedStaffCount} Assigned (Manage)
                     </button>
+                    
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => {
+                          setEditingPolicyId(p.id);
+                          setName(p.name);
+                          setDescription(p.description || '');
+                          setCompanyId(p.companyId || '');
+                          setType(p.type || 'individual');
+                          setEffectiveFrom(p.effectiveFrom || 'day_one');
+                          setMonthlyThreshold(String(p.monthlyThreshold || 0));
+                          setTeamOverridePercent(String(p.teamOverridePercent || 2.5));
+                          setSlabs(p.slabs || []);
+                          setShowForm(true);
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        style={{ padding: '4px 8px', fontSize: '11px' }}
+                        title="Edit Scheme Parameters"
+                      >
+                        Edit
+                      </button>
+
+                      <button 
+                        type="button"
+                        className="btn-icon delete" 
+                        onClick={() => {
+                          if (mappedStaffCount > 0) {
+                            onShowToast("Cannot delete scheme. Staff profiles are currently mapped to this commission scheme.", "warning");
+                            return;
+                          }
+                          if (window.confirm(`Are you sure you want to delete scheme "${p.name}"?`)) {
+                            onDeletePolicy(p.id);
+                            onShowToast(`Deleted scheme "${p.name}"`, "info");
+                          }
+                        }}
+                        title="Delete Policy"
+                        style={{ width: '26px', height: '26px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -1177,6 +1241,193 @@ export default function CommissionsDashboard({
             </table>
           </div>
 
+        </div>
+      )}
+
+      {/* Assign Users Modal */}
+      {assigningSchemeId !== null && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          animation: 'fadeIn 0.2s'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            width: '90%',
+            maxWidth: '650px',
+            padding: '24px',
+            boxShadow: 'var(--shadow-xl)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>
+                  👥 Assign Commission Scheme to Staff
+                </h3>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  Scheme: <strong>{assigningSchemeName}</strong>
+                </span>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setAssigningSchemeId(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <input
+              type="text"
+              className="form-input"
+              value={assigningStaffSearch}
+              onChange={(e) => setAssigningStaffSearch(e.target.value)}
+              placeholder="Search by recruiter name or department..."
+              style={{ fontSize: '13px', padding: '10px' }}
+            />
+
+            {/* Staff list with checkboxes */}
+            <div style={{ maxHeight: '250px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+              <table className="entity-table dense" style={{ fontSize: '11px', width: '100%' }}>
+                <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1 }}>
+                  <tr>
+                    <th style={{ width: '40px', textAlign: 'center' }}>
+                      <input 
+                        type="checkbox"
+                        checked={staff.length > 0 && staff.filter(s => {
+                          const term = assigningStaffSearch.toLowerCase();
+                          return s.fullName.toLowerCase().includes(term) || (s.department || '').toLowerCase().includes(term);
+                        }).every(s => assigningSelectedStaffIds.includes(s.id))}
+                        onChange={(e) => {
+                          const term = assigningStaffSearch.toLowerCase();
+                          const filtered = staff.filter(s => s.fullName.toLowerCase().includes(term) || (s.department || '').toLowerCase().includes(term));
+                          if (e.target.checked) {
+                            setAssigningSelectedStaffIds(prev => Array.from(new Set([...prev, ...filtered.map(s => s.id)])));
+                          } else {
+                            setAssigningSelectedStaffIds(prev => prev.filter(id => !filtered.some(f => f.id === id)));
+                          }
+                        }}
+                      />
+                    </th>
+                    <th>Staff Name</th>
+                    <th>Company</th>
+                    <th>Department / Role</th>
+                    <th>Current Scheme Assignment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {staff
+                    .filter(s => {
+                      const term = assigningStaffSearch.toLowerCase();
+                      return s.fullName.toLowerCase().includes(term) || (s.department || '').toLowerCase().includes(term);
+                    })
+                    .map(s => {
+                      const isChecked = assigningSelectedStaffIds.includes(s.id);
+                      const currentPolicy = commissionPolicies.find(cp => cp.id === s.commissionPolicyId);
+
+                      return (
+                        <tr 
+                          key={s.id}
+                          onClick={() => {
+                            setAssigningSelectedStaffIds(prev => 
+                              prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
+                            );
+                          }}
+                          style={{ cursor: 'pointer', backgroundColor: isChecked ? 'rgba(99,102,241,0.04)' : 'transparent' }}
+                        >
+                          <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                            <input 
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setAssigningSelectedStaffIds(prev => 
+                                  prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
+                                );
+                              }}
+                            />
+                          </td>
+                          <td style={{ fontWeight: 600 }}>{s.fullName}</td>
+                          <td>{companies.find(c => c.id === s.companyId)?.name || 'Employer'}</td>
+                          <td>{s.department || 'N/A'} <span style={{ color: 'var(--text-muted)' }}>({s.jobTitle || 'N/A'})</span></td>
+                          <td>
+                            {currentPolicy ? (
+                              <span style={{
+                                fontSize: '10px',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: currentPolicy.id === assigningSchemeId ? 'var(--success-light)' : 'var(--border-color)',
+                                color: currentPolicy.id === assigningSchemeId ? 'var(--success)' : 'var(--text-secondary)'
+                              }}>
+                                {currentPolicy.name}
+                              </span>
+                            ) : (
+                              <em style={{ color: 'var(--text-muted)' }}>None</em>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  {staff.filter(s => {
+                    const term = assigningStaffSearch.toLowerCase();
+                    return s.fullName.toLowerCase().includes(term) || (s.department || '').toLowerCase().includes(term);
+                  }).length === 0 && (
+                    <tr>
+                      <td colSpan="5" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
+                        No staff members found matching search filter.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+              <button 
+                type="button"
+                className="btn-secondary"
+                onClick={() => setAssigningSchemeId(null)}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                className="btn-primary"
+                onClick={async () => {
+                  try {
+                    for (const member of staff) {
+                      const shouldBeMapped = assigningSelectedStaffIds.includes(member.id);
+                      const currentlyMapped = member.commissionPolicyId === assigningSchemeId;
+
+                      if (shouldBeMapped && !currentlyMapped) {
+                        await onUpdateStaff({ ...member, commissionPolicyId: assigningSchemeId });
+                      } else if (!shouldBeMapped && currentlyMapped) {
+                        await onUpdateStaff({ ...member, commissionPolicyId: '' });
+                      }
+                    }
+                    onShowToast(`Successfully updated recruiter assignments for scheme "${assigningSchemeName}".`, "success");
+                    setAssigningSchemeId(null);
+                  } catch (err) {
+                    onShowToast(`Error saving assignments: ${err.message}`, "warning");
+                  }
+                }}
+              >
+                Apply Assignments
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -204,6 +204,16 @@ export default function App() {
 
   // Get scoped lists based on currentUser permissions
   const getScopedData = () => {
+    if (!currentUser) {
+      return {
+        scopedCompanies: [],
+        scopedStaff: [],
+        scopedLeaves: [],
+        scopedPlacements: [],
+        scopedExpenses: []
+      };
+    }
+
     const role = currentUser.permissions?.role || 'admin';
     const scope = currentUser.permissions?.dataScope || 'all';
     const dept = currentUser.department;

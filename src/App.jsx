@@ -2160,6 +2160,7 @@ export default function App() {
               onDeleteHoliday={handleDeleteHoliday}
               onSaveLeaveRequest={handleSaveLeaveRequest}
               onUpdateLeaveRequestStatus={handleUpdateLeaveRequestStatus}
+              onUpdateStaff={handleSaveStaff}
               onShowToast={handleShowToast}
             />
           )}

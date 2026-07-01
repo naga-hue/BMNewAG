@@ -58,6 +58,10 @@ export default function CommissionsDashboard({
   const [assigningSchemeName, setAssigningSchemeName] = useState('');
   const [assigningStaffSearch, setAssigningStaffSearch] = useState('');
   const [assigningSelectedStaffIds, setAssigningSelectedStaffIds] = useState([]);
+  const [assignCompanyFilter, setAssignCompanyFilter] = useState('all');
+  const [assignDeptFilter, setAssignDeptFilter] = useState('all');
+  const [assignSortBy, setAssignSortBy] = useState('fullName');
+  const [assignSortOrder, setAssignSortOrder] = useState('asc');
 
   // Form states - Scheme creator
   const [name, setName] = useState('');
@@ -798,6 +802,10 @@ export default function CommissionsDashboard({
                         setAssigningSchemeId(p.id);
                         setAssigningSchemeName(p.name);
                         setAssigningStaffSearch('');
+                        setAssignCompanyFilter('all');
+                        setAssignDeptFilter('all');
+                        setAssignSortBy('fullName');
+                        setAssignSortOrder('asc');
                         const currentMappedIds = staff.filter(s => s.commissionPolicyId === p.id).map(s => s.id);
                         setAssigningSelectedStaffIds(currentMappedIds);
                       }}
@@ -1342,109 +1350,172 @@ export default function CommissionsDashboard({
               </button>
             </div>
 
-            {/* Search Input */}
-            <input
-              type="text"
-              className="form-input"
-              value={assigningStaffSearch}
-              onChange={(e) => setAssigningStaffSearch(e.target.value)}
-              placeholder="Search by recruiter name or department..."
-              style={{ fontSize: '13px', padding: '10px' }}
-            />
+            {/* Filters Row */}
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '150px' }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={assigningStaffSearch}
+                  onChange={(e) => setAssigningStaffSearch(e.target.value)}
+                  placeholder="Search by name or department..."
+                  style={{ fontSize: '13px', padding: '8px 12px', height: '36px' }}
+                />
+              </div>
+              <select
+                className="select-filter"
+                value={assignCompanyFilter}
+                onChange={(e) => setAssignCompanyFilter(e.target.value)}
+                style={{ fontSize: '12px', padding: '8px 12px', minWidth: '130px', height: '36px' }}
+              >
+                <option value="all">All Companies</option>
+                {companies.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <select
+                className="select-filter"
+                value={assignDeptFilter}
+                onChange={(e) => setAssignDeptFilter(e.target.value)}
+                style={{ fontSize: '12px', padding: '8px 12px', minWidth: '130px', height: '36px' }}
+              >
+                <option value="all">All Departments</option>
+                {Array.from(new Set(staff.map(s => s.department).filter(Boolean))).sort().map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
 
             {/* Staff list with checkboxes */}
-            <div style={{ maxHeight: '250px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
-              <table className="entity-table dense" style={{ fontSize: '11px', width: '100%' }}>
-                <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1 }}>
-                  <tr>
-                    <th style={{ width: '40px', textAlign: 'center' }}>
-                      <input 
-                        type="checkbox"
-                        checked={staff.length > 0 && staff.filter(s => {
-                          const term = assigningStaffSearch.toLowerCase();
-                          return s.fullName.toLowerCase().includes(term) || (s.department || '').toLowerCase().includes(term);
-                        }).every(s => assigningSelectedStaffIds.includes(s.id))}
-                        onChange={(e) => {
-                          const term = assigningStaffSearch.toLowerCase();
-                          const filtered = staff.filter(s => s.fullName.toLowerCase().includes(term) || (s.department || '').toLowerCase().includes(term));
-                          if (e.target.checked) {
-                            setAssigningSelectedStaffIds(prev => Array.from(new Set([...prev, ...filtered.map(s => s.id)])));
-                          } else {
-                            setAssigningSelectedStaffIds(prev => prev.filter(id => !filtered.some(f => f.id === id)));
-                          }
-                        }}
-                      />
-                    </th>
-                    <th>Staff Name</th>
-                    <th>Company</th>
-                    <th>Department / Role</th>
-                    <th>Current Scheme Assignment</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {staff
-                    .filter(s => {
-                      const term = assigningStaffSearch.toLowerCase();
-                      return s.fullName.toLowerCase().includes(term) || (s.department || '').toLowerCase().includes(term);
-                    })
-                    .map(s => {
-                      const isChecked = assigningSelectedStaffIds.includes(s.id);
-                      const currentPolicy = commissionPolicies.find(cp => cp.id === s.commissionPolicyId);
+            <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+              {(() => {
+                // Filter
+                const filtered = staff.filter(s => {
+                  const term = assigningStaffSearch.toLowerCase();
+                  const matchesSearch = s.fullName.toLowerCase().includes(term) || (s.department || '').toLowerCase().includes(term);
+                  const matchesCompany = assignCompanyFilter === 'all' || s.companyId === assignCompanyFilter;
+                  const matchesDept = assignDeptFilter === 'all' || s.department === assignDeptFilter;
+                  return matchesSearch && matchesCompany && matchesDept;
+                });
 
-                      return (
-                        <tr 
-                          key={s.id}
-                          onClick={() => {
-                            setAssigningSelectedStaffIds(prev => 
-                              prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
-                            );
-                          }}
-                          style={{ cursor: 'pointer', backgroundColor: isChecked ? 'rgba(99,102,241,0.04)' : 'transparent' }}
-                        >
-                          <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                            <input 
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {
-                                setAssigningSelectedStaffIds(prev => 
-                                  prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
-                                );
-                              }}
-                            />
-                          </td>
-                          <td style={{ fontWeight: 600 }}>{s.fullName}</td>
-                          <td>{companies.find(c => c.id === s.companyId)?.name || 'Employer'}</td>
-                          <td>{s.department || 'N/A'} <span style={{ color: 'var(--text-muted)' }}>({s.jobTitle || 'N/A'})</span></td>
-                          <td>
-                            {currentPolicy ? (
-                              <span style={{
-                                fontSize: '10px',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: currentPolicy.id === assigningSchemeId ? 'var(--success-light)' : 'var(--border-color)',
-                                color: currentPolicy.id === assigningSchemeId ? 'var(--success)' : 'var(--text-secondary)'
-                              }}>
-                                {currentPolicy.name}
-                              </span>
-                            ) : (
-                              <em style={{ color: 'var(--text-muted)' }}>None</em>
-                            )}
+                // Sort
+                const sorted = [...filtered].sort((a, b) => {
+                  let valA = '';
+                  let valB = '';
+                  if (assignSortBy === 'fullName') {
+                    valA = a.fullName || '';
+                    valB = b.fullName || '';
+                  } else if (assignSortBy === 'company') {
+                    valA = companies.find(c => c.id === a.companyId)?.name || '';
+                    valB = companies.find(c => c.id === b.companyId)?.name || '';
+                  } else if (assignSortBy === 'department') {
+                    valA = a.department || '';
+                    valB = b.department || '';
+                  } else if (assignSortBy === 'scheme') {
+                    valA = commissionPolicies.find(p => p.id === a.commissionPolicyId)?.name || '';
+                    valB = commissionPolicies.find(p => p.id === b.commissionPolicyId)?.name || '';
+                  }
+                  return assignSortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                });
+
+                const toggleSort = (field) => {
+                  if (assignSortBy === field) {
+                    setAssignSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                  } else {
+                    setAssignSortBy(field);
+                    setAssignSortOrder('asc');
+                  }
+                };
+
+                return (
+                  <table className="entity-table dense" style={{ fontSize: '11px', width: '100%' }}>
+                    <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1 }}>
+                      <tr>
+                        <th style={{ width: '40px', textAlign: 'center' }}>
+                          <input 
+                            type="checkbox"
+                            checked={sorted.length > 0 && sorted.every(s => assigningSelectedStaffIds.includes(s.id))}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setAssigningSelectedStaffIds(prev => Array.from(new Set([...prev, ...sorted.map(s => s.id)])));
+                              } else {
+                                setAssigningSelectedStaffIds(prev => prev.filter(id => !sorted.some(f => f.id === id)));
+                              }
+                            }}
+                          />
+                        </th>
+                        <th onClick={() => toggleSort('fullName')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                          Staff Name {assignSortBy === 'fullName' ? (assignSortOrder === 'asc' ? '▲' : '▼') : '⇅'}
+                        </th>
+                        <th onClick={() => toggleSort('company')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                          Company {assignSortBy === 'company' ? (assignSortOrder === 'asc' ? '▲' : '▼') : '⇅'}
+                        </th>
+                        <th onClick={() => toggleSort('department')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                          Department / Role {assignSortBy === 'department' ? (assignSortOrder === 'asc' ? '▲' : '▼') : '⇅'}
+                        </th>
+                        <th onClick={() => toggleSort('scheme')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                          Current Scheme Assignment {assignSortBy === 'scheme' ? (assignSortOrder === 'asc' ? '▲' : '▼') : '⇅'}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sorted.map(s => {
+                        const isChecked = assigningSelectedStaffIds.includes(s.id);
+                        const currentPolicy = commissionPolicies.find(cp => cp.id === s.commissionPolicyId);
+
+                        return (
+                          <tr 
+                            key={s.id}
+                            onClick={() => {
+                              setAssigningSelectedStaffIds(prev => 
+                                prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
+                              );
+                            }}
+                            style={{ cursor: 'pointer', backgroundColor: isChecked ? 'rgba(99,102,241,0.04)' : 'transparent' }}
+                          >
+                            <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                              <input 
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  setAssigningSelectedStaffIds(prev => 
+                                    prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
+                                  );
+                                }}
+                              />
+                            </td>
+                            <td style={{ fontWeight: 600 }}>{s.fullName}</td>
+                            <td>{companies.find(c => c.id === s.companyId)?.name || 'Employer'}</td>
+                            <td>{s.department || 'N/A'} <span style={{ color: 'var(--text-muted)' }}>({s.jobTitle || 'N/A'})</span></td>
+                            <td>
+                              {currentPolicy ? (
+                                <span style={{
+                                  fontSize: '10px',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  backgroundColor: currentPolicy.id === assigningSchemeId ? 'var(--success-light)' : 'var(--border-color)',
+                                  color: currentPolicy.id === assigningSchemeId ? 'var(--success)' : 'var(--text-secondary)'
+                                }}>
+                                  {currentPolicy.name}
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>Unassigned</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {sorted.length === 0 && (
+                        <tr>
+                          <td colSpan="5" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
+                            No matching staff members found.
                           </td>
                         </tr>
-                      );
-                    })}
-                  {staff.filter(s => {
-                    const term = assigningStaffSearch.toLowerCase();
-                    return s.fullName.toLowerCase().includes(term) || (s.department || '').toLowerCase().includes(term);
-                  }).length === 0 && (
-                    <tr>
-                      <td colSpan="5" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
-                        No staff members found matching search filter.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                      )}
+                    </tbody>
+                  </table>
+                );
+              })()}
             </div>
 
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>

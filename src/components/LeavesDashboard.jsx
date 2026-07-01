@@ -27,9 +27,21 @@ export default function LeavesDashboard({
   onDeleteHoliday,
   onSaveLeaveRequest,
   onUpdateLeaveRequestStatus,
+  onUpdateStaff,
   onShowToast 
 }) {
   const [activeSubTab, setActiveSubTab] = useState('requests'); // requests, policies, holidays
+
+  // Policy Edit & Assign modal states
+  const [editingPolicyId, setEditingPolicyId] = useState(null);
+  const [assigningPolicyId, setAssigningPolicyId] = useState(null);
+  const [assigningPolicyName, setAssigningPolicyName] = useState('');
+  const [assigningStaffSearch, setAssigningStaffSearch] = useState('');
+  const [assigningSelectedStaffIds, setAssigningSelectedStaffIds] = useState([]);
+  const [assignCompanyFilter, setAssignCompanyFilter] = useState('all');
+  const [assignDeptFilter, setAssignDeptFilter] = useState('all');
+  const [assignSortBy, setAssignSortBy] = useState('fullName');
+  const [assignSortOrder, setAssignSortOrder] = useState('asc');
 
   // Form states - Request Leave
   const [reqStaffId, setReqStaffId] = useState('');
@@ -97,7 +109,7 @@ export default function LeavesDashboard({
     }
   };
 
-  // Submit Policy Creation
+  // Submit Policy Creation/Edit
   const handlePolicySubmit = async (e) => {
     e.preventDefault();
     if (!policyName.trim() || !policyCompanyId || !policyAnnual || !policySick) {
@@ -105,8 +117,8 @@ export default function LeavesDashboard({
       return;
     }
 
-    const newPolicy = {
-      id: `policy-${Date.now()}`,
+    const payload = {
+      id: editingPolicyId || `policy-${Date.now()}`,
       name: policyName.trim(),
       companyId: policyCompanyId,
       annualAllowance: Number(policyAnnual),
@@ -115,10 +127,11 @@ export default function LeavesDashboard({
     };
 
     try {
-      await onSavePolicy(newPolicy);
-      onShowToast(`Created leave policy "${policyName}"`, "success");
+      await onSavePolicy(payload);
+      onShowToast(editingPolicyId ? `Updated leave policy "${policyName}"` : `Created leave policy "${policyName}"`, "success");
       setPolicyName('');
       setPolicyDesc('');
+      setEditingPolicyId(null);
       setShowPolicyForm(false);
     } catch (err) {
       onShowToast(`Error saving policy: ${err.message}`, "warning");
@@ -529,7 +542,7 @@ export default function LeavesDashboard({
           {showPolicyForm && (
             <form onSubmit={handlePolicySubmit} className="detail-section" style={{ border: '1px solid var(--primary)', animation: 'fadeIn 0.2s' }}>
               <div className="section-title" style={{ fontSize: '13px', color: 'var(--primary)' }}>
-                <Plus size={14} /> Create Corporate Leave Policy
+                <Plus size={14} /> {editingPolicyId ? 'Edit Leave Allowance Policy' : 'Create Corporate Leave Policy'}
               </div>
 
               <div className="form-group">
@@ -595,9 +608,26 @@ export default function LeavesDashboard({
                 />
               </div>
 
-              <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
-                Save Leave Policy
-              </button>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  onClick={() => {
+                    setEditingPolicyId(null);
+                    setPolicyName('');
+                    setPolicyDesc('');
+                    setPolicyAnnual('25');
+                    setPolicySick('10');
+                    setShowPolicyForm(false);
+                  }}
+                  style={{ flex: 1, justifyContent: 'center' }}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
+                  {editingPolicyId ? 'Save Changes' : 'Create Leave Policy'}
+                </button>
+              </div>
             </form>
           )}
 
@@ -640,7 +670,43 @@ export default function LeavesDashboard({
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => {
+                        setAssigningPolicyId(p.id);
+                        setAssigningPolicyName(p.name);
+                        setAssigningStaffSearch('');
+                        setAssignCompanyFilter('all');
+                        setAssignDeptFilter('all');
+                        setAssignSortBy('fullName');
+                        setAssignSortOrder('asc');
+                        const currentMappedIds = staff.filter(s => s.leavePolicyId === p.id).map(s => s.id);
+                        setAssigningSelectedStaffIds(currentMappedIds);
+                      }}
+                      style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', marginRight: 'auto' }}
+                    >
+                      <Users size={12} /> Manage Assignments
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => {
+                        setEditingPolicyId(p.id);
+                        setPolicyName(p.name);
+                        setPolicyCompanyId(p.companyId);
+                        setPolicyAnnual(p.annualAllowance);
+                        setPolicySick(p.sickAllowance);
+                        setPolicyDesc(p.description || '');
+                        setShowPolicyForm(true);
+                      }}
+                      style={{ padding: '4px 8px', fontSize: '11px' }}
+                    >
+                      Edit
+                    </button>
+
                     <button 
                       className="btn-icon delete" 
                       onClick={() => {
@@ -653,6 +719,7 @@ export default function LeavesDashboard({
                           onShowToast(`Deleted policy "${p.name}"`, "info");
                         }
                       }}
+                      style={{ height: '28px', width: '28px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                       title="Delete Policy"
                     >
                       <Trash2 size={14} />
@@ -813,6 +880,256 @@ export default function LeavesDashboard({
             </div>
           )}
 
+        </div>
+      )}
+
+      {/* Assign Users Modal */}
+      {assigningPolicyId !== null && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          animation: 'fadeIn 0.2s'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            width: '90%',
+            maxWidth: '650px',
+            padding: '24px',
+            boxShadow: 'var(--shadow-xl)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>
+                  👥 Assign Leave Allowance Policy to Staff
+                </h3>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  Policy: <strong>{assigningPolicyName}</strong>
+                </span>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setAssigningPolicyId(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Filters Row */}
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '150px' }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={assigningStaffSearch}
+                  onChange={(e) => setAssigningStaffSearch(e.target.value)}
+                  placeholder="Search by name or department..."
+                  style={{ fontSize: '13px', padding: '8px 12px', height: '36px' }}
+                />
+              </div>
+              <select
+                className="select-filter"
+                value={assignCompanyFilter}
+                onChange={(e) => setAssignCompanyFilter(e.target.value)}
+                style={{ fontSize: '12px', padding: '8px 12px', minWidth: '130px', height: '36px' }}
+              >
+                <option value="all">All Companies</option>
+                {companies.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <select
+                className="select-filter"
+                value={assignDeptFilter}
+                onChange={(e) => setAssignDeptFilter(e.target.value)}
+                style={{ fontSize: '12px', padding: '8px 12px', minWidth: '130px', height: '36px' }}
+              >
+                <option value="all">All Departments</option>
+                {Array.from(new Set(staff.map(s => s.department).filter(Boolean))).sort().map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Staff list with checkboxes */}
+            <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+              {(() => {
+                // Filter
+                const filtered = staff.filter(s => {
+                  const term = assigningStaffSearch.toLowerCase();
+                  const matchesSearch = s.fullName.toLowerCase().includes(term) || (s.department || '').toLowerCase().includes(term);
+                  const matchesCompany = assignCompanyFilter === 'all' || s.companyId === assignCompanyFilter;
+                  const matchesDept = assignDeptFilter === 'all' || s.department === assignDeptFilter;
+                  return matchesSearch && matchesCompany && matchesDept;
+                });
+
+                // Sort
+                const sorted = [...filtered].sort((a, b) => {
+                  let valA = '';
+                  let valB = '';
+                  if (assignSortBy === 'fullName') {
+                    valA = a.fullName || '';
+                    valB = b.fullName || '';
+                  } else if (assignSortBy === 'company') {
+                    valA = companies.find(c => c.id === a.companyId)?.name || '';
+                    valB = companies.find(c => c.id === b.companyId)?.name || '';
+                  } else if (assignSortBy === 'department') {
+                    valA = a.department || '';
+                    valB = b.department || '';
+                  } else if (assignSortBy === 'policy') {
+                    valA = leavePolicies.find(p => p.id === a.leavePolicyId)?.name || '';
+                    valB = leavePolicies.find(p => p.id === b.leavePolicyId)?.name || '';
+                  }
+                  return assignSortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                });
+
+                const toggleSort = (field) => {
+                  if (assignSortBy === field) {
+                    setAssignSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                  } else {
+                    setAssignSortBy(field);
+                    setAssignSortOrder('asc');
+                  }
+                };
+
+                return (
+                  <table className="entity-table dense" style={{ fontSize: '11px', width: '100%' }}>
+                    <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1 }}>
+                      <tr>
+                        <th style={{ width: '40px', textAlign: 'center' }}>
+                          <input 
+                            type="checkbox"
+                            checked={sorted.length > 0 && sorted.every(s => assigningSelectedStaffIds.includes(s.id))}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setAssigningSelectedStaffIds(prev => Array.from(new Set([...prev, ...sorted.map(s => s.id)])));
+                              } else {
+                                setAssigningSelectedStaffIds(prev => prev.filter(id => !sorted.some(f => f.id === id)));
+                              }
+                            }}
+                          />
+                        </th>
+                        <th onClick={() => toggleSort('fullName')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                          Staff Name {assignSortBy === 'fullName' ? (assignSortOrder === 'asc' ? '▲' : '▼') : '⇅'}
+                        </th>
+                        <th onClick={() => toggleSort('company')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                          Company {assignSortBy === 'company' ? (assignSortOrder === 'asc' ? '▲' : '▼') : '⇅'}
+                        </th>
+                        <th onClick={() => toggleSort('department')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                          Department / Role {assignSortBy === 'department' ? (assignSortOrder === 'asc' ? '▲' : '▼') : '⇅'}
+                        </th>
+                        <th onClick={() => toggleSort('policy')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                          Current Policy Assignment {assignSortBy === 'policy' ? (assignSortOrder === 'asc' ? '▲' : '▼') : '⇅'}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sorted.map(s => {
+                        const isChecked = assigningSelectedStaffIds.includes(s.id);
+                        const currentPolicy = leavePolicies.find(cp => cp.id === s.leavePolicyId);
+
+                        return (
+                          <tr 
+                            key={s.id}
+                            onClick={() => {
+                              setAssigningSelectedStaffIds(prev => 
+                                prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
+                              );
+                            }}
+                            style={{ cursor: 'pointer', backgroundColor: isChecked ? 'rgba(99,102,241,0.04)' : 'transparent' }}
+                          >
+                            <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                              <input 
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  setAssigningSelectedStaffIds(prev => 
+                                    prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
+                                  );
+                                }}
+                              />
+                            </td>
+                            <td style={{ fontWeight: 600 }}>{s.fullName}</td>
+                            <td>{companies.find(c => c.id === s.companyId)?.name || 'Employer'}</td>
+                            <td>{s.department || 'N/A'} <span style={{ color: 'var(--text-muted)' }}>({s.jobTitle || 'N/A'})</span></td>
+                            <td>
+                              {currentPolicy ? (
+                                <span style={{
+                                  fontSize: '10px',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  backgroundColor: currentPolicy.id === assigningPolicyId ? 'var(--success-light)' : 'var(--border-color)',
+                                  color: currentPolicy.id === assigningPolicyId ? 'var(--success)' : 'var(--text-secondary)'
+                                }}>
+                                  {currentPolicy.name}
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>Unassigned</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {sorted.length === 0 && (
+                        <tr>
+                          <td colSpan="5" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
+                            No matching staff members found.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+              <button 
+                type="button"
+                className="btn-secondary"
+                onClick={() => setAssigningPolicyId(null)}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                className="btn-primary"
+                onClick={async () => {
+                  try {
+                    for (const member of staff) {
+                      const shouldBeMapped = assigningSelectedStaffIds.includes(member.id);
+                      const currentlyMapped = member.leavePolicyId === assigningPolicyId;
+
+                      if (shouldBeMapped && !currentlyMapped) {
+                        await onUpdateStaff({ ...member, leavePolicyId: assigningPolicyId });
+                      } else if (!shouldBeMapped && currentlyMapped) {
+                        await onUpdateStaff({ ...member, leavePolicyId: '' });
+                      }
+                    }
+                    onShowToast("Staff leave policy assignments updated successfully!", "success");
+                    setAssigningPolicyId(null);
+                  } catch (err) {
+                    onShowToast(`Error updating assignments: ${err.message}`, "warning");
+                  }
+                }}
+              >
+                Apply Assignments
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -57,11 +57,40 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
   const selectedCompanyObj = companies.find(c => c.id === companyId);
   const companyDepts = selectedCompanyObj ? (selectedCompanyObj.departments || []).map(d => d.name || d) : [];
 
+  const normalizeDateForInput = (dateStr) => {
+    if (!dateStr) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return dateStr;
+    }
+    if (dateStr.includes('/')) {
+      const parts = dateStr.split('/');
+      if (parts.length === 3) {
+        let [d, m, y] = parts;
+        d = d.padStart(2, '0');
+        m = m.padStart(2, '0');
+        if (y.length === 2) {
+          y = Number(y) > 30 ? `19${y}` : `20${y}`;
+        }
+        return `${y}-${m}-${d}`;
+      }
+    }
+    try {
+      const dObj = new Date(dateStr);
+      if (!isNaN(dObj.getTime())) {
+        const y = dObj.getFullYear();
+        const m = String(dObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dObj.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+    } catch (e) {}
+    return dateStr;
+  };
+
   // Reset or load editing staff member details
   useEffect(() => {
     if (staffMember) {
       setFullName(staffMember.fullName || '');
-      setDateOfBirth(staffMember.dateOfBirth || '');
+      setDateOfBirth(normalizeDateForInput(staffMember.dateOfBirth || ''));
       setAddress(staffMember.address || '');
       setPersonalEmail(staffMember.personalEmail || '');
       setPersonalPhone(staffMember.personalPhone || '');
@@ -69,7 +98,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setCompanyId(staffMember.companyId || (companies[0] ? companies[0].id : ''));
       setDepartment(staffMember.department || '');
       setJobTitle(staffMember.jobTitle || '');
-      setStartDate(staffMember.startDate || '');
+      setStartDate(normalizeDateForInput(staffMember.startDate || ''));
       setReportingManagerId(staffMember.reportingManagerId || '');
       setLeavePolicyId(staffMember.leavePolicyId || '');
       setCommissionPolicyId(staffMember.commissionPolicyId || '');

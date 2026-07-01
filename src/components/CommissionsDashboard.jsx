@@ -67,6 +67,7 @@ export default function CommissionsDashboard({
   const [monthlyThreshold, setMonthlyThreshold] = useState('3000');
   const [teamOverridePercent, setTeamOverridePercent] = useState('2.5');
   const [description, setDescription] = useState('');
+  const [starterWaiveThreshold, setStarterWaiveThreshold] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
   // Slabs setup
@@ -142,7 +143,8 @@ export default function CommissionsDashboard({
       monthlyThreshold: Number(monthlyThreshold),
       slabs: sortedSlabs,
       teamOverridePercent: type === 'manager' ? Number(teamOverridePercent) : 0,
-      description: description.trim()
+      description: description.trim(),
+      starterWaiveThreshold
     };
 
     try {
@@ -161,6 +163,7 @@ export default function CommissionsDashboard({
       setEffectiveFrom('day_one');
       setMonthlyThreshold('3000');
       setTeamOverridePercent('2.5');
+      setStarterWaiveThreshold(false);
       setSlabs([
         { minAmount: 0, maxAmount: 10000, rate: 10 },
         { minAmount: 10000, maxAmount: 15000, rate: 15 },
@@ -190,6 +193,35 @@ export default function CommissionsDashboard({
   // Cash-Received Payroll Calculation Math
   const calculateCashReceivedCommission = (member, policy, monthStr) => {
     if (!policy) {
+      return { 
+        billing: 0, 
+        baseEarned: 0, 
+        withheld: 0, 
+        paidNow: 0, 
+        released: 0, 
+        totalPayout: 0, 
+        currentPlacements: [], 
+        releasedPlacements: [], 
+        historicalWithheld: [] 
+      };
+    }
+
+    const getMonthsOfService = (startStr, dateStr) => {
+      if (!startStr) return 999;
+      try {
+        const [startYear, startMonth] = startStr.substring(0, 7).split('-').map(Number);
+        const [payYear, payMonth] = dateStr.split('-').map(Number);
+        return (payYear - startYear) * 12 + (payMonth - startMonth);
+      } catch (e) {
+        return 999;
+      }
+    };
+
+    const monthsOfService = getMonthsOfService(member.startDate, monthStr);
+    const isStarterWaiverActive = policy.starterWaiveThreshold && monthsOfService < 12;
+    const isLocked = policy.effectiveFrom === 'one_year_service' && monthsOfService < 12 && !isStarterWaiverActive;
+
+    if (isLocked) {
       return { 
         billing: 0, 
         baseEarned: 0, 
@@ -240,7 +272,7 @@ export default function CommissionsDashboard({
       const policyCompany = companies.find(c => c.id === policy.companyId);
       const policyCurrency = policyCompany ? policyCompany.currency : 'GBP';
       
-      const thresh = toGBP(policy.monthlyThreshold, policyCurrency);
+      const thresh = isStarterWaiverActive ? 0 : toGBP(policy.monthlyThreshold, policyCurrency);
       const commissionable = Math.max(0, billingAmt - thresh);
       const slabs = policy.slabs || [];
       let earned = 0;
@@ -528,6 +560,7 @@ export default function CommissionsDashboard({
               setEffectiveFrom('day_one');
               setMonthlyThreshold('3000');
               setTeamOverridePercent('2.5');
+              setStarterWaiveThreshold(false);
               setSlabs([
                 { minAmount: 0, maxAmount: 10000, rate: 10 },
                 { minAmount: 10000, maxAmount: 15000, rate: 15 },
@@ -613,6 +646,20 @@ export default function CommissionsDashboard({
                     required
                   />
                 </div>
+              </div>
+
+              {/* Starter Waiver Checkbox Banner */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', marginTop: '8px' }}>
+                <input 
+                  type="checkbox"
+                  id="starterWaiveThreshold"
+                  checked={starterWaiveThreshold}
+                  onChange={(e) => setStarterWaiveThreshold(e.target.checked)}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                />
+                <label htmlFor="starterWaiveThreshold" style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-primary)', cursor: 'pointer', margin: 0 }}>
+                  ⚡ <strong>First Year Starter Waiver</strong> — Force immediate Day One unlock & waive the monthly threshold (set threshold to £0) during the recruiter's first 12 months of service.
+                </label>
               </div>
 
               {/* Dynamic Slabs Setup */}
@@ -715,6 +762,11 @@ export default function CommissionsDashboard({
                     <div>Type: <strong style={{ textTransform: 'capitalize' }}>{p.type === 'manager' ? 'Manager Team-Billing' : 'Recruiter'} plan</strong></div>
                     <div>Unlocks: <strong>{p.effectiveFrom === 'day_one' ? 'Day One' : 'After 1 year service'}</strong></div>
                     <div>Monthly Threshold: <strong>{symbol}{Number(p.monthlyThreshold).toLocaleString()}{matchedComp?.currency !== 'GBP' && ` (approx. ${formatGBP(toGBP(p.monthlyThreshold, matchedComp?.currency))})`}</strong></div>
+                    {p.starterWaiveThreshold && (
+                      <div style={{ color: 'var(--success)', fontWeight: 600, fontSize: '11px', marginTop: '2px', borderTop: '1px solid var(--border-color)', paddingTop: '4px' }}>
+                        ⚡ First Year Starter Waiver Active
+                      </div>
+                    )}
                   </div>
 
                   {/* Slabs summary */}
@@ -768,6 +820,7 @@ export default function CommissionsDashboard({
                           setMonthlyThreshold(String(p.monthlyThreshold || 0));
                           setTeamOverridePercent(String(p.teamOverridePercent || 2.5));
                           setSlabs(p.slabs || []);
+                          setStarterWaiveThreshold(p.starterWaiveThreshold || false);
                           setShowForm(true);
                           window.scrollTo({ top: 0, behavior: 'smooth' });
                         }}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Building2, 
   ShieldCheck, 
@@ -26,6 +26,7 @@ export default function Dashboard({
 }) {
   // Current date anchor: June 29, 2026
   const CURRENT_DATE = new Date('2026-06-29');
+  const [calDate, setCalDate] = useState(new Date('2026-06-01'));
 
   // Helper to compile core document/insurance alerts
   const getComplianceAlerts = (company) => {
@@ -697,6 +698,254 @@ export default function Dashboard({
           )}
         </div>
 
+      </div>
+
+      {/* Leaves & Holidays Monthly Calendar Widget */}
+      <div className="chart-card" style={{ width: '100%' }}>
+        <div className="chart-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>
+          <h2 className="chart-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <CalendarDays size={20} style={{ color: 'var(--accent)' }} /> Group Leaves & Bank Holidays Calendar
+          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button 
+              type="button"
+              className="btn-secondary" 
+              onClick={() => setCalDate(new Date(calDate.getFullYear(), calDate.getMonth() - 1, 1))}
+              style={{ padding: '4px 10px', fontSize: '12px' }}
+            >
+              ◀
+            </button>
+            <span style={{ fontSize: '14px', fontWeight: 700, minWidth: '120px', textAlign: 'center', color: 'var(--text-primary)' }}>
+              {calDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+            </span>
+            <button 
+              type="button"
+              className="btn-secondary" 
+              onClick={() => setCalDate(new Date(calDate.getFullYear(), calDate.getMonth() + 1, 1))}
+              style={{ padding: '4px 10px', fontSize: '12px' }}
+            >
+              ▶
+            </button>
+            <button 
+              type="button"
+              className="btn-secondary" 
+              onClick={() => setCalDate(new Date('2026-06-01'))}
+              style={{ padding: '4px 10px', fontSize: '12px', marginLeft: '6px' }}
+            >
+              Today
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '20px' }}>
+          {/* Calendar Grid */}
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', textAlign: 'center', fontWeight: 600, fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
+                <div key={d} style={{ padding: '6px 0', borderBottom: '1px solid var(--border-color)' }}>{d}</div>
+              ))}
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
+              {(() => {
+                const year = calDate.getFullYear();
+                const month = calDate.getMonth();
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
+                let firstDayIndex = new Date(year, month, 1).getDay();
+                firstDayIndex = firstDayIndex === 0 ? 6 : firstDayIndex - 1;
+
+                const cells = [];
+                for (let i = 0; i < firstDayIndex; i++) {
+                  cells.push(<div key={`empty-${i}`} style={{ minHeight: '80px', backgroundColor: 'transparent' }} />);
+                }
+
+                for (let d = 1; d <= daysInMonth; d++) {
+                  const dayEvents = (() => {
+                    const events = [];
+
+                    // Holidays
+                    holidays.forEach(h => {
+                      if (!h.date) return;
+                      const hDate = new Date(h.date);
+                      if (hDate.getFullYear() === year && hDate.getMonth() === month && hDate.getDate() === d) {
+                        events.push({ type: 'holiday', name: h.name });
+                      }
+                    });
+
+                    // Leaves
+                    leaveRequests.forEach(r => {
+                      if (r.status !== 'approved' || !r.startDate || !r.endDate) return;
+                      const start = new Date(r.startDate);
+                      const end = new Date(r.endDate);
+                      const checkDate = new Date(year, month, d);
+                      const startDateOnly = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+                      const endDateOnly = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+
+                      if (checkDate >= startDateOnly && checkDate <= endDateOnly) {
+                        const staffMember = staff.find(s => s.id === r.staffId);
+                        events.push({
+                          type: 'leave',
+                          staffName: staffMember ? staffMember.fullName.split(' ')[0] + ' ' + (staffMember.fullName.split(' ')[1] ? staffMember.fullName.split(' ')[1][0] + '.' : '') : 'Staff',
+                          leaveType: r.leaveType
+                        });
+                      }
+                    });
+
+                    return events;
+                  })();
+
+                  const isToday = year === 2026 && month === 5 && d === 29;
+
+                  cells.push(
+                    <div 
+                      key={`day-${d}`} 
+                      style={{
+                        minHeight: '80px',
+                        backgroundColor: 'var(--bg-secondary)',
+                        border: isToday ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+                        borderRadius: '6px',
+                        padding: '6px',
+                        position: 'relative',
+                        boxShadow: isToday ? '0 0 10px rgba(99,102,241,0.25)' : 'none',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px'
+                      }}
+                    >
+                      <span style={{ 
+                        fontSize: '11px', 
+                        fontWeight: 700, 
+                        color: isToday ? 'var(--accent)' : 'var(--text-secondary)',
+                        alignSelf: 'flex-end'
+                      }}>
+                        {d}
+                      </span>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', overflowY: 'auto', flex: 1 }}>
+                        {dayEvents.map((evt, idx) => (
+                          <div 
+                            key={idx}
+                            style={{
+                              fontSize: '9px',
+                              padding: '2px 4px',
+                              borderRadius: '3px',
+                              fontWeight: 500,
+                              lineHeight: '1.1',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              backgroundColor: evt.type === 'holiday' ? 'rgba(16, 185, 129, 0.15)' : 
+                                             evt.leaveType === 'Annual' ? 'rgba(99, 102, 241, 0.15)' : 
+                                             evt.leaveType === 'Sick' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                              color: evt.type === 'holiday' ? 'var(--success)' : 
+                                     evt.leaveType === 'Annual' ? 'var(--accent)' : 
+                                     evt.leaveType === 'Sick' ? 'var(--danger)' : 'var(--warning)',
+                              border: evt.type === 'holiday' ? '1px solid rgba(16, 185, 129, 0.2)' : 
+                                      evt.leaveType === 'Annual' ? '1px solid rgba(99, 102, 241, 0.2)' : 
+                                      evt.leaveType === 'Sick' ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid rgba(245, 158, 11, 0.2)'
+                            }}
+                            title={evt.type === 'holiday' ? `Holiday: ${evt.name}` : `Leave: ${evt.staffName} (${evt.leaveType})`}
+                          >
+                            {evt.type === 'holiday' ? `🌴 ${evt.name}` : `👤 ${evt.staffName}`}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
+
+                return cells;
+              })()}
+            </div>
+          </div>
+
+          {/* Agenda Sidebar */}
+          <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <h3 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+              📅 Monthly Planner Agenda
+            </h3>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', maxHeight: '420px', paddingRight: '4px' }}>
+              {(() => {
+                const year = calDate.getFullYear();
+                const month = calDate.getMonth();
+                const list = [];
+
+                // Compile Holidays
+                holidays.forEach(h => {
+                  if (!h.date) return;
+                  const hDate = new Date(h.date);
+                  if (hDate.getFullYear() === year && hDate.getMonth() === month) {
+                    list.push({
+                      day: hDate.getDate(),
+                      type: 'holiday',
+                      title: h.name,
+                      desc: `Public Holiday (${h.country})`
+                    });
+                  }
+                });
+
+                // Compile Leaves
+                leaveRequests.forEach(r => {
+                  if (r.status !== 'approved' || !r.startDate || !r.endDate) return;
+                  const start = new Date(r.startDate);
+                  const end = new Date(r.endDate);
+                  const monthStart = new Date(year, month, 1);
+                  const monthEnd = new Date(year, month + 1, 0);
+
+                  if (start <= monthEnd && end >= monthStart) {
+                    const staffMember = staff.find(s => s.id === r.staffId);
+                    list.push({
+                      day: start.getFullYear() === year && start.getMonth() === month ? start.getDate() : 1,
+                      type: 'leave',
+                      title: staffMember ? staffMember.fullName : 'Staff Member',
+                      desc: `${r.leaveType} Leave (${r.startDate} to ${r.endDate})`
+                    });
+                  }
+                });
+
+                list.sort((a, b) => a.day - b.day);
+
+                return list.map((item, idx) => (
+                  <div 
+                    key={idx}
+                    style={{
+                      padding: '8px 12px',
+                      backgroundColor: 'var(--bg-secondary)',
+                      borderLeft: `3px solid ${item.type === 'holiday' ? 'var(--success)' : 'var(--accent)'}`,
+                      borderRadius: '4px',
+                      fontSize: '11px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                      <strong style={{ color: 'var(--text-primary)' }}>{item.title}</strong>
+                      <span style={{ fontSize: '9px', background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: '3px', color: 'var(--text-secondary)' }}>
+                        Day {item.day}
+                      </span>
+                    </div>
+                    <div style={{ color: 'var(--text-muted)' }}>{item.desc}</div>
+                  </div>
+                ));
+              })()}
+
+              {(() => {
+                const year = calDate.getFullYear();
+                const month = calDate.getMonth();
+                const totalEvents = holidays.filter(h => h.date && new Date(h.date).getFullYear() === year && new Date(h.date).getMonth() === month).length +
+                                    leaveRequests.filter(r => r.status === 'approved' && r.startDate && r.endDate && new Date(r.startDate) <= new Date(year, month + 1, 0) && new Date(r.endDate) >= new Date(year, month, 1)).length;
+                
+                if (totalEvents === 0) {
+                  return (
+                    <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '11px' }}>
+                      No leaves or holidays logged this month.
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Upcoming Operational Planner Agenda */}

@@ -44,6 +44,7 @@ import StaffForm from './components/StaffForm';
 import BulkStaffImportModal from './components/BulkStaffImportModal';
 import LeavesDashboard from './components/LeavesDashboard';
 import CommissionsDashboard from './components/CommissionsDashboard';
+import PayrollDashboard from './components/PayrollDashboard';
 import VendorsDashboard from './components/VendorsDashboard';
 import PlacementsDashboard from './components/PlacementsDashboard';
 import ExpensesDashboard from './components/ExpensesDashboard';
@@ -69,7 +70,7 @@ export default function App() {
     permissions: {
       role: 'admin',
       dataScope: 'all',
-      allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors', 'logs', 'reports', 'rbac']
+      allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors', 'logs', 'reports', 'rbac']
     }
   };
 
@@ -93,6 +94,7 @@ export default function App() {
   const [expenses, setExpenses] = useState([]);
   const [nominalCodes, setNominalCodes] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [payrollRecords, setPayrollRecords] = useState([]);
 
   // Navigation tab: 'dashboard' | 'directory' | 'staff'
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -299,7 +301,7 @@ export default function App() {
             const permissions = found.permissions || {
               role: found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
               dataScope: found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
-              allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors']
+              allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors']
             };
             setCurrentUser({
               ...found,
@@ -405,6 +407,14 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = firebaseService.subscribeAuditLogs((updatedList) => {
       setAuditLogs(updatedList);
+    }, []);
+    return () => unsubscribe();
+  }, []);
+
+  // Sync payroll records
+  useEffect(() => {
+    const unsubscribe = firebaseService.subscribePayrollRecords((updatedList) => {
+      setPayrollRecords(updatedList);
     }, []);
     return () => unsubscribe();
   }, []);
@@ -897,6 +907,16 @@ export default function App() {
     }
   };
 
+  const handleSavePayrollRecord = async (record) => {
+    try {
+      await firebaseService.savePayrollRecord(record);
+      logActivity("Payroll", "UPDATE", `Updated payroll overrides for staff member ID ${record.staffId} in month ${record.month}`);
+    } catch (err) {
+      console.error("Save payroll record error:", err);
+      handleShowToast(`Error saving payroll override: ${err.message}`, 'warning');
+    }
+  };
+
   /* ==========================================
      AUDIT LOGS CALLBACKS
      ========================================== */
@@ -1122,7 +1142,7 @@ export default function App() {
                 const updatedPermissions = foundStaff.permissions || {
                   role: foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
                   dataScope: foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
-                  allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors']
+                  allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors']
                 };
                 setCurrentUser({
                   ...foundStaff,
@@ -1270,6 +1290,18 @@ export default function App() {
                   >
                     <TrendingUp size={18} />
                     <span>Commission Plans</span>
+                  </div>
+                </li>
+              )}
+
+              {currentUser.permissions.allowedModules.includes('payroll') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'payroll' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('payroll')}
+                  >
+                    <Wallet size={18} />
+                    <span>Group Payroll</span>
                   </div>
                 </li>
               )}
@@ -1428,6 +1460,7 @@ export default function App() {
                activeTab === 'staff' ? 'Staff & Personnel Directory' : 
                activeTab === 'leaves' ? 'Leaves & Holidays Dashboard' : 
                activeTab === 'commissions' ? 'Incentive Commission Plans' : 
+               activeTab === 'payroll' ? 'Group Payroll & Projections' : 
                activeTab === 'expenses' ? 'Expenses & Bank Statement Categorizer' :
                activeTab === 'logs' ? 'System Audit Trail Logs' :
                activeTab === 'reports' ? 'Profit & Loss / Group Reports' :
@@ -1456,7 +1489,7 @@ export default function App() {
                         const updatedPermissions = selectedMember.permissions || {
                           role: selectedMember.department === 'Finance' || selectedMember.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
                           dataScope: selectedMember.department === 'Finance' || selectedMember.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
-                          allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors']
+                          allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors']
                         };
                         setCurrentUser({
                           ...selectedMember,
@@ -2222,6 +2255,22 @@ export default function App() {
             />
           )}
 
+          {/* TAB 5.5: Payroll Dashboard */}
+          {activeTab === 'payroll' && (
+            <PayrollDashboard 
+              companies={companies}
+              staff={scopedStaff}
+              commissionPolicies={commissionPolicies}
+              placements={scopedPlacements}
+              payrollRecords={payrollRecords}
+              expenses={expenses}
+              nominalCodes={nominalCodes}
+              onSavePayrollRecord={handleSavePayrollRecord}
+              onSaveExpense={handleSaveExpense}
+              onShowToast={handleShowToast}
+            />
+          )}
+
           {/* TAB 6: Vendors & Assets Dashboard */}
           {activeTab === 'vendors' && (
             <VendorsDashboard 
@@ -2290,6 +2339,7 @@ export default function App() {
               placements={scopedPlacements}
               expenses={scopedExpenses}
               commissionPolicies={commissionPolicies}
+              payrollRecords={payrollRecords}
               onShowToast={handleShowToast}
             />
           )}

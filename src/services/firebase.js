@@ -1002,5 +1002,46 @@ export const firebaseService = {
       localStorage.setItem('bm-audit-logs', JSON.stringify(list));
       return log;
     }
+  },
+
+  subscribePayrollRecords(onUpdate, fallbackData = []) {
+    if (isConfigured && db) {
+      const payrollRef = collection(db, 'payrollRecords');
+      return onSnapshot(payrollRef, (snapshot) => {
+        const list = [];
+        snapshot.forEach((doc) => {
+          list.push(doc.data());
+        });
+        onUpdate(list);
+      }, (error) => {
+        console.error("Firestore payroll subscription error:", error);
+        const local = localStorage.getItem('bm-payroll-records');
+        onUpdate(local ? JSON.parse(local) : fallbackData);
+      });
+    } else {
+      const local = localStorage.getItem('bm-payroll-records');
+      const data = local ? JSON.parse(local) : fallbackData;
+      onUpdate(data);
+      return () => {};
+    }
+  },
+
+  async savePayrollRecord(record) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'payrollRecords', record.id);
+      await setDoc(docRef, record);
+      return record;
+    } else {
+      const local = localStorage.getItem('bm-payroll-records');
+      const list = local ? JSON.parse(local) : [];
+      const index = list.findIndex(r => r.id === record.id);
+      if (index > -1) {
+        list[index] = record;
+      } else {
+        list.push(record);
+      }
+      localStorage.setItem('bm-payroll-records', JSON.stringify(list));
+      return record;
+    }
   }
 };

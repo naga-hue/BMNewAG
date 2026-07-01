@@ -27,6 +27,7 @@ export default function ReportsDashboard({
   placements = [],
   expenses = [],
   commissionPolicies = [],
+  payrollRecords = [],
   onShowToast
 }) {
   const [activeTab, setActiveTab] = useState('consolidated'); // consolidated, divisional, departmental, forecast, ratios, leagues
@@ -871,13 +872,20 @@ export default function ReportsDashboard({
                     return sum + cellSum;
                   }, 0);
 
-                  // Salaries
-                  const salaries = activeStaff.reduce((sum, s) => sum + (toGBP(s.salary, s.currency) / 12), 0);
+                  // Salaries & Commissions matching overrides/reconciled actuals
+                  let salaries = 0;
+                  let commissions = 0;
 
-                  // Commissions
-                  const commissions = activeStaff.reduce((sum, s) => {
-                    return sum + calculateCommissionForRecruiter(s.id, pKey);
-                  }, 0);
+                  activeStaff.forEach(s => {
+                    const pr = payrollRecords.find(r => r.staffId === s.id && r.month === pKey);
+                    if (pr && pr.isReconciled) {
+                      salaries += Number(pr.basicSalary) || 0;
+                      commissions += Number(pr.commission) || 0;
+                    } else {
+                      salaries += toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
+                      commissions += calculateCommissionForRecruiter(s.id, pKey);
+                    }
+                  });
 
                   // Overheads
                   let overheadsExpenses = 0;

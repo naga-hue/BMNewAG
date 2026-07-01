@@ -485,7 +485,7 @@ export default function VendorsDashboard({
               {vendors.map(v => (
                 <div key={v.id} style={{ 
                   flex: '1 1 300px', 
-                  backgroundColor: 'var(--bg-sidebar)', 
+                  backgroundColor: 'var(--bg-card)', 
                   border: '1px solid var(--border-color)', 
                   padding: '12px', 
                   borderRadius: '6px',
@@ -494,7 +494,7 @@ export default function VendorsDashboard({
                   alignItems: 'flex-start'
                 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span style={{ fontWeight: 600, fontSize: '13px' }}>{v.name}</span>
+                    <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>{v.name}</span>
                     <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600, textTransform: 'uppercase' }}>{v.category}</span>
                     <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
                       {v.contactEmail && (
@@ -1079,7 +1079,7 @@ export default function VendorsDashboard({
                       display: 'flex', 
                       justifyContent: 'space-between', 
                       alignItems: 'center', 
-                      backgroundColor: 'var(--bg-sidebar)', 
+                      backgroundColor: 'var(--bg-secondary)', 
                       padding: '12px 16px', 
                       borderRadius: '6px', 
                       border: '1px solid var(--border-color)',

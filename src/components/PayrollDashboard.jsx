@@ -498,8 +498,7 @@ export default function PayrollDashboard({
                             {/* Recruiter Rows */}
                             {members.map(s => {
                               let annualSum = 0;
-                              const matchedComp = companies.find(comp => comp.id === s.companyId);
-                              const symbol = matchedComp ? (symbolMap[matchedComp.currency] || '£') : '£';
+                              const symbol = symbolMap[s.currency || 'GBP'] || '£';
 
                               return (
                                 <tr key={s.id} hover="true">

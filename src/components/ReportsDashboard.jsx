@@ -110,6 +110,21 @@ export default function ReportsDashboard({
     return earned;
   };
 
+  // Helper to fetch payroll actual overrides or default projections
+  const getStaffPayrollForMonth = (s, monthKey) => {
+    const pr = payrollRecords.find(r => r.staffId === s.id && r.month === monthKey);
+    if (pr && pr.isReconciled) {
+      return {
+        salaries: Number(pr.basicSalary) || 0,
+        commissions: Number(pr.commission) || 0
+      };
+    }
+    return {
+      salaries: toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP'),
+      commissions: calculateCommissionForRecruiter(s.id, monthKey)
+    };
+  };
+
   // Dynamic shared overhead helper
   const getDynamicOverheadApportionment = (monthKey) => {
     const activeStaff = staff.filter(s => {
@@ -219,15 +234,14 @@ export default function ReportsDashboard({
       return sum + cellSum;
     }, 0);
 
-    // 3. Salaries
-    const salaries = activeStaff.reduce((sum, s) => {
-      return sum + (toGBP(s.salary, s.currency) / 12);
-    }, 0);
-
-    // 4. Commissions
-    const commissions = activeStaff.reduce((sum, s) => {
-      return sum + calculateCommissionForRecruiter(s.id, monthKey);
-    }, 0);
+    // 3. Salaries & 4. Commissions
+    let salaries = 0;
+    let commissions = 0;
+    activeStaff.forEach(s => {
+      const pay = getStaffPayrollForMonth(s, monthKey);
+      salaries += pay.salaries;
+      commissions += pay.commissions;
+    });
 
     // 5. Operating expenses + shared overhead apportionments
     const totalGroupHead = staff.filter(s => s.startDate && s.startDate.substring(0, 7) <= monthKey).length || 1;
@@ -545,8 +559,9 @@ export default function ReportsDashboard({
                     if (deptFilter !== 'all' && s.department !== deptFilter) return;
                     
                     if (companyDataMap[s.companyId]) {
-                      companyDataMap[s.companyId].salaries += toGBP(s.salary, s.currency) / 12;
-                      companyDataMap[s.companyId].commissions += calculateCommissionForRecruiter(s.id, mKey);
+                      const pay = getStaffPayrollForMonth(s, mKey);
+                      companyDataMap[s.companyId].salaries += pay.salaries;
+                      companyDataMap[s.companyId].commissions += pay.commissions;
                     }
                   });
 
@@ -706,8 +721,9 @@ export default function ReportsDashboard({
                     if (companyFilter !== 'all' && s.companyId !== companyFilter) return;
 
                     if (deptDataMap[s.department]) {
-                      deptDataMap[s.department].salaries += toGBP(s.salary, s.currency) / 12;
-                      deptDataMap[s.department].commissions += calculateCommissionForRecruiter(s.id, mKey);
+                      const pay = getStaffPayrollForMonth(s, mKey);
+                      deptDataMap[s.department].salaries += pay.salaries;
+                      deptDataMap[s.department].commissions += pay.commissions;
                     }
                   });
 
@@ -877,14 +893,9 @@ export default function ReportsDashboard({
                   let commissions = 0;
 
                   activeStaff.forEach(s => {
-                    const pr = payrollRecords.find(r => r.staffId === s.id && r.month === pKey);
-                    if (pr && pr.isReconciled) {
-                      salaries += Number(pr.basicSalary) || 0;
-                      commissions += Number(pr.commission) || 0;
-                    } else {
-                      salaries += toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
-                      commissions += calculateCommissionForRecruiter(s.id, pKey);
-                    }
+                    const pay = getStaffPayrollForMonth(s, pKey);
+                    salaries += pay.salaries;
+                    commissions += pay.commissions;
                   });
 
                   // Overheads

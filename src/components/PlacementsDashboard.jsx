@@ -981,20 +981,50 @@ export default function PlacementsDashboard({
 
   const sortedPlacements = sortPlacements(filteredPlacements);
 
-  const totalGross = filteredPlacements.reduce((acc, p) => acc + (p.grossBillAmount || 0), 0);
-  const totalDns = filteredPlacements.reduce((acc, p) => {
-    if (p.status === 'dns') {
-      return acc + (p.grossBillAmount || 0);
+  // Compute matching split ratio weight helper
+  const getPlacementSplitWeight = (p) => {
+    // If no filters are active, return full 100% weight (1.0)
+    if (consultantFilter === 'all' && deptFilter === 'all' && companyFilter === 'all') {
+      return 1.0;
     }
-    return acc + (p.dnsAmount || 0);
+
+    if (!p.splits || p.splits.length === 0) {
+      return 1.0;
+    }
+
+    let matchingPercentage = 0;
+    p.splits.forEach(s => {
+      let match = true;
+      const rec = staff.find(st => st.id === s.staffId);
+
+      if (consultantFilter !== 'all' && s.staffId !== consultantFilter) match = false;
+      if (deptFilter !== 'all' && (!rec || rec.department !== deptFilter)) match = false;
+      if (companyFilter !== 'all' && (!rec || rec.companyId !== companyFilter)) match = false;
+
+      if (match) {
+        matchingPercentage += Number(s.percentage) || 0;
+      }
+    });
+
+    return matchingPercentage / 100;
+  };
+
+  const totalGross = filteredPlacements.reduce((acc, p) => acc + ((p.grossBillAmount || 0) * getPlacementSplitWeight(p)), 0);
+  const totalDns = filteredPlacements.reduce((acc, p) => {
+    const w = getPlacementSplitWeight(p);
+    if (p.status === 'dns') {
+      return acc + ((p.grossBillAmount || 0) * w);
+    }
+    return acc + ((p.dnsAmount || 0) * w);
   }, 0);
   const totalRebate = filteredPlacements.reduce((acc, p) => {
+    const w = getPlacementSplitWeight(p);
     if (p.status === 'rebate' || (p.status !== 'dns' && p.dnsRebateAmount > 0)) {
-      return acc + (p.dnsRebateAmount || 0);
+      return acc + ((p.dnsRebateAmount || 0) * w);
     }
-    return acc + (p.rebateAmount || 0);
+    return acc + ((p.rebateAmount || 0) * w);
   }, 0);
-  const totalNet = filteredPlacements.reduce((acc, p) => acc + (p.netScoreValue || 0), 0);
+  const totalNet = filteredPlacements.reduce((acc, p) => acc + ((p.netScoreValue || 0) * getPlacementSplitWeight(p)), 0);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -1547,7 +1577,12 @@ export default function PlacementsDashboard({
                         )}
                       </td>
                       <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
-                        £{p.netScoreValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        <div>£{p.netScoreValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                        {getPlacementSplitWeight(p) < 1.0 && (
+                          <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600 }}>
+                            Share: £{(p.netScoreValue * getPlacementSplitWeight(p)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </div>
+                        )}
                       </td>
                       <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                         {p.splits?.map((s, i) => {

@@ -166,6 +166,8 @@ export default function ExpensesDashboard({
   // Linked placement/sales invoice (for credits)
   const [linkedPlacementId, setLinkedPlacementId] = useState('');
   const [showPlacementSelector, setShowPlacementSelector] = useState(false);
+  const [manualBankAccountId, setManualBankAccountId] = useState('');
+  const [statementBankAccountId, setStatementBankAccountId] = useState('');
 
   // Recipient linkage states (manual entry)
   const [recipientType, setRecipientType] = useState('other'); // vendor, staff, other
@@ -209,7 +211,35 @@ export default function ExpensesDashboard({
   // Handle Edit Expense
   const handleEditExpense = (exp) => {
     setEditingExpenseId(exp.id);
-    setDate(exp.date);
+    
+    // Normalize date string (e.g. DD/MM/YYYY) to YYYY-MM-DD for date input
+    let formattedDate = '';
+    if (exp.date) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(exp.date)) {
+        formattedDate = exp.date;
+      } else {
+        const parts = exp.date.split(/[-/]/);
+        if (parts.length === 3) {
+          if (parts[0].length === 4) {
+            formattedDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+          } else {
+            // Assume DD-MM-YYYY
+            const day = parts[0];
+            const month = parts[1];
+            const year = parts[2];
+            formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          }
+        } else {
+          try {
+            const d = new Date(exp.date);
+            if (!isNaN(d.getTime())) {
+              formattedDate = d.toISOString().substring(0, 10);
+            }
+          } catch (e) {}
+        }
+      }
+    }
+    setDate(formattedDate);
     setPlMonth(exp.plMonth);
     setPayee(exp.payee);
     setNominalCode(exp.nominalCode);
@@ -231,6 +261,7 @@ export default function ExpensesDashboard({
     }
 
     setLinkedPlacementId(exp.linkedPlacementId || '');
+    setManualBankAccountId(exp.bankAccountId ? `${exp.bankCompanyId}:${exp.bankAccountId}` : '');
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -266,6 +297,20 @@ export default function ExpensesDashboard({
       });
     }
 
+    let bankCompanyId = '';
+    let bankAccountId = '';
+    let bankAccountRef = '';
+    if (manualBankAccountId) {
+      const [compId, bankId] = manualBankAccountId.split(':');
+      const comp = companies.find(c => c.id === compId);
+      const bank = comp?.bankAccounts?.find(b => b.id === bankId);
+      if (bank) {
+        bankCompanyId = compId;
+        bankAccountId = bankId;
+        bankAccountRef = `${bank.bankName} - ${bank.accountName}`;
+      }
+    }
+
     const expenseData = {
       id: editingExpenseId || `exp-${Date.now()}`,
       date,
@@ -281,7 +326,10 @@ export default function ExpensesDashboard({
       recipientId,
       allocationType,
       allocationTarget: target,
-      linkedPlacementId: linkedPlacementId || null
+      linkedPlacementId: linkedPlacementId || null,
+      bankCompanyId,
+      bankAccountId,
+      bankAccountRef
     };
 
     try {
@@ -325,6 +373,7 @@ export default function ExpensesDashboard({
       setAllocationTarget('');
       setSelectedStaffIds([]);
       setLinkedPlacementId('');
+      setManualBankAccountId('');
       setEditingExpenseId(null);
       setShowForm(false);
     } catch (err) {
@@ -447,6 +496,15 @@ export default function ExpensesDashboard({
   };
 
   const handleApplyBankMappings = () => {
+    const activeCompanyId = statementCompanyId || (companies[0] ? companies[0].id : '');
+    const activeCompany = companies.find(c => c.id === activeCompanyId);
+    const activeCompanyBanks = activeCompany?.bankAccounts || [];
+
+    if (activeCompanyBanks.length > 0 && !statementBankAccountId) {
+      onShowToast("Please select a registered bank account for the statement import.", "warning");
+      return;
+    }
+
     if (!columnMappings.date || !columnMappings.payee || !columnMappings.amount) {
       onShowToast("Please map the required Date, Payee, and Amount fields.", "warning");
       return;
@@ -543,7 +601,11 @@ export default function ExpensesDashboard({
           payee: row.payee + (row.reference ? ` [Ref: ${row.reference}]` : ''),
           nominalCode: row.nominalCode,
           amount: Math.abs(row.amount), // gross amount is absolute
-          currency: "GBP",
+          currency: (() => {
+            const comp = companies.find(c => c.id === (statementCompanyId || (companies[0] ? companies[0].id : '')));
+            const bank = comp?.bankAccounts?.find(b => b.id === statementBankAccountId);
+            return bank?.currency || 'GBP';
+          })(),
           taxRate: row.taxRate !== undefined ? row.taxRate : 0,
           recipientType: row.recipientType || 'other',
           recipientId: row.recipientId || '',
@@ -551,7 +613,8 @@ export default function ExpensesDashboard({
           allocationType: row.allocationType,
           allocationTarget: target,
           linkedPlacementId: row.linkedPlacementId || null,
-          bankCompanyId: statementCompanyId || companies[0]?.id || '',
+          bankCompanyId: statementCompanyId || (companies[0] ? companies[0].id : ''),
+          bankAccountId: statementBankAccountId,
           bankAccountRef: statementAccountRef || 'Main Current Account'
         };
 
@@ -586,6 +649,9 @@ export default function ExpensesDashboard({
         setCsvHeaders([]);
         setCsvRows([]);
         setCategorizedRows([]);
+        setStatementCompanyId('');
+        setStatementBankAccountId('');
+        setStatementAccountRef('Main Current Account');
         setImportStep(1);
         setActiveSubTab('ledger');
       }
@@ -744,6 +810,7 @@ export default function ExpensesDashboard({
                 setAllocationTarget(companies[0]?.id || '');
                 setSelectedStaffIds([]);
                 setLinkedPlacementId('');
+                setManualBankAccountId('');
                 setShowForm(prev => !prev);
               }}>
                 <Plus size={16} /> {showForm ? 'Close Form' : 'Log Expense'}
@@ -881,7 +948,43 @@ export default function ExpensesDashboard({
               </div>
 
               <div className="form-group-row">
-                <div className="form-group">
+                <div className="form-group" style={{ flex: 1.5 }}>
+                  <label className="form-label">Paid From Bank Account</label>
+                  <select 
+                    className="select-filter"
+                    value={manualBankAccountId}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setManualBankAccountId(val);
+                      if (val) {
+                        const [compId, bankId] = val.split(':');
+                        const comp = companies.find(c => c.id === compId);
+                        const bank = comp?.bankAccounts?.find(b => b.id === bankId);
+                        if (bank) {
+                          setCurrency(bank.currency || 'GBP');
+                        }
+                      }
+                    }}
+                    style={{ width: '100%', padding: '10px' }}
+                  >
+                    <option value="">-- No Mapped Account --</option>
+                    {companies.map(c => {
+                      const accounts = c.bankAccounts || [];
+                      if (accounts.length === 0) return null;
+                      return (
+                        <optgroup key={c.id} label={c.name}>
+                          {accounts.map(acc => (
+                            <option key={acc.id} value={`${c.id}:${acc.id}`}>
+                              {acc.bankName} - {acc.accountName} ({acc.currency})
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ flex: 0.8 }}>
                   <label className="form-label">Tax / VAT Rate (%)</label>
                   <input 
                     type="number" 
@@ -892,7 +995,7 @@ export default function ExpensesDashboard({
                   />
                 </div>
 
-                <div className="form-group" style={{ flex: 2 }}>
+                <div className="form-group" style={{ flex: 1.5 }}>
                   <label className="form-label">Drag or drop supporting Invoice / Receipt</label>
                   <input 
                     type="file" 
@@ -1005,6 +1108,7 @@ export default function ExpensesDashboard({
                 <button type="button" className="btn-secondary" onClick={() => {
                   setShowForm(false);
                   setEditingExpenseId(null);
+                  setManualBankAccountId('');
                 }}>
                   Cancel
                 </button>
@@ -1138,11 +1242,14 @@ export default function ExpensesDashboard({
                       <td>
                         {exp.bankCompanyId ? (
                           <div style={{ fontSize: '11px' }}>
-                            <div>{companies.find(c => c.id === exp.bankCompanyId)?.name || 'Company'}</div>
-                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{exp.bankAccountRef || 'Main Account'}</div>
+                            <div style={{ fontWeight: 600 }}>{companies.find(c => c.id === exp.bankCompanyId)?.name || 'Company'}</div>
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                              🏦 {exp.bankAccountRef || 'Main Account'}
+                              {exp.id.startsWith('exp-stmt-') ? '' : ' (Manual Mapped)'}
+                            </div>
                           </div>
                         ) : (
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Manual Entry</span>
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Manual (No Bank)</span>
                         )}
                       </td>
                       <td style={{ fontSize: '11px' }}>{exp.nominalCode}</td>
@@ -1301,11 +1408,24 @@ export default function ExpensesDashboard({
                 </div>
                 <div className="form-group-row">
                   <div className="form-group">
-                    <label className="form-label">Select Company Bank Account *</label>
+                    <label className="form-label">Select Company *</label>
                     <select
                       className="select-filter"
                       value={statementCompanyId || (companies[0] ? companies[0].id : '')}
-                      onChange={(e) => setStatementCompanyId(e.target.value)}
+                      onChange={(e) => {
+                        const compId = e.target.value;
+                        setStatementCompanyId(compId);
+                        // Pre-select first bank account of this company if available
+                        const comp = companies.find(c => c.id === compId);
+                        const banks = comp?.bankAccounts || [];
+                        if (banks.length > 0) {
+                          setStatementBankAccountId(banks[0].id);
+                          setStatementAccountRef(`${banks[0].bankName} - ${banks[0].accountName}`);
+                        } else {
+                          setStatementBankAccountId('');
+                          setStatementAccountRef('');
+                        }
+                      }}
                       style={{ width: '100%', padding: '8px' }}
                       required
                     >
@@ -1315,16 +1435,45 @@ export default function ExpensesDashboard({
                     </select>
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Account Name / Statement Label *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={statementAccountRef}
-                      onChange={(e) => setStatementAccountRef(e.target.value)}
-                      placeholder="e.g. HSBC Current, Starling Main, Cash Account"
-                      style={{ padding: '8px', fontSize: '13px' }}
-                      required
-                    />
+                    <label className="form-label">Select Bank Account *</label>
+                    {(() => {
+                      const activeCompId = statementCompanyId || (companies[0] ? companies[0].id : '');
+                      const activeComp = companies.find(c => c.id === activeCompId);
+                      const activeCompBanks = activeComp?.bankAccounts || [];
+
+                      return (
+                        <>
+                          <select
+                            className="select-filter"
+                            value={statementBankAccountId}
+                            onChange={(e) => {
+                              const bId = e.target.value;
+                              setStatementBankAccountId(bId);
+                              const acc = activeCompBanks.find(b => b.id === bId);
+                              if (acc) {
+                                setStatementAccountRef(`${acc.bankName} - ${acc.accountName}`);
+                              } else {
+                                setStatementAccountRef('');
+                              }
+                            }}
+                            style={{ width: '100%', padding: '8px' }}
+                            required
+                          >
+                            <option value="">-- Select Bank Account --</option>
+                            {activeCompBanks.map(acc => (
+                              <option key={acc.id} value={acc.id}>
+                                {acc.bankName} - {acc.accountName} ({acc.currency})
+                              </option>
+                            ))}
+                          </select>
+                          {activeCompBanks.length === 0 && (
+                            <span style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '4px', display: 'block' }}>
+                              ⚠️ No bank accounts configured for this company. Please add one under the Companies tab first!
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>

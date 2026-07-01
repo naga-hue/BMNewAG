@@ -242,7 +242,9 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
         expiryDate: insExpiryDate
       } : null,
       documents,
-      complianceTasks: initialComplianceTasks
+      complianceTasks: initialComplianceTasks,
+      departments: company ? (company.departments || []) : [],
+      bankAccounts: company ? (company.bankAccounts || []) : []
     };
 
     onSave(savedCompany);

@@ -25,6 +25,7 @@ export default function RBACDashboard({
   const [editRole, setEditRole] = useState('recruiter');
   const [editScope, setEditScope] = useState('self');
   const [editModules, setEditModules] = useState([]);
+  const [editPassword, setEditPassword] = useState('');
 
   const handleEditClick = (s) => {
     setEditingStaffId(s.id);
@@ -39,6 +40,7 @@ export default function RBACDashboard({
     setEditRole(perm.role || 'recruiter');
     setEditScope(perm.dataScope || 'self');
     setEditModules(perm.allowedModules || []);
+    setEditPassword(s.password || '');
   };
 
   const handleToggleModule = (modKey) => {
@@ -51,6 +53,7 @@ export default function RBACDashboard({
     try {
       const updatedStaff = {
         ...s,
+        password: editPassword.trim(),
         permissions: {
           role: editRole,
           dataScope: editScope,
@@ -81,6 +84,7 @@ export default function RBACDashboard({
               <th>Staff Member</th>
               <th>Department / Company</th>
               <th>Access Role</th>
+              <th>Sign-in Password</th>
               <th>Data Visibility Scope</th>
               <th>Allowed Modules</th>
               <th style={{ textAlign: 'right' }}>Actions</th>
@@ -137,6 +141,24 @@ export default function RBACDashboard({
                         textTransform: 'capitalize'
                       }}>
                         {perm.role}
+                      </span>
+                    )}
+                  </td>
+
+                  {/* Password column */}
+                  <td>
+                    {isEditing ? (
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        value={editPassword}
+                        onChange={(e) => setEditPassword(e.target.value)}
+                        placeholder="Welcome123"
+                        style={{ padding: '4px 8px', fontSize: '12px', width: '130px' }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: '12px', color: s.password ? 'var(--text-secondary)' : 'var(--danger)', fontFamily: s.password ? 'monospace' : 'inherit' }}>
+                        {s.password ? '••••••••' : '⚠️ No password set'}
                       </span>
                     )}
                   </td>
@@ -260,7 +282,7 @@ export default function RBACDashboard({
 
             {staff.length === 0 && (
               <tr>
-                <td colSpan="6" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
+                <td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
                   No staff members registered. Please create staff records in the Directory first.
                 </td>
               </tr>

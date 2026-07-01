@@ -73,7 +73,11 @@ export default function App() {
     }
   };
 
-  const [currentUser, setCurrentUser] = useState(DEFAULT_ADMIN_USER);
+  const [currentUser, setCurrentUser] = useState(() => {
+    const storedId = localStorage.getItem('bm-logged-in-user-id');
+    if (storedId === 'super-admin') return DEFAULT_ADMIN_USER;
+    return null;
+  });
 
   // Database lists
   const [companies, setCompanies] = useState([]);
@@ -270,6 +274,27 @@ export default function App() {
         const refreshed = updatedList.find(s => s.id === selectedStaff.id);
         if (refreshed) {
           setSelectedStaff(refreshed);
+        }
+      }
+
+      // Auto-restore or synchronize active logged-in user profile
+      const storedId = localStorage.getItem('bm-logged-in-user-id');
+      if (storedId) {
+        if (storedId === 'super-admin') {
+          setCurrentUser(DEFAULT_ADMIN_USER);
+        } else {
+          const found = updatedList.find(s => s.id === storedId);
+          if (found) {
+            const permissions = found.permissions || {
+              role: found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
+              dataScope: found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
+              allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors']
+            };
+            setCurrentUser({
+              ...found,
+              permissions
+            });
+          }
         }
       }
     }, initialStaff);
@@ -1017,6 +1042,131 @@ export default function App() {
     return formatGBP(totalGBP);
   };
 
+  if (!currentUser) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        backgroundColor: 'var(--bg-secondary)',
+        backgroundImage: 'radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 40%), radial-gradient(circle at 90% 80%, rgba(99, 102, 241, 0.03) 0%, transparent 40%)',
+        fontFamily: 'Inter, sans-serif'
+      }}>
+        <div style={{
+          width: '100%',
+          maxWidth: '400px',
+          padding: '40px',
+          backgroundColor: 'var(--bg-card)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '16px',
+          boxShadow: 'var(--shadow-xl)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '24px',
+          animation: 'fadeIn 0.3s ease-out'
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '12px',
+              backgroundColor: 'var(--primary)',
+              color: '#ffffff',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '24px',
+              fontWeight: 700,
+              marginBottom: '16px'
+            }}>H</div>
+            <h2 style={{ fontSize: '20px', fontWeight: 700, margin: '0 0 6px 0', color: 'var(--text-primary)' }}>Humres Group</h2>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0 }}>Business Management Suite</p>
+          </div>
+
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            const email = e.target.email.value.trim().toLowerCase();
+            const password = e.target.password.value;
+
+            // 1. Check Super Admin
+            if (email === DEFAULT_ADMIN_USER.businessEmail.toLowerCase() && (password === 'admin123' || password === 'Welcome123')) {
+              setCurrentUser(DEFAULT_ADMIN_USER);
+              localStorage.setItem('bm-logged-in-user-id', 'super-admin');
+              handleShowToast("Welcome back, Super Admin!", "success");
+              return;
+            }
+
+            // 2. Check Staff list
+            const foundStaff = staff.find(s => s.businessEmail?.toLowerCase() === email || s.personalEmail?.toLowerCase() === email);
+            if (foundStaff) {
+              if (foundStaff.password === password) {
+                const updatedPermissions = foundStaff.permissions || {
+                  role: foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
+                  dataScope: foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
+                  allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors']
+                };
+                setCurrentUser({
+                  ...foundStaff,
+                  permissions: updatedPermissions
+                });
+                localStorage.setItem('bm-logged-in-user-id', foundStaff.id);
+                handleShowToast(`Welcome back, ${foundStaff.fullName}!`, "success");
+                return;
+              }
+            }
+
+            handleShowToast("Invalid email or password. Please try again.", "warning");
+          }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            
+            <div className="form-group">
+              <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>Business Email</label>
+              <input 
+                name="email"
+                type="email" 
+                className="form-input" 
+                placeholder="name@globalrecruiters.ae"
+                required
+                style={{ padding: '12px' }}
+              />
+            </div>
+
+            <div className="form-group">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label className="form-label" style={{ fontSize: '12px', fontWeight: 600, margin: 0 }}>Password</label>
+              </div>
+              <input 
+                name="password"
+                type="password" 
+                className="form-input" 
+                placeholder="••••••••"
+                required
+                style={{ padding: '12px' }}
+              />
+            </div>
+
+            <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '12px', marginTop: '8px', fontSize: '14px', fontWeight: 600 }}>
+              Sign In
+            </button>
+          </form>
+
+          <div style={{ 
+            fontSize: '11px', 
+            color: 'var(--text-muted)', 
+            backgroundColor: 'rgba(255,255,255,0.02)', 
+            padding: '10px', 
+            borderRadius: '6px', 
+            border: '1px solid var(--border-color)', 
+            textAlign: 'center' 
+          }}>
+            🔑 Super Admin default: <strong>naga@globalrecruiters.ae</strong><br/>
+            Password default: <strong>Welcome123</strong>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
       
@@ -1206,16 +1356,41 @@ export default function App() {
             </span>
           </div>
 
-          <div className="user-profile">
-            <div className="avatar">
-              {currentUser.fullName ? currentUser.fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'SU'}
-            </div>
-            <div>
-              <div className="username">{currentUser.fullName}</div>
-              <div className="user-role" style={{ textTransform: 'capitalize' }}>
-                {currentUser.permissions?.role || 'User'}
+          <div className="user-profile" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="avatar">
+                {currentUser.fullName ? currentUser.fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'SU'}
+              </div>
+              <div>
+                <div className="username" style={{ fontSize: '13px', fontWeight: 600 }}>{currentUser.fullName}</div>
+                <div className="user-role" style={{ textTransform: 'capitalize', fontSize: '11px', color: 'var(--text-muted)' }}>
+                  {currentUser.permissions?.role || 'User'}
+                </div>
               </div>
             </div>
+            <button
+              onClick={() => {
+                setCurrentUser(null);
+                localStorage.removeItem('bm-logged-in-user-id');
+                handleShowToast("Signed out successfully.", "info");
+              }}
+              style={{
+                background: 'none',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+                color: 'var(--danger)',
+                fontSize: '10px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                backgroundColor: 'rgba(239, 68, 68, 0.05)',
+                transition: 'all 0.2s',
+                textTransform: 'uppercase'
+              }}
+              title="Sign Out of Suite"
+            >
+              Exit
+            </button>
           </div>
         </div>
       </aside>
@@ -1242,52 +1417,56 @@ export default function App() {
           </div>
           
           <div className="header-actions">
-            {/* Active User Switcher Dropdown */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '8px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500 }}>Active Session:</span>
-              <select
-                className="select-filter"
-                value={currentUser.id}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val === 'super-admin') {
-                    setCurrentUser(DEFAULT_ADMIN_USER);
-                    setActiveTab('dashboard');
-                  } else {
-                    const selectedMember = staff.find(st => st.id === val);
-                    if (selectedMember) {
-                      const updatedPermissions = selectedMember.permissions || {
-                        role: selectedMember.department === 'Finance' || selectedMember.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
-                        dataScope: selectedMember.department === 'Finance' || selectedMember.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
-                        allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors']
-                      };
-                      setCurrentUser({
-                        ...selectedMember,
-                        permissions: updatedPermissions
-                      });
+            {/* Active User Switcher Dropdown (Admin Impersonation Feature) */}
+            {currentUser.permissions?.role === 'admin' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '8px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500 }}>Active Impersonation:</span>
+                <select
+                  className="select-filter"
+                  value={currentUser.id}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'super-admin') {
+                      setCurrentUser(DEFAULT_ADMIN_USER);
+                      localStorage.setItem('bm-logged-in-user-id', 'super-admin');
                       setActiveTab('dashboard');
+                    } else {
+                      const selectedMember = staff.find(st => st.id === val);
+                      if (selectedMember) {
+                        const updatedPermissions = selectedMember.permissions || {
+                          role: selectedMember.department === 'Finance' || selectedMember.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
+                          dataScope: selectedMember.department === 'Finance' || selectedMember.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
+                          allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors']
+                        };
+                        setCurrentUser({
+                          ...selectedMember,
+                          permissions: updatedPermissions
+                        });
+                        localStorage.setItem('bm-logged-in-user-id', selectedMember.id);
+                        setActiveTab('dashboard');
+                      }
                     }
-                  }
-                }}
-                style={{ 
-                  padding: '4px 8px', 
-                  fontSize: '12px', 
-                  minWidth: '180px', 
-                  backgroundColor: 'var(--bg-secondary)', 
-                  border: '1px solid var(--border-color)', 
-                  borderRadius: 'var(--radius-md)', 
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer'
-                }}
-              >
-                <option value="super-admin">Super Admin (All Access)</option>
-                {staff.map(st => (
-                  <option key={st.id} value={st.id}>
-                    {st.fullName} ({st.permissions?.role || 'Recruiter'})
-                  </option>
-                ))}
-              </select>
-            </div>
+                  }}
+                  style={{ 
+                    padding: '4px 8px', 
+                    fontSize: '12px', 
+                    minWidth: '180px', 
+                    backgroundColor: 'var(--bg-secondary)', 
+                    border: '1px solid var(--border-color)', 
+                    borderRadius: 'var(--radius-md)', 
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="super-admin">Super Admin (All Access)</option>
+                  {staff.map(st => (
+                    <option key={st.id} value={st.id}>
+                      {st.fullName} ({st.permissions?.role || 'Recruiter'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <button 
               className="btn-theme-toggle" 

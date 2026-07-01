@@ -1037,11 +1037,15 @@ export default function ExpensesDashboard({
                     <span style={{ fontWeight: 600 }}>
                       {(() => {
                         if (allocationType === 'company') {
-                          const comp = companies.find(c => c.id === allocationTarget);
-                          return `🏢 Company Target: ${comp ? comp.name : 'Click to select Company'}`;
+                          const targets = Array.isArray(allocationTarget) ? allocationTarget : [allocationTarget].filter(Boolean);
+                          if (targets.length === 0) return '🏢 Click to select Company';
+                          const names = targets.map(tid => companies.find(c => c.id === tid)?.name).filter(Boolean);
+                          return `🏢 Company Target: ${names.join(', ')}`;
                         }
                         if (allocationType === 'department') {
-                          return `📂 Department Cost Center: ${allocationTarget || 'Click to select Department'}`;
+                          const targets = Array.isArray(allocationTarget) ? allocationTarget : [allocationTarget].filter(Boolean);
+                          if (targets.length === 0) return '📂 Click to select Department';
+                          return `📂 Department Cost Center: ${targets.join(', ')}`;
                         }
                         if (allocationType === 'staff') {
                           const count = selectedStaffIds?.length || 0;
@@ -1223,10 +1227,12 @@ export default function ExpensesDashboard({
                   // Resolve Allocation Label
                   let allocationLabel = 'Whole Corporate Group';
                   if (exp.allocationType === 'company') {
-                    const comp = companies.find(c => c.id === exp.allocationTarget);
-                    allocationLabel = comp ? `Corp: ${comp.name}` : 'Corporate';
+                    const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+                    const names = targets.map(tid => companies.find(c => c.id === tid)?.name).filter(Boolean);
+                    allocationLabel = names.length > 0 ? `Corp: ${names.join(', ')}` : 'Corporate';
                   } else if (exp.allocationType === 'department') {
-                    allocationLabel = `Dept: ${exp.allocationTarget}`;
+                    const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+                    allocationLabel = targets.length > 0 ? `Dept: ${targets.join(', ')}` : 'Department';
                   } else if (exp.allocationType === 'staff') {
                     const ids = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
                     allocationLabel = `Staff: ${ids.length} recruiters`;
@@ -1647,11 +1653,15 @@ export default function ExpensesDashboard({
                           >
                             {(() => {
                               if (row.allocationType === 'company') {
-                                const comp = companies.find(c => c.id === row.allocationTarget);
-                                return `🏢 ${comp ? comp.name : 'Choose Company'}`;
+                                const targets = Array.isArray(row.allocationTarget) ? row.allocationTarget : [row.allocationTarget].filter(Boolean);
+                                if (targets.length === 0) return '🏢 Choose Company';
+                                const names = targets.map(tid => companies.find(c => c.id === tid)?.name).filter(Boolean);
+                                return `🏢 ${names.join(', ')}`;
                               }
                               if (row.allocationType === 'department') {
-                                return `📂 Dept: ${row.allocationTarget || 'Choose Dept'}`;
+                                const targets = Array.isArray(row.allocationTarget) ? row.allocationTarget : [row.allocationTarget].filter(Boolean);
+                                if (targets.length === 0) return '📂 Choose Dept';
+                                return `📂 Dept: ${targets.join(', ')}`;
                               }
                               if (row.allocationType === 'staff') {
                                 const count = row.selectedStaffIds?.length || 0;
@@ -1770,19 +1780,31 @@ export default function ExpensesDashboard({
             const gbpAmt = toGBP(exp.amount, exp.currency);
 
             if (exp.allocationType === 'company') {
-              const compStaff = activeStaff.filter(s => s.companyId === exp.allocationTarget);
-              const compHead = compStaff.length || 1;
-              compStaff.forEach(s => {
-                staffOverheadMap[s.id][mIdx] += gbpAmt / compHead;
-                staffTransactionsMap[s.id][mIdx].push({ ...exp, apportionedShare: gbpAmt / compHead, shareReason: 'Company Apportionment' });
-              });
+              const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+              if (targets.length > 0) {
+                const compShare = gbpAmt / targets.length;
+                targets.forEach(targetComp => {
+                  const compStaff = activeStaff.filter(s => s.companyId === targetComp);
+                  const compHead = compStaff.length || 1;
+                  compStaff.forEach(s => {
+                    staffOverheadMap[s.id][mIdx] += compShare / compHead;
+                    staffTransactionsMap[s.id][mIdx].push({ ...exp, apportionedShare: compShare / compHead, shareReason: 'Company Apportionment' });
+                  });
+                });
+              }
             } else if (exp.allocationType === 'department') {
-              const deptStaff = activeStaff.filter(s => s.department === exp.allocationTarget);
-              const deptHead = deptStaff.length || 1;
-              deptStaff.forEach(s => {
-                staffOverheadMap[s.id][mIdx] += gbpAmt / deptHead;
-                staffTransactionsMap[s.id][mIdx].push({ ...exp, apportionedShare: gbpAmt / deptHead, shareReason: 'Department Apportionment' });
-              });
+              const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+              if (targets.length > 0) {
+                const deptShare = gbpAmt / targets.length;
+                targets.forEach(targetDept => {
+                  const deptStaff = activeStaff.filter(s => s.department === targetDept);
+                  const deptHead = deptStaff.length || 1;
+                  deptStaff.forEach(s => {
+                    staffOverheadMap[s.id][mIdx] += deptShare / deptHead;
+                    staffTransactionsMap[s.id][mIdx].push({ ...exp, apportionedShare: deptShare / deptHead, shareReason: 'Department Apportionment' });
+                  });
+                });
+              }
             } else if (exp.allocationType === 'staff') {
               const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
               if (targets.length > 0) {
@@ -2438,29 +2460,43 @@ export default function ExpensesDashboard({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {companies
                     .filter(c => c.name.toLowerCase().includes(allocationSearch.toLowerCase()))
-                    .map(c => (
-                      <label 
-                        key={c.id} 
-                        style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'space-between',
-                          padding: '8px', 
-                          borderRadius: '4px', 
-                          cursor: 'pointer',
-                          backgroundColor: allocatingTarget === c.id ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
-                          border: allocatingTarget === c.id ? '1px solid var(--primary)' : '1px solid transparent'
-                        }}
-                      >
-                        <span style={{ fontSize: '12px', fontWeight: allocatingTarget === c.id ? 600 : 'normal' }}>{c.name}</span>
-                        <input 
-                          type="radio" 
-                          name="allocating-company"
-                          checked={allocatingTarget === c.id} 
-                          onChange={() => setAllocatingTarget(c.id)}
-                        />
-                      </label>
-                    ))}
+                    .map(c => {
+                      const isChecked = Array.isArray(allocatingTarget) 
+                        ? allocatingTarget.includes(c.id) 
+                        : allocatingTarget === c.id;
+                      return (
+                        <label 
+                          key={c.id} 
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'space-between',
+                            padding: '8px', 
+                            borderRadius: '4px', 
+                            cursor: 'pointer',
+                            backgroundColor: isChecked ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
+                            border: isChecked ? '1px solid var(--primary)' : '1px solid transparent'
+                          }}
+                        >
+                          <span style={{ fontSize: '12px', fontWeight: isChecked ? 600 : 'normal' }}>{c.name}</span>
+                          <input 
+                            type="checkbox" 
+                            checked={isChecked} 
+                            onChange={(e) => {
+                              let current = Array.isArray(allocatingTarget) 
+                                ? [...allocatingTarget] 
+                                : [allocatingTarget].filter(Boolean);
+                              if (e.target.checked) {
+                                if (!current.includes(c.id)) current.push(c.id);
+                              } else {
+                                current = current.filter(id => id !== c.id);
+                              }
+                              setAllocatingTarget(current);
+                            }}
+                          />
+                        </label>
+                      );
+                    })}
                   {companies.filter(c => c.name.toLowerCase().includes(allocationSearch.toLowerCase())).length === 0 && (
                     <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>No matching companies.</div>
                   )}
@@ -2471,29 +2507,43 @@ export default function ExpensesDashboard({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {allAvailableDepts
                     .filter(d => d.toLowerCase().includes(allocationSearch.toLowerCase()))
-                    .map(d => (
-                      <label 
-                        key={d} 
-                        style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'space-between',
-                          padding: '8px', 
-                          borderRadius: '4px', 
-                          cursor: 'pointer',
-                          backgroundColor: allocatingTarget === d ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
-                          border: allocatingTarget === d ? '1px solid var(--primary)' : '1px solid transparent'
-                        }}
-                      >
-                        <span style={{ fontSize: '12px', fontWeight: allocatingTarget === d ? 600 : 'normal' }}>{d}</span>
-                        <input 
-                          type="radio" 
-                          name="allocating-department"
-                          checked={allocatingTarget === d} 
-                          onChange={() => setAllocatingTarget(d)}
-                        />
-                      </label>
-                    ))}
+                    .map(d => {
+                      const isChecked = Array.isArray(allocatingTarget) 
+                        ? allocatingTarget.includes(d) 
+                        : allocatingTarget === d;
+                      return (
+                        <label 
+                          key={d} 
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'space-between',
+                            padding: '8px', 
+                            borderRadius: '4px', 
+                            cursor: 'pointer',
+                            backgroundColor: isChecked ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
+                            border: isChecked ? '1px solid var(--primary)' : '1px solid transparent'
+                          }}
+                        >
+                          <span style={{ fontSize: '12px', fontWeight: isChecked ? 600 : 'normal' }}>{d}</span>
+                          <input 
+                            type="checkbox" 
+                            checked={isChecked} 
+                            onChange={(e) => {
+                              let current = Array.isArray(allocatingTarget) 
+                                ? [...allocatingTarget] 
+                                : [allocatingTarget].filter(Boolean);
+                              if (e.target.checked) {
+                                if (!current.includes(d)) current.push(d);
+                              } else {
+                                current = current.filter(name => name !== d);
+                              }
+                              setAllocatingTarget(current);
+                            }}
+                          />
+                        </label>
+                      );
+                    })}
                   {allAvailableDepts.filter(d => d.toLowerCase().includes(allocationSearch.toLowerCase())).length === 0 && (
                     <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>No matching departments.</div>
                   )}

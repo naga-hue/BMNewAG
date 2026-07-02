@@ -130,6 +130,34 @@ export default function ExpensesDashboard({
     return depts.sort();
   }, [companyFilter, companies, staff]);
 
+  // Matrix Filter states
+  const [matrixCompanyFilter, setMatrixCompanyFilter] = useState('all');
+  const [matrixDeptFilter, setMatrixDeptFilter] = useState('all');
+  const [matrixStaffFilter, setMatrixStaffFilter] = useState('all');
+
+  const matrixFilteredDepts = useMemo(() => {
+    const depts = [];
+    const targetCompanies = matrixCompanyFilter === 'all' 
+      ? companies 
+      : companies.filter(c => c.id === matrixCompanyFilter);
+    const targetStaff = matrixCompanyFilter === 'all' 
+      ? staff 
+      : staff.filter(s => s.companyId === matrixCompanyFilter);
+
+    targetCompanies.forEach(c => {
+      (c.departments || []).forEach(d => {
+        const name = d.name || d;
+        if (name && !depts.includes(name)) depts.push(name);
+      });
+    });
+    targetStaff.forEach(s => {
+      if (s.department && !depts.includes(s.department)) {
+        depts.push(s.department);
+      }
+    });
+    return depts.sort();
+  }, [matrixCompanyFilter, companies, staff]);
+
   // Column Choose visibility state
   const [visibleCols, setVisibleCols] = useState({
     select: true,
@@ -2467,9 +2495,15 @@ export default function ExpensesDashboard({
         }
 
         // 2. Build the hierarchical tree data structure: Companies -> Nominals -> Parties
-        const computedMatrixData = [];
-        companies.forEach(company => {
-          const companyStaff = staff.filter(s => s.companyId === company.id);
+         const computedMatrixData = [];
+        const visibleCompanies = companies.filter(c => matrixCompanyFilter === 'all' || c.id === matrixCompanyFilter);
+        visibleCompanies.forEach(company => {
+          const companyStaff = staff.filter(s => {
+            if (s.companyId !== company.id) return false;
+            if (matrixDeptFilter !== 'all' && s.department !== matrixDeptFilter) return false;
+            if (matrixStaffFilter !== 'all' && s.id !== matrixStaffFilter) return false;
+            return true;
+          });
 
           const companyMonths = Array(12).fill(0);
           const companyTransactionsByMonth = Array.from({ length: 12 }, () => []);
@@ -2556,15 +2590,14 @@ export default function ExpensesDashboard({
           });
         });
 
-        // 3. Compute col totals
+        // 3. Compute col totals dynamically from visible companies
         const colTotals = Array(12).fill(0);
-        let grandTotal = 0;
-        for (let m = 0; m < 12; m++) {
-          const monthKey = `${matrixYear}-${String(m + 1).padStart(2, '0')}`;
-          const monthExpenses = yearExpenses.filter(e => e.plMonth === monthKey);
-          colTotals[m] = monthExpenses.reduce((sum, e) => sum + toGBP(e.amount, e.currency), 0);
-          grandTotal += colTotals[m];
-        }
+        computedMatrixData.forEach(compRow => {
+          for (let m = 0; m < 12; m++) {
+            colTotals[m] += compRow.months[m];
+          }
+        });
+        const grandTotal = colTotals.reduce((a, b) => a + b, 0);
 
         // 4. Flatten based on expand states
         const flatRowsForMatrix = [];
@@ -2615,17 +2648,70 @@ export default function ExpensesDashboard({
                 <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>YTD Expenses & Shared Apportionments Matrix</h3>
                 <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Apportioned overhead costs distributed dynamically down to departments and individuals</span>
               </div>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <select
                   className="select-filter"
                   value={matrixYear}
                   onChange={(e) => setMatrixYear(e.target.value)}
-                  style={{ padding: '6px', fontSize: '13px', width: '100px' }}
+                  style={{ padding: '6px', fontSize: '12px', width: '80px' }}
                 >
                   <option value="2025">2025</option>
                   <option value="2026">2026</option>
                   <option value="2027">2027</option>
                 </select>
+
+                <select
+                  className="select-filter"
+                  value={matrixCompanyFilter}
+                  onChange={(e) => {
+                    setMatrixCompanyFilter(e.target.value);
+                    setMatrixDeptFilter('all');
+                    setMatrixStaffFilter('all');
+                  }}
+                  style={{ padding: '6px', fontSize: '12px', minWidth: '130px' }}
+                >
+                  <option value="all">🏢 All Companies</option>
+                  {companies.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+
+                <select
+                  className="select-filter"
+                  value={matrixDeptFilter}
+                  onChange={(e) => {
+                    setMatrixDeptFilter(e.target.value);
+                    setMatrixStaffFilter('all');
+                  }}
+                  style={{ padding: '6px', fontSize: '12px', minWidth: '130px' }}
+                >
+                  <option value="all">📂 All Departments</option>
+                  {matrixFilteredDepts.map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+
+                <select
+                  className="select-filter"
+                  value={matrixStaffFilter}
+                  onChange={(e) => setMatrixStaffFilter(e.target.value)}
+                  style={{ padding: '6px', fontSize: '12px', minWidth: '130px' }}
+                >
+                  <option value="all">👥 All Recruiters</option>
+                  {(() => {
+                    const visibleStaff = matrixCompanyFilter === 'all'
+                      ? staff
+                      : staff.filter(s => s.companyId === matrixCompanyFilter);
+                    const activeVisibleStaff = visibleStaff.filter(s => {
+                      if (matrixDeptFilter !== 'all' && s.department !== matrixDeptFilter) return false;
+                      return true;
+                    });
+                    return activeVisibleStaff.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ));
+                  })()}
+                </select>
+
                 <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={expandAll}>
                   Expand All
                 </button>

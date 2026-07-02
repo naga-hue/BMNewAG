@@ -1158,6 +1158,18 @@ export default function ExpensesDashboard({
 
               <select 
                 className="select-filter"
+                value={bankAccountFilter}
+                onChange={(e) => setBankAccountFilter(e.target.value)}
+                style={{ minWidth: '160px' }}
+              >
+                <option value="all">All Bank Accounts</option>
+                {allBankAccounts.map(b => (
+                  <option key={b.id} value={b.id}>{b.ref}</option>
+                ))}
+              </select>
+
+              <select 
+                className="select-filter"
                 value={companyFilter}
                 onChange={(e) => setCompanyFilter(e.target.value)}
               >

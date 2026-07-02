@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { toGBP } from '../utils/currency';
 import { 
   Building2, 

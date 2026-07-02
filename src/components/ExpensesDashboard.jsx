@@ -1224,6 +1224,95 @@ export default function ExpensesDashboard({
       });
   }, [placements]);
 
+  const recipientRows = useMemo(() => {
+    const rows = [];
+    
+    staff.forEach(s => {
+      rows.push({
+        id: `staff:${s.id}`,
+        name: s.fullName,
+        type: 'Staff / Recruiter',
+        rawType: 'staff',
+        rawId: s.id
+      });
+    });
+
+    vendors.forEach(v => {
+      rows.push({
+        id: `vendor:${v.id}`,
+        name: v.name,
+        type: 'Registered Vendor',
+        rawType: 'vendor',
+        rawId: v.id
+      });
+    });
+
+    const seenNames = new Set(rows.map(r => r.name.toLowerCase()));
+    expenses.forEach(e => {
+      if (!e.recipientType || e.recipientType === 'other') {
+        const cleanPayeeName = (e.payee || '').split(' [Ref:')[0].trim();
+        if (cleanPayeeName && !seenNames.has(cleanPayeeName.toLowerCase())) {
+          seenNames.add(cleanPayeeName.toLowerCase());
+          rows.push({
+            id: `other:${cleanPayeeName}`,
+            name: cleanPayeeName,
+            type: 'General Payee',
+            rawType: 'other',
+            rawId: cleanPayeeName
+          });
+        }
+      }
+    });
+
+    return rows;
+  }, [staff, vendors, expenses]);
+
+  const computedRecipientRows = useMemo(() => {
+    const searched = recipientRows.filter(r => {
+      if (!recipientSearchQuery.trim()) return true;
+      return r.name.toLowerCase().includes(recipientSearchQuery.toLowerCase()) || r.type.toLowerCase().includes(recipientSearchQuery.toLowerCase());
+    });
+
+    return searched.map(row => {
+      const monthlyValues = Array(12).fill(0);
+      
+      for (let m = 0; m < 12; m++) {
+        const monthKey = `2026-${String(m + 1).padStart(2, '0')}`;
+        const matchingExps = expenses.filter(e => {
+          if (e.plMonth !== monthKey) return false;
+          if (recipientCompanyFilter !== 'all' && e.bankCompanyId !== recipientCompanyFilter) return false;
+          if (recipientNominalFilter !== 'all' && e.nominalCode !== recipientNominalFilter) return false;
+          
+          if (row.rawType === 'staff') {
+            if (e.recipientType === 'staff' && e.recipientId === row.rawId) return true;
+            if (!e.recipientType || e.recipientType === 'other') {
+              return (e.payee || '').toLowerCase().includes(row.name.toLowerCase());
+            }
+          } else if (row.rawType === 'vendor') {
+            if (e.recipientType === 'vendor' && e.recipientId === row.rawId) return true;
+            if (!e.recipientType || e.recipientType === 'other') {
+              return (e.payee || '').toLowerCase().includes(row.name.toLowerCase());
+            }
+          } else if (row.rawType === 'other') {
+            const cleanPayee = (e.payee || '').split(' [Ref:')[0].trim().toLowerCase();
+            return cleanPayee === row.name.toLowerCase();
+          }
+          return false;
+        });
+
+        monthlyValues[m] = matchingExps.reduce((acc, curr) => acc + toGBP(curr.amount, curr.currency), 0);
+      }
+
+      const ytdTotal = monthlyValues.reduce((acc, curr) => acc + curr, 0);
+
+      return {
+        ...row,
+        monthlyValues,
+        ytdTotal
+      };
+    }).filter(r => r.ytdTotal > 0 || recipientSearchQuery.trim() !== '');
+  }, [recipientRows, expenses, recipientCompanyFilter, recipientNominalFilter, recipientSearchQuery]);
+
   // Filter Ledger transactions list
   const filteredExpenses = (expenses || []).filter(exp => {
     if (!exp) return false;
@@ -3913,97 +4002,8 @@ export default function ExpensesDashboard({
           SUB-TAB: RECIPIENT PAYMENTS MATRIX (Jan - Dec)
           ============================================================== */}
       {activeSubTab === 'recipients' && (() => {
-        const recipientRows = useMemo(() => {
-          const rows = [];
-          
-          staff.forEach(s => {
-            rows.push({
-              id: `staff:${s.id}`,
-              name: s.fullName,
-              type: 'Staff / Recruiter',
-              rawType: 'staff',
-              rawId: s.id
-            });
-          });
-
-          vendors.forEach(v => {
-            rows.push({
-              id: `vendor:${v.id}`,
-              name: v.name,
-              type: 'Registered Vendor',
-              rawType: 'vendor',
-              rawId: v.id
-            });
-          });
-
-          const seenNames = new Set(rows.map(r => r.name.toLowerCase()));
-          expenses.forEach(e => {
-            if (!e.recipientType || e.recipientType === 'other') {
-              const cleanPayeeName = (e.payee || '').split(' [Ref:')[0].trim();
-              if (cleanPayeeName && !seenNames.has(cleanPayeeName.toLowerCase())) {
-                seenNames.add(cleanPayeeName.toLowerCase());
-                rows.push({
-                  id: `other:${cleanPayeeName}`,
-                  name: cleanPayeeName,
-                  type: 'General Payee',
-                  rawType: 'other',
-                  rawId: cleanPayeeName
-                });
-              }
-            }
-          });
-
-          return rows;
-        }, [staff, vendors, expenses]);
-
-        const computedRows = useMemo(() => {
-          const searched = recipientRows.filter(r => {
-            if (!recipientSearchQuery.trim()) return true;
-            return r.name.toLowerCase().includes(recipientSearchQuery.toLowerCase()) || r.type.toLowerCase().includes(recipientSearchQuery.toLowerCase());
-          });
-
-          return searched.map(row => {
-            const monthlyValues = Array(12).fill(0);
-            
-            for (let m = 0; m < 12; m++) {
-              const monthKey = `2026-${String(m + 1).padStart(2, '0')}`;
-              const matchingExps = expenses.filter(e => {
-                if (e.plMonth !== monthKey) return false;
-                if (recipientCompanyFilter !== 'all' && e.bankCompanyId !== recipientCompanyFilter) return false;
-                if (recipientNominalFilter !== 'all' && e.nominalCode !== recipientNominalFilter) return false;
-                
-                if (row.rawType === 'staff') {
-                  if (e.recipientType === 'staff' && e.recipientId === row.rawId) return true;
-                  if (!e.recipientType || e.recipientType === 'other') {
-                    return (e.payee || '').toLowerCase().includes(row.name.toLowerCase());
-                  }
-                } else if (row.rawType === 'vendor') {
-                  if (e.recipientType === 'vendor' && e.recipientId === row.rawId) return true;
-                  if (!e.recipientType || e.recipientType === 'other') {
-                    return (e.payee || '').toLowerCase().includes(row.name.toLowerCase());
-                  }
-                } else if (row.rawType === 'other') {
-                  const cleanPayee = (e.payee || '').split(' [Ref:')[0].trim().toLowerCase();
-                  return cleanPayee === row.name.toLowerCase();
-                }
-                return false;
-              });
-
-              monthlyValues[m] = matchingExps.reduce((acc, curr) => acc + toGBP(curr.amount, curr.currency), 0);
-            }
-
-            const ytdTotal = monthlyValues.reduce((acc, curr) => acc + curr, 0);
-
-            return {
-              ...row,
-              monthlyValues,
-              ytdTotal
-            };
-          }).filter(r => r.ytdTotal > 0 || recipientSearchQuery.trim() !== '');
-        }, [recipientRows, expenses, recipientCompanyFilter, recipientNominalFilter, recipientSearchQuery]);
-
         const monthlyGrandTotals = Array(12).fill(0);
-        computedRows.forEach(row => {
+        computedRecipientRows.forEach(row => {
           for (let m = 0; m < 12; m++) {
             monthlyGrandTotals[m] += row.monthlyValues[m];
           }
@@ -4090,7 +4090,7 @@ export default function ExpensesDashboard({
                   </tr>
                 </thead>
                 <tbody>
-                  {computedRows.map(row => (
+                  {computedRecipientRows.map(row => (
                     <tr 
                       key={row.id} 
                       className="ledger-row-hover"
@@ -4161,7 +4161,7 @@ export default function ExpensesDashboard({
                       </td>
                     </tr>
                   ))}
-                  {computedRows.length === 0 && (
+                  {computedRecipientRows.length === 0 && (
                     <tr>
                       <td colSpan="15" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
                         No recipient payments found matching selected filters.

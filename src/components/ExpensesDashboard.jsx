@@ -125,10 +125,7 @@ export default function ExpensesDashboard({
   // Multi-select row selection state
   const [selectedExpenseIds, setSelectedExpenseIds] = useState([]);
 
-  // Bulk Allocation selection modal states
-  const [isBulkAllocModalOpen, setIsBulkAllocModalOpen] = useState(false);
-  const [bulkAllocType, setBulkAllocType] = useState(''); // 'company', 'department', 'staff'
-  const [bulkSelectedTargets, setBulkSelectedTargets] = useState([]);
+
 
   // Sorting state for expenses ledger table
   const [sortBy, setSortBy] = useState('date');
@@ -212,11 +209,16 @@ export default function ExpensesDashboard({
   const [recipientId, setRecipientId] = useState('');
 
   // Target Allocation Modal states
-  const [allocatingRowId, setAllocatingRowId] = useState(null); // row.id or 'manual'
+  const [allocatingRowId, setAllocatingRowId] = useState(null); // row.id, 'manual', or 'bulk'
   const [allocationSearch, setAllocationSearch] = useState('');
   const [allocatingType, setAllocatingType] = useState('company');
-  const [allocatingTarget, setAllocatingTarget] = useState('');
+  const [allocatingTarget, setAllocatingTarget] = useState([]);
   const [allocatingStaffIds, setAllocatingStaffIds] = useState([]);
+  const [expandedSections, setExpandedSections] = useState({
+    company: true,
+    department: false,
+    staff: false
+  });
 
   // Quick Vendor Registration Modal states
   const [quickVendorRowId, setQuickVendorRowId] = useState(null);
@@ -935,16 +937,7 @@ export default function ExpensesDashboard({
     }
   };
 
-  const handleApplyBulkAllocationClick = () => {
-    if (bulkSelectedTargets.length === 0) {
-      onShowToast("Please select at least one allocation target.", "warning");
-      return;
-    }
-    handleBulkUpdateAllocation(bulkAllocType, bulkSelectedTargets);
-    setIsBulkAllocModalOpen(false);
-    setBulkAllocType('');
-    setBulkSelectedTargets([]);
-  };
+
 
   // Filter nominal codes & placements lists
   const unpaidPlacements = placements.filter(p => p.clientPaymentStatus !== 'paid' && p.netScoreValue > 0);
@@ -1629,31 +1622,21 @@ export default function ExpensesDashboard({
                 </div>
 
                 {/* Bulk Allocation */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>Allocation:</span>
-                  <select
-                    className="select-filter"
-                    onChange={(e) => {
-                      const type = e.target.value;
-                      if (!type) return;
-                      if (type === 'global') {
-                        handleBulkUpdateAllocation('global', []);
-                      } else {
-                        setBulkAllocType(type);
-                        setBulkSelectedTargets([]);
-                        setIsBulkAllocModalOpen(true);
-                      }
-                      e.target.value = '';
-                    }}
-                    style={{ padding: '4px 8px', fontSize: '11px' }}
-                  >
-                    <option value="">-- Apply Allocation --</option>
-                    <option value="global">Whole Corporate Group</option>
-                    <option value="company">Specific Company...</option>
-                    <option value="department">Specific Department...</option>
-                    <option value="staff">Specific Recruiters (Staff)...</option>
-                  </select>
-                </div>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setAllocatingRowId('bulk');
+                    setAllocatingType('company');
+                    setAllocatingTarget([]);
+                    setAllocatingStaffIds([]);
+                    setExpandedSections({ company: true, department: false, staff: false });
+                    setAllocationSearch('');
+                  }}
+                  style={{ padding: '6px 12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  🎯 Allocate Selected...
+                </button>
 
                 {/* Bulk Delete */}
                 <button 
@@ -1805,15 +1788,33 @@ export default function ExpensesDashboard({
                       {visibleCols.nominal && <td style={{ fontSize: '11px' }}>{exp.nominalCode}</td>}
                       {visibleCols.allocation && (
                         <td>
-                          <span style={{ 
-                            fontSize: '11px', 
-                            fontWeight: 500, 
-                            color: exp.allocationType === 'staff' ? 'var(--warning)' : exp.allocationType === 'department' ? 'var(--accent)' : 'var(--text-secondary)',
-                            backgroundColor: 'rgba(255,255,255,0.03)',
-                            border: '1px solid var(--border-color)',
-                            padding: '3px 8px',
-                            borderRadius: '4px'
-                          }}>
+                          <span 
+                            onClick={() => {
+                              setAllocatingRowId(exp.id);
+                              setAllocatingType(exp.allocationType || 'company');
+                              setAllocatingTarget(exp.allocationTarget || []);
+                              setAllocatingStaffIds(exp.allocationType === 'staff' ? (Array.isArray(exp.allocationTarget) ? exp.allocationTarget : []) : []);
+                              setExpandedSections({
+                                company: exp.allocationType === 'company' || !exp.allocationType,
+                                department: exp.allocationType === 'department',
+                                staff: exp.allocationType === 'staff'
+                              });
+                              setAllocationSearch('');
+                            }}
+                            title="Click to modify allocation target"
+                            style={{ 
+                              fontSize: '11px', 
+                              fontWeight: 500, 
+                              color: exp.allocationType === 'staff' ? 'var(--warning)' : exp.allocationType === 'department' ? 'var(--accent)' : 'var(--text-secondary)',
+                              backgroundColor: 'rgba(255,255,255,0.03)',
+                              border: '1px solid var(--border-color)',
+                              padding: '3px 8px',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              textDecoration: 'underline dashed rgba(255,255,255,0.3)',
+                              display: 'inline-block'
+                            }}
+                          >
                             {allocationLabel}
                           </span>
                           {exp.description && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>{exp.description}</div>}
@@ -3069,6 +3070,9 @@ export default function ExpensesDashboard({
       {/* ==============================================================
           MODAL: TARGET ALLOCATION MULTI-SELECT DESK
           ============================================================== */}
+      {/* ==============================================================
+          MODAL: TARGET ALLOCATION MULTI-SELECT DESK (ACCORDION TREE VIEW)
+          ============================================================== */}
       {allocatingRowId !== null && (
         <div style={{
           position: 'fixed',
@@ -3087,65 +3091,32 @@ export default function ExpensesDashboard({
             backgroundColor: 'var(--bg-card)',
             border: '1px solid var(--border-color)',
             borderRadius: '12px',
-            width: '90%',
-            maxWidth: '550px',
+            width: '95%',
+            maxWidth: '520px',
             padding: '24px',
-            boxShadow: 'var(--shadow-lg)',
+            boxShadow: 'var(--shadow-xl)',
             display: 'flex',
             flexDirection: 'column',
             gap: '16px'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               <div>
-                <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>Select Target Allocation Cost Center</h3>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                  {allocatingRowId === 'bulk' ? 'Bulk Allocate Cost Centers' : 'Select Target Allocation Cost Center'}
+                </h3>
                 <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  Assign where this expense amount should be routed.
+                  {allocatingRowId === 'bulk' 
+                    ? `Assign cost centers for the ${selectedExpenseIds.length} selected transactions.` 
+                    : 'Assign where this expense amount should be routed.'}
                 </span>
               </div>
               <button 
                 type="button" 
-                className="btn-icon" 
                 onClick={() => setAllocatingRowId(null)}
-                style={{ border: 'none', background: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                style={{ border: 'none', background: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '18px' }}
               >
                 ✕
               </button>
-            </div>
-
-            {/* Switch Tabs for Company, Department, Staff */}
-            <div style={{
-              display: 'flex',
-              backgroundColor: 'var(--bg-secondary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '6px',
-              padding: '2px',
-              width: '100%',
-              gap: '2px'
-            }}>
-              {[
-                { key: 'company', label: '🏢 Companies' },
-                { key: 'department', label: '📂 Departments' },
-                { key: 'staff', label: '👥 Staff Splits' }
-              ].map(t => (
-                <button
-                  type="button"
-                  key={t.key}
-                  onClick={() => setAllocatingType(t.key)}
-                  style={{
-                    flex: 1,
-                    background: allocatingType === t.key ? 'var(--bg-primary)' : 'none',
-                    border: 'none',
-                    color: allocatingType === t.key ? 'var(--primary)' : 'var(--text-secondary)',
-                    padding: '8px',
-                    borderRadius: '4px',
-                    fontWeight: 600,
-                    fontSize: '12px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {t.label}
-                </button>
-              ))}
             </div>
 
             {/* Search filter box */}
@@ -3153,170 +3124,320 @@ export default function ExpensesDashboard({
               <input 
                 type="text" 
                 className="form-input" 
-                placeholder="Search targets by name..."
+                placeholder="Search allocation targets by name..."
                 value={allocationSearch}
                 onChange={(e) => setAllocationSearch(e.target.value)}
-                style={{ fontSize: '12px', padding: '8px' }}
+                style={{ fontSize: '12px', padding: '8px', width: '100%' }}
               />
             </div>
 
-            {/* List Container */}
+            {/* Accordion Tree View Container */}
             <div style={{ 
-              maxHeight: '250px', 
+              maxHeight: '320px', 
               overflowY: 'auto', 
-              border: '1px solid var(--border-color)', 
-              borderRadius: '6px', 
-              backgroundColor: 'var(--bg-secondary)',
-              padding: '8px'
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              paddingRight: '4px'
             }}>
-              {allocatingType === 'company' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {companies
-                    .filter(c => c.name.toLowerCase().includes(allocationSearch.toLowerCase()))
-                    .map(c => {
-                      const isChecked = Array.isArray(allocatingTarget) 
-                        ? allocatingTarget.includes(c.id) 
-                        : allocatingTarget === c.id;
-                      return (
-                        <label 
-                          key={c.id} 
-                          style={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'space-between',
-                            padding: '8px', 
-                            borderRadius: '4px', 
-                            cursor: 'pointer',
-                            backgroundColor: isChecked ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
-                            border: isChecked ? '1px solid var(--primary)' : '1px solid transparent'
-                          }}
-                        >
-                          <span style={{ fontSize: '12px', fontWeight: isChecked ? 600 : 'normal' }}>{c.name}</span>
-                          <input 
-                            type="checkbox" 
-                            checked={isChecked} 
-                            onChange={(e) => {
-                              let current = Array.isArray(allocatingTarget) 
-                                ? [...allocatingTarget] 
-                                : [allocatingTarget].filter(Boolean);
-                              if (e.target.checked) {
-                                if (!current.includes(c.id)) current.push(c.id);
-                              } else {
-                                current = current.filter(id => id !== c.id);
-                              }
-                              setAllocatingTarget(current);
-                            }}
-                          />
-                        </label>
-                      );
-                    })}
-                  {companies.filter(c => c.name.toLowerCase().includes(allocationSearch.toLowerCase())).length === 0 && (
-                    <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>No matching companies.</div>
-                  )}
+              
+              {/* Option 1: Global Corporate Allocation */}
+              <div 
+                onClick={() => {
+                  setAllocatingType('global');
+                  setAllocatingTarget([]);
+                  setAllocatingStaffIds([]);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '12px',
+                  backgroundColor: allocatingType === 'global' ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
+                  border: allocatingType === 'global' ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <input 
+                  type="radio" 
+                  checked={allocatingType === 'global'} 
+                  readOnly 
+                  style={{ cursor: 'pointer' }}
+                />
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>🌎 Whole Corporate Group</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Allocate cost to global company overhead</div>
                 </div>
-              )}
+              </div>
 
-              {allocatingType === 'department' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {allAvailableDepts
-                    .filter(d => d.toLowerCase().includes(allocationSearch.toLowerCase()))
-                    .map(d => {
-                      const isChecked = Array.isArray(allocatingTarget) 
-                        ? allocatingTarget.includes(d) 
-                        : allocatingTarget === d;
-                      return (
-                        <label 
-                          key={d} 
-                          style={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'space-between',
-                            padding: '8px', 
-                            borderRadius: '4px', 
-                            cursor: 'pointer',
-                            backgroundColor: isChecked ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
-                            border: isChecked ? '1px solid var(--primary)' : '1px solid transparent'
-                          }}
-                        >
-                          <span style={{ fontSize: '12px', fontWeight: isChecked ? 600 : 'normal' }}>{d}</span>
-                          <input 
-                            type="checkbox" 
-                            checked={isChecked} 
-                            onChange={(e) => {
-                              let current = Array.isArray(allocatingTarget) 
-                                ? [...allocatingTarget] 
-                                : [allocatingTarget].filter(Boolean);
-                              if (e.target.checked) {
-                                if (!current.includes(d)) current.push(d);
-                              } else {
-                                current = current.filter(name => name !== d);
-                              }
-                              setAllocatingTarget(current);
-                            }}
-                          />
-                        </label>
-                      );
-                    })}
-                  {allAvailableDepts.filter(d => d.toLowerCase().includes(allocationSearch.toLowerCase())).length === 0 && (
-                    <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>No matching departments.</div>
-                  )}
-                </div>
-              )}
-
-              {allocatingType === 'staff' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', paddingLeft: '4px' }}>
-                    Select one or more staff members to split cost:
+              {/* Option 2: Companies Accordion Section */}
+              <div>
+                <div 
+                  onClick={() => setExpandedSections(prev => ({ ...prev, company: !prev.company }))}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px',
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    color: 'var(--text-primary)'
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    🏢 Companies 
+                    {allocatingType === 'company' && allocatingTarget.length > 0 && (
+                      <span style={{ fontSize: '10px', backgroundColor: 'var(--primary)', color: '#fff', padding: '1px 6px', borderRadius: '10px' }}>
+                        Active ({allocatingTarget.length} selected)
+                      </span>
+                    )}
                   </span>
-                  {staff
-                    .filter(s => s.fullName.toLowerCase().includes(allocationSearch.toLowerCase()))
-                    .map(s => {
-                      const isChecked = allocatingStaffIds.includes(s.id);
-                      return (
-                        <label 
-                          key={s.id} 
-                          style={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'space-between',
-                            padding: '8px', 
-                            borderRadius: '4px', 
-                            cursor: 'pointer',
-                            backgroundColor: isChecked ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
-                            border: isChecked ? '1px solid var(--primary)' : '1px solid transparent'
-                          }}
-                        >
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '12px', fontWeight: isChecked ? 600 : 'normal' }}>{s.fullName}</span>
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{s.department || 'No Dept'}</span>
-                          </div>
-                          <input 
-                            type="checkbox" 
-                            checked={isChecked} 
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setAllocatingStaffIds(prev => [...prev, s.id]);
-                              } else {
-                                setAllocatingStaffIds(prev => prev.filter(id => id !== s.id));
-                              }
-                            }}
-                          />
-                        </label>
-                      );
-                    })}
-                  {staff.filter(s => s.fullName.toLowerCase().includes(allocationSearch.toLowerCase())).length === 0 && (
-                    <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>No matching staff members.</div>
-                  )}
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{expandedSections.company ? '▼' : '▶'}</span>
                 </div>
-              )}
+                {expandedSections.company && (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    border: '1px solid var(--border-color)',
+                    borderTop: 'none',
+                    borderRadius: '0 0 8px 8px',
+                    padding: '8px',
+                    backgroundColor: 'var(--bg-sidebar)',
+                    maxHeight: '180px',
+                    overflowY: 'auto'
+                  }}>
+                    {companies
+                      .filter(c => c.name.toLowerCase().includes(allocationSearch.toLowerCase()))
+                      .map(c => {
+                        const isChecked = allocatingType === 'company' && allocatingTarget.includes(c.id);
+                        return (
+                          <label 
+                            key={c.id} 
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '8px',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              backgroundColor: isChecked ? 'rgba(99, 102, 241, 0.06)' : 'transparent',
+                              margin: 0
+                            }}
+                          >
+                            <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: isChecked ? 600 : 'normal' }}>{c.name}</span>
+                            <input 
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                let current = allocatingType === 'company' ? [...allocatingTarget] : [];
+                                if (e.target.checked) {
+                                  if (!current.includes(c.id)) current.push(c.id);
+                                } else {
+                                  current = current.filter(id => id !== c.id);
+                                }
+                                setAllocatingType('company');
+                                setAllocatingTarget(current);
+                                setAllocatingStaffIds([]);
+                              }}
+                            />
+                          </label>
+                        );
+                      })}
+                    {companies.filter(c => c.name.toLowerCase().includes(allocationSearch.toLowerCase())).length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>No matching companies found.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Option 3: Departments Accordion Section */}
+              <div>
+                <div 
+                  onClick={() => setExpandedSections(prev => ({ ...prev, department: !prev.department }))}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px',
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    color: 'var(--text-primary)'
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    📂 Departments 
+                    {allocatingType === 'department' && allocatingTarget.length > 0 && (
+                      <span style={{ fontSize: '10px', backgroundColor: 'var(--accent)', color: '#fff', padding: '1px 6px', borderRadius: '10px' }}>
+                        Active ({allocatingTarget.length} selected)
+                      </span>
+                    )}
+                  </span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{expandedSections.department ? '▼' : '▶'}</span>
+                </div>
+                {expandedSections.department && (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    border: '1px solid var(--border-color)',
+                    borderTop: 'none',
+                    borderRadius: '0 0 8px 8px',
+                    padding: '8px',
+                    backgroundColor: 'var(--bg-sidebar)',
+                    maxHeight: '180px',
+                    overflowY: 'auto'
+                  }}>
+                    {allAvailableDepts
+                      .filter(d => d.toLowerCase().includes(allocationSearch.toLowerCase()))
+                      .map(d => {
+                        const isChecked = allocatingType === 'department' && allocatingTarget.includes(d);
+                        return (
+                          <label 
+                            key={d} 
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '8px',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              backgroundColor: isChecked ? 'rgba(99, 102, 241, 0.06)' : 'transparent',
+                              margin: 0
+                            }}
+                          >
+                            <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: isChecked ? 600 : 'normal' }}>{d}</span>
+                            <input 
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                let current = allocatingType === 'department' ? [...allocatingTarget] : [];
+                                if (e.target.checked) {
+                                  if (!current.includes(d)) current.push(d);
+                                } else {
+                                  current = current.filter(name => name !== d);
+                                }
+                                setAllocatingType('department');
+                                setAllocatingTarget(current);
+                                setAllocatingStaffIds([]);
+                              }}
+                            />
+                          </label>
+                        );
+                      })}
+                    {allAvailableDepts.filter(d => d.toLowerCase().includes(allocationSearch.toLowerCase())).length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>No matching departments found.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Option 4: Staff/Recruiters Accordion Section */}
+              <div>
+                <div 
+                  onClick={() => setExpandedSections(prev => ({ ...prev, staff: !prev.staff }))}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px',
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    color: 'var(--text-primary)'
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    👥 Recruiters (Staff) 
+                    {allocatingType === 'staff' && allocatingStaffIds.length > 0 && (
+                      <span style={{ fontSize: '10px', backgroundColor: 'var(--warning)', color: '#000', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>
+                        Active ({allocatingStaffIds.length} selected)
+                      </span>
+                    )}
+                  </span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{expandedSections.staff ? '▼' : '▶'}</span>
+                </div>
+                {expandedSections.staff && (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    border: '1px solid var(--border-color)',
+                    borderTop: 'none',
+                    borderRadius: '0 0 8px 8px',
+                    padding: '8px',
+                    backgroundColor: 'var(--bg-sidebar)',
+                    maxHeight: '180px',
+                    overflowY: 'auto'
+                  }}>
+                    {staff
+                      .filter(s => s.fullName.toLowerCase().includes(allocationSearch.toLowerCase()))
+                      .map(s => {
+                        const isChecked = allocatingType === 'staff' && allocatingStaffIds.includes(s.id);
+                        return (
+                          <label 
+                            key={s.id} 
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '8px',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              backgroundColor: isChecked ? 'rgba(99, 102, 241, 0.06)' : 'transparent',
+                              margin: 0
+                            }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: isChecked ? 600 : 'normal' }}>{s.fullName}</span>
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{s.department || 'No Dept'}</span>
+                            </div>
+                            <input 
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                let current = allocatingType === 'staff' ? [...allocatingStaffIds] : [];
+                                if (e.target.checked) {
+                                  if (!current.includes(s.id)) current.push(s.id);
+                                } else {
+                                  current = current.filter(id => id !== s.id);
+                                }
+                                setAllocatingType('staff');
+                                setAllocatingStaffIds(current);
+                                setAllocatingTarget([]);
+                              }}
+                            />
+                          </label>
+                        );
+                      })}
+                    {staff.filter(s => s.fullName.toLowerCase().includes(allocationSearch.toLowerCase())).length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>No matching recruiters found.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
             </div>
 
-            {/* Footer buttons */}
-            <div style={{ display: 'flex', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+            {/* Footer actions */}
+            <div style={{ display: 'flex', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px', marginTop: '4px' }}>
               <button 
                 type="button" 
                 className="btn-primary" 
-                style={{ flex: 1 }}
+                style={{ flex: 1, justifyContent: 'center' }}
                 onClick={() => {
                   let finalTarget = allocatingTarget;
                   if (allocatingType === 'staff') {
@@ -3325,14 +3446,18 @@ export default function ExpensesDashboard({
                       return;
                     }
                     finalTarget = allocatingStaffIds;
+                  } else if (allocatingType === 'global') {
+                    finalTarget = [];
                   } else {
-                    if (!finalTarget) {
-                      if (allocatingType === 'company') finalTarget = companies[0]?.id || '';
-                      if (allocatingType === 'department') finalTarget = allAvailableDepts[0] || '';
+                    if (!finalTarget || finalTarget.length === 0) {
+                      if (allocatingType === 'company') finalTarget = companies[0] ? [companies[0].id] : [];
+                      if (allocatingType === 'department') finalTarget = allAvailableDepts[0] ? [allAvailableDepts[0]] : [];
                     }
                   }
 
-                  if (allocatingRowId === 'manual') {
+                  if (allocatingRowId === 'bulk') {
+                    handleBulkUpdateAllocation(allocatingType, finalTarget);
+                  } else if (allocatingRowId === 'manual') {
                     setAllocationType(allocatingType);
                     if (allocatingType === 'staff') {
                       setSelectedStaffIds(allocatingStaffIds);
@@ -3341,7 +3466,7 @@ export default function ExpensesDashboard({
                       setAllocationTarget(finalTarget);
                       setSelectedStaffIds([]);
                     }
-                  } else {
+                  } else if (String(allocatingRowId).startsWith('exp-stmt-') || String(allocatingRowId).startsWith('stmt-') || !expenses.some(e => e.id === allocatingRowId)) {
                     handleUpdateCategorizedRow(allocatingRowId, 'allocationType', allocatingType);
                     if (allocatingType === 'staff') {
                       handleUpdateCategorizedRow(allocatingRowId, 'selectedStaffIds', allocatingStaffIds);
@@ -3349,6 +3474,16 @@ export default function ExpensesDashboard({
                     } else {
                       handleUpdateCategorizedRow(allocatingRowId, 'allocationTarget', finalTarget);
                       handleUpdateCategorizedRow(allocatingRowId, 'selectedStaffIds', []);
+                    }
+                  } else {
+                    const original = expenses.find(e => e.id === allocatingRowId);
+                    if (original) {
+                      onSaveExpense({
+                        ...original,
+                        allocationType: allocatingType,
+                        allocationTarget: finalTarget
+                      });
+                      onShowToast("Cost allocation updated for transaction.", "success");
                     }
                   }
                   setAllocatingRowId(null);
@@ -3359,7 +3494,7 @@ export default function ExpensesDashboard({
               <button 
                 type="button" 
                 className="btn-secondary" 
-                style={{ flex: 1 }}
+                style={{ flex: 1, justifyContent: 'center' }}
                 onClick={() => setAllocatingRowId(null)}
               >
                 Cancel
@@ -3795,145 +3930,7 @@ export default function ExpensesDashboard({
         </div>
       )}
 
-      {/* ==============================================================
-          BULK ALLOCATION TARGET MODAL POPUP
-          ============================================================== */}
-      {isBulkAllocModalOpen && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.65)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000,
-          animation: 'fadeIn 0.2s'
-        }}>
-          <div style={{
-            backgroundColor: 'var(--bg-sidebar)',
-            border: '1px solid var(--border-color)',
-            borderRadius: 'var(--radius-lg)',
-            padding: '24px',
-            width: '450px',
-            boxShadow: 'var(--shadow-xl)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-              <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                Select Bulk Allocation Target
-              </h3>
-              <button 
-                type="button" 
-                onClick={() => {
-                  setIsBulkAllocModalOpen(false);
-                  setBulkAllocType('');
-                  setBulkSelectedTargets([]);
-                }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: 'var(--text-muted)' }}
-              >
-                ✕
-              </button>
-            </div>
 
-            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
-              Apply allocation to <strong>{selectedExpenseIds.length}</strong> selected transactions.
-            </p>
-
-            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
-                {bulkAllocType === 'company' && 'Select Target Company'}
-                {bulkAllocType === 'department' && 'Select Target Department'}
-                {bulkAllocType === 'staff' && 'Select Target Recruiters (Multiple Select)'}
-              </label>
-
-              {bulkAllocType === 'company' && (
-                <select
-                  className="select-filter"
-                  style={{ width: '100%', padding: '10px' }}
-                  onChange={(e) => setBulkSelectedTargets([e.target.value])}
-                  value={bulkSelectedTargets[0] || ''}
-                >
-                  <option value="">-- Select Company --</option>
-                  {companies.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              )}
-
-              {bulkAllocType === 'department' && (
-                <select
-                  className="select-filter"
-                  style={{ width: '100%', padding: '10px' }}
-                  onChange={(e) => setBulkSelectedTargets([e.target.value])}
-                  value={bulkSelectedTargets[0] || ''}
-                >
-                  <option value="">-- Select Department --</option>
-                  {Array.from(new Set(staff.map(s => s.department).filter(Boolean))).sort().map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              )}
-
-              {bulkAllocType === 'staff' && (
-                <div style={{ 
-                  maxHeight: '180px', 
-                  overflowY: 'auto', 
-                  border: '1px solid var(--border-color)', 
-                  borderRadius: 'var(--radius-sm)', 
-                  padding: '10px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px',
-                  backgroundColor: 'var(--bg-secondary)'
-                }}>
-                  {staff.map(s => (
-                    <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer', margin: 0, color: 'var(--text-primary)' }}>
-                      <input 
-                        type="checkbox"
-                        checked={bulkSelectedTargets.includes(s.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setBulkSelectedTargets(prev => [...prev, s.id]);
-                          } else {
-                            setBulkSelectedTargets(prev => prev.filter(id => id !== s.id));
-                          }
-                        }}
-                      />
-                      <span>{s.fullName} ({s.department})</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px', marginTop: '8px' }}>
-              <button 
-                type="button" 
-                className="btn-secondary"
-                onClick={() => {
-                  setIsBulkAllocModalOpen(false);
-                  setBulkAllocType('');
-                  setBulkSelectedTargets([]);
-                }}
-              >
-                Cancel
-              </button>
-              <button 
-                type="button" 
-                className="btn-primary"
-                onClick={handleApplyBulkAllocationClick}
-              >
-                Apply Bulk Allocation
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

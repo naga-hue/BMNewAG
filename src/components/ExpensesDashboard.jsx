@@ -515,12 +515,14 @@ export default function ExpensesDashboard({
     const payeeColIdx = csvHeaders.indexOf(columnMappings.payee);
     const amountColIdx = csvHeaders.indexOf(columnMappings.amount);
     const refColIdx = columnMappings.reference ? csvHeaders.indexOf(columnMappings.reference) : -1;
+    const nominalColIdx = columnMappings.nominal ? csvHeaders.indexOf(columnMappings.nominal) : -1;
 
     const parsedRows = csvRows.map((row, idx) => {
       const dateVal = row[dateColIdx] || '';
       const payeeVal = row[payeeColIdx] || '';
       const amtVal = Number(String(row[amountColIdx]).replace(/[^0-9.-]/g, '')) || 0;
       const refVal = refColIdx > -1 ? row[refColIdx] || '' : '';
+      const nominalVal = nominalColIdx > -1 ? row[nominalColIdx] || '' : '';
       
       const parts = dateVal.split(/[-/]/);
       let yyyymm = new Date().toISOString().substring(0, 7);
@@ -548,6 +550,20 @@ export default function ExpensesDashboard({
         }
       }
 
+      // Auto-detect matching nominal category
+      let autoNominalCode = '';
+      if (nominalVal) {
+        const cleanNomVal = String(nominalVal).trim().toLowerCase();
+        const matched = activeNominalCodes.find(c => {
+          const codeStr = String(c.code || '').toLowerCase();
+          const cId = String(c.id).toLowerCase();
+          return cId === cleanNomVal || codeStr === cleanNomVal || codeStr.includes(cleanNomVal) || cleanNomVal.includes(codeStr);
+        });
+        if (matched) {
+          autoNominalCode = matched.code;
+        }
+      }
+
       return {
         id: `stmt-row-${idx}-${Date.now()}`,
         date: dateVal,
@@ -555,7 +571,7 @@ export default function ExpensesDashboard({
         payee: payeeVal,
         reference: refVal,
         amount: amtVal,
-        nominalCode: '',
+        nominalCode: autoNominalCode || '',
         recipientType: autoRecType,
         recipientId: autoRecId,
         taxRate: 0, // default to 0% (Exempt)
@@ -1406,7 +1422,8 @@ export default function ExpensesDashboard({
                   { key: 'date', label: 'Transaction Date *' },
                   { key: 'payee', label: 'Payee / Description *' },
                   { key: 'amount', label: 'Value Amount *' },
-                  { key: 'reference', label: 'Reference / Memo (Optional)' }
+                  { key: 'reference', label: 'Reference / Memo (Optional)' },
+                  { key: 'nominal', label: 'Nominal Code (Optional)' }
                 ].map(item => (
                   <div key={item.key} className="form-group">
                     <label className="form-label">{item.label}</label>

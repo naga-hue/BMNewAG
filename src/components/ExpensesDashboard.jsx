@@ -3566,7 +3566,7 @@ export default function ExpensesDashboard({
                       setAllocationTarget(finalTarget);
                       setSelectedStaffIds([]);
                     }
-                  } else if (String(allocatingRowId).startsWith('exp-stmt-') || String(allocatingRowId).startsWith('stmt-') || !expenses.some(e => e.id === allocatingRowId)) {
+                  } else if (!expenses.some(e => e.id === allocatingRowId)) {
                     handleUpdateCategorizedRow(allocatingRowId, 'allocationType', allocatingType);
                     if (allocatingType === 'staff') {
                       handleUpdateCategorizedRow(allocatingRowId, 'selectedStaffIds', allocatingStaffIds);

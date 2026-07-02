@@ -134,6 +134,7 @@ export default function ExpensesDashboard({
   const [matrixCompanyFilter, setMatrixCompanyFilter] = useState('all');
   const [matrixDeptFilter, setMatrixDeptFilter] = useState('all');
   const [matrixStaffFilter, setMatrixStaffFilter] = useState('all');
+  const [matrixGroupingMode, setMatrixGroupingMode] = useState('company-first'); // 'company-first' or 'nominal-first'
 
   const matrixFilteredDepts = useMemo(() => {
     const depts = [];
@@ -2666,28 +2667,30 @@ export default function ExpensesDashboard({
           });
         }
 
-        // 2. Build the hierarchical tree data structure: Companies -> Nominals -> Parties
-         const computedMatrixData = [];
-        const visibleCompanies = companies.filter(c => matrixCompanyFilter === 'all' || c.id === matrixCompanyFilter);
-        visibleCompanies.forEach(company => {
-          const companyStaff = staff.filter(s => {
-            if (s.companyId !== company.id) return false;
-            if (matrixDeptFilter !== 'all' && s.department !== matrixDeptFilter) return false;
-            if (matrixStaffFilter !== 'all' && s.id !== matrixStaffFilter) return false;
-            return true;
-          });
+        // 2. Build the hierarchical tree data structure: Company-first or Nominal-first
+        const computedMatrixData = [];
 
-          const companyMonths = Array(12).fill(0);
-          const companyTransactionsByMonth = Array.from({ length: 12 }, () => []);
-          const nominalsMap = {};
+        if (matrixGroupingMode === 'nominal-first') {
+          // Nominal -> Company -> Party
+          const visibleCompanies = companies.filter(c => matrixCompanyFilter === 'all' || c.id === matrixCompanyFilter);
+          const visibleCompaniesIds = visibleCompanies.map(c => c.id);
 
-          companyStaff.forEach(member => {
+          const nominalsMap = {}; // nominal -> { months: [], transactionsByMonth: [], companies: { compId -> { months: [], transactionsByMonth: [], parties: { payee -> { months: [], transactionsByMonth: [] } } } } }
+
+          staff.forEach(member => {
+            if (matrixCompanyFilter !== 'all' && member.companyId !== matrixCompanyFilter) return;
+            if (matrixDeptFilter !== 'all' && member.department !== matrixDeptFilter) return;
+            if (matrixStaffFilter !== 'all' && member.id !== matrixStaffFilter) return;
+
             const memberTransactionsByMonth = staffTransactionsMap[member.id] || Array.from({ length: 12 }, () => []);
 
             for (let m = 0; m < 12; m++) {
               const monthTrans = memberTransactionsByMonth[m] || [];
               monthTrans.forEach(t => {
                 const nom = t.nominalCode || 'Uncategorized';
+                const compId = member.companyId;
+                if (!visibleCompaniesIds.includes(compId)) return;
+
                 const payee = (() => {
                   if (t.recipientType === 'vendor' && t.recipientId) {
                     const v = vendors.find(item => item.id === t.recipientId);
@@ -2705,72 +2708,190 @@ export default function ExpensesDashboard({
                   nominalsMap[nom] = {
                     months: Array(12).fill(0),
                     transactionsByMonth: Array.from({ length: 12 }, () => []),
+                    companies: {}
+                  };
+                }
+
+                if (!nominalsMap[nom].companies[compId]) {
+                  nominalsMap[nom].companies[compId] = {
+                    months: Array(12).fill(0),
+                    transactionsByMonth: Array.from({ length: 12 }, () => []),
                     parties: {}
+                  };
+                }
+
+                if (!nominalsMap[nom].companies[compId].parties[payee]) {
+                  nominalsMap[nom].companies[compId].parties[payee] = {
+                    months: Array(12).fill(0),
+                    transactionsByMonth: Array.from({ length: 12 }, () => [])
                   };
                 }
 
                 nominalsMap[nom].months[m] += share;
                 nominalsMap[nom].transactionsByMonth[m].push(t);
 
-                if (!nominalsMap[nom].parties[payee]) {
-                  nominalsMap[nom].parties[payee] = {
-                    months: Array(12).fill(0),
-                    transactionsByMonth: Array.from({ length: 12 }, () => [])
-                  };
-                }
+                nominalsMap[nom].companies[compId].months[m] += share;
+                nominalsMap[nom].companies[compId].transactionsByMonth[m].push(t);
 
-                nominalsMap[nom].parties[payee].months[m] += share;
-                nominalsMap[nom].parties[payee].transactionsByMonth[m].push(t);
-
-                // Add to company totals
-                companyMonths[m] += share;
-                companyTransactionsByMonth[m].push(t);
+                nominalsMap[nom].companies[compId].parties[payee].months[m] += share;
+                nominalsMap[nom].companies[compId].parties[payee].transactionsByMonth[m].push(t);
               });
             }
           });
 
-          const nominalRows = [];
           Object.keys(nominalsMap).sort().forEach(nom => {
             const nomData = nominalsMap[nom];
-            const partyRows = [];
+            const compRows = [];
 
-            Object.keys(nomData.parties).sort().forEach(payee => {
-              const partyData = nomData.parties[payee];
-              partyRows.push({
-                id: `party-${company.id}-${nom}-${payee}`,
-                name: payee,
-                type: 'party',
-                targetVal: payee,
-                months: partyData.months,
-                transactionsByMonth: partyData.transactionsByMonth,
-                total: partyData.months.reduce((a, b) => a + b, 0),
-                children: []
+            Object.keys(nomData.companies).sort().forEach(compId => {
+              const compData = nomData.companies[compId];
+              const compObj = companies.find(c => c.id === compId);
+              const compName = compObj ? compObj.name : 'Unknown Company';
+              const partyRows = [];
+
+              Object.keys(compData.parties).sort().forEach(payee => {
+                const partyData = compData.parties[payee];
+                partyRows.push({
+                  id: `party-${nom}-${compId}-${payee}`,
+                  name: payee,
+                  type: 'party',
+                  targetVal: payee,
+                  months: partyData.months,
+                  transactionsByMonth: partyData.transactionsByMonth,
+                  total: partyData.months.reduce((a, b) => a + b, 0),
+                  children: []
+                });
+              });
+
+              compRows.push({
+                id: `company-${nom}-${compId}`,
+                name: compName,
+                type: 'company',
+                targetVal: compName,
+                months: compData.months,
+                transactionsByMonth: compData.transactionsByMonth,
+                total: compData.months.reduce((a, b) => a + b, 0),
+                children: partyRows
               });
             });
 
-            nominalRows.push({
-              id: `nominal-${company.id}-${nom}`,
+            computedMatrixData.push({
+              id: `nominal-${nom}`,
               name: nom,
               type: 'nominal',
               targetVal: nom,
               months: nomData.months,
               transactionsByMonth: nomData.transactionsByMonth,
               total: nomData.months.reduce((a, b) => a + b, 0),
-              children: partyRows
+              children: compRows
             });
           });
 
-          computedMatrixData.push({
-            id: `company-${company.id}`,
-            name: company.name,
-            type: 'company',
-            targetVal: company.name,
-            months: companyMonths,
-            transactionsByMonth: companyTransactionsByMonth,
-            total: companyMonths.reduce((a, b) => a + b, 0),
-            children: nominalRows
+        } else {
+          // Default: Company -> Nominal -> Party
+          const visibleCompanies = companies.filter(c => matrixCompanyFilter === 'all' || c.id === matrixCompanyFilter);
+          visibleCompanies.forEach(company => {
+            const companyStaff = staff.filter(s => {
+              if (s.companyId !== company.id) return false;
+              if (matrixDeptFilter !== 'all' && s.department !== matrixDeptFilter) return false;
+              if (matrixStaffFilter !== 'all' && s.id !== matrixStaffFilter) return false;
+              return true;
+            });
+
+            const companyMonths = Array(12).fill(0);
+            const companyTransactionsByMonth = Array.from({ length: 12 }, () => []);
+            const nominalsMap = {};
+
+            companyStaff.forEach(member => {
+              const memberTransactionsByMonth = staffTransactionsMap[member.id] || Array.from({ length: 12 }, () => []);
+
+              for (let m = 0; m < 12; m++) {
+                const monthTrans = memberTransactionsByMonth[m] || [];
+                monthTrans.forEach(t => {
+                  const nom = t.nominalCode || 'Uncategorized';
+                  const payee = (() => {
+                    if (t.recipientType === 'vendor' && t.recipientId) {
+                      const v = vendors.find(item => item.id === t.recipientId);
+                      if (v) return v.name;
+                    }
+                    if (t.recipientType === 'staff' && t.recipientId) {
+                      const s = staff.find(item => item.id === t.recipientId);
+                      if (s) return s.fullName;
+                    }
+                    return (t.payee || 'Unknown Payee').split(' [Ref:')[0].trim();
+                  })();
+                  const share = t.apportionedShare !== undefined ? t.apportionedShare : toGBP(t.amount, t.currency);
+
+                  if (!nominalsMap[nom]) {
+                    nominalsMap[nom] = {
+                      months: Array(12).fill(0),
+                      transactionsByMonth: Array.from({ length: 12 }, () => []),
+                      parties: {}
+                    };
+                  }
+
+                  nominalsMap[nom].months[m] += share;
+                  nominalsMap[nom].transactionsByMonth[m].push(t);
+
+                  if (!nominalsMap[nom].parties[payee]) {
+                    nominalsMap[nom].parties[payee] = {
+                      months: Array(12).fill(0),
+                      transactionsByMonth: Array.from({ length: 12 }, () => [])
+                    };
+                  }
+
+                  nominalsMap[nom].parties[payee].months[m] += share;
+                  nominalsMap[nom].parties[payee].transactionsByMonth[m].push(t);
+
+                  companyMonths[m] += share;
+                  companyTransactionsByMonth[m].push(t);
+                });
+              }
+            });
+
+            const nominalRows = [];
+            Object.keys(nominalsMap).sort().forEach(nom => {
+              const nomData = nominalsMap[nom];
+              const partyRows = [];
+
+              Object.keys(nomData.parties).sort().forEach(payee => {
+                const partyData = nomData.parties[payee];
+                partyRows.push({
+                  id: `party-${company.id}-${nom}-${payee}`,
+                  name: payee,
+                  type: 'party',
+                  targetVal: payee,
+                  months: partyData.months,
+                  transactionsByMonth: partyData.transactionsByMonth,
+                  total: partyData.months.reduce((a, b) => a + b, 0),
+                  children: []
+                });
+              });
+
+              nominalRows.push({
+                id: `nominal-${company.id}-${nom}`,
+                name: nom,
+                type: 'nominal',
+                targetVal: nom,
+                months: nomData.months,
+                transactionsByMonth: nomData.transactionsByMonth,
+                total: nomData.months.reduce((a, b) => a + b, 0),
+                children: partyRows
+              });
+            });
+
+            computedMatrixData.push({
+              id: `company-${company.id}`,
+              name: company.name,
+              type: 'company',
+              targetVal: company.name,
+              months: companyMonths,
+              transactionsByMonth: companyTransactionsByMonth,
+              total: companyMonths.reduce((a, b) => a + b, 0),
+              children: nominalRows
+            });
           });
-        });
+        }
 
         // 3. Compute col totals dynamically from visible companies
         const colTotals = Array(12).fill(0);
@@ -2894,6 +3015,16 @@ export default function ExpensesDashboard({
                   })()}
                 </select>
 
+                <select
+                  className="select-filter"
+                  value={matrixGroupingMode}
+                  onChange={(e) => setMatrixGroupingMode(e.target.value)}
+                  style={{ padding: '6px', fontSize: '12px', minWidth: '160px', backgroundColor: 'rgba(99, 102, 241, 0.08)', color: 'var(--primary)', fontWeight: 600, border: '1px solid rgba(99, 102, 241, 0.2)' }}
+                >
+                  <option value="company-first">🏢 Company ➔ Nominal ➔ Party</option>
+                  <option value="nominal-first">📂 Nominal ➔ Company ➔ Party</option>
+                </select>
+
                 <button type="button" className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={expandAll}>
                   Expand All
                 </button>
@@ -2924,26 +3055,26 @@ export default function ExpensesDashboard({
                     </tr>
                   ) : (
                     flatRowsForMatrix.map(row => {
-                      const isCompany = row.type === 'company';
-                      const isDept = row.type === 'nominal';
-                      const isMember = row.type === 'party';
+                      const isLevel1 = (matrixGroupingMode === 'company-first' && row.type === 'company') || (matrixGroupingMode === 'nominal-first' && row.type === 'nominal');
+                      const isLevel2 = (matrixGroupingMode === 'company-first' && row.type === 'nominal') || (matrixGroupingMode === 'nominal-first' && row.type === 'company');
+                      const isLevel3 = row.type === 'party';
 
-                      const paddingLeft = isCompany ? '12px' : isDept ? '32px' : '52px';
-                      const hasChildren = isCompany || isDept;
+                      const paddingLeft = isLevel1 ? '12px' : isLevel2 ? '32px' : '52px';
+                      const hasChildren = isLevel1 || isLevel2;
                       const isExpanded = matrixExpandedKeys[row.id];
 
                       return (
                         <tr 
                           key={row.id}
                           style={{ 
-                            backgroundColor: isCompany ? 'rgba(255,255,255,0.01)' : 'transparent',
-                            borderBottom: isCompany ? '1px solid var(--border-color)' : '1px dashed rgba(255,255,255,0.04)'
+                            backgroundColor: isLevel1 ? 'rgba(255,255,255,0.01)' : 'transparent',
+                            borderBottom: isLevel1 ? '1px solid var(--border-color)' : '1px dashed rgba(255,255,255,0.04)'
                           }}
                         >
                           <td style={{ 
                             paddingLeft, 
-                            fontWeight: isCompany ? 700 : isDept ? 600 : 400,
-                            color: isCompany ? 'var(--text-primary)' : isDept ? 'var(--text-secondary)' : 'var(--text-muted)'
+                            fontWeight: isLevel1 ? 700 : isLevel2 ? 600 : 400,
+                            color: isLevel1 ? 'var(--text-primary)' : isLevel2 ? 'var(--text-secondary)' : 'var(--text-muted)'
                           }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               {hasChildren ? (
@@ -2983,14 +3114,14 @@ export default function ExpensesDashboard({
                                     textAlign: 'left',
                                     padding: 0,
                                     cursor: 'pointer',
-                                    fontWeight: isCompany ? 700 : isDept ? 600 : 500,
+                                    fontWeight: isLevel1 ? 700 : isLevel2 ? 600 : 500,
                                     textDecoration: 'underline dashed rgba(255,255,255,0.2)'
                                   }}
                                   title="Click to view full year YTD details"
                                 >
                                   {row.name}
                                 </button>
-                                {isMember && row.subtitle && (
+                                {isLevel3 && row.subtitle && (
                                   <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>{row.subtitle}</span>
                                 )}
                               </div>
@@ -3011,10 +3142,10 @@ export default function ExpensesDashboard({
                                       setDrilldownTargetVal(row.name);
                                     }}
                                     style={{
-                                      background: isCompany ? 'rgba(239, 68, 68, 0.08)' : isDept ? 'rgba(245, 158, 11, 0.08)' : 'rgba(99, 102, 241, 0.08)',
-                                      border: isCompany ? '1px solid rgba(239, 68, 68, 0.2)' : isDept ? '1px solid rgba(245, 158, 11, 0.2)' : '1px solid rgba(99, 102, 241, 0.2)',
+                                      background: isLevel1 ? 'rgba(239, 68, 68, 0.08)' : isLevel2 ? 'rgba(245, 158, 11, 0.08)' : 'rgba(99, 102, 241, 0.08)',
+                                      border: isLevel1 ? '1px solid rgba(239, 68, 68, 0.2)' : isLevel2 ? '1px solid rgba(245, 158, 11, 0.2)' : '1px solid rgba(99, 102, 241, 0.2)',
                                       borderRadius: '4px',
-                                      color: isCompany ? 'var(--danger)' : isDept ? 'var(--warning)' : 'var(--accent)',
+                                      color: isLevel1 ? 'var(--danger)' : isLevel2 ? 'var(--warning)' : 'var(--accent)',
                                       fontSize: '11px',
                                       fontWeight: 700,
                                       padding: '2px 6px',
@@ -3038,7 +3169,7 @@ export default function ExpensesDashboard({
                             textAlign: 'right', 
                             fontWeight: 700, 
                             backgroundColor: 'rgba(255,255,255,0.01)', 
-                            color: isCompany ? 'var(--danger)' : isDept ? 'var(--warning)' : 'var(--accent)'
+                            color: isLevel1 ? 'var(--danger)' : isLevel2 ? 'var(--warning)' : 'var(--accent)'
                           }}>
                             {row.total > 0 ? (
                               <button
@@ -3053,7 +3184,7 @@ export default function ExpensesDashboard({
                                   background: 'none',
                                   border: 'none',
                                   fontWeight: 700,
-                                  color: isCompany ? 'var(--danger)' : isDept ? 'var(--warning)' : 'var(--accent)',
+                                  color: isLevel1 ? 'var(--danger)' : isLevel2 ? 'var(--warning)' : 'var(--accent)',
                                   cursor: 'pointer',
                                   textDecoration: 'underline dashed rgba(255,255,255,0.3)',
                                   padding: 0,

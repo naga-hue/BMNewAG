@@ -2482,7 +2482,7 @@ export default function ExpensesDashboard({
               const monthTrans = memberTransactionsByMonth[m] || [];
               monthTrans.forEach(t => {
                 const nom = t.nominalCode || 'Uncategorized';
-                const payee = t.payee || 'Unknown Payee';
+                const payee = (t.payee || 'Unknown Payee').split(' [Ref:')[0].trim();
                 const share = t.apportionedShare !== undefined ? t.apportionedShare : toGBP(t.amount, t.currency);
 
                 if (!nominalsMap[nom]) {

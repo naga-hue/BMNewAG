@@ -738,6 +738,19 @@ export default function ExpensesDashboard({
   // Extract unique P&L months in expenses database
   const uniquePlMonths = Array.from(new Set((expenses || []).map(e => e?.plMonth).filter(Boolean))).sort();
 
+  // Extract all registered bank accounts across all companies
+  const allBankAccounts = [];
+  companies.forEach(c => {
+    if (c.bankAccounts) {
+      c.bankAccounts.forEach(b => {
+        allBankAccounts.push({
+          id: b.id,
+          ref: `${b.bankName} - ${b.accountName} (${c.name})`
+        });
+      });
+    }
+  });
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       

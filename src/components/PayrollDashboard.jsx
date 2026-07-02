@@ -58,6 +58,55 @@ export default function PayrollDashboard({
   const [dailyRateDefault, setDailyRateDefault] = useState('0');
   const [expectedDaysPerMonth, setExpectedDaysPerMonth] = useState('21.67');
   const [editingPolicyId, setEditingPolicyId] = useState(null);
+
+  // Progressive Tax & NI slab states
+  const [payeSlabs, setPayeSlabs] = useState([
+    { minAmount: 0, maxAmount: 1047.50, rate: 0 },
+    { minAmount: 1047.50, maxAmount: 4189.17, rate: 20 },
+    { minAmount: 4189.17, maxAmount: 10428.33, rate: 40 },
+    { minAmount: 10428.33, maxAmount: 9999999, rate: 45 }
+  ]);
+  const [employeeNiSlabs, setEmployeeNiSlabs] = useState([
+    { minAmount: 0, maxAmount: 1047.00, rate: 0 },
+    { minAmount: 1047.00, maxAmount: 4189.00, rate: 8 },
+    { minAmount: 4189.00, maxAmount: 9999999, rate: 2 }
+  ]);
+  const [employerNiSlabs, setEmployerNiSlabs] = useState([
+    { minAmount: 0, maxAmount: 758.00, rate: 0 },
+    { minAmount: 758.00, maxAmount: 9999999, rate: 13.8 }
+  ]);
+
+  const handleUpdateSlab = (type, index, field, value) => {
+    const numVal = Number(value) || 0;
+    if (type === 'paye') {
+      setPayeSlabs(prev => prev.map((s, i) => i === index ? { ...s, [field]: numVal } : s));
+    } else if (type === 'eeNi') {
+      setEmployeeNiSlabs(prev => prev.map((s, i) => i === index ? { ...s, [field]: numVal } : s));
+    } else if (type === 'erNi') {
+      setEmployerNiSlabs(prev => prev.map((s, i) => i === index ? { ...s, [field]: numVal } : s));
+    }
+  };
+
+  const handleAddSlab = (type) => {
+    const newSlab = { minAmount: 0, maxAmount: 9999999, rate: 0 };
+    if (type === 'paye') {
+      setPayeSlabs(prev => [...prev, newSlab]);
+    } else if (type === 'eeNi') {
+      setEmployeeNiSlabs(prev => [...prev, newSlab]);
+    } else if (type === 'erNi') {
+      setEmployerNiSlabs(prev => [...prev, newSlab]);
+    }
+  };
+
+  const handleRemoveSlab = (type, index) => {
+    if (type === 'paye') {
+      setPayeSlabs(prev => prev.filter((_, i) => i !== index));
+    } else if (type === 'eeNi') {
+      setEmployeeNiSlabs(prev => prev.filter((_, i) => i !== index));
+    } else if (type === 'erNi') {
+      setEmployerNiSlabs(prev => prev.filter((_, i) => i !== index));
+    }
+  };
   
   // Selected cell for override modal
   const [selectedCell, setSelectedCell] = useState(null); // { staffMember, month, basic, commission }
@@ -97,7 +146,10 @@ export default function PayrollDashboard({
       studentLoanRate: policyType === 'ft_uk' ? (Number(studentLoanRate) || 0) : 0,
       studentLoanThreshold: policyType === 'ft_uk' ? (Number(studentLoanThreshold) || 0) : 0,
       dailyRateDefault: policyType === 'freelance' ? (Number(dailyRateDefault) || 0) : 0,
-      expectedDaysPerMonth: policyType === 'freelance' ? (Number(expectedDaysPerMonth) || 0) : 21.67
+      expectedDaysPerMonth: policyType === 'freelance' ? (Number(expectedDaysPerMonth) || 0) : 21.67,
+      payeSlabs: policyType === 'freelance' ? [] : payeSlabs,
+      employeeNiSlabs: policyType === 'freelance' ? [] : employeeNiSlabs,
+      employerNiSlabs: policyType === 'freelance' ? [] : employerNiSlabs
     };
 
     try {
@@ -117,6 +169,21 @@ export default function PayrollDashboard({
         setStudentLoanThreshold('2274');
         setDailyRateDefault('0');
         setExpectedDaysPerMonth('21.67');
+        setPayeSlabs([
+          { minAmount: 0, maxAmount: 1047.50, rate: 0 },
+          { minAmount: 1047.50, maxAmount: 4189.17, rate: 20 },
+          { minAmount: 4189.17, maxAmount: 10428.33, rate: 40 },
+          { minAmount: 10428.33, maxAmount: 9999999, rate: 45 }
+        ]);
+        setEmployeeNiSlabs([
+          { minAmount: 0, maxAmount: 1047.00, rate: 0 },
+          { minAmount: 1047.00, maxAmount: 4189.00, rate: 8 },
+          { minAmount: 4189.00, maxAmount: 9999999, rate: 2 }
+        ]);
+        setEmployerNiSlabs([
+          { minAmount: 0, maxAmount: 758.00, rate: 0 },
+          { minAmount: 758.00, maxAmount: 9999999, rate: 13.8 }
+        ]);
         setEditingPolicyId(null);
       }
     } catch (err) {
@@ -138,6 +205,21 @@ export default function PayrollDashboard({
     setStudentLoanThreshold(String(policy.studentLoanThreshold ?? '2274'));
     setDailyRateDefault(String(policy.dailyRateDefault ?? '0'));
     setExpectedDaysPerMonth(String(policy.expectedDaysPerMonth ?? '21.67'));
+    setPayeSlabs(policy.payeSlabs || [
+      { minAmount: 0, maxAmount: 1047.50, rate: 0 },
+      { minAmount: 1047.50, maxAmount: 4189.17, rate: 20 },
+      { minAmount: 4189.17, maxAmount: 10428.33, rate: 40 },
+      { minAmount: 10428.33, maxAmount: 9999999, rate: 45 }
+    ]);
+    setEmployeeNiSlabs(policy.employeeNiSlabs || [
+      { minAmount: 0, maxAmount: 1047.00, rate: 0 },
+      { minAmount: 1047.00, maxAmount: 4189.00, rate: 8 },
+      { minAmount: 4189.00, maxAmount: 9999999, rate: 2 }
+    ]);
+    setEmployerNiSlabs(policy.employerNiSlabs || [
+      { minAmount: 0, maxAmount: 758.00, rate: 0 },
+      { minAmount: 758.00, maxAmount: 9999999, rate: 13.8 }
+    ]);
   };
 
   // Helper to calculate exact cash-received commission payout (matching Incentive Commissions ledger)
@@ -302,6 +384,24 @@ export default function PayrollDashboard({
   // Get active departments
   const departments = [...new Set(staff.map(s => s.department).filter(Boolean))].sort();
 
+  const calculateSlabCost = (amount, slabs) => {
+    if (!slabs || slabs.length === 0) return 0;
+    let totalCost = 0;
+    const sortedSlabs = [...slabs].sort((a, b) => Number(a.minAmount) - Number(b.minAmount));
+    for (const slab of sortedSlabs) {
+      const min = Number(slab.minAmount) || 0;
+      const max = Number(slab.maxAmount) || 999999999;
+      const rate = Number(slab.rate) || 0;
+      
+      if (amount <= min) continue;
+      const applicableRange = Math.min(amount, max) - min;
+      if (applicableRange > 0) {
+        totalCost += (applicableRange * rate) / 100;
+      }
+    }
+    return totalCost;
+  };
+
   // Helper to fetch cell status and values
   const getCellData = (staffMember, month) => {
     const record = payrollRecords.find(r => r.staffId === staffMember.id && r.month === month);
@@ -327,7 +427,9 @@ export default function PayrollDashboard({
         const grossSalaryAndComm = baselineBasic + baselineCommission;
         
         // Calculate Employer NIC
-        if (policy.employerNiRate > 0) {
+        if (policy.employerNiSlabs && policy.employerNiSlabs.length > 0) {
+          projectedEmployerNi = calculateSlabCost(grossSalaryAndComm, policy.employerNiSlabs);
+        } else if (policy.employerNiRate > 0) {
           const thresholdGBP = toGBP(Number(policy.employerNiThreshold || 0), 'GBP');
           const taxableNiAmount = Math.max(0, grossSalaryAndComm - thresholdGBP);
           projectedEmployerNi = (taxableNiAmount * Number(policy.employerNiRate)) / 100;
@@ -338,10 +440,21 @@ export default function PayrollDashboard({
           projectedEmployerPension = (grossSalaryAndComm * Number(policy.employerPensionRate)) / 100;
         }
 
-        // Calculate Employee Tax/NIC
-        if (policy.employeeTaxNicRate > 0) {
-          projectedEmployeeTaxNic = (grossSalaryAndComm * Number(policy.employeeTaxNicRate)) / 100;
+        // Calculate Employee Tax (PAYE)
+        let projectedPAYE = 0;
+        if (policy.payeSlabs && policy.payeSlabs.length > 0) {
+          projectedPAYE = calculateSlabCost(grossSalaryAndComm, policy.payeSlabs);
+        } else if (policy.employeeTaxNicRate > 0) {
+          projectedPAYE = (grossSalaryAndComm * Number(policy.employeeTaxNicRate)) / 100;
         }
+
+        // Calculate Employee NIC
+        let projectedEmployeeNic = 0;
+        if (policy.employeeNiSlabs && policy.employeeNiSlabs.length > 0) {
+          projectedEmployeeNic = calculateSlabCost(grossSalaryAndComm, policy.employeeNiSlabs);
+        }
+
+        projectedEmployeeTaxNic = projectedPAYE + projectedEmployeeNic;
 
         // Calculate Employee Pension
         if (policy.employeePensionRate > 0) {
@@ -908,20 +1021,8 @@ ${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleSt
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
                   <div>
                     <h4 style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                      🏢 Employer Projected Rates
+                      🏢 Employer Benefits
                     </h4>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label className="form-label" style={{ fontSize: '10px' }}>Employer NI Rate (%)</label>
-                      <input 
-                        type="number" step="any" className="form-input" value={employerNiRate} onChange={(e) => setEmployerNiRate(e.target.value)} style={{ width: '100%', padding: '6px' }}
-                      />
-                    </div>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label className="form-label" style={{ fontSize: '10px' }}>NI Monthly Threshold (£)</label>
-                      <input 
-                        type="number" step="any" className="form-input" value={employerNiThreshold} onChange={(e) => setEmployerNiThreshold(e.target.value)} style={{ width: '100%', padding: '6px' }}
-                      />
-                    </div>
                     <div className="form-group">
                       <label className="form-label" style={{ fontSize: '10px' }}>Employer Pension Rate (%)</label>
                       <input 
@@ -932,19 +1033,88 @@ ${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleSt
                   
                   <div>
                     <h4 style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                      👥 Employee Projected Deductions
+                      👥 Employee Deductions
                     </h4>
-                    <div className="form-group" style={{ marginBottom: '8px' }}>
-                      <label className="form-label" style={{ fontSize: '10px' }}>Employee Tax & NI Rate (%)</label>
-                      <input 
-                        type="number" step="any" className="form-input" value={employeeTaxNicRate} onChange={(e) => setEmployeeTaxNicRate(e.target.value)} style={{ width: '100%', padding: '6px' }}
-                      />
-                    </div>
                     <div className="form-group">
                       <label className="form-label" style={{ fontSize: '10px' }}>Employee Pension Rate (%)</label>
                       <input 
                         type="number" step="any" className="form-input" value={employeePensionRate} onChange={(e) => setEmployeePensionRate(e.target.value)} style={{ width: '100%', padding: '6px' }}
                       />
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                  <h4 style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '8px' }}>
+                    📈 Progressive Tax & NI Bands (Monthly)
+                  </h4>
+                  
+                  {/* 1. PAYE Slabs */}
+                  <div style={{ marginBottom: '12px', backgroundColor: 'var(--bg-secondary)', padding: '10px', borderRadius: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 600 }}>Employee PAYE (Income Tax) Brackets:</span>
+                      <button type="button" onClick={() => handleAddSlab('paye')} style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--primary)', cursor: 'pointer' }}>
+                        + Add Band
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {payeSlabs.map((slab, i) => (
+                        <div key={i} style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          <input type="number" step="any" placeholder="Min (£)" value={slab.minAmount} onChange={(e) => handleUpdateSlab('paye', i, 'minAmount', e.target.value)} style={{ flex: 1, padding: '4px 6px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-color)', minWidth: 0 }} />
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>to</span>
+                          <input type="number" step="any" placeholder="Max (£)" value={slab.maxAmount} onChange={(e) => handleUpdateSlab('paye', i, 'maxAmount', e.target.value)} style={{ flex: 1, padding: '4px 6px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-color)', minWidth: 0 }} />
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>@</span>
+                          <input type="number" step="any" placeholder="Rate (%)" value={slab.rate} onChange={(e) => handleUpdateSlab('paye', i, 'rate', e.target.value)} style={{ width: '45px', padding: '4px 6px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-color)', minWidth: 0 }} />
+                          <span style={{ fontSize: '11px' }}>%</span>
+                          <button type="button" onClick={() => handleRemoveSlab('paye', i)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px' }}>🗑️</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 2. Employee NI Slabs */}
+                  <div style={{ marginBottom: '12px', backgroundColor: 'var(--bg-secondary)', padding: '10px', borderRadius: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 600 }}>Employee NI (NIC) Brackets:</span>
+                      <button type="button" onClick={() => handleAddSlab('eeNi')} style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--primary)', cursor: 'pointer' }}>
+                        + Add Band
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {employeeNiSlabs.map((slab, i) => (
+                        <div key={i} style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          <input type="number" step="any" placeholder="Min (£)" value={slab.minAmount} onChange={(e) => handleUpdateSlab('eeNi', i, 'minAmount', e.target.value)} style={{ flex: 1, padding: '4px 6px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-color)', minWidth: 0 }} />
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>to</span>
+                          <input type="number" step="any" placeholder="Max (£)" value={slab.maxAmount} onChange={(e) => handleUpdateSlab('eeNi', i, 'maxAmount', e.target.value)} style={{ flex: 1, padding: '4px 6px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-color)', minWidth: 0 }} />
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>@</span>
+                          <input type="number" step="any" placeholder="Rate (%)" value={slab.rate} onChange={(e) => handleUpdateSlab('eeNi', i, 'rate', e.target.value)} style={{ width: '45px', padding: '4px 6px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-color)', minWidth: 0 }} />
+                          <span style={{ fontSize: '11px' }}>%</span>
+                          <button type="button" onClick={() => handleRemoveSlab('eeNi', i)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px' }}>🗑️</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 3. Employer NI Slabs */}
+                  <div style={{ marginBottom: '12px', backgroundColor: 'var(--bg-secondary)', padding: '10px', borderRadius: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 600 }}>Employer NI (NIC) Brackets:</span>
+                      <button type="button" onClick={() => handleAddSlab('erNi')} style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--primary)', cursor: 'pointer' }}>
+                        + Add Band
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {employerNiSlabs.map((slab, i) => (
+                        <div key={i} style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          <input type="number" step="any" placeholder="Min (£)" value={slab.minAmount} onChange={(e) => handleUpdateSlab('erNi', i, 'minAmount', e.target.value)} style={{ flex: 1, padding: '4px 6px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-color)', minWidth: 0 }} />
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>to</span>
+                          <input type="number" step="any" placeholder="Max (£)" value={slab.maxAmount} onChange={(e) => handleUpdateSlab('erNi', i, 'maxAmount', e.target.value)} style={{ flex: 1, padding: '4px 6px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-color)', minWidth: 0 }} />
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>@</span>
+                          <input type="number" step="any" placeholder="Rate (%)" value={slab.rate} onChange={(e) => handleUpdateSlab('erNi', i, 'rate', e.target.value)} style={{ width: '45px', padding: '4px 6px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-color)', minWidth: 0 }} />
+                          <span style={{ fontSize: '11px' }}>%</span>
+                          <button type="button" onClick={() => handleRemoveSlab('erNi', i)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '12px' }}>🗑️</button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>

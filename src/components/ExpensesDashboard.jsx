@@ -535,6 +535,7 @@ export default function ExpensesDashboard({
       // Auto-detect recipient matching vendor name or staff member name
       let autoRecType = 'other';
       let autoRecId = '';
+      let matchedStaffMember = null;
       const cleanPayee = payeeVal.toLowerCase().replace(/[^a-z0-9]/g, '');
       if (cleanPayee) {
         const matchedVendor = vendors.find(v => v.name.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanPayee) || cleanPayee.includes(v.name.toLowerCase().replace(/[^a-z0-9]/g, '')));
@@ -546,6 +547,7 @@ export default function ExpensesDashboard({
           if (matchedStaff) {
             autoRecType = 'staff';
             autoRecId = matchedStaff.id;
+            matchedStaffMember = matchedStaff;
           }
         }
       }
@@ -564,6 +566,38 @@ export default function ExpensesDashboard({
         }
       }
 
+      // Auto-detect target cost center allocation
+      let autoAllocType = 'company';
+      let autoAllocTarget = companies[0]?.id || '';
+      let autoStaffIds = [];
+
+      if (matchedStaffMember) {
+        autoAllocType = 'staff';
+        autoAllocTarget = [matchedStaffMember.id];
+        autoStaffIds = [matchedStaffMember.id];
+      } else {
+        // Match payee to registered Company Name
+        const matchedComp = companies.find(c => {
+          const cName = c.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return cleanPayee.includes(cName) || cName.includes(cleanPayee);
+        });
+        if (matchedComp) {
+          autoAllocType = 'company';
+          autoAllocTarget = matchedComp.id;
+        } else {
+          // Match payee to active Department Name
+          const activeDepts = Array.from(new Set(staff.map(s => s.department).filter(Boolean)));
+          const matchedDept = activeDepts.find(d => {
+            const dName = d.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return cleanPayee.includes(dName);
+          });
+          if (matchedDept) {
+            autoAllocType = 'department';
+            autoAllocTarget = [matchedDept];
+          }
+        }
+      }
+
       return {
         id: `stmt-row-${idx}-${Date.now()}`,
         date: dateVal,
@@ -575,9 +609,9 @@ export default function ExpensesDashboard({
         recipientType: autoRecType,
         recipientId: autoRecId,
         taxRate: 0, // default to 0% (Exempt)
-        allocationType: 'company',
-        allocationTarget: companies[0]?.id || '',
-        selectedStaffIds: [],
+        allocationType: autoAllocType,
+        allocationTarget: autoAllocTarget,
+        selectedStaffIds: autoStaffIds,
         linkedPlacementId: '',
         isCredit: amtVal > 0,
         committed: false

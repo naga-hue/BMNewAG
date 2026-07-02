@@ -2547,7 +2547,17 @@ export default function ExpensesDashboard({
               const monthTrans = memberTransactionsByMonth[m] || [];
               monthTrans.forEach(t => {
                 const nom = t.nominalCode || 'Uncategorized';
-                const payee = (t.payee || 'Unknown Payee').split(' [Ref:')[0].trim();
+                const payee = (() => {
+                  if (t.recipientType === 'vendor' && t.recipientId) {
+                    const v = vendors.find(item => item.id === t.recipientId);
+                    if (v) return v.name;
+                  }
+                  if (t.recipientType === 'staff' && t.recipientId) {
+                    const s = staff.find(item => item.id === t.recipientId);
+                    if (s) return s.fullName;
+                  }
+                  return (t.payee || 'Unknown Payee').split(' [Ref:')[0].trim();
+                })();
                 const share = t.apportionedShare !== undefined ? t.apportionedShare : toGBP(t.amount, t.currency);
 
                 if (!nominalsMap[nom]) {

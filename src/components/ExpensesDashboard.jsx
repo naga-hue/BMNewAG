@@ -125,6 +125,11 @@ export default function ExpensesDashboard({
   // Multi-select row selection state
   const [selectedExpenseIds, setSelectedExpenseIds] = useState([]);
 
+  // Bulk Allocation selection modal states
+  const [isBulkAllocModalOpen, setIsBulkAllocModalOpen] = useState(false);
+  const [bulkAllocType, setBulkAllocType] = useState(''); // 'company', 'department', 'staff'
+  const [bulkSelectedTargets, setBulkSelectedTargets] = useState([]);
+
   // Sorting state for expenses ledger table
   const [sortBy, setSortBy] = useState('date');
   const [sortOrder, setSortOrder] = useState('desc'); // desc or asc
@@ -911,23 +916,34 @@ export default function ExpensesDashboard({
   };
 
   const handleResetExpenses = async () => {
-    if (expenses.length === 0) {
+    const targetList = expenses || [];
+    if (targetList.length === 0) {
       onShowToast("Ledger is already empty.", "info");
       return;
     }
 
-    if (!window.confirm("🚨 DANGER ZONE: This will permanently delete ALL expense records in the database. This action cannot be undone!\n\nAre you absolutely sure you want to proceed?")) {
+    if (!window.confirm(`🚨 DANGER ZONE: This will permanently delete ALL ${targetList.length} expense records in the database. This action cannot be undone!\n\nAre you absolutely sure you want to proceed?`)) {
       return;
     }
 
     try {
-      for (const exp of expenses) {
-        await onDeleteExpense(exp.id);
-      }
+      // Parallel delete triggers to avoid sequence locks and freeze delays
+      await Promise.all(targetList.map(exp => onDeleteExpense(exp.id)));
       onShowToast("All expense ledger entries have been successfully reset.", "success");
     } catch (err) {
       onShowToast(`Error resetting expenses: ${err.message}`, "warning");
     }
+  };
+
+  const handleApplyBulkAllocationClick = () => {
+    if (bulkSelectedTargets.length === 0) {
+      onShowToast("Please select at least one allocation target.", "warning");
+      return;
+    }
+    handleBulkUpdateAllocation(bulkAllocType, bulkSelectedTargets);
+    setIsBulkAllocModalOpen(false);
+    setBulkAllocType('');
+    setBulkSelectedTargets([]);
   };
 
   // Filter nominal codes & placements lists
@@ -1619,25 +1635,23 @@ export default function ExpensesDashboard({
                     className="select-filter"
                     onChange={(e) => {
                       const type = e.target.value;
+                      if (!type) return;
                       if (type === 'global') {
                         handleBulkUpdateAllocation('global', []);
-                      } else if (type === 'company' && companies[0]) {
-                        handleBulkUpdateAllocation('company', [companies[0].id]);
-                      } else if (type === 'department') {
-                        const depts = Array.from(new Set(staff.map(s => s.department).filter(Boolean)));
-                        if (depts[0]) handleBulkUpdateAllocation('department', [depts[0]]);
-                      } else if (type === 'staff' && staff[0]) {
-                        handleBulkUpdateAllocation('staff', [staff[0].id]);
+                      } else {
+                        setBulkAllocType(type);
+                        setBulkSelectedTargets([]);
+                        setIsBulkAllocModalOpen(true);
                       }
                       e.target.value = '';
                     }}
                     style={{ padding: '4px 8px', fontSize: '11px' }}
                   >
-                    <option value="">-- Set Target Type --</option>
+                    <option value="">-- Apply Allocation --</option>
                     <option value="global">Whole Corporate Group</option>
-                    <option value="company">First Registered Company</option>
-                    <option value="department">First Staff Department</option>
-                    <option value="staff">First Staff Member</option>
+                    <option value="company">Specific Company...</option>
+                    <option value="department">Specific Department...</option>
+                    <option value="staff">Specific Recruiters (Staff)...</option>
                   </select>
                 </div>
 
@@ -3778,6 +3792,146 @@ export default function ExpensesDashboard({
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* ==============================================================
+          BULK ALLOCATION TARGET MODAL POPUP
+          ============================================================== */}
+      {isBulkAllocModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          animation: 'fadeIn 0.2s'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-sidebar)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '24px',
+            width: '450px',
+            boxShadow: 'var(--shadow-xl)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                Select Bulk Allocation Target
+              </h3>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setIsBulkAllocModalOpen(false);
+                  setBulkAllocType('');
+                  setBulkSelectedTargets([]);
+                }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: 'var(--text-muted)' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
+              Apply allocation to <strong>{selectedExpenseIds.length}</strong> selected transactions.
+            </p>
+
+            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
+                {bulkAllocType === 'company' && 'Select Target Company'}
+                {bulkAllocType === 'department' && 'Select Target Department'}
+                {bulkAllocType === 'staff' && 'Select Target Recruiters (Multiple Select)'}
+              </label>
+
+              {bulkAllocType === 'company' && (
+                <select
+                  className="select-filter"
+                  style={{ width: '100%', padding: '10px' }}
+                  onChange={(e) => setBulkSelectedTargets([e.target.value])}
+                  value={bulkSelectedTargets[0] || ''}
+                >
+                  <option value="">-- Select Company --</option>
+                  {companies.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              )}
+
+              {bulkAllocType === 'department' && (
+                <select
+                  className="select-filter"
+                  style={{ width: '100%', padding: '10px' }}
+                  onChange={(e) => setBulkSelectedTargets([e.target.value])}
+                  value={bulkSelectedTargets[0] || ''}
+                >
+                  <option value="">-- Select Department --</option>
+                  {Array.from(new Set(staff.map(s => s.department).filter(Boolean))).sort().map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              )}
+
+              {bulkAllocType === 'staff' && (
+                <div style={{ 
+                  maxHeight: '180px', 
+                  overflowY: 'auto', 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: 'var(--radius-sm)', 
+                  padding: '10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  backgroundColor: 'var(--bg-secondary)'
+                }}>
+                  {staff.map(s => (
+                    <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer', margin: 0, color: 'var(--text-primary)' }}>
+                      <input 
+                        type="checkbox"
+                        checked={bulkSelectedTargets.includes(s.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setBulkSelectedTargets(prev => [...prev, s.id]);
+                          } else {
+                            setBulkSelectedTargets(prev => prev.filter(id => id !== s.id));
+                          }
+                        }}
+                      />
+                      <span>{s.fullName} ({s.department})</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px', marginTop: '8px' }}>
+              <button 
+                type="button" 
+                className="btn-secondary"
+                onClick={() => {
+                  setIsBulkAllocModalOpen(false);
+                  setBulkAllocType('');
+                  setBulkSelectedTargets([]);
+                }}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn-primary"
+                onClick={handleApplyBulkAllocationClick}
+              >
+                Apply Bulk Allocation
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

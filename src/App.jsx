@@ -268,9 +268,10 @@ export default function App() {
   // Sync companies from Firebase Service (with LocalStorage fallback)
   useEffect(() => {
     const unsubscribe = firebaseService.subscribeCompanies((updatedList) => {
-      setCompanies(updatedList);
+      const sorted = [...updatedList].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      setCompanies(sorted);
       if (selectedCompany) {
-        const refreshed = updatedList.find(c => c.id === selectedCompany.id);
+        const refreshed = sorted.find(c => c.id === selectedCompany.id);
         if (refreshed) {
           setSelectedCompany(refreshed);
         }
@@ -283,9 +284,10 @@ export default function App() {
   // Sync staff from Firebase Service (with LocalStorage fallback)
   useEffect(() => {
     const unsubscribe = firebaseService.subscribeStaff((updatedList) => {
-      setStaff(updatedList);
+      const sorted = [...updatedList].sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
+      setStaff(sorted);
       if (selectedStaff) {
-        const refreshed = updatedList.find(s => s.id === selectedStaff.id);
+        const refreshed = sorted.find(s => s.id === selectedStaff.id);
         if (refreshed) {
           setSelectedStaff(refreshed);
         }
@@ -351,7 +353,8 @@ export default function App() {
   // Sync vendors
   useEffect(() => {
     const unsubscribe = firebaseService.subscribeVendors((updatedList) => {
-      setVendors(updatedList);
+      const sorted = [...updatedList].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      setVendors(sorted);
     }, initialVendors);
     return () => unsubscribe();
   }, []);
@@ -399,7 +402,8 @@ export default function App() {
   // Sync nominal codes
   useEffect(() => {
     const unsubscribe = firebaseService.subscribeNominalCodes((updatedList) => {
-      setNominalCodes(updatedList);
+      const sorted = [...updatedList].sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+      setNominalCodes(sorted);
     }, initialNominalCodes);
     return () => unsubscribe();
   }, []);

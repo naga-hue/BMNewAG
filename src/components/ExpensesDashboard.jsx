@@ -2968,7 +2968,28 @@ export default function ExpensesDashboard({
                                 <span style={{ width: '14px', display: 'inline-block', textAlign: 'center', opacity: 0.3 }}>•</span>
                               )}
                               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <span>{row.name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDrilldownMonthIdx('ytd');
+                                    setDrilldownRowId(row.id);
+                                    setDrilldownRowType(row.type);
+                                    setDrilldownTargetVal(`${row.name} (Full Year YTD)`);
+                                  }}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--text-primary)',
+                                    textAlign: 'left',
+                                    padding: 0,
+                                    cursor: 'pointer',
+                                    fontWeight: isCompany ? 700 : isDept ? 600 : 500,
+                                    textDecoration: 'underline dashed rgba(255,255,255,0.2)'
+                                  }}
+                                  title="Click to view full year YTD details"
+                                >
+                                  {row.name}
+                                </button>
                                 {isMember && row.subtitle && (
                                   <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>{row.subtitle}</span>
                                 )}
@@ -3019,7 +3040,32 @@ export default function ExpensesDashboard({
                             backgroundColor: 'rgba(255,255,255,0.01)', 
                             color: isCompany ? 'var(--danger)' : isDept ? 'var(--warning)' : 'var(--accent)'
                           }}>
-                            £{Math.round(row.total).toLocaleString()}
+                            {row.total > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDrilldownMonthIdx('ytd');
+                                  setDrilldownRowId(row.id);
+                                  setDrilldownRowType(row.type);
+                                  setDrilldownTargetVal(`${row.name} (YTD Total)`);
+                                }}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  fontWeight: 700,
+                                  color: isCompany ? 'var(--danger)' : isDept ? 'var(--warning)' : 'var(--accent)',
+                                  cursor: 'pointer',
+                                  textDecoration: 'underline dashed rgba(255,255,255,0.3)',
+                                  padding: 0,
+                                  width: '100%',
+                                  textAlign: 'right'
+                                }}
+                              >
+                                £{Math.round(row.total).toLocaleString()}
+                              </button>
+                            ) : (
+                              <span>£0</span>
+                            )}
                           </td>
                         </tr>
                       );
@@ -3031,11 +3077,59 @@ export default function ExpensesDashboard({
                     <td style={{ paddingLeft: '12px' }}>Monthly Totals (Group Expenses)</td>
                     {colTotals.map((tot, idx) => (
                       <td key={idx} style={{ textAlign: 'right', color: 'var(--danger)' }}>
-                        £{Math.round(tot).toLocaleString()}
+                        {tot > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDrilldownMonthIdx(idx);
+                              setDrilldownRowId('group-total');
+                              setDrilldownRowType('group-total');
+                              setDrilldownTargetVal('Group Expenses Total');
+                            }}
+                            style={{
+                              background: 'rgba(239, 68, 68, 0.08)',
+                              border: '1px solid rgba(239, 68, 68, 0.2)',
+                              borderRadius: '4px',
+                              color: 'var(--danger)',
+                              fontWeight: 700,
+                              padding: '2px 6px',
+                              cursor: 'pointer',
+                              textAlign: 'right'
+                            }}
+                          >
+                            £{Math.round(tot).toLocaleString()}
+                          </button>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', opacity: 0.3 }}>—</span>
+                        )}
                       </td>
                     ))}
                     <td style={{ textAlign: 'right', color: 'var(--danger)', fontSize: '13px' }}>
-                      £{Math.round(grandTotal).toLocaleString()}
+                      {grandTotal > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDrilldownMonthIdx('ytd');
+                            setDrilldownRowId('group-total');
+                            setDrilldownRowType('group-total');
+                            setDrilldownTargetVal('Group Expenses (Grand Total)');
+                          }}
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            borderRadius: '4px',
+                            color: 'var(--danger)',
+                            fontWeight: 700,
+                            padding: '4px 8px',
+                            cursor: 'pointer',
+                            textAlign: 'right'
+                          }}
+                        >
+                          £{Math.round(grandTotal).toLocaleString()}
+                        </button>
+                      ) : (
+                        <span>£0</span>
+                      )}
                     </td>
                   </tr>
                 </tbody>
@@ -3075,7 +3169,7 @@ export default function ExpensesDashboard({
                         🏦 Expenses Drill-down: {drilldownTargetVal}
                       </h3>
                       <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                        Period: {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][drilldownMonthIdx]} {matrixYear}
+                        Period: {drilldownMonthIdx === 'ytd' ? 'Full Year YTD' : `${["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][drilldownMonthIdx]} ${matrixYear}`}
                       </span>
                     </div>
                     <button 
@@ -3108,18 +3202,47 @@ export default function ExpensesDashboard({
                       </thead>
                       <tbody>
                         {(() => {
-                          const matchedRow = flatRowsForMatrix.find(r => r.id === drilldownRowId);
+                          let matchedRow = flatRowsForMatrix.find(r => r.id === drilldownRowId);
+                          
+                          if (drilldownRowId === 'group-total') {
+                            const allGroupTransactionsByMonth = Array.from({ length: 12 }, () => []);
+                            flatRowsForMatrix.forEach(r => {
+                              if (r.type === 'party') {
+                                for (let m = 0; m < 12; m++) {
+                                  allGroupTransactionsByMonth[m].push(...(r.transactionsByMonth[m] || []));
+                                }
+                              }
+                            });
+                            matchedRow = {
+                              id: 'group-total',
+                              name: 'Group Expenses Total',
+                              transactionsByMonth: allGroupTransactionsByMonth
+                            };
+                          }
+
                           if (!matchedRow) return null;
 
                           // De-duplicate transactions
                           const uniq = [];
                           const seen = new Set();
-                          (matchedRow.transactionsByMonth[drilldownMonthIdx] || []).forEach(t => {
-                            if (!seen.has(t.id)) {
-                              seen.add(t.id);
-                              uniq.push(t);
+                          
+                          if (drilldownMonthIdx === 'ytd') {
+                            for (let m = 0; m < 12; m++) {
+                              (matchedRow.transactionsByMonth[m] || []).forEach(t => {
+                                if (!seen.has(t.id)) {
+                                  seen.add(t.id);
+                                  uniq.push(t);
+                                }
+                              });
                             }
-                          });
+                          } else {
+                            (matchedRow.transactionsByMonth[drilldownMonthIdx] || []).forEach(t => {
+                              if (!seen.has(t.id)) {
+                                seen.add(t.id);
+                                uniq.push(t);
+                              }
+                            });
+                          }
 
                           if (uniq.length === 0) {
                             return (

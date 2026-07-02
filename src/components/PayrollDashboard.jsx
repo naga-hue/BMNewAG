@@ -27,9 +27,13 @@ export default function PayrollDashboard({
   commissionPolicies = [],
   placements = [],
   payrollRecords = [],
+  payrollPolicies = [],
   expenses = [],
   nominalCodes = [],
   onSavePayrollRecord,
+  onSavePayrollPolicy,
+  onDeletePayrollPolicy,
+  onUpdateStaff,
   onSaveExpense,
   onDeleteExpense,
   onShowToast
@@ -38,6 +42,22 @@ export default function PayrollDashboard({
   const [selectedCompanyId, setSelectedCompanyId] = useState('all');
   const [selectedDept, setSelectedDept] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all'); // all, reconciled, projected
+  const [activeSubTab, setActiveSubTab] = useState('grid'); // grid, policies
+
+  // Payroll policy creator states
+  const [policyName, setPolicyName] = useState('');
+  const [policyType, setPolicyType] = useState('ft_uk'); // ft_uk, freelance, custom
+  const [employerNiRate, setEmployerNiRate] = useState('13.8');
+  const [employerNiThreshold, setEmployerNiThreshold] = useState('758');
+  const [employerPensionRate, setEmployerPensionRate] = useState('3.0');
+  const [employeeTaxNicRate, setEmployeeTaxNicRate] = useState('20.0');
+  const [employeePensionRate, setEmployeePensionRate] = useState('5.0');
+  const [studentLoanActive, setStudentLoanActive] = useState(false);
+  const [studentLoanRate, setStudentLoanRate] = useState('9.0');
+  const [studentLoanThreshold, setStudentLoanThreshold] = useState('2274');
+  const [dailyRateDefault, setDailyRateDefault] = useState('0');
+  const [expectedDaysPerMonth, setExpectedDaysPerMonth] = useState('21.67');
+  const [editingPolicyId, setEditingPolicyId] = useState(null);
   
   // Selected cell for override modal
   const [selectedCell, setSelectedCell] = useState(null); // { staffMember, month, basic, commission }
@@ -55,6 +75,70 @@ export default function PayrollDashboard({
 
   // FX Rates representation
   const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
+
+  // Save or Update Payroll Policy
+  const handleSavePolicySubmit = async (e) => {
+    e.preventDefault();
+    if (!policyName.trim()) {
+      onShowToast("Please enter a policy name.", "warning");
+      return;
+    }
+
+    const savedPolicy = {
+      id: editingPolicyId || `policy-${Date.now()}`,
+      name: policyName.trim(),
+      type: policyType,
+      employerNiRate: policyType === 'freelance' ? 0 : Number(employerNiRate) || 0,
+      employerNiThreshold: policyType === 'freelance' ? 0 : Number(employerNiThreshold) || 0,
+      employerPensionRate: policyType === 'freelance' ? 0 : Number(employerPensionRate) || 0,
+      employeeTaxNicRate: policyType === 'freelance' ? 0 : Number(employeeTaxNicRate) || 0,
+      employeePensionRate: policyType === 'freelance' ? 0 : Number(employeePensionRate) || 0,
+      studentLoanActive: policyType === 'ft_uk' ? studentLoanActive : false,
+      studentLoanRate: policyType === 'ft_uk' ? (Number(studentLoanRate) || 0) : 0,
+      studentLoanThreshold: policyType === 'ft_uk' ? (Number(studentLoanThreshold) || 0) : 0,
+      dailyRateDefault: policyType === 'freelance' ? (Number(dailyRateDefault) || 0) : 0,
+      expectedDaysPerMonth: policyType === 'freelance' ? (Number(expectedDaysPerMonth) || 0) : 21.67
+    };
+
+    try {
+      if (onSavePayrollPolicy) {
+        await onSavePayrollPolicy(savedPolicy);
+        onShowToast(`Payroll Policy "${policyName}" saved successfully.`, "success");
+        // Reset states
+        setPolicyName('');
+        setPolicyType('ft_uk');
+        setEmployerNiRate('13.8');
+        setEmployerNiThreshold('758');
+        setEmployerPensionRate('3.0');
+        setEmployeeTaxNicRate('20.0');
+        setEmployeePensionRate('5.0');
+        setStudentLoanActive(false);
+        setStudentLoanRate('9.0');
+        setStudentLoanThreshold('2274');
+        setDailyRateDefault('0');
+        setExpectedDaysPerMonth('21.67');
+        setEditingPolicyId(null);
+      }
+    } catch (err) {
+      onShowToast(`Error saving policy: ${err.message}`, "warning");
+    }
+  };
+
+  const handleEditPolicyClick = (policy) => {
+    setEditingPolicyId(policy.id);
+    setPolicyName(policy.name || '');
+    setPolicyType(policy.type || 'ft_uk');
+    setEmployerNiRate(String(policy.employerNiRate ?? '13.8'));
+    setEmployerNiThreshold(String(policy.employerNiThreshold ?? '758'));
+    setEmployerPensionRate(String(policy.employerPensionRate ?? '3.0'));
+    setEmployeeTaxNicRate(String(policy.employeeTaxNicRate ?? '20.0'));
+    setEmployeePensionRate(String(policy.employeePensionRate ?? '5.0'));
+    setStudentLoanActive(!!policy.studentLoanActive);
+    setStudentLoanRate(String(policy.studentLoanRate ?? '9.0'));
+    setStudentLoanThreshold(String(policy.studentLoanThreshold ?? '2274'));
+    setDailyRateDefault(String(policy.dailyRateDefault ?? '0'));
+    setExpectedDaysPerMonth(String(policy.expectedDaysPerMonth ?? '21.67'));
+  };
 
   // Helper to calculate exact cash-received commission payout (matching Incentive Commissions ledger)
   const calculateCashReceivedCommission = (member, policy, monthStr, staffList, companiesList, placementsList) => {
@@ -223,8 +307,56 @@ export default function PayrollDashboard({
     const record = payrollRecords.find(r => r.staffId === staffMember.id && r.month === month);
     
     // Project base monthly salaries in GBP
-    const baselineBasic = toGBP(Number(staffMember.salary || 0) / 12, staffMember.currency || 'GBP');
+    let baselineBasic = toGBP(Number(staffMember.salary || 0) / 12, staffMember.currency || 'GBP');
     const baselineCommission = calculateCommissionForRecruiter(staffMember.id, month);
+
+    // Read policy template
+    const policy = payrollPolicies.find(p => p.id === staffMember.payrollPolicyId);
+    let projectedEmployerNi = 0;
+    let projectedEmployerPension = 0;
+    let projectedEmployeeTaxNic = 0;
+    let projectedEmployeePension = 0;
+
+    if (policy) {
+      if (policy.type === 'freelance') {
+        const dailyRate = Number(staffMember.attendanceRate || policy.dailyRateDefault || 0);
+        const workingDays = Number(policy.expectedDaysPerMonth || 21.67);
+        const monthlyContractorRateVal = dailyRate * workingDays;
+        baselineBasic = toGBP(monthlyContractorRateVal, staffMember.currency || 'GBP');
+      } else {
+        const grossSalaryAndComm = baselineBasic + baselineCommission;
+        
+        // Calculate Employer NIC
+        if (policy.employerNiRate > 0) {
+          const thresholdGBP = toGBP(Number(policy.employerNiThreshold || 0), 'GBP');
+          const taxableNiAmount = Math.max(0, grossSalaryAndComm - thresholdGBP);
+          projectedEmployerNi = (taxableNiAmount * Number(policy.employerNiRate)) / 100;
+        }
+        
+        // Calculate Employer Pension
+        if (policy.employerPensionRate > 0) {
+          projectedEmployerPension = (grossSalaryAndComm * Number(policy.employerPensionRate)) / 100;
+        }
+
+        // Calculate Employee Tax/NIC
+        if (policy.employeeTaxNicRate > 0) {
+          projectedEmployeeTaxNic = (grossSalaryAndComm * Number(policy.employeeTaxNicRate)) / 100;
+        }
+
+        // Calculate Employee Pension
+        if (policy.employeePensionRate > 0) {
+          projectedEmployeePension = (grossSalaryAndComm * Number(policy.employeePensionRate)) / 100;
+        }
+
+        // Calculate Student Loan
+        if (policy.studentLoanActive && policy.studentLoanRate > 0) {
+          const slThresholdGBP = toGBP(Number(policy.studentLoanThreshold || 0), 'GBP');
+          const slTaxable = Math.max(0, grossSalaryAndComm - slThresholdGBP);
+          const studentLoanDeduction = (slTaxable * Number(policy.studentLoanRate)) / 100;
+          projectedEmployeeTaxNic += studentLoanDeduction;
+        }
+      }
+    }
 
     if (record) {
       return {
@@ -232,12 +364,12 @@ export default function PayrollDashboard({
         basic: record.isReconciled ? Number(record.basicSalary) : baselineBasic,
         commission: record.isReconciled ? Number(record.commission) : baselineCommission,
         total: record.isReconciled 
-          ? (Number(record.basicSalary) + Number(record.commission)) 
-          : (baselineBasic + baselineCommission),
-        employerNi: Number(record.employerNi || 0),
-        employerPension: Number(record.employerPension || 0),
-        employeeTaxNic: Number(record.employeeTaxNic || 0),
-        employeePension: Number(record.employeePension || 0),
+          ? (Number(record.basicSalary) + Number(record.commission) + Number(record.employerNi || 0) + Number(record.employerPension || 0)) 
+          : (baselineBasic + baselineCommission + projectedEmployerNi + projectedEmployerPension),
+        employerNi: record.isReconciled ? Number(record.employerNi || 0) : projectedEmployerNi,
+        employerPension: record.isReconciled ? Number(record.employerPension || 0) : projectedEmployerPension,
+        employeeTaxNic: record.isReconciled ? Number(record.employeeTaxNic || 0) : projectedEmployeeTaxNic,
+        employeePension: record.isReconciled ? Number(record.employeePension || 0) : projectedEmployeePension,
         notes: record.notes || '',
         id: record.id
       };
@@ -247,11 +379,11 @@ export default function PayrollDashboard({
       isReconciled: false,
       basic: baselineBasic,
       commission: baselineCommission,
-      total: baselineBasic + baselineCommission,
-      employerNi: 0,
-      employerPension: 0,
-      employeeTaxNic: 0,
-      employeePension: 0,
+      total: baselineBasic + baselineCommission + projectedEmployerNi + projectedEmployerPension,
+      employerNi: projectedEmployerNi,
+      employerPension: projectedEmployerPension,
+      employeeTaxNic: projectedEmployeeTaxNic,
+      employeePension: projectedEmployeePension,
       notes: '',
       id: null
     };
@@ -457,8 +589,48 @@ export default function PayrollDashboard({
         </div>
       </div>
 
-      {/* Control Filter Bar */}
-      <div className="controls-row" style={{ marginTop: 0 }}>
+      {/* Sub-tab Navigation */}
+      <div style={{ 
+        display: 'flex', 
+        backgroundColor: 'var(--bg-secondary)', 
+        border: '1px solid var(--border-color)',
+        borderRadius: 'var(--radius-md)',
+        padding: '4px',
+        width: 'fit-content',
+        gap: '4px',
+        marginBottom: '4px'
+      }}>
+        {[
+          { key: 'grid', label: 'Group Payroll & Projections' },
+          { key: 'policies', label: 'Payroll Policy Templates' }
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setActiveSubTab(t.key)}
+            style={{
+              background: activeSubTab === t.key ? 'var(--bg-sidebar)' : 'none',
+              border: 'none',
+              borderRadius: 'var(--radius-sm)',
+              padding: '6px 16px',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: activeSubTab === t.key ? 'var(--primary)' : 'var(--text-secondary)',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeSubTab === 'grid' && (
+        <>
+          {/* Control Filter Bar */}
+          <div className="controls-row" style={{ marginTop: 0 }}>
         <div className="search-filter-group" style={{ flexWrap: 'wrap', gap: '8px' }}>
           <div className="search-input-wrapper">
             <Search size={16} className="search-icon" />
@@ -689,6 +861,301 @@ ${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleSt
           </tbody>
         </table>
       </div>
+        </>
+      )}
+
+      {/* ==============================================================
+          SUB-TAB: PAYROLL POLICIES MANAGER
+          ============================================================== */}
+      {activeSubTab === 'policies' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', animation: 'fadeIn 0.2s' }}>
+          
+          {/* Left Column: Form to create/edit policy */}
+          <form onSubmit={handleSavePolicySubmit} className="detail-section" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="section-title" style={{ fontSize: '14px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Briefcase size={16} style={{ color: 'var(--primary)' }} /> 
+              {editingPolicyId ? 'Modify' : 'Create'} Payroll Policy Template
+            </div>
+            
+            <div className="form-group">
+              <label className="form-label">Template Name <span>*</span></label>
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="e.g. UK Full Time Staff"
+                value={policyName}
+                onChange={(e) => setPolicyName(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Policy Structure Type <span>*</span></label>
+              <select 
+                className="select-filter"
+                value={policyType}
+                onChange={(e) => setPolicyType(e.target.value)}
+                style={{ width: '100%', padding: '10px' }}
+              >
+                <option value="ft_uk">FT UK Employee (PAYE, NIC, Pension, Student Loan)</option>
+                <option value="freelance">Freelance Contractor (Daily Rate, Attendance-based)</option>
+                <option value="custom">Custom Formula (Global / Multi-rate)</option>
+              </select>
+            </div>
+
+            {policyType !== 'freelance' ? (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                  <div>
+                    <h4 style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                      🏢 Employer Projected Rates
+                    </h4>
+                    <div className="form-group" style={{ marginBottom: '8px' }}>
+                      <label className="form-label" style={{ fontSize: '10px' }}>Employer NI Rate (%)</label>
+                      <input 
+                        type="number" step="any" className="form-input" value={employerNiRate} onChange={(e) => setEmployerNiRate(e.target.value)} style={{ width: '100%', padding: '6px' }}
+                      />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: '8px' }}>
+                      <label className="form-label" style={{ fontSize: '10px' }}>NI Monthly Threshold (£)</label>
+                      <input 
+                        type="number" step="any" className="form-input" value={employerNiThreshold} onChange={(e) => setEmployerNiThreshold(e.target.value)} style={{ width: '100%', padding: '6px' }}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontSize: '10px' }}>Employer Pension Rate (%)</label>
+                      <input 
+                        type="number" step="any" className="form-input" value={employerPensionRate} onChange={(e) => setEmployerPensionRate(e.target.value)} style={{ width: '100%', padding: '6px' }}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h4 style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                      👥 Employee Projected Deductions
+                    </h4>
+                    <div className="form-group" style={{ marginBottom: '8px' }}>
+                      <label className="form-label" style={{ fontSize: '10px' }}>Employee Tax & NI Rate (%)</label>
+                      <input 
+                        type="number" step="any" className="form-input" value={employeeTaxNicRate} onChange={(e) => setEmployeeTaxNicRate(e.target.value)} style={{ width: '100%', padding: '6px' }}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontSize: '10px' }}>Employee Pension Rate (%)</label>
+                      <input 
+                        type="number" step="any" className="form-input" value={employeePensionRate} onChange={(e) => setEmployeePensionRate(e.target.value)} style={{ width: '100%', padding: '6px' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {policyType === 'ft_uk' && (
+                  <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px', marginTop: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input 
+                        type="checkbox" 
+                        id="policy-student-loan-check" 
+                        checked={studentLoanActive} 
+                        onChange={(e) => setStudentLoanActive(e.target.checked)} 
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <label htmlFor="policy-student-loan-check" style={{ fontSize: '12px', fontWeight: 600, cursor: 'pointer', margin: 0 }}>
+                        Estimate Student Loan Deductions
+                      </label>
+                    </div>
+                    {studentLoanActive && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px', animation: 'fadeIn 0.2s' }}>
+                        <div className="form-group">
+                          <label className="form-label" style={{ fontSize: '10px' }}>Student Loan Rate (%)</label>
+                          <input 
+                            type="number" step="any" className="form-input" value={studentLoanRate} onChange={(e) => setStudentLoanRate(e.target.value)} style={{ width: '100%', padding: '6px' }}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label" style={{ fontSize: '10px' }}>Monthly Threshold (£)</label>
+                          <input 
+                            type="number" step="any" className="form-input" value={studentLoanThreshold} onChange={(e) => setStudentLoanThreshold(e.target.value)} style={{ width: '100%', padding: '6px' }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                <div className="form-group">
+                  <label className="form-label">Default Daily Rate (£)</label>
+                  <input 
+                    type="number" 
+                    className="form-input" 
+                    placeholder="e.g. 300"
+                    value={dailyRateDefault} 
+                    onChange={(e) => setDailyRateDefault(e.target.value)} 
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Est. Working Days / Month</label>
+                  <input 
+                    type="number" 
+                    step="any"
+                    className="form-input" 
+                    placeholder="e.g. 21.67"
+                    value={expectedDaysPerMonth} 
+                    onChange={(e) => setExpectedDaysPerMonth(e.target.value)} 
+                  />
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+              <button type="submit" className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
+                {editingPolicyId ? 'Update Policy Template' : 'Create Policy Template'}
+              </button>
+              {editingPolicyId && (
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  style={{ flex: 1, justifyContent: 'center' }}
+                  onClick={() => {
+                    setEditingPolicyId(null);
+                    setPolicyName('');
+                    setPolicyType('ft_uk');
+                    setEmployerNiRate('13.8');
+                    setEmployerNiThreshold('758');
+                    setEmployerPensionRate('3.0');
+                    setEmployeeTaxNicRate('20.0');
+                    setEmployeePensionRate('5.0');
+                    setStudentLoanActive(false);
+                    setStudentLoanRate('9.0');
+                    setStudentLoanThreshold('2274');
+                    setDailyRateDefault('0');
+                    setExpectedDaysPerMonth('21.67');
+                  }}
+                >
+                  Cancel Edit
+                </button>
+              )}
+            </div>
+          </form>
+
+          {/* Right Column: Policies Registry & Assignment */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div className="detail-section">
+              <h3 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '12px' }}>Active Policy Templates</h3>
+              <div className="table-container" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                <table className="entity-table dense" style={{ fontSize: '11px' }}>
+                  <thead>
+                    <tr>
+                      <th>Template Name</th>
+                      <th>Structure</th>
+                      <th>Summary Rates</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payrollPolicies.map(p => (
+                      <tr key={p.id}>
+                        <td style={{ fontWeight: 600 }}>{p.name}</td>
+                        <td>
+                          <span style={{ 
+                            fontSize: '9px', fontWeight: 700, padding: '2px 6px', borderRadius: '4px',
+                            backgroundColor: p.type === 'ft_uk' ? 'rgba(99, 102, 241, 0.12)' : p.type === 'freelance' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(107, 114, 128, 0.12)',
+                            color: p.type === 'ft_uk' ? 'var(--primary)' : p.type === 'freelance' ? 'var(--warning)' : 'var(--text-secondary)'
+                          }}>
+                            {p.type === 'ft_uk' ? 'FT UK' : p.type === 'freelance' ? 'Freelance' : 'Custom'}
+                          </span>
+                        </td>
+                        <td>
+                          {p.type === 'freelance' ? (
+                            <span>Daily: £{p.dailyRateDefault} ({p.expectedDaysPerMonth} days)</span>
+                          ) : (
+                            <span>Er NI: {p.employerNiRate}%, Er Pen: {p.employerPensionRate}%, Ee Tax: {p.employeeTaxNicRate}%</span>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
+                            <button className="btn-icon" onClick={() => handleEditPolicyClick(p)} title="Edit Policy" style={{ border: 'none', background: 'none' }}>
+                              📝
+                            </button>
+                            <button 
+                              className="btn-icon delete" 
+                              onClick={() => {
+                                if (window.confirm(`Are you sure you want to delete policy template "${p.name}"?`)) {
+                                  onDeletePayrollPolicy(p.id);
+                                }
+                              }}
+                              title="Delete Policy"
+                              style={{ border: 'none', background: 'none' }}
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {payrollPolicies.length === 0 && (
+                      <tr>
+                        <td colSpan="4" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>
+                          No policies defined. Create one on the left.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Quick Assignment Panel */}
+            <div className="detail-section">
+              <h3 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Roster Policy Assignment Desk</h3>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                Quickly link staff members to payroll templates for real-time projections.
+              </p>
+              <div className="table-container" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                <table className="entity-table dense" style={{ fontSize: '11px' }}>
+                  <thead>
+                    <tr>
+                      <th>Recruiter / Staff</th>
+                      <th>Assign Policy Template</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {staff.map(s => (
+                      <tr key={s.id}>
+                        <td style={{ fontWeight: 600 }}>{s.fullName} ({s.department})</td>
+                        <td>
+                          <select
+                            className="select-filter"
+                            value={s.payrollPolicyId || ''}
+                            onChange={async (e) => {
+                              const val = e.target.value;
+                              try {
+                                if (onUpdateStaff) {
+                                  await onUpdateStaff({ ...s, payrollPolicyId: val });
+                                  onShowToast(`Assigned policy template to ${s.fullName}`, "success");
+                                }
+                              } catch (err) {
+                                onShowToast(`Error: ${err.message}`, "warning");
+                              }
+                            }}
+                            style={{ padding: '4px 8px', fontSize: '11px', width: '100%' }}
+                          >
+                            <option value="">-- No Policy (Salaried Default) --</option>
+                            {payrollPolicies.map(p => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Spreadsheet Override Modal */}
       {selectedCell !== null && (

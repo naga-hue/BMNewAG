@@ -82,12 +82,13 @@ export default function ExpensesDashboard({
   const activeNominalCodes = (nominalCodes || []).map(c => {
     if (typeof c === 'string') {
       const parts = c.split(' - ');
-      return { id: parts[0] || c, code: c };
+      return { id: parts[0] || c, code: c, type: 'indirect' };
     }
     if (c && typeof c === 'object') {
       return {
         id: c.id || '',
-        code: c.code || ''
+        code: c.code || '',
+        type: c.type || 'indirect'
       };
     }
     return null;
@@ -208,6 +209,12 @@ export default function ExpensesDashboard({
   // Nominal Code setting states
   const [newNominalCodeId, setNewNominalCodeId] = useState('');
   const [newNominalCodeName, setNewNominalCodeName] = useState('');
+  const [newNominalType, setNewNominalType] = useState('indirect'); // direct, indirect
+  const [nominalMode, setNominalMode] = useState('single'); // single, bulk
+  const [bulkInput, setBulkInput] = useState('');
+  const [selectedNominalIds, setSelectedNominalIds] = useState([]);
+  const [quickAddNominalOpen, setQuickAddNominalOpen] = useState(false);
+  const [quickAddRowId, setQuickAddRowId] = useState(null);
 
   // Handle Edit Expense
   const handleEditExpense = (exp) => {
@@ -408,13 +415,109 @@ export default function ExpensesDashboard({
     try {
       await onSaveNominalCode({
         id: newNominalCodeId.trim(),
-        code: codeStr
+        code: codeStr,
+        type: newNominalType
       });
-      onShowToast(`Added Nominal code: ${codeStr}`, "success");
+      onShowToast(`Added Nominal code: ${codeStr} (${newNominalType === 'direct' ? 'Direct Cost' : 'Indirect Cost'})`, "success");
       setNewNominalCodeId('');
       setNewNominalCodeName('');
+      setNewNominalType('indirect');
     } catch (err) {
       onShowToast(`Error creating Nominal: ${err.message}`, "warning");
+    }
+  };
+
+  // Bulk add nominal codes from textarea input
+  const handleBulkNominalSubmit = async (e) => {
+    e.preventDefault();
+    if (!bulkInput.trim()) {
+      onShowToast("Please enter nominal codes in the text area.", "warning");
+      return;
+    }
+
+    const lines = bulkInput.split('\n').map(l => l.trim()).filter(Boolean);
+    let successCount = 0;
+    let failCount = 0;
+    let existsCount = 0;
+
+    for (let line of lines) {
+      let codeId = '';
+      let codeName = '';
+      let typeVal = 'indirect';
+
+      // Try split by comma
+      if (line.includes(',')) {
+        const parts = line.split(',');
+        codeId = parts[0]?.trim();
+        codeName = parts[1]?.trim();
+        if (parts[2]) {
+          const t = parts[2].trim().toLowerCase();
+          if (t === 'direct' || t === 'indirect') {
+            typeVal = t;
+          }
+        }
+      } 
+      // Try split by dash
+      else if (line.includes(' - ')) {
+        const parts = line.split(' - ');
+        codeId = parts[0]?.trim();
+        codeName = parts[1]?.trim();
+      }
+      else {
+        // Fallback: split by whitespace
+        const match = line.match(/^(\w+)\s+(.+)$/);
+        if (match) {
+          codeId = match[1];
+          codeName = match[2];
+        }
+      }
+
+      if (!codeId || !codeName) {
+        failCount++;
+        continue;
+      }
+
+      const codeStr = `${codeId} - ${codeName}`;
+      const exists = activeNominalCodes.some(c => c.id === codeId || String(c.code || '').toLowerCase() === codeStr.toLowerCase());
+
+      if (exists) {
+        existsCount++;
+        continue;
+      }
+
+      try {
+        await onSaveNominalCode({
+          id: codeId,
+          code: codeStr,
+          type: typeVal
+        });
+        successCount++;
+      } catch (err) {
+        failCount++;
+      }
+    }
+
+    onShowToast(`Bulk import complete. Success: ${successCount}, Skipped (Exists): ${existsCount}, Errors: ${failCount}`, successCount > 0 ? "success" : "warning");
+    if (successCount > 0) {
+      setBulkInput('');
+    }
+  };
+
+  // Bulk remove selected nominal codes
+  const handleBulkDeleteNominals = async () => {
+    if (selectedNominalIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedNominalIds.length} selected Nominal category codes?`)) return;
+
+    let successCount = 0;
+    try {
+      for (const id of selectedNominalIds) {
+        await onDeleteNominalCode(id);
+        successCount++;
+      }
+      onShowToast(`Successfully deleted ${successCount} nominal categories.`, "success");
+      setSelectedNominalIds([]);
+    } catch (err) {
+      onShowToast(`Error bulk deleting nominals: ${err.message}`, "warning");
     }
   };
 
@@ -1658,11 +1761,25 @@ export default function ExpensesDashboard({
                         <td>
                           <select
                             value={row.nominalCode}
-                            onChange={(e) => handleUpdateCategorizedRow(row.id, 'nominalCode', e.target.value)}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'quick_add_nominal') {
+                                setQuickAddRowId(row.id);
+                                setNewNominalCodeId('');
+                                setNewNominalCodeName('');
+                                setNewNominalType('indirect');
+                                setQuickAddNominalOpen(true);
+                              } else {
+                                handleUpdateCategorizedRow(row.id, 'nominalCode', val);
+                              }
+                            }}
                             disabled={row.committed}
                             style={{ padding: '4px', fontSize: '11px', width: '160px' }}
                           >
                             <option value="">-- Unmapped --</option>
+                            <option value="quick_add_nominal" style={{ color: 'var(--primary)', fontWeight: 'bold' }}>
+                              ➕ Add New Nominal Code...
+                            </option>
                              {activeNominalCodes.map(c => (
                               <option key={c.id} value={c.code}>{c.code}</option>
                             ))}
@@ -2345,61 +2462,172 @@ export default function ExpensesDashboard({
               <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Nominal Codes Manager</h2>
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Manage the nominal ledger codes for categorization of bank statements and manual expense inputs.</p>
             </div>
+            
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button 
+                type="button" 
+                className={nominalMode === 'single' ? 'btn-primary' : 'btn-secondary'}
+                onClick={() => setNominalMode('single')}
+                style={{ fontSize: '12px', padding: '6px 12px' }}
+              >
+                Single Nominal Add
+              </button>
+              <button 
+                type="button" 
+                className={nominalMode === 'bulk' ? 'btn-primary' : 'btn-secondary'}
+                onClick={() => setNominalMode('bulk')}
+                style={{ fontSize: '12px', padding: '6px 12px' }}
+              >
+                Bulk Nominal Add / Paste List
+              </button>
+            </div>
           </div>
 
-          <form onSubmit={handleNominalSubmit} className="detail-section" style={{ maxWidth: '600px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div className="section-title">
-              <PlusCircle size={14} /> Add Nominal Category
-            </div>
+          {nominalMode === 'single' && (
+            <form onSubmit={handleNominalSubmit} className="detail-section" style={{ maxWidth: '600px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="section-title">
+                <PlusCircle size={14} /> Add Nominal Category
+              </div>
 
-            <div className="form-group-row">
+              <div className="form-group-row">
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">Nominal Code ID (Key) <span>*</span></label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    placeholder="e.g. 7011"
+                    value={newNominalCodeId}
+                    onChange={(e) => setNewNominalCodeId(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group" style={{ flex: 2 }}>
+                  <label className="form-label">Nominal Code Name / Description <span>*</span></label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    placeholder="e.g. Marketing & Advertising Overhead"
+                    value={newNominalCodeName}
+                    onChange={(e) => setNewNominalCodeName(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="form-group" style={{ maxWidth: '300px' }}>
+                <label className="form-label">Cost Classification Type <span>*</span></label>
+                <select 
+                  className="select-filter"
+                  value={newNominalType}
+                  onChange={(e) => setNewNominalType(e.target.value)}
+                  style={{ width: '100%', padding: '8px' }}
+                >
+                  <option value="indirect">Indirect Cost (Overhead / G&A)</option>
+                  <option value="direct">Direct Cost (Salaries, Commission, Placements Cost)</option>
+                </select>
+              </div>
+
+              <button type="submit" className="btn-primary" style={{ alignSelf: 'flex-start', padding: '10px 24px', marginTop: '4px' }}>
+                Create Nominal Bracket
+              </button>
+            </form>
+          )}
+
+          {nominalMode === 'bulk' && (
+            <form onSubmit={handleBulkNominalSubmit} className="detail-section" style={{ maxWidth: '600px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="section-title">
+                <PlusCircle size={14} /> Bulk Paste Nominal Ledger Codes
+              </div>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                Paste nominal codes one per line. Formats allowed:<br />
+                • <code>500 - Salaries &amp; Wages</code> (Code and Name split by dash)<br />
+                • <code>500,Salaries &amp; Wages</code> (Code and Name split by comma)<br />
+                • <code>500,Salaries &amp; Wages,direct</code> (Include cost type: 'direct' or 'indirect')
+              </p>
               <div className="form-group">
-                <label className="form-label">Nominal Code ID (Key) <span>*</span></label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  placeholder="e.g. 7011"
-                  value={newNominalCodeId}
-                  onChange={(e) => setNewNominalCodeId(e.target.value)}
+                <textarea
+                  className="form-input"
+                  rows="8"
+                  placeholder="e.g.&#10;500,Salaries & Wages,direct&#10;501,HMRC PAYE,direct&#10;7000,Marketing Expenses,indirect"
+                  value={bulkInput}
+                  onChange={(e) => setBulkInput(e.target.value)}
+                  style={{ fontFamily: 'monospace', fontSize: '12px' }}
                   required
                 />
               </div>
-
-              <div className="form-group" style={{ flex: 2 }}>
-                <label className="form-label">Nominal Code Name / Description <span>*</span></label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  placeholder="e.g. Marketing & Advertising Overhead"
-                  value={newNominalCodeName}
-                  onChange={(e) => setNewNominalCodeName(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            <button type="submit" className="btn-primary" style={{ alignSelf: 'flex-start', padding: '10px 24px' }}>
-              Create Nominal Bracket
-            </button>
-          </form>
+              <button type="submit" className="btn-primary" style={{ alignSelf: 'flex-start', padding: '10px 24px' }}>
+                Bulk Import Nominals
+              </button>
+            </form>
+          )}
 
           {/* Nominal Codes List */}
-          <div style={{ maxWidth: '600px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>Active Nominal Ledger Bracket Registry</h3>
+          <div style={{ maxWidth: '750px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 600, margin: 0 }}>Active Nominal Ledger Bracket Registry</h3>
+              {selectedNominalIds.length > 0 && (
+                <button 
+                  onClick={handleBulkDeleteNominals}
+                  className="btn-primary" 
+                  style={{ fontSize: '11px', backgroundColor: 'var(--danger)', borderColor: 'var(--danger)', padding: '4px 10px', gap: '4px' }}
+                >
+                  <Trash2 size={10} /> Delete Selected ({selectedNominalIds.length})
+                </button>
+              )}
+            </div>
             <div className="table-container">
               <table className="entity-table dense" style={{ fontSize: '12px' }}>
                 <thead>
                   <tr>
-                    <th>Nominal Code ID</th>
+                    <th style={{ width: '40px', textAlign: 'center' }}>
+                      <input 
+                        type="checkbox"
+                        checked={activeNominalCodes.length > 0 && selectedNominalIds.length === activeNominalCodes.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedNominalIds(activeNominalCodes.map(c => c.id));
+                          } else {
+                            setSelectedNominalIds([]);
+                          }
+                        }}
+                      />
+                    </th>
+                    <th style={{ width: '130px' }}>Nominal Code ID</th>
                     <th>Nominal Code Label</th>
-                    <th style={{ textAlign: 'right' }}>Actions</th>
+                    <th style={{ width: '130px' }}>Classification</th>
+                    <th style={{ textAlign: 'right', width: '80px' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {activeNominalCodes.map(c => (
                     <tr key={c.id}>
+                      <td style={{ textAlign: 'center' }}>
+                        <input 
+                          type="checkbox"
+                          checked={selectedNominalIds.includes(c.id)}
+                          onChange={() => {
+                            setSelectedNominalIds(prev => 
+                              prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id]
+                            );
+                          }}
+                        />
+                      </td>
                       <td style={{ fontWeight: 700, fontFamily: 'monospace' }}>{c.id}</td>
                       <td>{c.code}</td>
+                      <td>
+                        <span style={{ 
+                          display: 'inline-block',
+                          fontSize: '9px',
+                          fontWeight: 700,
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          backgroundColor: c.type === 'direct' ? 'rgba(99, 102, 241, 0.12)' : 'rgba(107, 114, 128, 0.12)',
+                          color: c.type === 'direct' ? 'var(--primary)' : 'var(--text-secondary)'
+                        }}>
+                          {c.type === 'direct' ? 'DIRECT COST' : 'INDIRECT COST'}
+                        </span>
+                      </td>
                       <td>
                         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                           <button 
@@ -2420,7 +2648,7 @@ export default function ExpensesDashboard({
                   ))}
                   {activeNominalCodes.length === 0 && (
                     <tr>
-                      <td colSpan="3" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>
+                      <td colSpan="5" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>
                         No nominal categories initialized. Add one above.
                       </td>
                     </tr>
@@ -3019,6 +3247,141 @@ export default function ExpensesDashboard({
                 className="btn-secondary" 
                 style={{ flex: 1 }}
                 onClick={() => setQuickVendorRowId(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ==============================================================
+          MODAL: QUICK ADD NOMINAL LEDGER CODE
+          ============================================================== */}
+      {quickAddNominalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          zIndex: 9999,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          backdropFilter: 'blur(3px)'
+        }}>
+          <form 
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!newNominalCodeId.trim() || !newNominalCodeName.trim()) {
+                onShowToast("Please enter both nominal code and description name.", "warning");
+                return;
+              }
+              const codeStr = `${newNominalCodeId.trim()} - ${newNominalCodeName.trim()}`;
+              const exists = activeNominalCodes.some(c => c.id === newNominalCodeId.trim() || String(c.code || '').toLowerCase() === codeStr.toLowerCase());
+              if (exists) {
+                onShowToast("A nominal code with this key or description name already exists.", "warning");
+                return;
+              }
+              try {
+                await onSaveNominalCode({
+                  id: newNominalCodeId.trim(),
+                  code: codeStr,
+                  type: newNominalType
+                });
+                onShowToast(`Added Nominal category: ${codeStr}`, "success");
+                
+                // Pre-select it on the row that triggered it
+                if (quickAddRowId) {
+                  handleUpdateCategorizedRow(quickAddRowId, 'nominalCode', codeStr);
+                }
+                
+                setQuickAddNominalOpen(false);
+                setQuickAddRowId(null);
+              } catch (err) {
+                onShowToast(`Error: ${err.message}`, "warning");
+              }
+            }}
+            className="detail-section"
+            style={{
+              width: '400px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              padding: '20px',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: 'var(--shadow-xl)',
+              backgroundColor: 'var(--bg-primary)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+              <h3 style={{ fontSize: '13px', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <PlusCircle size={14} style={{ color: 'var(--primary)' }} /> Quick Add Nominal Ledger Code
+              </h3>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setQuickAddNominalOpen(false);
+                  setQuickAddRowId(null);
+                }} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '16px' }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Nominal Code ID (Key) <span>*</span></label>
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="e.g. 505"
+                value={newNominalCodeId}
+                onChange={(e) => setNewNominalCodeId(e.target.value)}
+                required
+                autoFocus
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Nominal Label / Name <span>*</span></label>
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="e.g. Health Insurance Overhead"
+                value={newNominalCodeName}
+                onChange={(e) => setNewNominalCodeName(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Cost Classification Type <span>*</span></label>
+              <select 
+                className="select-filter"
+                value={newNominalType}
+                onChange={(e) => setNewNominalType(e.target.value)}
+                style={{ width: '100%', padding: '8px' }}
+              >
+                <option value="indirect">Indirect Cost (Overhead / G&A)</option>
+                <option value="direct">Direct Cost (Salaries, Commission, Placements Cost)</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+              <button type="submit" className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
+                Save & Select
+              </button>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => {
+                  setQuickAddNominalOpen(false);
+                  setQuickAddRowId(null);
+                }}
               >
                 Cancel
               </button>

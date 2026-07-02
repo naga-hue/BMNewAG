@@ -95,6 +95,7 @@ export default function App() {
   const [nominalCodes, setNominalCodes] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [payrollRecords, setPayrollRecords] = useState([]);
+  const [payrollPolicies, setPayrollPolicies] = useState([]);
 
   // Navigation tab: 'dashboard' | 'directory' | 'staff'
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -415,6 +416,14 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = firebaseService.subscribePayrollRecords((updatedList) => {
       setPayrollRecords(updatedList);
+    }, []);
+    return () => unsubscribe();
+  }, []);
+
+  // Sync payroll policies
+  useEffect(() => {
+    const unsubscribe = firebaseService.subscribePayrollPolicies((updatedList) => {
+      setPayrollPolicies(updatedList);
     }, []);
     return () => unsubscribe();
   }, []);
@@ -2263,9 +2272,13 @@ export default function App() {
               commissionPolicies={commissionPolicies}
               placements={scopedPlacements}
               payrollRecords={payrollRecords}
+              payrollPolicies={payrollPolicies}
               expenses={expenses}
               nominalCodes={nominalCodes}
               onSavePayrollRecord={handleSavePayrollRecord}
+              onSavePayrollPolicy={firebaseService.savePayrollPolicy}
+              onDeletePayrollPolicy={firebaseService.deletePayrollPolicy}
+              onUpdateStaff={handleSaveStaff}
               onSaveExpense={handleSaveExpense}
               onDeleteExpense={handleDeleteExpense}
               onShowToast={handleShowToast}
@@ -2410,6 +2423,7 @@ export default function App() {
         staffList={staff}
         leavePolicies={leavePolicies}
         commissionPolicies={commissionPolicies}
+        payrollPolicies={payrollPolicies}
       />
 
       {/* Bulk Staff Import Wizard */}

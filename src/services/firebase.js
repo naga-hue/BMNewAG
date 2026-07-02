@@ -1043,5 +1043,60 @@ export const firebaseService = {
       localStorage.setItem('bm-payroll-records', JSON.stringify(list));
       return record;
     }
+  },
+
+  subscribePayrollPolicies(onUpdate, fallbackData = []) {
+    if (isConfigured && db) {
+      const policiesRef = collection(db, 'payrollPolicies');
+      return onSnapshot(policiesRef, (snapshot) => {
+        const list = [];
+        snapshot.forEach((doc) => {
+          list.push(doc.data());
+        });
+        onUpdate(list);
+      }, (error) => {
+        console.error("Firestore payroll policies subscription error:", error);
+        const local = localStorage.getItem('bm-payroll-policies');
+        onUpdate(local ? JSON.parse(local) : fallbackData);
+      });
+    } else {
+      const local = localStorage.getItem('bm-payroll-policies');
+      const data = local ? JSON.parse(local) : fallbackData;
+      onUpdate(data);
+      return () => {};
+    }
+  },
+
+  async savePayrollPolicy(policy) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'payrollPolicies', policy.id);
+      await setDoc(docRef, policy);
+      return policy;
+    } else {
+      const local = localStorage.getItem('bm-payroll-policies');
+      const list = local ? JSON.parse(local) : [];
+      const index = list.findIndex(p => p.id === policy.id);
+      if (index > -1) {
+        list[index] = policy;
+      } else {
+        list.push(policy);
+      }
+      localStorage.setItem('bm-payroll-policies', JSON.stringify(list));
+      return policy;
+    }
+  },
+
+  async deletePayrollPolicy(id) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'payrollPolicies', id);
+      await deleteDoc(docRef);
+      return id;
+    } else {
+      const local = localStorage.getItem('bm-payroll-policies');
+      const list = local ? JSON.parse(local) : [];
+      const filtered = list.filter(p => p.id !== id);
+      localStorage.setItem('bm-payroll-policies', JSON.stringify(filtered));
+      return id;
+    }
   }
 };

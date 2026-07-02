@@ -21,7 +21,7 @@ const CURRENCIES = [
   { code: 'ZAR', symbol: 'R', label: 'ZAR - South African Rand' }
 ];
 
-export default function StaffForm({ staffMember, companies, isOpen, onClose, onSave, onShowToast, staffList = [], leavePolicies = [], commissionPolicies = [] }) {
+export default function StaffForm({ staffMember, companies, isOpen, onClose, onSave, onShowToast, staffList = [], leavePolicies = [], commissionPolicies = [], payrollPolicies = [] }) {
   const [currentStep, setCurrentStep] = useState(1);
   const [errors, setErrors] = useState({});
   
@@ -43,10 +43,12 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
   const [status, setStatus] = useState('active');
   const [exitDate, setExitDate] = useState('');
   const [noticePeriod, setNoticePeriod] = useState('');
+  const [payrollPolicyId, setPayrollPolicyId] = useState('');
 
   // Step 3: Compensation details state
   const [salary, setSalary] = useState('');
   const [currency, setCurrency] = useState('GBP');
+  const [attendanceRate, setAttendanceRate] = useState('');
 
   // Step 4: Business contact details state
   const [businessEmail, setBusinessEmail] = useState('');
@@ -108,9 +110,11 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setStatus(staffMember.status || 'active');
       setExitDate(normalizeDateForInput(staffMember.exitDate || ''));
       setNoticePeriod(staffMember.noticePeriod || '');
+      setPayrollPolicyId(staffMember.payrollPolicyId || '');
       
       setSalary(staffMember.salary || '');
       setCurrency(staffMember.currency || 'GBP');
+      setAttendanceRate(staffMember.attendanceRate || '');
       
       setBusinessEmail(staffMember.businessEmail || '');
       setBusinessPhone(staffMember.businessPhone || '');
@@ -135,6 +139,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setStatus('active');
       setExitDate('');
       setNoticePeriod('');
+      setPayrollPolicyId('');
       
       setSalary('');
       setCurrency(companies[0] ? (
@@ -144,6 +149,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
         companies[0].country === 'South Africa' ? 'ZAR' : 
         'GBP'
       ) : 'GBP');
+      setAttendanceRate('');
       
       setBusinessEmail('');
       setBusinessPhone('');
@@ -224,7 +230,13 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       if (!startDate) errs.startDate = "Official Start Date";
     }
     else if (currentStep === 3) {
-      if (!salary || Number(salary) <= 0) errs.salary = "Salary package";
+      const selectedPolicy = payrollPolicies.find(p => p.id === payrollPolicyId);
+      const isFreelance = selectedPolicy?.type === 'freelance';
+      if (isFreelance) {
+        if (!attendanceRate || Number(attendanceRate) <= 0) errs.attendanceRate = "Contractor Daily Rate";
+      } else {
+        if (!salary || Number(salary) <= 0) errs.salary = "Salary package";
+      }
       if (!currency) errs.currency = "Currency selection";
     }
     else if (currentStep === 4) {
@@ -295,11 +307,13 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       startDate,
       salary: Number(salary),
       currency,
+      attendanceRate: attendanceRate ? Number(attendanceRate) : '',
       businessEmail,
       businessPhone,
       reportingManagerId,
       leavePolicyId,
       commissionPolicyId,
+      payrollPolicyId,
       status,
       exitDate: status === 'exited' ? exitDate : '',
       noticePeriod: status === 'exited' ? noticePeriod : '',
@@ -631,6 +645,42 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                     }
                   </select>
                 </div>
+
+                <div className="form-group" style={{ marginTop: '8px' }}>
+                  <label className="form-label">Payroll Policy Template (For projections & payslips)</label>
+                  <select 
+                    className="select-filter"
+                    value={payrollPolicyId}
+                    onChange={(e) => setPayrollPolicyId(e.target.value)}
+                    style={{ width: '100%', padding: '10px' }}
+                  >
+                    <option value="">-- No Policy (Standard Salaried Projections) --</option>
+                    {payrollPolicies.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.type === 'ft_uk' ? 'FT UK Employee' : p.type === 'freelance' ? 'Freelance/Contractor' : 'Custom'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {(() => {
+                  const selectedPolicy = payrollPolicies.find(p => p.id === payrollPolicyId);
+                  const isFreelance = selectedPolicy?.type === 'freelance';
+                  if (!isFreelance) return null;
+                  return (
+                    <div className="form-group" style={{ marginTop: '8px', animation: 'fadeIn 0.2s' }}>
+                      <label className="form-label">Contractor Daily Rate ({CURRENCIES.find(c => c.code === currency)?.symbol}) <span>*</span></label>
+                      <input 
+                        type="number"
+                        className="form-input"
+                        placeholder="e.g. 300"
+                        value={attendanceRate}
+                        onChange={(e) => setAttendanceRate(e.target.value)}
+                        required
+                      />
+                    </div>
+                  );
+                })()}
                 
                 <div style={{ 
                   marginTop: '16px', 

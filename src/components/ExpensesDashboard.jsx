@@ -1561,22 +1561,57 @@ export default function ExpensesDashboard({
                   { key: 'amount', label: 'Value Amount *' },
                   { key: 'reference', label: 'Reference / Memo (Optional)' },
                   { key: 'nominal', label: 'Nominal Code (Optional)' }
-                ].map(item => (
-                  <div key={item.key} className="form-group">
-                    <label className="form-label">{item.label}</label>
-                    <select
-                      className="select-filter"
-                      value={columnMappings[item.key] || ''}
-                      onChange={(e) => setColumnMappings(prev => ({ ...prev, [item.key]: e.target.value }))}
-                      style={{ width: '100%', padding: '8px' }}
-                    >
-                      <option value="">-- Choose Column --</option>
-                      {csvHeaders.map(header => (
-                        <option key={header} value={header}>{header}</option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
+                ].map(item => {
+                  const isUnmapped = !columnMappings[item.key];
+                  const isRequired = ['date', 'payee', 'amount'].includes(item.key);
+                  return (
+                    <div key={item.key} className="form-group" style={{ position: 'relative' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <label className="form-label" style={{ margin: 0 }}>{item.label}</label>
+                        <span style={{ 
+                          fontSize: '10px', 
+                          fontWeight: 700, 
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          backgroundColor: isUnmapped 
+                            ? (isRequired ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)') 
+                            : 'rgba(34, 197, 94, 0.1)',
+                          color: isUnmapped 
+                            ? (isRequired ? 'var(--danger)' : 'var(--warning)') 
+                            : 'var(--success)',
+                          transition: 'all 0.2s'
+                        }}>
+                          {isUnmapped ? (isRequired ? '⚠️ Required Unmapped' : '⚠️ Unmapped') : '✓ Mapped'}
+                        </span>
+                      </div>
+                      <select
+                        className="select-filter"
+                        value={columnMappings[item.key] || ''}
+                        onChange={(e) => setColumnMappings(prev => ({ ...prev, [item.key]: e.target.value }))}
+                        style={{ 
+                          width: '100%', 
+                          padding: '8px',
+                          border: isUnmapped 
+                            ? (isRequired 
+                                ? '2px solid rgba(239, 68, 68, 0.65)' 
+                                : '1px dashed var(--warning)') 
+                            : '1.5px solid var(--success)',
+                          backgroundColor: isUnmapped 
+                            ? (isRequired ? 'rgba(239, 68, 68, 0.02)' : 'transparent')
+                            : 'rgba(34, 197, 94, 0.01)',
+                          borderRadius: 'var(--radius-sm)',
+                          outline: 'none',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        <option value="">-- Choose Column --</option>
+                        {csvHeaders.map(header => (
+                          <option key={header} value={header}>{header}</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Target Bank Account and Reference Form */}

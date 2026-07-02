@@ -2844,7 +2844,7 @@ export default function ExpensesDashboard({
                                 £{toGBP(t.amount, t.currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </td>
                               <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>
-                                £{toGBP(t.apportionedShare || t.amount, t.currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                £{(t.apportionedShare !== undefined ? t.apportionedShare : toGBP(t.amount, t.currency)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </td>
                               <td>
                                 <span style={{

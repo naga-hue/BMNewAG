@@ -81,6 +81,49 @@ export default function VendorsDashboard({
   const [paymentReminderDate, setPaymentReminderDate] = useState('');
   const [showContractForm, setShowContractForm] = useState(false);
 
+  const availableDeptsForChosenCompany = useMemo(() => {
+    if (!unusedCompanyId) return ['Operations', 'Recruitment', 'Finance', 'Marketing', 'Sales'];
+    
+    const depts = [];
+    const companyProfile = companies.find(c => c.id === unusedCompanyId);
+    if (companyProfile && Array.isArray(companyProfile.departments)) {
+      companyProfile.departments.forEach(d => {
+        const name = d.name || d;
+        if (name && !depts.includes(name)) depts.push(name);
+      });
+    }
+    const companyStaff = staff.filter(s => s.companyId === unusedCompanyId);
+    companyStaff.forEach(s => {
+      if (s.department && !depts.includes(s.department)) {
+        depts.push(s.department);
+      }
+    });
+    if (depts.length === 0) {
+      return ['Operations', 'Recruitment', 'Finance', 'Marketing', 'Sales'];
+    }
+    return depts.sort();
+  }, [unusedCompanyId, companies, staff]);
+
+  const handleCompanyChange = (companyId) => {
+    setUnusedCompanyId(companyId);
+    const depts = [];
+    const companyProfile = companies.find(c => c.id === companyId);
+    if (companyProfile && Array.isArray(companyProfile.departments)) {
+      companyProfile.departments.forEach(d => {
+        const name = d.name || d;
+        if (name && !depts.includes(name)) depts.push(name);
+      });
+    }
+    const companyStaff = staff.filter(s => s.companyId === companyId);
+    companyStaff.forEach(s => {
+      if (s.department && !depts.includes(s.department)) {
+        depts.push(s.department);
+      }
+    });
+    const fallbackList = depts.length > 0 ? depts.sort() : ['Operations', 'Recruitment', 'Finance', 'Marketing', 'Sales'];
+    setUnusedDept(fallbackList[0]);
+  };
+
   // Upload Invoice states
   const [uploadContractId, setUploadContractId] = useState(null);
   const [uploadDocType, setUploadDocType] = useState('invoice');
@@ -745,7 +788,7 @@ export default function VendorsDashboard({
                   <select 
                     className="select-filter"
                     value={unusedCompanyId}
-                    onChange={(e) => setUnusedCompanyId(e.target.value)}
+                    onChange={(e) => handleCompanyChange(e.target.value)}
                     style={{ width: '100%', padding: '10px' }}
                   >
                     <option value="">-- Select Company --</option>
@@ -762,12 +805,15 @@ export default function VendorsDashboard({
                     value={unusedDept}
                     onChange={(e) => setUnusedDept(e.target.value)}
                     style={{ width: '100%', padding: '10px' }}
+                    disabled={!unusedCompanyId}
                   >
-                    <option value="Operations">Operations</option>
-                    <option value="Recruitment">Recruitment</option>
-                    <option value="Finance">Finance</option>
-                    <option value="Marketing">Marketing</option>
-                    <option value="Sales">Sales</option>
+                    {!unusedCompanyId ? (
+                      <option value="">-- Select Company First --</option>
+                    ) : (
+                      availableDeptsForChosenCompany.map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))
+                    )}
                   </select>
                 </div>
               </div>

@@ -78,6 +78,30 @@ export default function ExpensesDashboard({
     return depts.sort();
   }, [companies, staff]);
 
+  const filteredAvailableDepts = useMemo(() => {
+    const depts = [];
+    let targetCompanies = companies;
+    let targetStaff = staff;
+
+    if (companyFilter !== 'all') {
+      targetCompanies = companies.filter(c => c.id === companyFilter);
+      targetStaff = staff.filter(s => s.companyId === companyFilter);
+    }
+
+    targetCompanies.forEach(c => {
+      (c.departments || []).forEach(d => {
+        const name = d.name || d;
+        if (name && !depts.includes(name)) depts.push(name);
+      });
+    });
+    targetStaff.forEach(s => {
+      if (s.department && !depts.includes(s.department)) {
+        depts.push(s.department);
+      }
+    });
+    return depts.sort();
+  }, [companyFilter, companies, staff]);
+
   // Normalize nominal codes to handle any legacy string arrays gracefully
   const activeNominalCodes = (nominalCodes || []).map(c => {
     if (typeof c === 'string') {
@@ -1466,7 +1490,11 @@ export default function ExpensesDashboard({
               <select 
                 className="select-filter"
                 value={companyFilter}
-                onChange={(e) => setCompanyFilter(e.target.value)}
+                onChange={(e) => {
+                  setCompanyFilter(e.target.value);
+                  setDeptFilter('all');
+                  setStaffFilter('all');
+                }}
               >
                 <option value="all">All Companies</option>
                 {companies.map(c => (
@@ -1480,7 +1508,7 @@ export default function ExpensesDashboard({
                 onChange={(e) => setDeptFilter(e.target.value)}
               >
                 <option value="all">All Departments</option>
-                {Array.from(new Set(staff.map(s => s.department).filter(Boolean))).sort().map(d => (
+                {filteredAvailableDepts.map(d => (
                   <option key={d} value={d}>{d}</option>
                 ))}
               </select>
@@ -1491,9 +1519,11 @@ export default function ExpensesDashboard({
                 onChange={(e) => setStaffFilter(e.target.value)}
               >
                 <option value="all">All Staff Allocated</option>
-                {staff.map(s => (
-                  <option key={s.id} value={s.id}>{s.fullName}</option>
-                ))}
+                {staff
+                  .filter(s => companyFilter === 'all' || s.companyId === companyFilter)
+                  .map(s => (
+                    <option key={s.id} value={s.id}>{s.fullName}</option>
+                  ))}
               </select>
 
               {/* Date range wrapper */}

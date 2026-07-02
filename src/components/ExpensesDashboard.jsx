@@ -3209,7 +3209,7 @@ export default function ExpensesDashboard({
                     borderTop: 'none',
                     borderRadius: '0 0 8px 8px',
                     padding: '8px',
-                    backgroundColor: 'var(--bg-sidebar)',
+                    backgroundColor: 'var(--bg-secondary)',
                     maxHeight: '180px',
                     overflowY: 'auto'
                   }}>
@@ -3294,7 +3294,7 @@ export default function ExpensesDashboard({
                     borderTop: 'none',
                     borderRadius: '0 0 8px 8px',
                     padding: '8px',
-                    backgroundColor: 'var(--bg-sidebar)',
+                    backgroundColor: 'var(--bg-secondary)',
                     maxHeight: '180px',
                     overflowY: 'auto'
                   }}>
@@ -3379,7 +3379,7 @@ export default function ExpensesDashboard({
                     borderTop: 'none',
                     borderRadius: '0 0 8px 8px',
                     padding: '8px',
-                    backgroundColor: 'var(--bg-sidebar)',
+                    backgroundColor: 'var(--bg-secondary)',
                     maxHeight: '180px',
                     overflowY: 'auto'
                   }}>

@@ -1551,13 +1551,14 @@ export default function ExpensesDashboard({
                       { key: 'receipt', label: 'Receipt' },
                       { key: 'actions', label: 'Actions' }
                     ].map(col => (
-                      <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer', margin: 0 }}>
+                      <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer', margin: 0, color: 'var(--text-primary)' }}>
                         <input 
                           type="checkbox" 
                           checked={visibleCols[col.key]} 
                           onChange={() => setVisibleCols(prev => ({ ...prev, [col.key]: !prev[col.key] }))}
+                          style={{ cursor: 'pointer' }}
                         />
-                        <span>{col.label}</span>
+                        <span style={{ color: 'var(--text-primary)' }}>{col.label}</span>
                       </label>
                     ))}
                   </div>

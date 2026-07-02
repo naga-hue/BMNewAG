@@ -54,6 +54,8 @@ export default function ExpensesDashboard({
   onSaveNominalCode,
   onDeleteNominalCode,
   onSavePlacement,
+  onSavePayrollRecord,
+  payrollRecords = [],
   onShowToast
 }) {
   const [activeSubTab, setActiveSubTab] = useState('matrix'); // matrix, ledger, statement, settings
@@ -296,6 +298,11 @@ export default function ExpensesDashboard({
   const [quickVendorRowId, setQuickVendorRowId] = useState(null);
   const [quickVendorName, setQuickVendorName] = useState('');
   const [quickVendorCategory, setQuickVendorCategory] = useState('Software License');
+
+  // Payroll Linkage Modal states
+  const [linkingPayrollExpId, setLinkingPayrollExpId] = useState(null);
+  const [linkingStaffId, setLinkingStaffId] = useState('');
+  const [linkingMonth, setLinkingMonth] = useState('2026-06');
 
   // Bank Statement Categorizer states
   const [csvFile, setCsvFile] = useState(null);
@@ -860,13 +867,14 @@ export default function ExpensesDashboard({
         const isStaff = row.allocationType === 'staff';
         const target = isStaff ? row.selectedStaffIds : row.allocationTarget;
 
+        const expenseId = `exp-stmt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
         const expenseData = {
-          id: `exp-stmt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          id: expenseId,
           date: row.date,
           plMonth: row.plMonth,
           payee: row.payee + (row.reference ? ` [Ref: ${row.reference}]` : ''),
           nominalCode: row.nominalCode,
-          amount: Math.abs(row.amount), // gross amount is absolute
+          amount: Math.abs(row.amount),
           currency: (() => {
             const comp = companies.find(c => c.id === (statementCompanyId || (companies[0] ? companies[0].id : '')));
             const bank = comp?.bankAccounts?.find(b => b.id === statementBankAccountId);
@@ -881,10 +889,31 @@ export default function ExpensesDashboard({
           linkedPlacementId: row.linkedPlacementId || null,
           bankCompanyId: statementCompanyId || (companies[0] ? companies[0].id : ''),
           bankAccountId: statementBankAccountId,
-          bankAccountRef: statementAccountRef || 'Main Current Account'
+          bankAccountRef: statementAccountRef || 'Main Current Account',
+          linkedPayrollCellId: row.linkedPayrollCellId || null
         };
 
         await onSaveExpense(expenseData);
+
+        if (row.linkedPayrollCellId) {
+          const [sid, m] = row.linkedPayrollCellId.split('_');
+          const baseVal = Math.abs(row.amount);
+          const record = {
+            id: `${sid}_${m}`,
+            staffId: sid,
+            month: m,
+            isReconciled: true,
+            basicSalary: baseVal,
+            commission: 0,
+            employerNi: 0,
+            employerPension: 0,
+            employeeTaxNic: 0,
+            employeePension: 0,
+            notes: `Linked to statement payment: ${row.payee} on ${row.date}.`,
+            linkedExpenseId: expenseId
+          };
+          await onSavePayrollRecord(record);
+        }
 
         // If a placement is linked, mark it as client paid!
         if (row.linkedPlacementId) {
@@ -1000,6 +1029,46 @@ export default function ExpensesDashboard({
       setSelectedExpenseIds([]);
     } catch (err) {
       onShowToast(`Error bulk updating payee: ${err.message}`, "warning");
+    }
+  };
+
+  const handleSavePayrollLinkage = async () => {
+    if (!linkingPayrollExpId) return;
+    const exp = expenses.find(e => e.id === linkingPayrollExpId);
+    if (!exp) return;
+
+    if (!linkingStaffId || !linkingMonth) {
+      onShowToast("Please select a staff member and payroll month.", "warning");
+      return;
+    }
+
+    try {
+      await onSaveExpense({
+        ...exp,
+        linkedPayrollCellId: `${linkingStaffId}_${linkingMonth}`
+      });
+
+      const baseVal = parseFloat(exp.amount.toFixed(2));
+      const record = {
+        id: `${linkingStaffId}_${linkingMonth}`,
+        staffId: linkingStaffId,
+        month: linkingMonth,
+        isReconciled: true,
+        basicSalary: baseVal,
+        commission: 0,
+        employerNi: 0,
+        employerPension: 0,
+        employeeTaxNic: 0,
+        employeePension: 0,
+        notes: `Linked to ledger transaction: ${exp.payee.split(' [Ref:')[0]} on ${exp.date}.`,
+        linkedExpenseId: exp.id
+      };
+      await onSavePayrollRecord(record);
+
+      onShowToast("Transaction linked to payroll successfully.", "success");
+      setLinkingPayrollExpId(null);
+    } catch (err) {
+      onShowToast(`Error linking transaction: ${err.message}`, "warning");
     }
   };
 
@@ -2114,6 +2183,66 @@ export default function ExpensesDashboard({
                               ))}
                             </optgroup>
                           </select>
+                          
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                            {exp.linkedPayrollCellId ? (() => {
+                              const [sid, m] = exp.linkedPayrollCellId.split('_');
+                              const staffMember = staff.find(s => s.id === sid);
+                              return (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                  <span>✓ Paid: {staffMember?.fullName || 'Staff'} ({m})</span>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try {
+                                        await onSaveExpense({
+                                          ...exp,
+                                          linkedPayrollCellId: null
+                                        });
+                                        const pRecId = `${sid}_${m}`;
+                                        const payrollRec = payrollRecords.find(r => r.id === pRecId);
+                                        if (payrollRec) {
+                                          await onSavePayrollRecord({
+                                            ...payrollRec,
+                                            linkedExpenseId: ''
+                                          });
+                                        }
+                                        onShowToast("Unlinked transaction from payroll.", "success");
+                                      } catch (err) {
+                                        onShowToast(`Error unlinking: ${err.message}`, "warning");
+                                      }
+                                    }}
+                                    style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0, fontSize: '9px' }}
+                                    title="Remove payroll linkage"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              );
+                            })() : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLinkingPayrollExpId(exp.id);
+                                  setLinkingStaffId(exp.recipientType === 'staff' ? exp.recipientId : '');
+                                  setLinkingMonth(exp.plMonth || '2026-06');
+                                }}
+                                style={{
+                                  background: 'rgba(99, 102, 241, 0.08)',
+                                  border: '1px dashed rgba(99, 102, 241, 0.3)',
+                                  borderRadius: '4px',
+                                  color: 'var(--primary)',
+                                  fontSize: '10px',
+                                  fontWeight: 600,
+                                  padding: '2px 4px',
+                                  cursor: 'pointer',
+                                  textAlign: 'center'
+                                }}
+                              >
+                                🔗 Link to Payroll
+                              </button>
+                            )}
+                          </div>
                         </td>
                       )}
                       {visibleCols.bank && (
@@ -2583,6 +2712,52 @@ export default function ExpensesDashboard({
                               ))}
                             </optgroup>
                           </select>
+                          
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                            {row.linkedPayrollCellId ? (() => {
+                              const [sid, m] = row.linkedPayrollCellId.split('_');
+                              const staffMember = staff.find(s => s.id === sid);
+                              return (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                  <span>✓ Paid: {staffMember?.fullName || 'Staff'} ({m})</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      handleUpdateCategorizedRow(row.id, 'linkedPayrollCellId', null);
+                                    }}
+                                    style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0, fontSize: '9px' }}
+                                    title="Remove payroll linkage"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              );
+                            })() : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLinkingPayrollExpId(row.id);
+                                  setLinkingStaffId(row.recipientType === 'staff' ? row.recipientId : '');
+                                  setLinkingMonth(row.plMonth || '2026-06');
+                                }}
+                                disabled={row.committed}
+                                style={{
+                                  background: 'rgba(99, 102, 241, 0.08)',
+                                  border: '1px dashed rgba(99, 102, 241, 0.3)',
+                                  borderRadius: '4px',
+                                  color: 'var(--primary)',
+                                  fontSize: '10px',
+                                  fontWeight: 600,
+                                  padding: '2px 4px',
+                                  cursor: 'pointer',
+                                  textAlign: 'center',
+                                  opacity: row.committed ? 0.5 : 1
+                                }}
+                              >
+                                🔗 Link to Payroll
+                              </button>
+                            )}
+                          </div>
                         </td>
 
                         {/* Target Selector Button */}
@@ -4519,6 +4694,125 @@ export default function ExpensesDashboard({
                 Save Link
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payroll Linkage Modal */}
+      {linkingPayrollExpId !== null && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          animation: 'fadeIn 0.2s'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            width: '90%',
+            maxWidth: '450px',
+            padding: '24px',
+            boxShadow: 'var(--shadow-xl)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                🔗 Reconcile Transaction with Payroll Roster
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setLinkingPayrollExpId(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {(() => {
+              const matchedRow = expenses.find(e => e.id === linkingPayrollExpId) || categorizedRows.find(e => e.id === linkingPayrollExpId);
+              if (!matchedRow) return <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Transaction details not found.</p>;
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '6px', fontSize: '12px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ fontWeight: 600 }}>{matchedRow.payee?.split(' [Ref:')[0]}</div>
+                    <div style={{ color: 'var(--text-secondary)', marginTop: '4px' }}>
+                      Date: {matchedRow.date} &bull; Amount: £{matchedRow.amount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Select Staff / Recruiter Member <span>*</span></label>
+                    <select
+                      className="select-filter"
+                      value={linkingStaffId}
+                      onChange={(e) => setLinkingStaffId(e.target.value)}
+                      style={{ width: '100%', padding: '8px', fontSize: '13px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
+                    >
+                      <option value="">-- Select Employee --</option>
+                      {staff.map(s => (
+                        <option key={s.id} value={s.id}>{s.fullName} ({s.payrollPolicyId ? 'Policy Assigned' : 'No Policy'})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Select Target Payroll Month <span>*</span></label>
+                    <select
+                      className="select-filter"
+                      value={linkingMonth}
+                      onChange={(e) => setLinkingMonth(e.target.value)}
+                      style={{ width: '100%', padding: '8px', fontSize: '13px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
+                    >
+                      {["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"].map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setLinkingPayrollExpId(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={async () => {
+                        if (typeof linkingPayrollExpId === 'string' && linkingPayrollExpId.startsWith('exp-stmt-') && !expenses.some(e => e.id === linkingPayrollExpId)) {
+                          handleUpdateCategorizedRow(linkingPayrollExpId, 'linkedPayrollCellId', `${linkingStaffId}_${linkingMonth}`);
+                          handleUpdateCategorizedRow(linkingPayrollExpId, 'recipientType', 'staff');
+                          handleUpdateCategorizedRow(linkingPayrollExpId, 'recipientId', linkingStaffId);
+                          const member = staff.find(s => s.id === linkingStaffId);
+                          if (member) {
+                            handleUpdateCategorizedRow(linkingPayrollExpId, 'payee', member.fullName);
+                          }
+                          onShowToast("Statement row marked to link to payroll upon commit.", "success");
+                          setLinkingPayrollExpId(null);
+                        } else {
+                          await handleSavePayrollLinkage();
+                        }
+                      }}
+                    >
+                      Save Linkage
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

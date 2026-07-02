@@ -2336,6 +2336,8 @@ export default function App() {
               onSaveNominalCode={handleSaveNominalCode}
               onDeleteNominalCode={handleDeleteNominalCode}
               onSavePlacement={handleSavePlacement}
+              onSavePayrollRecord={handleSavePayrollRecord}
+              payrollRecords={payrollRecords}
               onShowToast={handleShowToast}
             />
           )}

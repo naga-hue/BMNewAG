@@ -115,6 +115,8 @@ export default function PayrollDashboard({
   const [isReconciled, setIsReconciled] = useState(false);
   const [basicSalaryOverride, setBasicSalaryOverride] = useState('');
   const [commissionOverride, setCommissionOverride] = useState('');
+  const [linkedExpenseId, setLinkedExpenseId] = useState('');
+  const [initialLinkedExpenseId, setInitialLinkedExpenseId] = useState('');
   const [reconcileNotes, setReconcileNotes] = useState('');
   const [bookExpense, setBookExpense] = useState(true);
   const [employerNi, setEmployerNi] = useState('0.00');
@@ -513,6 +515,11 @@ export default function PayrollDashboard({
     setEmployerPension((data.employerPension || 0).toFixed(2));
     setEmployeeTaxNic((data.employeeTaxNic || 0).toFixed(2));
     setEmployeePension((data.employeePension || 0).toFixed(2));
+    
+    const record = payrollRecords.find(r => r.staffId === staffMember.id && r.month === month);
+    setLinkedExpenseId(record?.linkedExpenseId || '');
+    setInitialLinkedExpenseId(record?.linkedExpenseId || '');
+    
     setReconcileNotes(data.notes);
     setBookExpense(true);
   };
@@ -540,12 +547,35 @@ export default function PayrollDashboard({
       employerPension: empPensionVal,
       employeeTaxNic: taxNicVal,
       employeePension: pensionVal,
-      notes: reconcileNotes.trim()
+      notes: reconcileNotes.trim(),
+      linkedExpenseId: linkedExpenseId || ''
     };
 
     try {
       // 1. Save the payroll record override
       await onSavePayrollRecord(record);
+
+      // 1b. Update cross-references on expenses
+      if (linkedExpenseId !== initialLinkedExpenseId) {
+        if (initialLinkedExpenseId) {
+          const oldExp = expenses.find(e => e.id === initialLinkedExpenseId);
+          if (oldExp) {
+            await onSaveExpense({
+              ...oldExp,
+              linkedPayrollCellId: null
+            });
+          }
+        }
+        if (linkedExpenseId) {
+          const newExp = expenses.find(e => e.id === linkedExpenseId);
+          if (newExp) {
+            await onSaveExpense({
+              ...newExp,
+              linkedPayrollCellId: `${staffMember.id}_${month}`
+            });
+          }
+        }
+      }
 
       // 2. Double-entry bookkeeping: Auto-create split Expenses if checked and reconciled
       if (!isReconciled || !bookExpense) {
@@ -1395,6 +1425,77 @@ ${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleSt
                   onChange={(e) => setIsReconciled(e.target.checked)}
                   style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                 />
+              </div>
+
+              {/* Reconcile with Expense Ledger Payment */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }} className="form-group">
+                <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>
+                  🔗 Reconcile with Expense Ledger Payment
+                </label>
+                {(() => {
+                  const currentLinked = expenses.find(e => e.id === linkedExpenseId);
+                  
+                  // Filter unlinked expenses + include currently linked if present
+                  const unlinkedExpenses = expenses.filter(e => {
+                    if (e.id === linkedExpenseId) return true;
+                    if (e.linkedPayrollCellId) return false;
+                    
+                    const nom = (e.nominalCode || '').toLowerCase();
+                    const payeeLower = (e.payee || '').toLowerCase();
+                    const staffLower = (selectedCell.staffMember.fullName || '').toLowerCase();
+                    
+                    const isSalaryNominal = nom.includes('salary') || nom.includes('wage') || nom.includes('500') || nom.includes('director');
+                    const isContractorNominal = nom.includes('contractor') || nom.includes('freelance') || nom.includes('consult');
+                    const isStaffNameMatch = payeeLower.includes(staffLower) || staffLower.includes(payeeLower);
+
+                    return isSalaryNominal || isContractorNominal || isStaffNameMatch;
+                  });
+
+                  return (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <select
+                        className="select-filter"
+                        value={linkedExpenseId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setLinkedExpenseId(val);
+                          if (val) {
+                            const expMatched = expenses.find(item => item.id === val);
+                            if (expMatched) {
+                              setIsReconciled(true);
+                              setBasicSalaryOverride(expMatched.amount.toFixed(2));
+                              setCommissionOverride('0.00');
+                              setReconcileNotes(prev => `Linked to payment: ${expMatched.payee.split(' [Ref:')[0]} on ${expMatched.date}. ${prev}`);
+                              setBookExpense(false); // Prevent double-booking since it already exists!
+                            }
+                          }
+                        }}
+                        style={{ flex: 1, padding: '8px', fontSize: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
+                      >
+                        <option value="">-- Select payment to reconcile --</option>
+                        {unlinkedExpenses.map(e => (
+                          <option key={e.id} value={e.id}>
+                            [{e.date}] {e.payee.split(' [Ref:')[0]} - £{e.amount.toLocaleString()} ({e.nominalCode})
+                          </option>
+                        ))}
+                      </select>
+                      {linkedExpenseId && (
+                        <button
+                          type="button"
+                          className="btn-danger"
+                          onClick={() => {
+                            setLinkedExpenseId('');
+                            setBookExpense(true);
+                          }}
+                          style={{ padding: '6px 10px', fontSize: '11px' }}
+                          title="Clear linkage"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Basic Salary Override Field */}

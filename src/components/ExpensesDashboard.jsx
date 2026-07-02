@@ -78,30 +78,6 @@ export default function ExpensesDashboard({
     return depts.sort();
   }, [companies, staff]);
 
-  const filteredAvailableDepts = useMemo(() => {
-    const depts = [];
-    let targetCompanies = companies;
-    let targetStaff = staff;
-
-    if (companyFilter !== 'all') {
-      targetCompanies = companies.filter(c => c.id === companyFilter);
-      targetStaff = staff.filter(s => s.companyId === companyFilter);
-    }
-
-    targetCompanies.forEach(c => {
-      (c.departments || []).forEach(d => {
-        const name = d.name || d;
-        if (name && !depts.includes(name)) depts.push(name);
-      });
-    });
-    targetStaff.forEach(s => {
-      if (s.department && !depts.includes(s.department)) {
-        depts.push(s.department);
-      }
-    });
-    return depts.sort();
-  }, [companyFilter, companies, staff]);
-
   // Normalize nominal codes to handle any legacy string arrays gracefully
   const activeNominalCodes = (nominalCodes || []).map(c => {
     if (typeof c === 'string') {
@@ -129,6 +105,30 @@ export default function ExpensesDashboard({
   const [vendorFilter, setVendorFilter] = useState('all');
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
+
+  const filteredAvailableDepts = useMemo(() => {
+    const depts = [];
+    let targetCompanies = companies;
+    let targetStaff = staff;
+
+    if (companyFilter !== 'all') {
+      targetCompanies = companies.filter(c => c.id === companyFilter);
+      targetStaff = staff.filter(s => s.companyId === companyFilter);
+    }
+
+    targetCompanies.forEach(c => {
+      (c.departments || []).forEach(d => {
+        const name = d.name || d;
+        if (name && !depts.includes(name)) depts.push(name);
+      });
+    });
+    targetStaff.forEach(s => {
+      if (s.department && !depts.includes(s.department)) {
+        depts.push(s.department);
+      }
+    });
+    return depts.sort();
+  }, [companyFilter, companies, staff]);
 
   // Column Choose visibility state
   const [visibleCols, setVisibleCols] = useState({

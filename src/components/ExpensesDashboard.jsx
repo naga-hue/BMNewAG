@@ -219,7 +219,7 @@ export default function ExpensesDashboard({
 
   // Allocation targets
   const [allocationType, setAllocationType] = useState('company'); // company, department, staff
-  const [allocationTarget, setAllocationTarget] = useState('');
+  const [allocationTarget, setAllocationTarget] = useState([]);
   const [selectedStaffIds, setSelectedStaffIds] = useState([]);
 
   // Linked placement/sales invoice (for credits)
@@ -324,9 +324,9 @@ export default function ExpensesDashboard({
 
     if (exp.allocationType === 'staff') {
       setSelectedStaffIds(Array.isArray(exp.allocationTarget) ? exp.allocationTarget : []);
-      setAllocationTarget('');
+      setAllocationTarget([]);
     } else {
-      setAllocationTarget(String(exp.allocationTarget || ''));
+      setAllocationTarget(Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean));
       setSelectedStaffIds([]);
     }
 
@@ -352,9 +352,11 @@ export default function ExpensesDashboard({
         return;
       }
       target = selectedStaffIds;
-    } else if (!target) {
-      onShowToast("Please select an allocation target (company or department).", "warning");
-      return;
+    } else {
+      if (!target || target.length === 0) {
+        onShowToast("Please select an allocation target (company or department).", "warning");
+        return;
+      }
     }
 
     // Attach invoice reader if drag dropped
@@ -440,7 +442,7 @@ export default function ExpensesDashboard({
       setRecipientType('other');
       setRecipientId('');
       setAllocationType('company');
-      setAllocationTarget('');
+      setAllocationTarget([]);
       setSelectedStaffIds([]);
       setLinkedPlacementId('');
       setManualBankAccountId('');
@@ -1115,7 +1117,7 @@ export default function ExpensesDashboard({
                 setInvoiceFile(null);
                 setInvoiceUrl('#');
                 setAllocationType('company');
-                setAllocationTarget(companies[0]?.id || '');
+                setAllocationTarget(companies[0] ? [companies[0].id] : []);
                 setSelectedStaffIds([]);
                 setLinkedPlacementId('');
                 setManualBankAccountId('');

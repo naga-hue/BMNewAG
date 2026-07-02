@@ -950,6 +950,27 @@ export default function ExpensesDashboard({
     }
   };
 
+  const handleBulkUpdatePLMonth = async (monthVal) => {
+    if (!monthVal || selectedExpenseIds.length === 0) return;
+    try {
+      let count = 0;
+      for (const id of selectedExpenseIds) {
+        const original = expenses.find(e => e.id === id);
+        if (original) {
+          await onSaveExpense({
+            ...original,
+            plMonth: monthVal
+          });
+          count++;
+        }
+      }
+      onShowToast(`Bulk updated P&L Month for ${count} transactions.`, "success");
+      setSelectedExpenseIds([]);
+    } catch (err) {
+      onShowToast(`Error bulk updating P&L Month: ${err.message}`, "warning");
+    }
+  };
+
   const handleBulkUpdateAllocation = async (allocType, allocTarget) => {
     if (selectedExpenseIds.length === 0) return;
     try {
@@ -1780,6 +1801,29 @@ export default function ExpensesDashboard({
                   </select>
                 </div>
 
+                {/* Bulk P&L Month */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>P&L Month:</span>
+                  <input 
+                    type="month"
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleBulkUpdatePLMonth(e.target.value);
+                        e.target.value = '';
+                      }
+                    }}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '11px',
+                      background: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '4px',
+                      color: 'var(--text-primary)',
+                      cursor: 'pointer'
+                    }}
+                  />
+                </div>
+
                 {/* Bulk Allocation */}
                 <button
                   type="button"
@@ -1927,7 +1971,36 @@ export default function ExpensesDashboard({
                         </td>
                       )}
                       {visibleCols.date && <td>{exp.date}</td>}
-                      {visibleCols.plMonth && <td style={{ fontWeight: 600 }}>{exp.plMonth}</td>}
+                      {visibleCols.plMonth && (
+                        <td>
+                          <input 
+                            type="month"
+                            value={exp.plMonth || ''}
+                            onChange={(e) => {
+                              const newVal = e.target.value;
+                              if (newVal) {
+                                onSaveExpense({
+                                  ...exp,
+                                  plMonth: newVal
+                                });
+                                onShowToast("P&L Month updated.", "success");
+                              }
+                            }}
+                            className="select-filter"
+                            style={{
+                              padding: '2px 4px',
+                              fontSize: '12px',
+                              fontWeight: 600,
+                              background: 'var(--bg-secondary)',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '4px',
+                              color: 'var(--text-primary)',
+                              width: '120px',
+                              cursor: 'pointer'
+                            }}
+                          />
+                        </td>
+                      )}
                       {visibleCols.payee && <td style={{ fontWeight: 600 }}>{exp.payee}</td>}
                       {visibleCols.bank && (
                         <td>
@@ -3025,6 +3098,7 @@ export default function ExpensesDashboard({
                       <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1 }}>
                         <tr>
                           <th>Date</th>
+                          <th>P&L Month</th>
                           <th>Payee / Vendor</th>
                           <th>Nominal Category</th>
                           <th style={{ textAlign: 'right' }}>Total Cost (Gross)</th>
@@ -3050,7 +3124,7 @@ export default function ExpensesDashboard({
                           if (uniq.length === 0) {
                             return (
                               <tr>
-                                <td colSpan="6" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
+                                <td colSpan="7" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
                                   No expenses allocated in this month.
                                 </td>
                               </tr>
@@ -3060,6 +3134,35 @@ export default function ExpensesDashboard({
                           return uniq.map(t => (
                             <tr key={t.id}>
                               <td>{t.date}</td>
+                              <td>
+                                <input 
+                                  type="month"
+                                  value={t.plMonth || ''}
+                                  onChange={(e) => {
+                                    const newVal = e.target.value;
+                                    const original = expenses.find(exp => exp.id === t.id);
+                                    if (original && newVal) {
+                                      onSaveExpense({
+                                        ...original,
+                                        plMonth: newVal
+                                      });
+                                      onShowToast("P&L Month updated.", "success");
+                                    }
+                                  }}
+                                  className="select-filter"
+                                  style={{
+                                    fontSize: '11px',
+                                    padding: '2px 4px',
+                                    fontWeight: 600,
+                                    width: '100px',
+                                    background: 'var(--bg-secondary)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '4px',
+                                    color: 'var(--text-primary)',
+                                    cursor: 'pointer'
+                                  }}
+                                />
+                              </td>
                               <td style={{ fontWeight: 600 }}>{t.payee}</td>
                               <td>
                                 <select

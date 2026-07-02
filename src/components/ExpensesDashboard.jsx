@@ -972,6 +972,37 @@ export default function ExpensesDashboard({
     }
   };
 
+  const handleBulkUpdateRecipient = async (val) => {
+    if (selectedExpenseIds.length === 0) return;
+    try {
+      let count = 0;
+      const [type, id] = val === 'other' ? ['other', ''] : val.split(':');
+      
+      const mappedName = type === 'vendor'
+        ? vendors.find(v => v.id === id)?.name
+        : type === 'staff'
+          ? staff.find(s => s.id === id)?.fullName
+          : null;
+
+      for (const expId of selectedExpenseIds) {
+        const original = expenses.find(e => e.id === expId);
+        if (original) {
+          await onSaveExpense({
+            ...original,
+            recipientType: type,
+            recipientId: id,
+            payee: mappedName || original.payee
+          });
+          count++;
+        }
+      }
+      onShowToast(`Bulk updated Payee mapping for ${count} transactions.`, "success");
+      setSelectedExpenseIds([]);
+    } catch (err) {
+      onShowToast(`Error bulk updating payee: ${err.message}`, "warning");
+    }
+  };
+
   const handleBulkUpdateAllocation = async (allocType, allocTarget) => {
     if (selectedExpenseIds.length === 0) return;
     try {
@@ -1825,6 +1856,34 @@ export default function ExpensesDashboard({
                   />
                 </div>
 
+                {/* Bulk Recipient Mapping */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>Recipient:</span>
+                  <select
+                    className="select-filter"
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleBulkUpdateRecipient(e.target.value);
+                        e.target.value = '';
+                      }
+                    }}
+                    style={{ padding: '4px 8px', fontSize: '11px', minWidth: '150px' }}
+                  >
+                    <option value="">-- Apply Recipient --</option>
+                    <option value="other">General / Unlinked</option>
+                    <optgroup label="Registered Vendors">
+                      {vendors.map(v => (
+                        <option key={v.id} value={`vendor:${v.id}`}>{v.name}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Staff / Consultants">
+                      {staff.map(s => (
+                        <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </div>
+
                 {/* Bulk Allocation */}
                 <button
                   type="button"
@@ -2002,7 +2061,61 @@ export default function ExpensesDashboard({
                           />
                         </td>
                       )}
-                      {visibleCols.payee && <td style={{ fontWeight: 600 }}>{exp.payee}</td>}
+                      {visibleCols.payee && (
+                        <td>
+                          <select
+                            value={exp.recipientType && exp.recipientType !== 'other' ? `${exp.recipientType}:${exp.recipientId}` : 'other'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'other') {
+                                onSaveExpense({
+                                  ...exp,
+                                  recipientType: 'other',
+                                  recipientId: ''
+                                });
+                                onShowToast("Payee mapping cleared.", "success");
+                              } else {
+                                const [type, id] = val.split(':');
+                                const mappedName = type === 'vendor' 
+                                  ? vendors.find(v => v.id === id)?.name 
+                                  : staff.find(s => s.id === id)?.fullName;
+                                
+                                onSaveExpense({
+                                  ...exp,
+                                  recipientType: type,
+                                  recipientId: id,
+                                  payee: mappedName || exp.payee
+                                });
+                                onShowToast("Payee mapping updated.", "success");
+                              }
+                            }}
+                            className="select-filter"
+                            style={{ 
+                              padding: '2px 4px', 
+                              fontSize: '11px', 
+                              width: '100%', 
+                              minWidth: '155px',
+                              background: 'var(--bg-secondary)',
+                              color: 'var(--text-primary)',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '4px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <option value="other">General: {exp.payee.split(' [Ref:')[0]}</option>
+                            <optgroup label="Registered Vendors">
+                              {vendors.map(v => (
+                                <option key={v.id} value={`vendor:${v.id}`}>{v.name}</option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="Staff / Consultants">
+                              {staff.map(s => (
+                                <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
+                              ))}
+                            </optgroup>
+                          </select>
+                        </td>
+                      )}
                       {visibleCols.bank && (
                         <td>
                           {exp.bankCompanyId ? (
@@ -3417,7 +3530,62 @@ export default function ExpensesDashboard({
                                   }}
                                 />
                               </td>
-                              <td style={{ fontWeight: 600 }}>{t.payee}</td>
+                              <td>
+                                <select
+                                  value={t.recipientType && t.recipientType !== 'other' ? `${t.recipientType}:${t.recipientId}` : 'other'}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    const original = expenses.find(exp => exp.id === t.id);
+                                    if (original) {
+                                      if (val === 'other') {
+                                        onSaveExpense({
+                                          ...original,
+                                          recipientType: 'other',
+                                          recipientId: ''
+                                        });
+                                        onShowToast("Payee mapping cleared.", "success");
+                                      } else {
+                                        const [type, id] = val.split(':');
+                                        const mappedName = type === 'vendor' 
+                                          ? vendors.find(v => v.id === id)?.name 
+                                          : staff.find(s => s.id === id)?.fullName;
+                                        
+                                        onSaveExpense({
+                                          ...original,
+                                          recipientType: type,
+                                          recipientId: id,
+                                          payee: mappedName || original.payee
+                                        });
+                                        onShowToast("Payee mapping updated.", "success");
+                                      }
+                                    }
+                                  }}
+                                  className="select-filter"
+                                  style={{ 
+                                    padding: '2px 4px', 
+                                    fontSize: '11px', 
+                                    width: '100%', 
+                                    minWidth: '155px',
+                                    background: 'var(--bg-secondary)',
+                                    color: 'var(--text-primary)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  <option value="other">General: {t.payee.split(' [Ref:')[0]}</option>
+                                  <optgroup label="Registered Vendors">
+                                    {vendors.map(v => (
+                                      <option key={v.id} value={`vendor:${v.id}`}>{v.name}</option>
+                                    ))}
+                                  </optgroup>
+                                  <optgroup label="Staff / Consultants">
+                                    {staff.map(s => (
+                                      <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
+                                    ))}
+                                  </optgroup>
+                                </select>
+                              </td>
                               <td>
                                 <select
                                   value={t.nominalCode || ''}

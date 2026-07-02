@@ -2405,7 +2405,11 @@ export default function ExpensesDashboard({
 
         for (let mIdx = 0; mIdx < 12; mIdx++) {
           const monthKey = `${matrixYear}-${String(mIdx + 1).padStart(2, '0')}`;
-          const activeStaff = staff.filter(s => s.startDate && s.startDate.substring(0, 7) <= monthKey);
+          const activeStaff = staff.filter(s => {
+            const hasStarted = s.startDate && s.startDate.substring(0, 7) <= monthKey;
+            const notExited = !s.exitDate || s.exitDate.substring(0, 7) > monthKey;
+            return hasStarted && notExited;
+          });
           const activeStaffIds = activeStaff.map(s => s.id);
           const monthExpenses = yearExpenses.filter(e => e.plMonth === monthKey);
 

@@ -304,6 +304,11 @@ export default function ExpensesDashboard({
   const [linkingStaffId, setLinkingStaffId] = useState('');
   const [linkingMonth, setLinkingMonth] = useState('2026-06');
 
+  // Recipient Payments Matrix states
+  const [recipientCompanyFilter, setRecipientCompanyFilter] = useState('all');
+  const [recipientNominalFilter, setRecipientNominalFilter] = useState('all');
+  const [recipientSearchQuery, setRecipientSearchQuery] = useState('');
+
   // Bank Statement Categorizer states
   const [csvFile, setCsvFile] = useState(null);
   const [csvHeaders, setCsvHeaders] = useState([]);
@@ -1302,6 +1307,7 @@ export default function ExpensesDashboard({
           { key: 'ledger', label: 'Expenses Ledger Log' },
           { key: 'statement', label: 'Bank Statement Import & Categorizer' },
           { key: 'matrix', label: 'YTD Expenses Allocation Matrix' },
+          { key: 'recipients', label: 'Recipient Payments Matrix' },
           { key: 'settings', label: 'Nominal Codes Setup' }
         ].map(t => (
           <button
@@ -3639,7 +3645,34 @@ export default function ExpensesDashboard({
                         {(() => {
                           let matchedRow = flatRowsForMatrix.find(r => r.id === drilldownRowId);
                           
-                          if (drilldownRowId === 'group-total') {
+                          if (drilldownRowType === 'recipient') {
+                            const [rtype, rid] = drilldownRowId.split(':');
+                            const matchedStaff = staff.find(s => s.id === rid);
+                            const matchedVendor = vendors.find(v => v.id === rid);
+                            const name = rtype === 'staff' ? matchedStaff?.fullName : matchedVendor?.name;
+
+                            const recipientTransactionsByMonth = Array.from({ length: 12 }, () => []);
+                            for (let m = 0; m < 12; m++) {
+                              const monthKey = `2026-${String(m + 1).padStart(2, '0')}`;
+                              const monthlyTransactions = expenses.filter(e => {
+                                if (e.plMonth !== monthKey) return false;
+                                if (e.recipientType === rtype && e.recipientId === rid) return true;
+                                if (!e.recipientType || e.recipientType === 'other') {
+                                  const payeeLower = (e.payee || '').toLowerCase();
+                                  const nameLower = (name || '').toLowerCase();
+                                  return payeeLower.includes(nameLower) || nameLower.includes(payeeLower);
+                                }
+                                return false;
+                              });
+                              recipientTransactionsByMonth[m].push(...monthlyTransactions);
+                            }
+
+                            matchedRow = {
+                              id: drilldownRowId,
+                              name: name || 'Recipient',
+                              transactionsByMonth: recipientTransactionsByMonth
+                            };
+                          } else if (drilldownRowId === 'group-total') {
                             const allGroupTransactionsByMonth = Array.from({ length: 12 }, () => []);
                             flatRowsForMatrix.forEach(r => {
                               if (r.type === 'party') {
@@ -3871,6 +3904,286 @@ export default function ExpensesDashboard({
                 </div>
               </div>
             )}
+
+          </div>
+        );
+      })()}
+
+      {/* ==============================================================
+          SUB-TAB: RECIPIENT PAYMENTS MATRIX (Jan - Dec)
+          ============================================================== */}
+      {activeSubTab === 'recipients' && (() => {
+        const recipientRows = useMemo(() => {
+          const rows = [];
+          
+          staff.forEach(s => {
+            rows.push({
+              id: `staff:${s.id}`,
+              name: s.fullName,
+              type: 'Staff / Recruiter',
+              rawType: 'staff',
+              rawId: s.id
+            });
+          });
+
+          vendors.forEach(v => {
+            rows.push({
+              id: `vendor:${v.id}`,
+              name: v.name,
+              type: 'Registered Vendor',
+              rawType: 'vendor',
+              rawId: v.id
+            });
+          });
+
+          const seenNames = new Set(rows.map(r => r.name.toLowerCase()));
+          expenses.forEach(e => {
+            if (!e.recipientType || e.recipientType === 'other') {
+              const cleanPayeeName = (e.payee || '').split(' [Ref:')[0].trim();
+              if (cleanPayeeName && !seenNames.has(cleanPayeeName.toLowerCase())) {
+                seenNames.add(cleanPayeeName.toLowerCase());
+                rows.push({
+                  id: `other:${cleanPayeeName}`,
+                  name: cleanPayeeName,
+                  type: 'General Payee',
+                  rawType: 'other',
+                  rawId: cleanPayeeName
+                });
+              }
+            }
+          });
+
+          return rows;
+        }, [staff, vendors, expenses]);
+
+        const computedRows = useMemo(() => {
+          const searched = recipientRows.filter(r => {
+            if (!recipientSearchQuery.trim()) return true;
+            return r.name.toLowerCase().includes(recipientSearchQuery.toLowerCase()) || r.type.toLowerCase().includes(recipientSearchQuery.toLowerCase());
+          });
+
+          return searched.map(row => {
+            const monthlyValues = Array(12).fill(0);
+            
+            for (let m = 0; m < 12; m++) {
+              const monthKey = `2026-${String(m + 1).padStart(2, '0')}`;
+              const matchingExps = expenses.filter(e => {
+                if (e.plMonth !== monthKey) return false;
+                if (recipientCompanyFilter !== 'all' && e.bankCompanyId !== recipientCompanyFilter) return false;
+                if (recipientNominalFilter !== 'all' && e.nominalCode !== recipientNominalFilter) return false;
+                
+                if (row.rawType === 'staff') {
+                  if (e.recipientType === 'staff' && e.recipientId === row.rawId) return true;
+                  if (!e.recipientType || e.recipientType === 'other') {
+                    return (e.payee || '').toLowerCase().includes(row.name.toLowerCase());
+                  }
+                } else if (row.rawType === 'vendor') {
+                  if (e.recipientType === 'vendor' && e.recipientId === row.rawId) return true;
+                  if (!e.recipientType || e.recipientType === 'other') {
+                    return (e.payee || '').toLowerCase().includes(row.name.toLowerCase());
+                  }
+                } else if (row.rawType === 'other') {
+                  const cleanPayee = (e.payee || '').split(' [Ref:')[0].trim().toLowerCase();
+                  return cleanPayee === row.name.toLowerCase();
+                }
+                return false;
+              });
+
+              monthlyValues[m] = matchingExps.reduce((acc, curr) => acc + toGBP(curr.amount, curr.currency), 0);
+            }
+
+            const ytdTotal = monthlyValues.reduce((acc, curr) => acc + curr, 0);
+
+            return {
+              ...row,
+              monthlyValues,
+              ytdTotal
+            };
+          }).filter(r => r.ytdTotal > 0 || recipientSearchQuery.trim() !== '');
+        }, [recipientRows, expenses, recipientCompanyFilter, recipientNominalFilter, recipientSearchQuery]);
+
+        const monthlyGrandTotals = Array(12).fill(0);
+        computedRows.forEach(row => {
+          for (let m = 0; m < 12; m++) {
+            monthlyGrandTotals[m] += row.monthlyValues[m];
+          }
+        });
+        const ytdGrandTotal = monthlyGrandTotals.reduce((acc, curr) => acc + curr, 0);
+
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            <div>
+              <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Recipient Payments Matrix</h2>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                Annual payment log (Jan - Dec) showing amounts paid to staff members, registered vendors, and general payees.
+              </p>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              gap: '16px',
+              flexWrap: 'wrap',
+              backgroundColor: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-md)',
+              padding: '16px'
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>ENTITY COMPANY</span>
+                <select
+                  className="select-filter"
+                  value={recipientCompanyFilter}
+                  onChange={(e) => setRecipientCompanyFilter(e.target.value)}
+                  style={{ width: '180px', padding: '8px', fontSize: '13px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
+                >
+                  <option value="all">All Companies</option>
+                  {companies.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>NOMINAL CATEGORY</span>
+                <select
+                  className="select-filter"
+                  value={recipientNominalFilter}
+                  onChange={(e) => setRecipientNominalFilter(e.target.value)}
+                  style={{ width: '220px', padding: '8px', fontSize: '13px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
+                >
+                  <option value="all">All Nominal Codes</option>
+                  {nominalCodes.map(c => (
+                    <option key={c.id} value={c.code}>{c.code}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>SEARCH RECIPIENT NAME</span>
+                <input
+                  type="text"
+                  className="search-input"
+                  placeholder="Search by vendor, employee, or general payee name..."
+                  value={recipientSearchQuery}
+                  onChange={(e) => setRecipientSearchQuery(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', fontSize: '13px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
+                />
+              </div>
+            </div>
+
+            <div style={{
+              overflowX: 'auto',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-lg)',
+              backgroundColor: 'var(--bg-card)'
+            }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Recipient Name</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600 }}>Type</th>
+                    {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map(m => (
+                      <th key={m} style={{ padding: '12px 8px', textAlign: 'right', fontWeight: 600, width: '70px' }}>{m}</th>
+                    ))}
+                    <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, width: '90px', borderLeft: '1px solid var(--border-color)', backgroundColor: 'rgba(255,255,255,0.02)' }}>YTD Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {computedRows.map(row => (
+                    <tr 
+                      key={row.id} 
+                      className="ledger-row-hover"
+                      style={{ borderBottom: '1px solid var(--border-color)', transition: 'background-color 0.15s' }}
+                    >
+                      <td style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--text-primary)' }}>{row.name}</td>
+                      <td style={{ padding: '10px 16px', color: 'var(--text-secondary)' }}>
+                        <span style={{
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          backgroundColor: row.rawType === 'staff' ? 'rgba(245, 158, 11, 0.1)' : row.rawType === 'vendor' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                          color: row.rawType === 'staff' ? 'var(--warning)' : row.rawType === 'vendor' ? 'var(--primary)' : 'var(--text-secondary)',
+                          padding: '2px 6px',
+                          borderRadius: '4px'
+                        }}>
+                          {row.type}
+                        </span>
+                      </td>
+                      {row.monthlyValues.map((val, mIdx) => {
+                        const hasVal = val > 0;
+                        return (
+                          <td 
+                            key={mIdx} 
+                            style={{ 
+                              padding: '10px 8px', 
+                              textAlign: 'right', 
+                              color: hasVal ? 'var(--text-primary)' : 'var(--text-muted)',
+                              fontWeight: hasVal ? 500 : 400,
+                              cursor: hasVal ? 'pointer' : 'default',
+                              backgroundColor: hasVal ? 'rgba(99, 102, 241, 0.01)' : 'transparent'
+                            }}
+                            onClick={() => {
+                              if (hasVal) {
+                                setDrilldownMonthIdx(mIdx);
+                                setDrilldownRowId(row.id);
+                                setDrilldownRowType('recipient');
+                                setDrilldownTargetVal(row.name);
+                              }
+                            }}
+                            className={hasVal ? "cell-value-hover" : ""}
+                            title={hasVal ? `Click to view payments in month ${mIdx + 1}` : ''}
+                          >
+                            {hasVal ? `£${Math.round(val).toLocaleString()}` : '-'}
+                          </td>
+                        );
+                      })}
+                      <td 
+                        style={{ 
+                          padding: '10px 16px', 
+                          textAlign: 'right', 
+                          fontWeight: 700, 
+                          color: 'var(--accent)', 
+                          borderLeft: '1px solid var(--border-color)',
+                          backgroundColor: 'rgba(99, 102, 241, 0.02)',
+                          cursor: row.ytdTotal > 0 ? 'pointer' : 'default'
+                        }}
+                        onClick={() => {
+                          if (row.ytdTotal > 0) {
+                            setDrilldownMonthIdx('ytd');
+                            setDrilldownRowId(row.id);
+                            setDrilldownRowType('recipient');
+                            setDrilldownTargetVal(`${row.name} (YTD Total)`);
+                          }
+                        }}
+                        title={row.ytdTotal > 0 ? 'Click to view full year transactions' : ''}
+                      >
+                        £{Math.round(row.ytdTotal).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                  {computedRows.length === 0 && (
+                    <tr>
+                      <td colSpan="15" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        No recipient payments found matching selected filters.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                <tfoot>
+                  <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--border-color)' }}>
+                    <td style={{ padding: '12px 16px' }} colSpan="2">Monthly Totals</td>
+                    {monthlyGrandTotals.map((val, mIdx) => (
+                      <td key={mIdx} style={{ padding: '12px 8px', textAlign: 'right', color: 'var(--text-primary)' }}>
+                        £{Math.round(val).toLocaleString()}
+                      </td>
+                    ))}
+                    <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--accent)', borderLeft: '1px solid var(--border-color)', backgroundColor: 'rgba(99, 102, 241, 0.04)' }}>
+                      £{Math.round(ytdGrandTotal).toLocaleString()}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
 
           </div>
         );

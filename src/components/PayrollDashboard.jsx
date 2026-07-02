@@ -1378,6 +1378,8 @@ ${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleSt
             borderRadius: '12px',
             width: '95%',
             maxWidth: '520px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
             padding: '24px',
             boxShadow: 'var(--shadow-xl)',
             display: 'flex',

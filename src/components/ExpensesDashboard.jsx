@@ -100,6 +100,7 @@ export default function ExpensesDashboard({
   const [companyFilter, setCompanyFilter] = useState('all');
   const [deptFilter, setDeptFilter] = useState('all');
   const [staffFilter, setStaffFilter] = useState('all');
+  const [bankAccountFilter, setBankAccountFilter] = useState('all');
 
   // Sorting state for expenses ledger table
   const [sortBy, setSortBy] = useState('date');
@@ -701,15 +702,18 @@ export default function ExpensesDashboard({
 
     if (nominalFilter !== 'all' && expNominal !== nominalFilter) return false;
     if (plMonthFilter !== 'all' && expPlMonth !== plMonthFilter) return false;
+    if (bankAccountFilter !== 'all' && exp.bankAccountId !== bankAccountFilter) return false;
 
     // Company filter
     if (companyFilter !== 'all') {
-      if (exp.allocationType !== 'company' || exp.allocationTarget !== companyFilter) return false;
+      const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+      if (exp.allocationType !== 'company' || !targets.includes(companyFilter)) return false;
     }
 
     // Department filter
     if (deptFilter !== 'all') {
-      if (exp.allocationType !== 'department' || exp.allocationTarget !== deptFilter) return false;
+      const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+      if (exp.allocationType !== 'department' || !targets.includes(deptFilter)) return false;
     }
 
     // Staff filter

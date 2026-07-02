@@ -2864,7 +2864,29 @@ export default function ExpensesDashboard({
                             <tr key={t.id}>
                               <td>{t.date}</td>
                               <td style={{ fontWeight: 600 }}>{t.payee}</td>
-                              <td>{t.nominalCode}</td>
+                              <td>
+                                <select
+                                  value={t.nominalCode || ''}
+                                  onChange={(e) => {
+                                    const newNominal = e.target.value;
+                                    const original = expenses.find(exp => exp.id === t.id);
+                                    if (original) {
+                                      onSaveExpense({
+                                        ...original,
+                                        nominalCode: newNominal
+                                      });
+                                      onShowToast("Nominal code updated.", "success");
+                                    }
+                                  }}
+                                  className="select-filter"
+                                  style={{ fontSize: '11px', padding: '2px 4px', width: '100%', minWidth: '130px' }}
+                                >
+                                  <option value="">-- Unmapped --</option>
+                                  {activeNominalCodes.map(nc => (
+                                    <option key={nc.code} value={nc.code}>{nc.code}</option>
+                                  ))}
+                                </select>
+                              </td>
                               <td style={{ textAlign: 'right' }}>
                                 £{toGBP(t.amount, t.currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </td>
@@ -2872,15 +2894,36 @@ export default function ExpensesDashboard({
                                 £{(t.apportionedShare !== undefined ? t.apportionedShare : toGBP(t.amount, t.currency)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </td>
                               <td>
-                                <span style={{
-                                  fontSize: '9px',
-                                  padding: '2px 6px',
-                                  borderRadius: '4px',
-                                  fontWeight: 600,
-                                  backgroundColor: 'rgba(239, 68, 68, 0.08)',
-                                  color: 'var(--danger)'
-                                }}>
-                                  {t.shareReason || 'Direct Cost'}
+                                <span 
+                                  onClick={() => {
+                                    const original = expenses.find(exp => exp.id === t.id);
+                                    if (original) {
+                                      setAllocatingRowId(original.id);
+                                      setAllocatingType(original.allocationType || 'company');
+                                      setAllocatingTarget(original.allocationTarget || []);
+                                      setAllocatingStaffIds(original.allocationType === 'staff' ? (Array.isArray(original.allocationTarget) ? original.allocationTarget : []) : []);
+                                      setExpandedSections({
+                                        company: original.allocationType === 'company' || !original.allocationType,
+                                        department: original.allocationType === 'department',
+                                        staff: original.allocationType === 'staff'
+                                      });
+                                      setAllocationSearch('');
+                                    }
+                                  }}
+                                  title="Click to modify allocation target"
+                                  style={{
+                                    fontSize: '9px',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    fontWeight: 600,
+                                    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                                    color: 'var(--accent)',
+                                    border: '1px dashed rgba(99, 102, 241, 0.3)',
+                                    cursor: 'pointer',
+                                    display: 'inline-block'
+                                  }}
+                                >
+                                  {t.shareReason || 'Direct Cost'} ✏️
                                 </span>
                               </td>
                             </tr>

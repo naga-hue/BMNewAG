@@ -31,6 +31,7 @@ export default function PayrollDashboard({
   nominalCodes = [],
   onSavePayrollRecord,
   onSaveExpense,
+  onDeleteExpense,
   onShowToast
 }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -47,6 +48,10 @@ export default function PayrollDashboard({
   const [commissionOverride, setCommissionOverride] = useState('');
   const [reconcileNotes, setReconcileNotes] = useState('');
   const [bookExpense, setBookExpense] = useState(true);
+  const [employerNi, setEmployerNi] = useState('0.00');
+  const [employerPension, setEmployerPension] = useState('0.00');
+  const [employeeTaxNic, setEmployeeTaxNic] = useState('0.00');
+  const [employeePension, setEmployeePension] = useState('0.00');
 
   // FX Rates representation
   const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
@@ -229,6 +234,10 @@ export default function PayrollDashboard({
         total: record.isReconciled 
           ? (Number(record.basicSalary) + Number(record.commission)) 
           : (baselineBasic + baselineCommission),
+        employerNi: Number(record.employerNi || 0),
+        employerPension: Number(record.employerPension || 0),
+        employeeTaxNic: Number(record.employeeTaxNic || 0),
+        employeePension: Number(record.employeePension || 0),
         notes: record.notes || '',
         id: record.id
       };
@@ -239,6 +248,10 @@ export default function PayrollDashboard({
       basic: baselineBasic,
       commission: baselineCommission,
       total: baselineBasic + baselineCommission,
+      employerNi: 0,
+      employerPension: 0,
+      employeeTaxNic: 0,
+      employeePension: 0,
       notes: '',
       id: null
     };
@@ -251,6 +264,10 @@ export default function PayrollDashboard({
     setIsReconciled(data.isReconciled);
     setBasicSalaryOverride(data.basic.toFixed(2));
     setCommissionOverride(data.commission.toFixed(2));
+    setEmployerNi((data.employerNi || 0).toFixed(2));
+    setEmployerPension((data.employerPension || 0).toFixed(2));
+    setEmployeeTaxNic((data.employeeTaxNic || 0).toFixed(2));
+    setEmployeePension((data.employeePension || 0).toFixed(2));
     setReconcileNotes(data.notes);
     setBookExpense(true);
   };
@@ -262,6 +279,10 @@ export default function PayrollDashboard({
 
     const baseVal = Number(basicSalaryOverride) || 0;
     const commVal = Number(commissionOverride) || 0;
+    const empNiVal = Number(employerNi) || 0;
+    const empPensionVal = Number(employerPension) || 0;
+    const taxNicVal = Number(employeeTaxNic) || 0;
+    const pensionVal = Number(employeePension) || 0;
 
     const record = {
       id: `${staffMember.id}_${month}`,
@@ -270,6 +291,10 @@ export default function PayrollDashboard({
       isReconciled,
       basicSalary: baseVal,
       commission: commVal,
+      employerNi: empNiVal,
+      employerPension: empPensionVal,
+      employeeTaxNic: taxNicVal,
+      employeePension: pensionVal,
       notes: reconcileNotes.trim()
     };
 
@@ -277,30 +302,84 @@ export default function PayrollDashboard({
       // 1. Save the payroll record override
       await onSavePayrollRecord(record);
 
-      // 2. Double-entry bookkeeping: Auto-create Expense if checked and reconciled
-      if (isReconciled && bookExpense) {
-        const totalPayout = baseVal + commVal;
-        
-        // Find existing Salaries nominal code, or fallback
-        const salaryNominal = nominalCodes.find(c => c.id === '500' || c.code?.includes('500') || c.code?.toLowerCase().includes('salary'))?.code || '500 - Salaries & Wages';
+      // 2. Double-entry bookkeeping: Auto-create split Expenses if checked and reconciled
+      if (!isReconciled || !bookExpense) {
+        // Delete all payroll expenses associated with this cell if unmarked
+        if (onDeleteExpense) {
+          await onDeleteExpense(`payroll-salary-${staffMember.id}-${month}`);
+          await onDeleteExpense(`payroll-tax-${staffMember.id}-${month}`);
+          await onDeleteExpense(`payroll-pension-${staffMember.id}-${month}`);
+          await onDeleteExpense(`payroll-exp-${staffMember.id}-${month}`);
+        }
+      } else {
+        // Clean up legacy single-booking expense if any exists
+        if (onDeleteExpense) {
+          await onDeleteExpense(`payroll-exp-${staffMember.id}-${month}`);
+        }
 
-        const expObj = {
-          id: `payroll-exp-${staffMember.id}-${month}`,
-          date: `${month}-28`, // standard monthly paydate
-          payee: `Payroll: ${staffMember.fullName}`,
-          amount: totalPayout,
-          currency: 'GBP',
+        // Find Nominal Codes
+        const salaryNominal = nominalCodes.find(c => c.id === '500' || c.code?.includes('500') || c.code?.toLowerCase().includes('salary'))?.code || '500 - Salaries & Wages';
+        const taxNominal = nominalCodes.find(c => c.id === '501' || c.code?.includes('501') || c.code?.toLowerCase().includes('paye') || c.code?.toLowerCase().includes('tax') || c.code?.toLowerCase().includes('ni'))?.code || '501 - HMRC PAYE & NI Contributions';
+        const pensionNominal = nominalCodes.find(c => c.id === '502' || c.code?.includes('502') || c.code?.toLowerCase().includes('pension') || c.code?.toLowerCase().includes('london'))?.code || '502 - Royal London Pension Contributions';
+
+        // 2a. Net Take-Home Salary Payment (Gross Salary + Comm - Deductions)
+        const netSalaryAmt = baseVal + commVal - taxNicVal - pensionVal;
+        const netExp = {
+          id: `payroll-salary-${staffMember.id}-${month}`,
+          date: `${month}-28`,
+          payee: `Net Salary: ${staffMember.fullName}`,
+          amount: netSalaryAmt,
+          currency: staffMember.currency || 'GBP',
           nominalCode: salaryNominal,
           allocationType: 'staff',
           allocationTarget: [staffMember.id],
           plMonth: month,
-          notes: `Reconciled via Group Payroll Module. ${reconcileNotes.trim()}`
+          notes: `Net take-home pay. Reconciled via Group Payroll Module. ${reconcileNotes.trim()}`
         };
+        await onSaveExpense(netExp);
 
-        await onSaveExpense(expObj);
+        // 2b. HMRC PAYE / NI (Employer NI + Employee Tax/NI)
+        const totalHmrcAmt = empNiVal + taxNicVal;
+        if (totalHmrcAmt > 0) {
+          const taxExp = {
+            id: `payroll-tax-${staffMember.id}-${month}`,
+            date: `${month}-28`,
+            payee: `HMRC PAYE & NI: ${staffMember.fullName}`,
+            amount: totalHmrcAmt,
+            currency: staffMember.currency || 'GBP',
+            nominalCode: taxNominal,
+            allocationType: 'staff',
+            allocationTarget: [staffMember.id],
+            plMonth: month,
+            notes: `HMRC payroll taxes (Employer NI: £${empNiVal.toFixed(2)}, Employee tax/NI deduction: £${taxNicVal.toFixed(2)}). Reconciled via Group Payroll Module. ${reconcileNotes.trim()}`
+          };
+          await onSaveExpense(taxExp);
+        } else if (onDeleteExpense) {
+          await onDeleteExpense(`payroll-tax-${staffMember.id}-${month}`);
+        }
+
+        // 2c. Royal London Pension (Employer Pension + Employee Pension deduction)
+        const totalPensionAmt = empPensionVal + pensionVal;
+        if (totalPensionAmt > 0) {
+          const pensionExp = {
+            id: `payroll-pension-${staffMember.id}-${month}`,
+            date: `${month}-28`,
+            payee: `Royal London Pension: ${staffMember.fullName}`,
+            amount: totalPensionAmt,
+            currency: staffMember.currency || 'GBP',
+            nominalCode: pensionNominal,
+            allocationType: 'staff',
+            allocationTarget: [staffMember.id],
+            plMonth: month,
+            notes: `Royal London Pension contributions (Employer share: £${empPensionVal.toFixed(2)}, Employee deduction: £${pensionVal.toFixed(2)}). Reconciled via Group Payroll Module. ${reconcileNotes.trim()}`
+          };
+          await onSaveExpense(pensionExp);
+        } else if (onDeleteExpense) {
+          await onDeleteExpense(`payroll-pension-${staffMember.id}-${month}`);
+        }
       }
 
-      onShowToast(`Payroll details saved for ${staffMember.fullName} (${month})`, 'success');
+      onShowToast(`Payroll details and double-entry split ledger records saved for ${staffMember.fullName} (${month})`, 'success');
       setSelectedCell(null);
     } catch (err) {
       onShowToast(`Error saving overrides: ${err.message}`, 'warning');
@@ -543,7 +622,10 @@ export default function PayrollDashboard({
                                           transition: 'all 0.15s'
                                         }}
                                         className={`payroll-cell ${cell.isReconciled ? 'reconciled' : 'projected'}`}
-                                        title={`${s.fullName} - ${m}\nSalary: £${Math.round(cell.basic).toLocaleString()}\nComm: £${Math.round(cell.commission).toLocaleString()}\nClick to edit override`}
+                                        title={`${s.fullName} - ${m}
+Salary (Gross): £${Math.round(cell.basic).toLocaleString()}
+Comm: £${Math.round(cell.commission).toLocaleString()}
+${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleString()}\n` : ''}${cell.employerPension > 0 ? `Employer Pension: £${Math.round(cell.employerPension).toLocaleString()}\n` : ''}${cell.employeeTaxNic > 0 ? `Employee Tax/NIC: £${Math.round(cell.employeeTaxNic).toLocaleString()}\n` : ''}${cell.employeePension > 0 ? `Employee Pension: £${Math.round(cell.employeePension).toLocaleString()}\n` : ''}Click to edit override`}
                                       >
                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
                                           <span>£{Math.round(cell.total).toLocaleString()}</span>
@@ -706,12 +788,87 @@ export default function PayrollDashboard({
                 />
               </div>
 
+              {/* Contributions & Deductions Breakdown */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                <div>
+                  <h4 style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                    🏢 Employer Contributions
+                  </h4>
+                  <div className="form-group" style={{ marginBottom: '8px' }}>
+                    <label className="form-label" style={{ fontSize: '11px' }}>Employer NI (£)</label>
+                    <input 
+                      type="number"
+                      className="form-input"
+                      value={employerNi}
+                      onChange={(e) => setEmployerNi(e.target.value)}
+                      style={{ width: '100%', padding: '6px 8px', fontSize: '12px' }}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontSize: '11px' }}>Employer Pension (£)</label>
+                    <input 
+                      type="number"
+                      className="form-input"
+                      value={employerPension}
+                      onChange={(e) => setEmployerPension(e.target.value)}
+                      style={{ width: '100%', padding: '6px 8px', fontSize: '12px' }}
+                    />
+                  </div>
+                </div>
+                
+                <div>
+                  <h4 style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                    👥 Employee Deductions
+                  </h4>
+                  <div className="form-group" style={{ marginBottom: '8px' }}>
+                    <label className="form-label" style={{ fontSize: '11px' }}>Employee Tax & NI (£)</label>
+                    <input 
+                      type="number"
+                      className="form-input"
+                      value={employeeTaxNic}
+                      onChange={(e) => setEmployeeTaxNic(e.target.value)}
+                      style={{ width: '100%', padding: '6px 8px', fontSize: '12px' }}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontSize: '11px' }}>Employee Pension (£)</label>
+                    <input 
+                      type="number"
+                      className="form-input"
+                      value={employeePension}
+                      onChange={(e) => setEmployeePension(e.target.value)}
+                      style={{ width: '100%', padding: '6px 8px', fontSize: '12px' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* Total Summary */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', backgroundColor: 'rgba(99, 102, 241, 0.05)', borderRadius: '6px', fontSize: '13px', fontWeight: 600 }}>
-                <span>Total Net Payout:</span>
-                <span style={{ color: 'var(--success)' }}>
-                  £{(Number(basicSalaryOverride) + Number(commissionOverride)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </span>
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '4px',
+                padding: '12px', 
+                backgroundColor: 'rgba(99, 102, 241, 0.05)', 
+                borderRadius: '6px', 
+                fontSize: '12px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                  <span>Gross Earnings (Basic + Comm):</span>
+                  <span>£{(Number(basicSalaryOverride) + Number(commissionOverride)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
+                  <span>Net Take-Home Pay (to Recruiter):</span>
+                  <span style={{ fontWeight: 600, color: 'var(--success)' }}>
+                    £{(Number(basicSalaryOverride) + Number(commissionOverride) - Number(employeeTaxNic) - Number(employeePension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', borderTop: '1px dashed var(--border-color)', paddingTop: '4px', marginTop: '4px' }}>
+                  <span>Total Cost to Company (CoC):</span>
+                  <span style={{ fontWeight: 600, color: 'var(--primary)' }}>
+                    £{(Number(basicSalaryOverride) + Number(commissionOverride) + Number(employerNi) + Number(employerPension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
               </div>
 
               {/* Notes */}
@@ -738,7 +895,7 @@ export default function PayrollDashboard({
                     style={{ cursor: 'pointer' }}
                   />
                   <label htmlFor="auto-book-expense-check" style={{ cursor: 'pointer' }}>
-                    Auto-book matching transaction to nominal ledger category **500 - Salaries**
+                    Auto-book matching split transactions to nominal ledger (Salaries, PAYE/NIC, and Pension)
                   </label>
                 </div>
               )}

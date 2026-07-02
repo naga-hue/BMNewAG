@@ -981,6 +981,61 @@ export default function PlacementsDashboard({
 
   const sortedPlacements = sortPlacements(filteredPlacements);
 
+  const handleExportPlacements = () => {
+    const headers = [
+      "Placement ID",
+      "Client",
+      "Candidate",
+      "Position Title",
+      "Type",
+      "Start Date",
+      "Gross Billing",
+      "Currency",
+      "Net Score Value",
+      "Payment Status",
+      "Recruiter Splits"
+    ];
+    const rows = sortedPlacements.map(p => [
+      p.placementId || '',
+      p.clientName || '',
+      p.candidateName || '',
+      p.positionTitle || '',
+      p.placementType || 'permanent',
+      p.startDate || '',
+      p.grossBillAmount || 0,
+      p.currency || 'GBP',
+      p.netScoreValue || 0,
+      p.clientPaymentStatus || 'pending',
+      (p.splits || []).map(s => {
+        const member = staff.find(item => item.id === s.staffId);
+        return `${member ? member.fullName : s.staffId} (${s.percentage}%)`;
+      }).join('; ')
+    ]);
+    
+    const escapeCsv = (val) => {
+      if (val === null || val === undefined) return '';
+      const str = typeof val === 'object' ? JSON.stringify(val) : String(val);
+      const escaped = str.replace(/"/g, '""');
+      return `"${escaped}"`;
+    };
+
+    const csvContent = [
+      headers.map(escapeCsv).join(','),
+      ...rows.map(row => row.map(escapeCsv).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', "Placements_Registry.csv");
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    onShowToast("Placements registry exported to CSV successfully.", "success");
+  };
+
   // Compute matching split ratio weight helper
   const getPlacementSplitWeight = (p) => {
     // If no filters are active, return full 100% weight (1.0)
@@ -1453,6 +1508,15 @@ export default function PlacementsDashboard({
                 ))}
               </select>
             </div>
+
+            <button 
+              type="button" 
+              className="btn-secondary" 
+              onClick={handleExportPlacements}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', fontSize: '13px' }}
+            >
+              📥 Export CSV
+            </button>
           </div>
 
           {/* Placements registry listing table */}

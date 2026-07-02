@@ -1022,6 +1022,66 @@ export default function ExpensesDashboard({
     }
   };
 
+  const handleExportExpenses = () => {
+    const headers = [
+      "Date",
+      "PL Month",
+      "Payee/Vendor",
+      "Nominal Code",
+      "Bank Account",
+      "Allocation Type",
+      "Allocation Target",
+      "Tax Rate (%)",
+      "Amount",
+      "Currency",
+      "Description",
+      "Linked Placement ID"
+    ];
+    const rows = filteredExpenses.map(exp => [
+      exp.date || '',
+      exp.plMonth || '',
+      exp.payee || '',
+      exp.nominalCode || '',
+      exp.bankAccountRef || 'Manual',
+      exp.allocationType || 'company',
+      (() => {
+        const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+        if (exp.allocationType === 'company') {
+          return targets.map(tid => companies.find(c => c.id === tid)?.name || tid).join(', ');
+        }
+        return targets.join(', ');
+      })(),
+      exp.taxRate || 0,
+      exp.amount || 0,
+      exp.currency || 'GBP',
+      exp.description || '',
+      exp.linkedPlacementId || ''
+    ]);
+    
+    const escapeCsv = (val) => {
+      if (val === null || val === undefined) return '';
+      const str = typeof val === 'object' ? JSON.stringify(val) : String(val);
+      const escaped = str.replace(/"/g, '""');
+      return `"${escaped}"`;
+    };
+
+    const csvContent = [
+      headers.map(escapeCsv).join(','),
+      ...rows.map(row => row.map(escapeCsv).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', "Expenses_Ledger.csv");
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    onShowToast("Expenses ledger exported to CSV successfully.", "success");
+  };
+
 
 
   // Filter nominal codes & placements lists
@@ -1665,6 +1725,14 @@ export default function ExpensesDashboard({
                 )}
               </div>
 
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                onClick={handleExportExpenses}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px' }}
+              >
+                📥 Export CSV
+              </button>
             </div>
           </div>
 

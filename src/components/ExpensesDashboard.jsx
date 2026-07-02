@@ -102,6 +102,28 @@ export default function ExpensesDashboard({
   const [deptFilter, setDeptFilter] = useState('all');
   const [staffFilter, setStaffFilter] = useState('all');
   const [bankAccountFilter, setBankAccountFilter] = useState('all');
+  const [vendorFilter, setVendorFilter] = useState('all');
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
+
+  // Column Choose visibility state
+  const [visibleCols, setVisibleCols] = useState({
+    select: true,
+    date: true,
+    plMonth: true,
+    payee: true,
+    bank: true,
+    nominal: true,
+    allocation: true,
+    tax: true,
+    amount: true,
+    receipt: true,
+    actions: true
+  });
+  const [showColPicker, setShowColPicker] = useState(false);
+
+  // Multi-select row selection state
+  const [selectedExpenseIds, setSelectedExpenseIds] = useState([]);
 
   // Sorting state for expenses ledger table
   const [sortBy, setSortBy] = useState('date');
@@ -127,6 +149,15 @@ export default function ExpensesDashboard({
       } else if (sortBy === 'date') {
         valA = new Date(valA || '1970-01-01');
         valB = new Date(valB || '1970-01-01');
+      } else if (sortBy === 'bank') {
+        valA = String(a.bankAccountRef || '').toLowerCase();
+        valB = String(b.bankAccountRef || '').toLowerCase();
+      } else if (sortBy === 'allocation') {
+        valA = String(a.allocationType || '').toLowerCase();
+        valB = String(b.allocationType || '').toLowerCase();
+      } else if (sortBy === 'receipt') {
+        valA = a.invoiceUrl && a.invoiceUrl !== '#' ? 1 : 0;
+        valB = b.invoiceUrl && b.invoiceUrl !== '#' ? 1 : 0;
       } else {
         valA = String(valA).toLowerCase();
         valB = String(valB).toLowerCase();
@@ -789,16 +820,18 @@ export default function ExpensesDashboard({
 
       onShowToast(`Successfully imported and logged ${mRows.length} bank transactions.`, "success");
       
-      // Update rows status
-      setCategorizedRows(prev => prev.map(r => {
+      // Update rows status locally first to prevent async state evaluation delay
+      const updatedRows = categorizedRows.map(r => {
         if (r.nominalCode) {
           return { ...r, committed: true };
         }
         return r;
-      }));
+      });
+      setCategorizedRows(updatedRows);
 
-      // If all rows committed, reset
-      if (categorizedRows.every(r => r.nominalCode || r.committed)) {
+      // If all rows are committed, reset
+      const allDone = updatedRows.every(r => r.committed);
+      if (allDone) {
         setCsvFile(null);
         setCsvHeaders([]);
         setCsvRows([]);
@@ -808,9 +841,72 @@ export default function ExpensesDashboard({
         setStatementAccountRef('Main Current Account');
         setImportStep(1);
         setActiveSubTab('ledger');
+      } else {
+        onShowToast(`${updatedRows.filter(r => r.committed).length} rows committed. Map the remaining rows to commit them too.`, "info");
       }
     } catch (err) {
       onShowToast(`Error committing statement rows: ${err.message}`, "warning");
+    }
+  };
+
+  const handleBulkUpdateNominal = async (nominalCode) => {
+    if (!nominalCode || selectedExpenseIds.length === 0) return;
+    try {
+      let count = 0;
+      for (const id of selectedExpenseIds) {
+        const original = expenses.find(e => e.id === id);
+        if (original) {
+          await onSaveExpense({
+            ...original,
+            nominalCode
+          });
+          count++;
+        }
+      }
+      onShowToast(`Bulk updated Nominal Code for ${count} transactions.`, "success");
+      setSelectedExpenseIds([]);
+    } catch (err) {
+      onShowToast(`Error bulk updating: ${err.message}`, "warning");
+    }
+  };
+
+  const handleBulkUpdateAllocation = async (allocType, allocTarget) => {
+    if (selectedExpenseIds.length === 0) return;
+    try {
+      let count = 0;
+      for (const id of selectedExpenseIds) {
+        const original = expenses.find(e => e.id === id);
+        if (original) {
+          await onSaveExpense({
+            ...original,
+            allocationType: allocType,
+            allocationTarget: allocTarget
+          });
+          count++;
+        }
+      }
+      onShowToast(`Bulk updated Allocation for ${count} transactions.`, "success");
+      setSelectedExpenseIds([]);
+    } catch (err) {
+      onShowToast(`Error bulk updating: ${err.message}`, "warning");
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedExpenseIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedExpenseIds.length} expense records?`)) {
+      return;
+    }
+    try {
+      let count = 0;
+      for (const id of selectedExpenseIds) {
+        await onDeleteExpense(id);
+        count++;
+      }
+      onShowToast(`Permanently deleted ${count} expense records.`, "success");
+      setSelectedExpenseIds([]);
+    } catch (err) {
+      onShowToast(`Error bulk deleting: ${err.message}`, "warning");
     }
   };
 
@@ -875,6 +971,15 @@ export default function ExpensesDashboard({
       const ids = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
       if (!ids.includes(staffFilter)) return false;
     }
+
+    // Vendor / Recipient Filter
+    if (vendorFilter !== 'all') {
+      if (exp.recipientId !== vendorFilter) return false;
+    }
+
+    // Start / End Date Filter
+    if (startDateFilter && exp.date < startDateFilter) return false;
+    if (endDateFilter && exp.date > endDateFilter) return false;
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -1291,7 +1396,7 @@ export default function ExpensesDashboard({
           )}
 
           {/* Filter Toolbar */}
-          <div className="controls-row">
+          <div className="controls-row" style={{ position: 'relative' }}>
             <div className="search-filter-group" style={{ flexWrap: 'wrap', gap: '8px' }}>
               <div className="search-input-wrapper">
                 <Search size={16} className="search-icon" />
@@ -1312,6 +1417,17 @@ export default function ExpensesDashboard({
                 <option value="all">All Nominal Codes</option>
                 {activeNominalCodes.map(c => (
                   <option key={c.id} value={c.code}>{c.code}</option>
+                ))}
+              </select>
+
+              <select 
+                className="select-filter"
+                value={vendorFilter}
+                onChange={(e) => setVendorFilter(e.target.value)}
+              >
+                <option value="all">All Vendors</option>
+                {vendors.map(v => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
                 ))}
               </select>
 
@@ -1370,36 +1486,250 @@ export default function ExpensesDashboard({
                   <option key={s.id} value={s.id}>{s.fullName}</option>
                 ))}
               </select>
+
+              {/* Date range wrapper */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '4px 10px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>From:</span>
+                <input 
+                  type="date" 
+                  value={startDateFilter} 
+                  onChange={(e) => setStartDateFilter(e.target.value)} 
+                  style={{ background: 'none', border: 'none', color: 'var(--text-primary)', fontSize: '11px', outline: 'none' }}
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>To:</span>
+                <input 
+                  type="date" 
+                  value={endDateFilter} 
+                  onChange={(e) => setEndDateFilter(e.target.value)} 
+                  style={{ background: 'none', border: 'none', color: 'var(--text-primary)', fontSize: '11px', outline: 'none' }}
+                />
+                {(startDateFilter || endDateFilter) && (
+                  <button type="button" onClick={() => { setStartDateFilter(''); setEndDateFilter(''); }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '12px', padding: 0 }}>✕</button>
+                )}
+              </div>
+
+              {/* Columns Selector */}
+              <div style={{ position: 'relative' }}>
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  onClick={() => setShowColPicker(!showColPicker)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px' }}
+                >
+                  <Settings size={14} /> Column Headers
+                </button>
+                {showColPicker && (
+                  <div style={{ 
+                    position: 'absolute', 
+                    top: '100%', 
+                    right: 0, 
+                    zIndex: 100, 
+                    backgroundColor: 'var(--bg-sidebar)', 
+                    border: '1px solid var(--border-color)', 
+                    borderRadius: 'var(--radius-md)', 
+                    padding: '12px', 
+                    minWidth: '180px', 
+                    boxShadow: 'var(--shadow-lg)',
+                    marginTop: '4px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px' }}>
+                      Visible Columns
+                    </div>
+                    {[
+                      { key: 'select', label: 'Select Checkbox' },
+                      { key: 'date', label: 'Date' },
+                      { key: 'plMonth', label: 'P&L Month' },
+                      { key: 'payee', label: 'Payee / Vendor' },
+                      { key: 'bank', label: 'Bank / Source' },
+                      { key: 'nominal', label: 'Nominal Bracket' },
+                      { key: 'allocation', label: 'Allocation Target' },
+                      { key: 'tax', label: 'Tax (VAT)' },
+                      { key: 'amount', label: 'Amount' },
+                      { key: 'receipt', label: 'Receipt' },
+                      { key: 'actions', label: 'Actions' }
+                    ].map(col => (
+                      <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer', margin: 0 }}>
+                        <input 
+                          type="checkbox" 
+                          checked={visibleCols[col.key]} 
+                          onChange={() => setVisibleCols(prev => ({ ...prev, [col.key]: !prev[col.key] }))}
+                        />
+                        <span>{col.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
             </div>
           </div>
+
+          {/* Bulk Actions Panel */}
+          {selectedExpenseIds.length > 0 && (
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              backgroundColor: 'rgba(99, 102, 241, 0.08)',
+              border: '1.5px solid var(--primary)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px 16px',
+              marginBottom: '12px',
+              fontSize: '12px',
+              animation: 'fadeIn 0.2s',
+              flexWrap: 'wrap',
+              gap: '12px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                <span style={{ backgroundColor: 'var(--primary)', color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '11px' }}>
+                  {selectedExpenseIds.length}
+                </span>
+                <span>transactions selected for bulk update:</span>
+              </div>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                {/* Bulk Nominal */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>Nominal:</span>
+                  <select
+                    className="select-filter"
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleBulkUpdateNominal(e.target.value);
+                        e.target.value = '';
+                      }
+                    }}
+                    style={{ padding: '4px 8px', fontSize: '11px' }}
+                  >
+                    <option value="">-- Apply Nominal --</option>
+                    {activeNominalCodes.map(c => (
+                      <option key={c.id} value={c.code}>{c.code}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Bulk Allocation */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>Allocation:</span>
+                  <select
+                    className="select-filter"
+                    onChange={(e) => {
+                      const type = e.target.value;
+                      if (type === 'global') {
+                        handleBulkUpdateAllocation('global', []);
+                      } else if (type === 'company' && companies[0]) {
+                        handleBulkUpdateAllocation('company', [companies[0].id]);
+                      } else if (type === 'department') {
+                        const depts = Array.from(new Set(staff.map(s => s.department).filter(Boolean)));
+                        if (depts[0]) handleBulkUpdateAllocation('department', [depts[0]]);
+                      } else if (type === 'staff' && staff[0]) {
+                        handleBulkUpdateAllocation('staff', [staff[0].id]);
+                      }
+                      e.target.value = '';
+                    }}
+                    style={{ padding: '4px 8px', fontSize: '11px' }}
+                  >
+                    <option value="">-- Set Target Type --</option>
+                    <option value="global">Whole Corporate Group</option>
+                    <option value="company">First Registered Company</option>
+                    <option value="department">First Staff Department</option>
+                    <option value="staff">First Staff Member</option>
+                  </select>
+                </div>
+
+                {/* Bulk Delete */}
+                <button 
+                  type="button" 
+                  className="btn-secondary delete" 
+                  onClick={handleBulkDelete}
+                  style={{ padding: '6px 12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <Trash2 size={12} /> Delete Selected
+                </button>
+
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  onClick={() => setSelectedExpenseIds([])}
+                  style={{ padding: '6px 12px', fontSize: '11px' }}
+                >
+                  Clear Selection
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Expenses Table */}
           <div className="table-container">
             <table className="entity-table dense">
               <thead>
                 <tr>
-                  <th onClick={() => handleHeaderClick('date')} style={{ cursor: 'pointer', userSelect: 'none' }}>
-                    Date {renderSortIndicator('date')}
-                  </th>
-                  <th onClick={() => handleHeaderClick('plMonth')} style={{ cursor: 'pointer', userSelect: 'none' }}>
-                    P&L Month {renderSortIndicator('plMonth')}
-                  </th>
-                  <th onClick={() => handleHeaderClick('payee')} style={{ cursor: 'pointer', userSelect: 'none' }}>
-                    Payee / Vendor {renderSortIndicator('payee')}
-                  </th>
-                  <th>Bank Account / Source</th>
-                  <th onClick={() => handleHeaderClick('nominalCode')} style={{ cursor: 'pointer', userSelect: 'none' }}>
-                    Nominal Bracket {renderSortIndicator('nominalCode')}
-                  </th>
-                  <th>Allocation Center Target</th>
-                  <th onClick={() => handleHeaderClick('taxRate')} style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}>
-                    Tax (VAT) {renderSortIndicator('taxRate')}
-                  </th>
-                  <th onClick={() => handleHeaderClick('amount')} style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}>
-                    Amount (Gross) {renderSortIndicator('amount')}
-                  </th>
-                  <th>Linked Receipt</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  {visibleCols.select && (
+                    <th style={{ width: '35px', textAlign: 'center' }}>
+                      <input 
+                        type="checkbox"
+                        checked={sortedExpenses.length > 0 && selectedExpenseIds.length === sortedExpenses.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedExpenseIds(sortedExpenses.map(exp => exp.id));
+                          } else {
+                            setSelectedExpenseIds([]);
+                          }
+                        }}
+                      />
+                    </th>
+                  )}
+                  {visibleCols.date && (
+                    <th onClick={() => handleHeaderClick('date')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                      Date {renderSortIndicator('date')}
+                    </th>
+                  )}
+                  {visibleCols.plMonth && (
+                    <th onClick={() => handleHeaderClick('plMonth')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                      P&L Month {renderSortIndicator('plMonth')}
+                    </th>
+                  )}
+                  {visibleCols.payee && (
+                    <th onClick={() => handleHeaderClick('payee')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                      Payee / Vendor {renderSortIndicator('payee')}
+                    </th>
+                  )}
+                  {visibleCols.bank && (
+                    <th onClick={() => handleHeaderClick('bank')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                      Bank Account / Source {renderSortIndicator('bank')}
+                    </th>
+                  )}
+                  {visibleCols.nominal && (
+                    <th onClick={() => handleHeaderClick('nominalCode')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                      Nominal Bracket {renderSortIndicator('nominalCode')}
+                    </th>
+                  )}
+                  {visibleCols.allocation && (
+                    <th onClick={() => handleHeaderClick('allocation')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                      Allocation Center Target {renderSortIndicator('allocation')}
+                    </th>
+                  )}
+                  {visibleCols.tax && (
+                    <th onClick={() => handleHeaderClick('taxRate')} style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}>
+                      Tax (VAT) {renderSortIndicator('taxRate')}
+                    </th>
+                  )}
+                  {visibleCols.amount && (
+                    <th onClick={() => handleHeaderClick('amount')} style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}>
+                      Amount (Gross) {renderSortIndicator('amount')}
+                    </th>
+                  )}
+                  {visibleCols.receipt && (
+                    <th onClick={() => handleHeaderClick('receipt')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                      Linked Receipt {renderSortIndicator('receipt')}
+                    </th>
+                  )}
+                  {visibleCols.actions && (
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -1424,78 +1754,103 @@ export default function ExpensesDashboard({
 
                   return (
                     <tr key={exp.id}>
-                      <td>{exp.date}</td>
-                      <td style={{ fontWeight: 600 }}>{exp.plMonth}</td>
-                      <td style={{ fontWeight: 600 }}>{exp.payee}</td>
-                      <td>
-                        {exp.bankCompanyId ? (
-                          <div style={{ fontSize: '11px' }}>
-                            <div style={{ fontWeight: 600 }}>{companies.find(c => c.id === exp.bankCompanyId)?.name || 'Company'}</div>
-                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                              🏦 {exp.bankAccountRef || 'Main Account'}
-                              {exp.id.startsWith('exp-stmt-') ? '' : ' (Manual Mapped)'}
-                            </div>
-                          </div>
-                        ) : (
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Manual (No Bank)</span>
-                        )}
-                      </td>
-                      <td style={{ fontSize: '11px' }}>{exp.nominalCode}</td>
-                      <td>
-                        <span style={{ 
-                          fontSize: '11px', 
-                          fontWeight: 500, 
-                          color: exp.allocationType === 'staff' ? 'var(--warning)' : exp.allocationType === 'department' ? 'var(--accent)' : 'var(--text-secondary)',
-                          backgroundColor: 'rgba(255,255,255,0.03)',
-                          border: '1px solid var(--border-color)',
-                          padding: '3px 8px',
-                          borderRadius: '4px'
-                        }}>
-                          {allocationLabel}
-                        </span>
-                        {exp.description && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>{exp.description}</div>}
-                      </td>
-                      <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{exp.taxRate}%</td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: exp.nominalCode.includes('Wages') || exp.nominalCode.includes('Rent') ? 'var(--danger)' : 'var(--text-primary)' }}>
-                        {exp.currency === 'GBP' ? (
-                          `£${exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                        ) : (
-                          `£${toGBP(exp.amount, exp.currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${symbol}${exp.amount.toLocaleString()})`
-                        )}
-                      </td>
-                      <td>
-                        {matchedPl ? (
-                          <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 600 }} title={`Settles placement invoice ${matchedPl.placementId}`}>
-                            Settle: {matchedPl.placementId}
-                          </span>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>—</span>
-                        )}
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                          {exp.invoiceUrl && exp.invoiceUrl !== '#' && (
-                            <button className="btn-icon" onClick={() => window.open(exp.invoiceUrl, '_blank')} title="Preview Invoice">
-                              <Eye size={12} />
-                            </button>
-                          )}
-                          <button className="btn-icon" onClick={() => handleEditExpense(exp)} title="Edit Transaction">
-                            <Edit3 size={12} />
-                          </button>
-                          <button 
-                            className="btn-icon delete" 
-                            onClick={() => {
-                              if (window.confirm(`Are you sure you want to delete this expense record?`)) {
-                                onDeleteExpense(exp.id);
-                                onShowToast("Deleted transaction.", "info");
+                      {visibleCols.select && (
+                        <td style={{ textAlign: 'center' }}>
+                          <input 
+                            type="checkbox"
+                            checked={selectedExpenseIds.includes(exp.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedExpenseIds(prev => [...prev, exp.id]);
+                              } else {
+                                setSelectedExpenseIds(prev => prev.filter(id => id !== exp.id));
                               }
                             }}
-                            title="Delete transaction"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </td>
+                          />
+                        </td>
+                      )}
+                      {visibleCols.date && <td>{exp.date}</td>}
+                      {visibleCols.plMonth && <td style={{ fontWeight: 600 }}>{exp.plMonth}</td>}
+                      {visibleCols.payee && <td style={{ fontWeight: 600 }}>{exp.payee}</td>}
+                      {visibleCols.bank && (
+                        <td>
+                          {exp.bankCompanyId ? (
+                            <div style={{ fontSize: '11px' }}>
+                              <div style={{ fontWeight: 600 }}>{companies.find(c => c.id === exp.bankCompanyId)?.name || 'Company'}</div>
+                              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                🏦 {exp.bankAccountRef || 'Main Account'}
+                                {exp.id.startsWith('exp-stmt-') ? '' : ' (Manual Mapped)'}
+                              </div>
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Manual (No Bank)</span>
+                          )}
+                        </td>
+                      )}
+                      {visibleCols.nominal && <td style={{ fontSize: '11px' }}>{exp.nominalCode}</td>}
+                      {visibleCols.allocation && (
+                        <td>
+                          <span style={{ 
+                            fontSize: '11px', 
+                            fontWeight: 500, 
+                            color: exp.allocationType === 'staff' ? 'var(--warning)' : exp.allocationType === 'department' ? 'var(--accent)' : 'var(--text-secondary)',
+                            backgroundColor: 'rgba(255,255,255,0.03)',
+                            border: '1px solid var(--border-color)',
+                            padding: '3px 8px',
+                            borderRadius: '4px'
+                          }}>
+                            {allocationLabel}
+                          </span>
+                          {exp.description && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>{exp.description}</div>}
+                        </td>
+                      )}
+                      {visibleCols.tax && <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{exp.taxRate}%</td>}
+                      {visibleCols.amount && (
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: exp.nominalCode?.includes('Wages') || exp.nominalCode?.includes('Rent') ? 'var(--danger)' : 'var(--text-primary)' }}>
+                          {exp.currency === 'GBP' ? (
+                            `£${exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          ) : (
+                            `£${toGBP(exp.amount, exp.currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${symbol}${exp.amount.toLocaleString()})`
+                          )}
+                        </td>
+                      )}
+                      {visibleCols.receipt && (
+                        <td>
+                          {matchedPl ? (
+                            <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 600 }} title={`Settles placement invoice ${matchedPl.placementId}`}>
+                              Settle: {matchedPl.placementId}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>—</span>
+                          )}
+                        </td>
+                      )}
+                      {visibleCols.actions && (
+                        <td>
+                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                            {exp.invoiceUrl && exp.invoiceUrl !== '#' && (
+                              <button className="btn-icon" onClick={() => window.open(exp.invoiceUrl, '_blank')} title="Preview Invoice">
+                                <Eye size={12} />
+                              </button>
+                            )}
+                            <button className="btn-icon" onClick={() => handleEditExpense(exp)} title="Edit Transaction">
+                              <Edit3 size={12} />
+                            </button>
+                            <button 
+                              className="btn-icon delete" 
+                              onClick={() => {
+                                if (window.confirm(`Are you sure you want to delete this expense record?`)) {
+                                  onDeleteExpense(exp.id);
+                                  onShowToast("Deleted transaction.", "info");
+                                }
+                              }}
+                              title="Delete transaction"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}

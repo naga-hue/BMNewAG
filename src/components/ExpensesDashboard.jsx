@@ -2137,9 +2137,17 @@ export default function ExpensesDashboard({
                           <span 
                             onClick={() => {
                               setAllocatingRowId(exp.id);
-                              setAllocatingType(exp.allocationType || 'company');
-                              setAllocatingTarget(exp.allocationTarget || []);
-                              setAllocatingStaffIds(exp.allocationType === 'staff' ? (Array.isArray(exp.allocationTarget) ? exp.allocationTarget : []) : []);
+                              const rawTarget = exp.allocationTarget || [];
+                              const targetArray = Array.isArray(rawTarget) ? rawTarget : [rawTarget].filter(Boolean);
+                              const type = exp.allocationType || 'company';
+                              const validTarget = type === 'company'
+                                ? targetArray.filter(tid => companies.some(c => c.id === tid))
+                                : type === 'department'
+                                  ? targetArray.filter(d => allAvailableDepts.includes(d))
+                                  : targetArray;
+                              setAllocatingType(type);
+                              setAllocatingTarget(validTarget);
+                              setAllocatingStaffIds(type === 'staff' ? targetArray.filter(sid => staff.some(s => s.id === sid)) : []);
                               setExpandedSections({
                                 company: exp.allocationType === 'company' || !exp.allocationType,
                                 department: exp.allocationType === 'department',
@@ -2584,8 +2592,16 @@ export default function ExpensesDashboard({
                             className="btn-secondary"
                             onClick={() => {
                               setAllocatingRowId(row.id);
-                              setAllocatingType(row.allocationType || 'company');
-                              setAllocatingTarget(row.allocationTarget || '');
+                              const rawTarget = row.allocationTarget || [];
+                              const targetArray = Array.isArray(rawTarget) ? rawTarget : [rawTarget].filter(Boolean);
+                              const type = row.allocationType || 'company';
+                              const validTarget = type === 'company'
+                                ? targetArray.filter(tid => companies.some(c => c.id === tid))
+                                : type === 'department'
+                                  ? targetArray.filter(d => allAvailableDepts.includes(d))
+                                  : targetArray;
+                              setAllocatingType(type);
+                              setAllocatingTarget(validTarget);
                               setAllocatingStaffIds(row.selectedStaffIds || []);
                               setAllocationSearch('');
                             }}
@@ -3621,9 +3637,17 @@ export default function ExpensesDashboard({
                                     const original = expenses.find(exp => exp.id === t.id);
                                     if (original) {
                                       setAllocatingRowId(original.id);
-                                      setAllocatingType(original.allocationType || 'company');
-                                      setAllocatingTarget(original.allocationTarget || []);
-                                      setAllocatingStaffIds(original.allocationType === 'staff' ? (Array.isArray(original.allocationTarget) ? original.allocationTarget : []) : []);
+                                      const rawTarget = original.allocationTarget || [];
+                                      const targetArray = Array.isArray(rawTarget) ? rawTarget : [rawTarget].filter(Boolean);
+                                      const type = original.allocationType || 'company';
+                                      const validTarget = type === 'company'
+                                        ? targetArray.filter(tid => companies.some(c => c.id === tid))
+                                        : type === 'department'
+                                          ? targetArray.filter(d => allAvailableDepts.includes(d))
+                                          : targetArray;
+                                      setAllocatingType(type);
+                                      setAllocatingTarget(validTarget);
+                                      setAllocatingStaffIds(type === 'staff' ? targetArray.filter(sid => staff.some(s => s.id === sid)) : []);
                                       setExpandedSections({
                                         company: original.allocationType === 'company' || !original.allocationType,
                                         department: original.allocationType === 'department',
@@ -4260,19 +4284,26 @@ export default function ExpensesDashboard({
                 style={{ flex: 1, justifyContent: 'center' }}
                 onClick={() => {
                   let finalTarget = allocatingTarget;
-                  if (allocatingType === 'staff') {
+                  if (allocatingType === 'company') {
+                    finalTarget = (Array.isArray(finalTarget) ? finalTarget : [finalTarget].filter(Boolean))
+                      .filter(tid => companies.some(c => c.id === tid));
+                    if (finalTarget.length === 0 && companies[0]) {
+                      finalTarget = [companies[0].id];
+                    }
+                  } else if (allocatingType === 'department') {
+                    finalTarget = (Array.isArray(finalTarget) ? finalTarget : [finalTarget].filter(Boolean))
+                      .filter(d => allAvailableDepts.includes(d));
+                    if (finalTarget.length === 0 && allAvailableDepts[0]) {
+                      finalTarget = [allAvailableDepts[0]];
+                    }
+                  } else if (allocatingType === 'staff') {
                     if (allocatingStaffIds.length === 0) {
                       onShowToast("Please select at least one staff member.", "warning");
                       return;
                     }
-                    finalTarget = allocatingStaffIds;
+                    finalTarget = allocatingStaffIds.filter(sid => staff.some(s => s.id === sid));
                   } else if (allocatingType === 'global') {
                     finalTarget = [];
-                  } else {
-                    if (!finalTarget || finalTarget.length === 0) {
-                      if (allocatingType === 'company') finalTarget = companies[0] ? [companies[0].id] : [];
-                      if (allocatingType === 'department') finalTarget = allAvailableDepts[0] ? [allAvailableDepts[0]] : [];
-                    }
                   }
 
                   if (allocatingRowId === 'bulk') {

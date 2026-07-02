@@ -230,6 +230,25 @@ export default function ExpensesDashboard({
     return sortOrder === 'asc' ? ' ▲' : ' ▼';
   };
 
+  // High Risk Confirmation Modal states
+  const [showHighRiskModal, setShowHighRiskModal] = useState(false);
+  const [highRiskAction, setHighRiskAction] = useState(null); // 'reset' or 'bulk-delete'
+  const [highRiskMessage, setHighRiskMessage] = useState('');
+  const [highRiskTimer, setHighRiskTimer] = useState(20);
+  const [highRiskUnderstandChecked, setHighRiskUnderstandChecked] = useState(false);
+
+  useEffect(() => {
+    let interval = null;
+    if (showHighRiskModal && highRiskTimer > 0) {
+      interval = setInterval(() => {
+        setHighRiskTimer(prev => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [showHighRiskModal, highRiskTimer]);
+
   // Manual Expense Form states
   const [showForm, setShowForm] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
@@ -953,41 +972,53 @@ export default function ExpensesDashboard({
     }
   };
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (selectedExpenseIds.length === 0) return;
-    if (!window.confirm(`Are you sure you want to delete ${selectedExpenseIds.length} expense records?`)) {
-      return;
-    }
-    try {
-      let count = 0;
-      for (const id of selectedExpenseIds) {
-        await onDeleteExpense(id);
-        count++;
-      }
-      onShowToast(`Permanently deleted ${count} expense records.`, "success");
-      setSelectedExpenseIds([]);
-    } catch (err) {
-      onShowToast(`Error bulk deleting: ${err.message}`, "warning");
-    }
+    setHighRiskAction('bulk-delete');
+    setHighRiskMessage(`You are about to permanently delete ${selectedExpenseIds.length} selected expense transaction records from the ledger database.`);
+    setHighRiskTimer(20);
+    setHighRiskUnderstandChecked(false);
+    setShowHighRiskModal(true);
   };
 
-  const handleResetExpenses = async () => {
+  const handleResetExpenses = () => {
     const targetList = expenses || [];
     if (targetList.length === 0) {
       onShowToast("Ledger is already empty.", "info");
       return;
     }
+    setHighRiskAction('reset');
+    setHighRiskMessage(`🚨 DANGER ZONE: You are about to permanently reset and wipe the entire transaction ledger database (ALL ${targetList.length} records).`);
+    setHighRiskTimer(20);
+    setHighRiskUnderstandChecked(false);
+    setShowHighRiskModal(true);
+  };
 
-    if (!window.confirm(`🚨 DANGER ZONE: This will permanently delete ALL ${targetList.length} expense records in the database. This action cannot be undone!\n\nAre you absolutely sure you want to proceed?`)) {
-      return;
-    }
-
-    try {
-      // Parallel delete triggers to avoid sequence locks and freeze delays
-      await Promise.all(targetList.map(exp => onDeleteExpense(exp.id)));
-      onShowToast("All expense ledger entries have been successfully reset.", "success");
-    } catch (err) {
-      onShowToast(`Error resetting expenses: ${err.message}`, "warning");
+  const handleExecuteHighRiskAction = async () => {
+    if (highRiskTimer > 0 || !highRiskUnderstandChecked) return;
+    
+    setShowHighRiskModal(false);
+    
+    if (highRiskAction === 'reset') {
+      try {
+        const targetList = expenses || [];
+        await Promise.all(targetList.map(exp => onDeleteExpense(exp.id)));
+        onShowToast("All expense ledger entries have been successfully reset.", "success");
+      } catch (err) {
+        onShowToast(`Error resetting expenses: ${err.message}`, "warning");
+      }
+    } else if (highRiskAction === 'bulk-delete') {
+      try {
+        let count = 0;
+        for (const id of selectedExpenseIds) {
+          await onDeleteExpense(id);
+          count++;
+        }
+        onShowToast(`Permanently deleted ${count} expense records.`, "success");
+        setSelectedExpenseIds([]);
+      } catch (err) {
+        onShowToast(`Error bulk deleting: ${err.message}`, "warning");
+      }
     }
   };
 
@@ -4116,7 +4147,127 @@ export default function ExpensesDashboard({
         </div>
       )}
 
+      {/* High Risk Action Confirmation Modal */}
+      {showHighRiskModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px',
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-primary)',
+            borderRadius: '12px',
+            border: '2px solid var(--danger)',
+            padding: '24px',
+            width: '100%',
+            maxWidth: '500px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2)',
+            animation: 'fadeIn 0.2s',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--danger)', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <AlertTriangle size={32} />
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>🚨 High-Risk Mass Deletion Warning</h3>
+            </div>
+            
+            <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5, color: 'var(--text-primary)' }}>
+              {highRiskMessage}
+            </p>
 
+            <div style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.06)',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              borderRadius: '8px',
+              padding: '12px',
+              fontSize: '12px',
+              color: 'var(--danger)',
+              fontWeight: 500
+            }}>
+              ⚠️ WARNING: This action is permanent and cannot be undone. All apportionments and calculations associated with these transactions will be recalculated.
+            </div>
+
+            <label style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              lineHeight: 1.4,
+              userSelect: 'none',
+              padding: '8px',
+              borderRadius: '6px',
+              border: '1px solid var(--border-color)',
+              backgroundColor: 'var(--bg-secondary)'
+            }}>
+              <input 
+                type="checkbox"
+                checked={highRiskUnderstandChecked}
+                onChange={(e) => setHighRiskUnderstandChecked(e.target.checked)}
+                style={{ marginTop: '3px' }}
+              />
+              <span>I understand that this action is irreversible and permanently removes these records from the server.</span>
+            </label>
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '12px',
+              backgroundColor: 'var(--bg-secondary)',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              fontSize: '13px',
+              fontWeight: 600,
+              color: highRiskTimer > 0 ? 'var(--text-secondary)' : 'var(--success)'
+            }}>
+              {highRiskTimer > 0 ? (
+                <span>⏳ Please wait {highRiskTimer} seconds to confirm...</span>
+              ) : (
+                <span>✅ Safety verification unlocked. You may confirm.</span>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+              <button 
+                type="button" 
+                className="btn-primary" 
+                disabled={highRiskTimer > 0 || !highRiskUnderstandChecked}
+                onClick={handleExecuteHighRiskAction}
+                style={{
+                  flex: 1,
+                  justifyContent: 'center',
+                  backgroundColor: (highRiskTimer > 0 || !highRiskUnderstandChecked) ? 'var(--bg-secondary)' : 'var(--danger)',
+                  borderColor: (highRiskTimer > 0 || !highRiskUnderstandChecked) ? 'var(--border-color)' : 'var(--danger)',
+                  color: (highRiskTimer > 0 || !highRiskUnderstandChecked) ? 'var(--text-muted)' : '#ffffff',
+                  opacity: (highRiskTimer > 0 || !highRiskUnderstandChecked) ? 0.6 : 1,
+                  cursor: (highRiskTimer > 0 || !highRiskUnderstandChecked) ? 'not-allowed' : 'pointer'
+                }}
+              >
+                Confirm Deletion
+              </button>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => setShowHighRiskModal(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -56,7 +56,7 @@ export default function ExpensesDashboard({
   onSavePlacement,
   onShowToast
 }) {
-  const [activeSubTab, setActiveSubTab] = useState('ledger'); // ledger, statement, settings
+  const [activeSubTab, setActiveSubTab] = useState('matrix'); // matrix, ledger, statement, settings
 
   // Compile list of unique departments from both company profiles and active staff records
   const allAvailableDepts = useMemo(() => {
@@ -2464,63 +2464,84 @@ export default function ExpensesDashboard({
           });
         }
 
-        // 2. Build the hierarchical tree data structure
+        // 2. Build the hierarchical tree data structure: Companies -> Nominals -> Parties
         const computedMatrixData = [];
         companies.forEach(company => {
           const companyStaff = staff.filter(s => s.companyId === company.id);
-          const companyDepts = Array.from(new Set(companyStaff.map(s => s.department).filter(Boolean))).sort();
 
           const companyMonths = Array(12).fill(0);
           const companyTransactionsByMonth = Array.from({ length: 12 }, () => []);
-          const deptRows = [];
+          const nominalsMap = {};
 
-          companyDepts.forEach(dept => {
-            const deptStaff = companyStaff.filter(s => s.department === dept);
-            const deptMonths = Array(12).fill(0);
-            const deptTransactionsByMonth = Array.from({ length: 12 }, () => []);
-            const staffRows = [];
-
-            deptStaff.forEach(member => {
-              const memberMonths = staffOverheadMap[member.id] || Array(12).fill(0);
-              const memberTransactionsByMonth = staffTransactionsMap[member.id] || Array.from({ length: 12 }, () => []);
-              const memberTotal = memberMonths.reduce((a, b) => a + b, 0);
-
-              staffRows.push({
-                id: `member-${company.id}-${dept}-${member.id}`,
-                name: member.fullName,
-                subtitle: member.jobTitle,
-                type: 'member',
-                targetVal: member.fullName,
-                months: memberMonths,
-                transactionsByMonth: memberTransactionsByMonth,
-                total: memberTotal
-              });
-
-              for (let m = 0; m < 12; m++) {
-                deptMonths[m] += memberMonths[m];
-                deptTransactionsByMonth[m].push(...memberTransactionsByMonth[m]);
-              }
-            });
-
-            const deptTotal = deptMonths.reduce((a, b) => a + b, 0);
-            deptRows.push({
-              id: `dept-${company.id}-${dept}`,
-              name: dept,
-              type: 'department',
-              targetVal: dept,
-              months: deptMonths,
-              transactionsByMonth: deptTransactionsByMonth,
-              total: deptTotal,
-              children: staffRows
-            });
+          companyStaff.forEach(member => {
+            const memberTransactionsByMonth = staffTransactionsMap[member.id] || Array.from({ length: 12 }, () => []);
 
             for (let m = 0; m < 12; m++) {
-              companyMonths[m] += deptMonths[m];
-              companyTransactionsByMonth[m].push(...deptTransactionsByMonth[m]);
+              const monthTrans = memberTransactionsByMonth[m] || [];
+              monthTrans.forEach(t => {
+                const nom = t.nominalCode || 'Uncategorized';
+                const payee = t.payee || 'Unknown Payee';
+                const share = t.apportionedShare !== undefined ? t.apportionedShare : toGBP(t.amount, t.currency);
+
+                if (!nominalsMap[nom]) {
+                  nominalsMap[nom] = {
+                    months: Array(12).fill(0),
+                    transactionsByMonth: Array.from({ length: 12 }, () => []),
+                    parties: {}
+                  };
+                }
+
+                nominalsMap[nom].months[m] += share;
+                nominalsMap[nom].transactionsByMonth[m].push(t);
+
+                if (!nominalsMap[nom].parties[payee]) {
+                  nominalsMap[nom].parties[payee] = {
+                    months: Array(12).fill(0),
+                    transactionsByMonth: Array.from({ length: 12 }, () => [])
+                  };
+                }
+
+                nominalsMap[nom].parties[payee].months[m] += share;
+                nominalsMap[nom].parties[payee].transactionsByMonth[m].push(t);
+
+                // Add to company totals
+                companyMonths[m] += share;
+                companyTransactionsByMonth[m].push(t);
+              });
             }
           });
 
-          const companyTotal = companyMonths.reduce((a, b) => a + b, 0);
+          const nominalRows = [];
+          Object.keys(nominalsMap).sort().forEach(nom => {
+            const nomData = nominalsMap[nom];
+            const partyRows = [];
+
+            Object.keys(nomData.parties).sort().forEach(payee => {
+              const partyData = nomData.parties[payee];
+              partyRows.push({
+                id: `party-${company.id}-${nom}-${payee}`,
+                name: payee,
+                type: 'party',
+                targetVal: payee,
+                months: partyData.months,
+                transactionsByMonth: partyData.transactionsByMonth,
+                total: partyData.months.reduce((a, b) => a + b, 0),
+                children: []
+              });
+            });
+
+            nominalRows.push({
+              id: `nominal-${company.id}-${nom}`,
+              name: nom,
+              type: 'nominal',
+              targetVal: nom,
+              months: nomData.months,
+              transactionsByMonth: nomData.transactionsByMonth,
+              total: nomData.months.reduce((a, b) => a + b, 0),
+              children: partyRows
+            });
+          });
+
           computedMatrixData.push({
             id: `company-${company.id}`,
             name: company.name,
@@ -2528,8 +2549,8 @@ export default function ExpensesDashboard({
             targetVal: company.name,
             months: companyMonths,
             transactionsByMonth: companyTransactionsByMonth,
-            total: companyTotal,
-            children: deptRows
+            total: companyMonths.reduce((a, b) => a + b, 0),
+            children: nominalRows
           });
         });
 
@@ -2548,11 +2569,11 @@ export default function ExpensesDashboard({
         computedMatrixData.forEach(compRow => {
           flatRowsForMatrix.push(compRow);
           if (matrixExpandedKeys[compRow.id]) {
-            compRow.children.forEach(deptRow => {
-              flatRowsForMatrix.push(deptRow);
-              if (matrixExpandedKeys[deptRow.id]) {
-                deptRow.children.forEach(memberRow => {
-                  flatRowsForMatrix.push(memberRow);
+            compRow.children.forEach(nomRow => {
+              flatRowsForMatrix.push(nomRow);
+              if (matrixExpandedKeys[nomRow.id]) {
+                nomRow.children.forEach(partyRow => {
+                  flatRowsForMatrix.push(partyRow);
                 });
               }
             });
@@ -2570,8 +2591,8 @@ export default function ExpensesDashboard({
           const newKeys = {};
           computedMatrixData.forEach(compRow => {
             newKeys[compRow.id] = true;
-            compRow.children.forEach(deptRow => {
-              newKeys[deptRow.id] = true;
+            compRow.children.forEach(nomRow => {
+              newKeys[nomRow.id] = true;
             });
           });
           setMatrixExpandedKeys(newKeys);
@@ -2634,8 +2655,8 @@ export default function ExpensesDashboard({
                   ) : (
                     flatRowsForMatrix.map(row => {
                       const isCompany = row.type === 'company';
-                      const isDept = row.type === 'department';
-                      const isMember = row.type === 'member';
+                      const isDept = row.type === 'nominal';
+                      const isMember = row.type === 'party';
 
                       const paddingLeft = isCompany ? '12px' : isDept ? '32px' : '52px';
                       const hasChildren = isCompany || isDept;

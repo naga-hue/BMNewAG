@@ -141,7 +141,7 @@ export default function PayrollDashboard({
       req.startDate.substring(0, 7) === monthKey
     ) || [];
     const leaveDays = approvedLeaves.reduce((sum, req) => sum + (Number(req.totalDays) || 0), 0);
-    const totalBusinessDays = getBusinessDaysInMonth(monthKey);
+    const totalBusinessDays = getBusinessDaysInMonth(monthKey, staffMember);
     const attendanceDays = Math.max(0, totalBusinessDays - leaveDays);
 
     const printWindow = window.open('', '_blank');
@@ -693,7 +693,7 @@ export default function PayrollDashboard({
     return totalCost;
   };
 
-  const getBusinessDaysInMonth = (monthKey) => {
+  const getBusinessDaysInMonth = (monthKey, staffMember) => {
     const parts = monthKey.split('-');
     const year = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1;
@@ -703,7 +703,13 @@ export default function PayrollDashboard({
     for (let d = 1; d <= days; d++) {
       const dayOfWeek = new Date(year, month, d).getDay();
       if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-        count++;
+        const mm = String(month + 1).padStart(2, '0');
+        const dd = String(d).padStart(2, '0');
+        const dateString = `${year}-${mm}-${dd}`;
+        const isHoliday = holidays.some(h => h.companyId === staffMember?.companyId && h.date === dateString);
+        if (!isHoliday) {
+          count++;
+        }
       }
     }
     return count || 22;
@@ -746,7 +752,7 @@ export default function PayrollDashboard({
 
     if (policy) {
       if (policy.type === 'freelance') {
-        const totalBusinessDays = getBusinessDaysInMonth(month);
+        const totalBusinessDays = getBusinessDaysInMonth(month, staffMember);
         const approvedLeaves = leaveRequests.filter(req => 
           req.staffId === staffMember.id && 
           req.status === 'approved' && 
@@ -1546,6 +1552,9 @@ ${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleSt
                     value={expectedDaysPerMonth} 
                     onChange={(e) => setExpectedDaysPerMonth(e.target.value)} 
                   />
+                  <span style={{ display: 'block', fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    💡 Calculated automatically based on weekends & public holidays. Enter fallback estimate (e.g. 0 to calculate dynamically).
+                  </span>
                 </div>
               </div>
             )}

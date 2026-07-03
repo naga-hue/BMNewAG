@@ -72,6 +72,7 @@ export default function ReportsDashboard({
   payrollRecords = [],
   payrollPolicies = [],
   leaveRequests = [],
+  holidays = [],
   onShowToast
 }) {
   const [activeTab, setActiveTab] = useState('consolidated'); // consolidated, divisional, departmental, forecast, ratios, leagues
@@ -312,7 +313,7 @@ export default function ReportsDashboard({
     return calculateCashReceivedCommission(member, policy, monthKey, staff, companies, placements);
   };
 
-  const getBusinessDaysInMonth = (monthKey) => {
+  const getBusinessDaysInMonth = (monthKey, staffMember) => {
     const parts = monthKey.split('-');
     const year = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1;
@@ -322,7 +323,13 @@ export default function ReportsDashboard({
     for (let d = 1; d <= days; d++) {
       const dayOfWeek = new Date(year, month, d).getDay();
       if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-        count++;
+        const mm = String(month + 1).padStart(2, '0');
+        const dd = String(d).padStart(2, '0');
+        const dateString = `${year}-${mm}-${dd}`;
+        const isHoliday = holidays.some(h => h.companyId === staffMember?.companyId && h.date === dateString);
+        if (!isHoliday) {
+          count++;
+        }
       }
     }
     return count || 22;
@@ -346,7 +353,7 @@ export default function ReportsDashboard({
       const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
 
       if (policy && policy.type === 'freelance') {
-        const totalBusinessDays = getBusinessDaysInMonth(monthKey);
+        const totalBusinessDays = getBusinessDaysInMonth(monthKey, s);
         const approvedLeaves = leaveRequests.filter(req => 
           req.staffId === s.id && 
           req.status === 'approved' && 

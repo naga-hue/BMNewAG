@@ -64,7 +64,7 @@ export default function LeavesDashboard({
   const [holidayName, setHolidayName] = useState('');
   const [holidayDate, setHolidayDate] = useState('');
   const [holidayCompanyId, setHolidayCompanyId] = useState('All');
-  const [holidayAddCompanyId, setHolidayAddCompanyId] = useState(companies[0]?.id || '');
+  const [holidayAddCompanyIds, setHolidayAddCompanyIds] = useState([]);
   const [showHolidayForm, setShowHolidayForm] = useState(false);
 
   // Search & Filter states
@@ -141,23 +141,26 @@ export default function LeavesDashboard({
   // Submit Public Holiday
   const handleHolidaySubmit = async (e) => {
     e.preventDefault();
-    if (!holidayName.trim() || !holidayDate || !holidayAddCompanyId) {
-      onShowToast("Please fill in all holiday details.", "warning");
+    if (!holidayName.trim() || !holidayDate || holidayAddCompanyIds.length === 0) {
+      onShowToast("Please fill in all holiday details and check at least one company.", "warning");
       return;
     }
 
-    const newHoliday = {
-      id: `hol-${Date.now()}`,
-      companyId: holidayAddCompanyId,
-      name: holidayName.trim(),
-      date: holidayDate
-    };
-
     try {
-      await onSaveHoliday(newHoliday);
-      onShowToast(`Created public holiday "${holidayName}"`, "success");
+      for (let i = 0; i < holidayAddCompanyIds.length; i++) {
+        const cid = holidayAddCompanyIds[i];
+        const newHoliday = {
+          id: `hol-${Date.now()}-${i}`,
+          companyId: cid,
+          name: holidayName.trim(),
+          date: holidayDate
+        };
+        await onSaveHoliday(newHoliday);
+      }
+      onShowToast(`Created public holiday "${holidayName}" for ${holidayAddCompanyIds.length} companies.`, "success");
       setHolidayName('');
       setHolidayDate('');
+      setHolidayAddCompanyIds([]);
       setShowHolidayForm(false);
     } catch (err) {
       onShowToast(`Error saving holiday: ${err.message}`, "warning");
@@ -780,19 +783,70 @@ export default function LeavesDashboard({
                   />
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Company Group Roster <span>*</span></label>
-                  <select 
-                    className="select-filter"
-                    value={holidayAddCompanyId}
-                    onChange={(e) => setHolidayAddCompanyId(e.target.value)}
-                    style={{ width: '100%', padding: '10px' }}
-                    required
-                  >
-                    {companies.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} ({c.country})</option>
-                    ))}
-                  </select>
+                <div className="form-group" style={{ gridColumn: 'span 3' }}>
+                  <label className="form-label">Applicable Companies (Check all that apply) <span>*</span></label>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                    gap: '8px',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '12px',
+                    maxHeight: '130px',
+                    overflowY: 'auto',
+                    backgroundColor: 'var(--bg-secondary)',
+                    width: '100%'
+                  }}>
+                    <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', marginBottom: '4px' }}>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => setHolidayAddCompanyIds(companies.map(c => c.id))}
+                        style={{ padding: '2px 8px', fontSize: '10px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => setHolidayAddCompanyIds([])}
+                        style={{ padding: '2px 8px', fontSize: '10px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        Deselect All
+                      </button>
+                    </div>
+                    {companies.map(c => {
+                      const isChecked = holidayAddCompanyIds.includes(c.id);
+                      return (
+                        <label 
+                          key={c.id} 
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '8px', 
+                            fontSize: '12px', 
+                            cursor: 'pointer',
+                            padding: '4px',
+                            borderRadius: '4px',
+                            backgroundColor: isChecked ? 'rgba(99,102,241,0.05)' : 'transparent'
+                          }}
+                        >
+                          <input 
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {
+                              setHolidayAddCompanyIds(prev => 
+                                prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id]
+                              );
+                            }}
+                          />
+                          <span style={{ fontWeight: isChecked ? 600 : 400 }}>
+                            {c.name} <span style={{ color: 'var(--text-muted)' }}>({c.country})</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 

@@ -313,6 +313,8 @@ export default function ExpensesDashboard({
   const [allocationType, setAllocationType] = useState('company'); // company, department, staff
   const [allocationTarget, setAllocationTarget] = useState([]);
   const [selectedStaffIds, setSelectedStaffIds] = useState([]);
+  const [allocationMode, setAllocationMode] = useState('auto'); // auto, manual
+  const [manualAllocationShares, setManualAllocationShares] = useState({}); // { targetId: percentage }
 
   // Linked placement/sales invoice (for credits)
   const [linkedPlacementId, setLinkedPlacementId] = useState('');
@@ -330,6 +332,8 @@ export default function ExpensesDashboard({
   const [allocatingType, setAllocatingType] = useState('company');
   const [allocatingTarget, setAllocatingTarget] = useState([]);
   const [allocatingStaffIds, setAllocatingStaffIds] = useState([]);
+  const [allocatingMode, setAllocatingMode] = useState('auto'); // auto, manual
+  const [allocatingManualShares, setAllocatingManualShares] = useState({}); // { targetId: percentage }
   const [expandedSections, setExpandedSections] = useState({
     company: true,
     department: false,
@@ -423,6 +427,8 @@ export default function ExpensesDashboard({
     setAllocationType(exp.allocationType || 'company');
     setRecipientType(exp.recipientType || 'other');
     setRecipientId(exp.recipientId || '');
+    setAllocationMode(exp.allocationMode || 'auto');
+    setManualAllocationShares(exp.manualAllocationShares || {});
 
     if (exp.allocationType === 'staff') {
       setSelectedStaffIds(Array.isArray(exp.allocationTarget) ? exp.allocationTarget : []);
@@ -500,6 +506,8 @@ export default function ExpensesDashboard({
       recipientId,
       allocationType,
       allocationTarget: target,
+      allocationMode,
+      manualAllocationShares,
       linkedPlacementId: linkedPlacementId || null,
       bankCompanyId,
       bankAccountId,
@@ -546,6 +554,8 @@ export default function ExpensesDashboard({
       setAllocationType('company');
       setAllocationTarget([]);
       setSelectedStaffIds([]);
+      setAllocationMode('auto');
+      setManualAllocationShares({});
       setLinkedPlacementId('');
       setManualBankAccountId('');
       setEditingExpenseId(null);
@@ -1380,35 +1390,74 @@ export default function ExpensesDashboard({
         if (exp.allocationType === 'company') {
           const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
           if (targets.length > 0) {
-            const eligibleStaff = activeStaff.filter(s => targets.includes(s.companyId));
-            const totalHead = eligibleStaff.length || 1;
-            const perStaffShare = gbpAmt / totalHead;
-            eligibleStaff.forEach(s => {
-              staffOverhead[s.id][mIdx] += perStaffShare;
-              staffTrans[s.id][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: 'Company Apportionment' });
-            });
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(compId => {
+                const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
+                const companyShare = gbpAmt * (percent / 100);
+                const compStaff = activeStaff.filter(s => s.companyId === compId);
+                const compHead = compStaff.length || 1;
+                const perStaffShare = companyShare / compHead;
+                compStaff.forEach(s => {
+                  staffOverhead[s.id][mIdx] += perStaffShare;
+                  staffTrans[s.id][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: `Company Custom Split (${percent}%)` });
+                });
+              });
+            } else {
+              const eligibleStaff = activeStaff.filter(s => targets.includes(s.companyId));
+              const totalHead = eligibleStaff.length || 1;
+              const perStaffShare = gbpAmt / totalHead;
+              eligibleStaff.forEach(s => {
+                staffOverhead[s.id][mIdx] += perStaffShare;
+                staffTrans[s.id][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: 'Company Apportionment' });
+              });
+            }
           }
         } else if (exp.allocationType === 'department') {
           const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
           if (targets.length > 0) {
-            const eligibleStaff = activeStaff.filter(s => targets.includes(s.department));
-            const totalHead = eligibleStaff.length || 1;
-            const perStaffShare = gbpAmt / totalHead;
-            eligibleStaff.forEach(s => {
-              staffOverhead[s.id][mIdx] += perStaffShare;
-              staffTrans[s.id][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: 'Department Apportionment' });
-            });
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(dept => {
+                const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
+                const deptShare = gbpAmt * (percent / 100);
+                const deptStaff = activeStaff.filter(s => s.department === dept);
+                const deptHead = deptStaff.length || 1;
+                const perStaffShare = deptShare / deptHead;
+                deptStaff.forEach(s => {
+                  staffOverhead[s.id][mIdx] += perStaffShare;
+                  staffTrans[s.id][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: `Department Custom Split (${percent}%)` });
+                });
+              });
+            } else {
+              const eligibleStaff = activeStaff.filter(s => targets.includes(s.department));
+              const totalHead = eligibleStaff.length || 1;
+              const perStaffShare = gbpAmt / totalHead;
+              eligibleStaff.forEach(s => {
+                staffOverhead[s.id][mIdx] += perStaffShare;
+                staffTrans[s.id][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: 'Department Apportionment' });
+              });
+            }
           }
         } else if (exp.allocationType === 'staff') {
           const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
           if (targets.length > 0) {
-            const perStaffShare = gbpAmt / targets.length;
-            targets.forEach(staffId => {
-              if (activeStaffIds.includes(staffId)) {
-                staffOverhead[staffId][mIdx] += perStaffShare;
-                staffTrans[staffId][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: 'Direct Staff Split' });
-              }
-            });
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(staffId => {
+                if (activeStaffIds.includes(staffId)) {
+                  const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
+                  const perStaffShare = gbpAmt * (percent / 100);
+                  staffOverhead[staffId][mIdx] += perStaffShare;
+                  staffTrans[staffId][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: `Direct Staff Custom Split (${percent}%)` });
+                }
+              });
+            } else {
+              const perStaffShare = gbpAmt / targets.length;
+              targets.forEach(staffId => {
+                if (activeStaffIds.includes(staffId)) {
+                  staffOverhead[staffId][mIdx] += perStaffShare;
+                  staffTrans[staffId][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: 'Direct Staff Split' });
+                }
+              });
+            }
           }
         } else {
           const groupHead = activeStaff.length || 1;
@@ -2015,6 +2064,8 @@ export default function ExpensesDashboard({
                       setAllocatingType(allocationType);
                       setAllocatingTarget(allocationTarget);
                       setAllocatingStaffIds(selectedStaffIds);
+                      setAllocatingMode(allocationMode || 'auto');
+                      setAllocatingManualShares(manualAllocationShares || {});
                       setAllocationSearch('');
                     }}
                     style={{ 
@@ -2723,6 +2774,8 @@ export default function ExpensesDashboard({
                               setAllocatingType(type);
                               setAllocatingTarget(validTarget);
                               setAllocatingStaffIds(type === 'staff' ? targetArray.filter(sid => staff.some(s => s.id === sid)) : []);
+                              setAllocatingMode(exp.allocationMode || 'auto');
+                              setAllocatingManualShares(exp.manualAllocationShares || {});
                               setExpandedSections({
                                 company: exp.allocationType === 'company' || !exp.allocationType,
                                 department: exp.allocationType === 'department',
@@ -4222,6 +4275,48 @@ export default function ExpensesDashboard({
               />
             </div>
 
+            {allocatingType !== 'global' && allocatingRowId !== 'bulk' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', backgroundColor: 'var(--bg-secondary)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Split Allocation Mode:</span>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setAllocatingMode('auto')}
+                    style={{
+                      flex: 1,
+                      padding: '6px 12px',
+                      fontSize: '11px',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: allocatingMode === 'auto' ? 'var(--primary)' : 'var(--bg-card)',
+                      color: allocatingMode === 'auto' ? '#fff' : 'var(--text-primary)',
+                      fontWeight: 600
+                    }}
+                  >
+                    Automatic (Staff Weighted)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAllocatingMode('manual')}
+                    style={{
+                      flex: 1,
+                      padding: '6px 12px',
+                      fontSize: '11px',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: allocatingMode === 'manual' ? 'var(--primary)' : 'var(--bg-card)',
+                      color: allocatingMode === 'manual' ? '#fff' : 'var(--text-primary)',
+                      fontWeight: 600
+                    }}
+                  >
+                    Manual Override (%)
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Accordion Tree View Container */}
             <div style={{ 
               maxHeight: '320px', 
@@ -4323,21 +4418,50 @@ export default function ExpensesDashboard({
                             }}
                           >
                             <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: isChecked ? 600 : 'normal' }}>{c.name}</span>
-                            <input 
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={(e) => {
-                                let current = allocatingType === 'company' ? [...allocatingTarget] : [];
-                                if (e.target.checked) {
-                                  if (!current.includes(c.id)) current.push(c.id);
-                                } else {
-                                  current = current.filter(id => id !== c.id);
-                                }
-                                setAllocatingType('company');
-                                setAllocatingTarget(current);
-                                setAllocatingStaffIds([]);
-                              }}
-                            />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              {isChecked && allocatingMode === 'manual' && (
+                                <input 
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  placeholder="%"
+                                  value={allocatingManualShares[c.id] || ''}
+                                  onChange={(e) => {
+                                    const val = Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0));
+                                    setAllocatingManualShares(prev => ({ ...prev, [c.id]: val }));
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{
+                                    width: '55px',
+                                    fontSize: '11px',
+                                    padding: '2px 4px',
+                                    textAlign: 'right',
+                                    backgroundColor: 'var(--bg-card)',
+                                    color: 'var(--text-primary)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '4px'
+                                  }}
+                                />
+                              )}
+                              <input 
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  let current = allocatingType === 'company' ? [...allocatingTarget] : [];
+                                  if (e.target.checked) {
+                                    if (!current.includes(c.id)) current.push(c.id);
+                                  } else {
+                                    current = current.filter(id => id !== c.id);
+                                    const newShares = { ...allocatingManualShares };
+                                    delete newShares[c.id];
+                                    setAllocatingManualShares(newShares);
+                                  }
+                                  setAllocatingType('company');
+                                  setAllocatingTarget(current);
+                                  setAllocatingStaffIds([]);
+                                }}
+                              />
+                            </div>
                           </label>
                         );
                       })}
@@ -4408,21 +4532,50 @@ export default function ExpensesDashboard({
                             }}
                           >
                             <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: isChecked ? 600 : 'normal' }}>{d}</span>
-                            <input 
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={(e) => {
-                                let current = allocatingType === 'department' ? [...allocatingTarget] : [];
-                                if (e.target.checked) {
-                                  if (!current.includes(d)) current.push(d);
-                                } else {
-                                  current = current.filter(name => name !== d);
-                                }
-                                setAllocatingType('department');
-                                setAllocatingTarget(current);
-                                setAllocatingStaffIds([]);
-                              }}
-                            />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              {isChecked && allocatingMode === 'manual' && (
+                                <input 
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  placeholder="%"
+                                  value={allocatingManualShares[d] || ''}
+                                  onChange={(e) => {
+                                    const val = Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0));
+                                    setAllocatingManualShares(prev => ({ ...prev, [d]: val }));
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{
+                                    width: '55px',
+                                    fontSize: '11px',
+                                    padding: '2px 4px',
+                                    textAlign: 'right',
+                                    backgroundColor: 'var(--bg-card)',
+                                    color: 'var(--text-primary)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '4px'
+                                  }}
+                                />
+                              )}
+                              <input 
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  let current = allocatingType === 'department' ? [...allocatingTarget] : [];
+                                  if (e.target.checked) {
+                                    if (!current.includes(d)) current.push(d);
+                                  } else {
+                                    current = current.filter(name => name !== d);
+                                    const newShares = { ...allocatingManualShares };
+                                    delete newShares[d];
+                                    setAllocatingManualShares(newShares);
+                                  }
+                                  setAllocatingType('department');
+                                  setAllocatingTarget(current);
+                                  setAllocatingStaffIds([]);
+                                }}
+                              />
+                            </div>
                           </label>
                         );
                       })}
@@ -4496,21 +4649,50 @@ export default function ExpensesDashboard({
                               <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: isChecked ? 600 : 'normal' }}>{s.fullName}</span>
                               <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{s.department || 'No Dept'}</span>
                             </div>
-                            <input 
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={(e) => {
-                                let current = allocatingType === 'staff' ? [...allocatingStaffIds] : [];
-                                if (e.target.checked) {
-                                  if (!current.includes(s.id)) current.push(s.id);
-                                } else {
-                                  current = current.filter(id => id !== s.id);
-                                }
-                                setAllocatingType('staff');
-                                setAllocatingStaffIds(current);
-                                setAllocatingTarget([]);
-                              }}
-                            />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              {isChecked && allocatingMode === 'manual' && (
+                                <input 
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  placeholder="%"
+                                  value={allocatingManualShares[s.id] || ''}
+                                  onChange={(e) => {
+                                    const val = Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0));
+                                    setAllocatingManualShares(prev => ({ ...prev, [s.id]: val }));
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{
+                                    width: '55px',
+                                    fontSize: '11px',
+                                    padding: '2px 4px',
+                                    textAlign: 'right',
+                                    backgroundColor: 'var(--bg-card)',
+                                    color: 'var(--text-primary)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '4px'
+                                  }}
+                                />
+                              )}
+                              <input 
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  let current = allocatingType === 'staff' ? [...allocatingStaffIds] : [];
+                                  if (e.target.checked) {
+                                    if (!current.includes(s.id)) current.push(s.id);
+                                  } else {
+                                    current = current.filter(id => id !== s.id);
+                                    const newShares = { ...allocatingManualShares };
+                                    delete newShares[s.id];
+                                    setAllocatingManualShares(newShares);
+                                  }
+                                  setAllocatingType('staff');
+                                  setAllocatingStaffIds(current);
+                                  setAllocatingTarget([]);
+                                }}
+                              />
+                            </div>
                           </label>
                         );
                       })}
@@ -4553,6 +4735,18 @@ export default function ExpensesDashboard({
                     finalTarget = [];
                   }
 
+
+                  if (allocatingType !== 'global' && allocatingRowId !== 'bulk' && allocatingMode === 'manual') {
+                    let totalPercent = 0;
+                    finalTarget.forEach(tid => {
+                      totalPercent += parseInt(allocatingManualShares[tid] || 0, 10);
+                    });
+                    if (totalPercent !== 100) {
+                      onShowToast(`Manual split percentages must sum to exactly 100% (currently ${totalPercent}%).`, "warning");
+                      return;
+                    }
+                  }
+
                   if (allocatingRowId === 'bulk') {
                     handleBulkUpdateAllocation(allocatingType, finalTarget);
                   } else if (allocatingRowId === 'manual') {
@@ -4564,6 +4758,8 @@ export default function ExpensesDashboard({
                       setAllocationTarget(finalTarget);
                       setSelectedStaffIds([]);
                     }
+                    setAllocationMode(allocatingMode);
+                    setManualAllocationShares(allocatingManualShares);
                   } else if (!expenses.some(e => e.id === allocatingRowId)) {
                     handleUpdateCategorizedRow(allocatingRowId, 'allocationType', allocatingType);
                     if (allocatingType === 'staff') {
@@ -4573,13 +4769,17 @@ export default function ExpensesDashboard({
                       handleUpdateCategorizedRow(allocatingRowId, 'allocationTarget', finalTarget);
                       handleUpdateCategorizedRow(allocatingRowId, 'selectedStaffIds', []);
                     }
+                    handleUpdateCategorizedRow(allocatingRowId, 'allocationMode', allocatingMode);
+                    handleUpdateCategorizedRow(allocatingRowId, 'manualAllocationShares', allocatingManualShares);
                   } else {
                     const original = expenses.find(e => e.id === allocatingRowId);
                     if (original) {
                       onSaveExpense({
                         ...original,
                         allocationType: allocatingType,
-                        allocationTarget: finalTarget
+                        allocationTarget: finalTarget,
+                        allocationMode: allocatingMode,
+                        manualAllocationShares: allocatingManualShares
                       });
                       onShowToast("Cost allocation updated for transaction.", "success");
                     }
@@ -5056,6 +5256,8 @@ export default function ExpensesDashboard({
                                 setAllocatingType(type);
                                 setAllocatingTarget(validTarget);
                                 setAllocatingStaffIds(type === 'staff' ? targetArray.filter(sid => staff.some(s => s.id === sid)) : []);
+                                setAllocatingMode(original.allocationMode || 'auto');
+                                setAllocatingManualShares(original.manualAllocationShares || {});
                                 setExpandedSections({
                                   company: original.allocationType === 'company' || !original.allocationType,
                                   department: original.allocationType === 'department',

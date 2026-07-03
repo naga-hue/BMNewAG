@@ -4096,7 +4096,33 @@ export default function ExpensesDashboard({
                       className="ledger-row-hover"
                       style={{ borderBottom: '1px solid var(--border-color)', transition: 'background-color 0.15s' }}
                     >
-                      <td style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--text-primary)' }}>{row.name}</td>
+                      <td style={{ padding: '10px 16px', fontWeight: 600 }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (row.ytdTotal > 0) {
+                              setDrilldownMonthIdx('ytd');
+                              setDrilldownRowId(row.id);
+                              setDrilldownRowType('recipient');
+                              setDrilldownTargetVal(`${row.name} (Full Year YTD)`);
+                            }
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--text-primary)',
+                            textAlign: 'left',
+                            padding: 0,
+                            cursor: row.ytdTotal > 0 ? 'pointer' : 'default',
+                            fontWeight: 600,
+                            textDecoration: row.ytdTotal > 0 ? 'underline dashed rgba(255,255,255,0.2)' : 'none'
+                          }}
+                          title={row.ytdTotal > 0 ? "Click to view full year YTD details" : ""}
+                          disabled={row.ytdTotal <= 0}
+                        >
+                          {row.name}
+                        </button>
+                      </td>
                       <td style={{ padding: '10px 16px', color: 'var(--text-secondary)' }}>
                         <span style={{
                           fontSize: '10px',
@@ -4112,52 +4138,74 @@ export default function ExpensesDashboard({
                       {row.monthlyValues.map((val, mIdx) => {
                         const hasVal = val > 0;
                         return (
-                          <td 
-                            key={mIdx} 
-                            style={{ 
-                              padding: '10px 8px', 
-                              textAlign: 'right', 
-                              color: hasVal ? 'var(--text-primary)' : 'var(--text-muted)',
-                              fontWeight: hasVal ? 500 : 400,
-                              cursor: hasVal ? 'pointer' : 'default',
-                              backgroundColor: hasVal ? 'rgba(99, 102, 241, 0.01)' : 'transparent'
-                            }}
-                            onClick={() => {
-                              if (hasVal) {
-                                setDrilldownMonthIdx(mIdx);
-                                setDrilldownRowId(row.id);
-                                setDrilldownRowType('recipient');
-                                setDrilldownTargetVal(row.name);
-                              }
-                            }}
-                            className={hasVal ? "cell-value-hover" : ""}
-                            title={hasVal ? `Click to view payments in month ${mIdx + 1}` : ''}
-                          >
-                            {hasVal ? `£${Math.round(val).toLocaleString()}` : '-'}
+                          <td key={mIdx} style={{ padding: '6px 8px', textAlign: 'right' }}>
+                            {hasVal ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDrilldownMonthIdx(mIdx);
+                                  setDrilldownRowId(row.id);
+                                  setDrilldownRowType('recipient');
+                                  setDrilldownTargetVal(row.name);
+                                }}
+                                style={{
+                                  background: row.rawType === 'staff' ? 'rgba(245, 158, 11, 0.08)' : row.rawType === 'vendor' ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255,255,255,0.04)',
+                                  border: row.rawType === 'staff' ? '1px solid rgba(245, 158, 11, 0.2)' : row.rawType === 'vendor' ? '1px solid rgba(99, 102, 241, 0.2)' : '1px solid rgba(255,255,255,0.1)',
+                                  borderRadius: '4px',
+                                  color: row.rawType === 'staff' ? 'var(--warning)' : row.rawType === 'vendor' ? 'var(--accent)' : 'var(--text-primary)',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  padding: '2px 6px',
+                                  cursor: 'pointer',
+                                  width: '100%',
+                                  textAlign: 'right',
+                                  transition: 'all 0.2s'
+                                }}
+                                title="Click to view transactions"
+                              >
+                                £{Math.round(val).toLocaleString()}
+                              </button>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', opacity: 0.3 }}>—</span>
+                            )}
                           </td>
                         );
                       })}
-                      <td 
-                        style={{ 
-                          padding: '10px 16px', 
-                          textAlign: 'right', 
-                          fontWeight: 700, 
-                          color: 'var(--accent)', 
-                          borderLeft: '1px solid var(--border-color)',
-                          backgroundColor: 'rgba(99, 102, 241, 0.02)',
-                          cursor: row.ytdTotal > 0 ? 'pointer' : 'default'
-                        }}
-                        onClick={() => {
-                          if (row.ytdTotal > 0) {
-                            setDrilldownMonthIdx('ytd');
-                            setDrilldownRowId(row.id);
-                            setDrilldownRowType('recipient');
-                            setDrilldownTargetVal(`${row.name} (YTD Total)`);
-                          }
-                        }}
-                        title={row.ytdTotal > 0 ? 'Click to view full year transactions' : ''}
-                      >
-                        £{Math.round(row.ytdTotal).toLocaleString()}
+                      <td style={{ 
+                        padding: '6px 16px', 
+                        textAlign: 'right', 
+                        borderLeft: '1px solid var(--border-color)',
+                        backgroundColor: 'rgba(99, 102, 241, 0.02)'
+                      }}>
+                        {row.ytdTotal > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDrilldownMonthIdx('ytd');
+                              setDrilldownRowId(row.id);
+                              setDrilldownRowType('recipient');
+                              setDrilldownTargetVal(`${row.name} (YTD Total)`);
+                            }}
+                            style={{
+                              background: 'rgba(99, 102, 241, 0.12)',
+                              border: '1px solid rgba(99, 102, 241, 0.3)',
+                              borderRadius: '4px',
+                              color: 'var(--accent)',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              padding: '2px 6px',
+                              cursor: 'pointer',
+                              width: '100%',
+                              textAlign: 'right',
+                              transition: 'all 0.2s'
+                            }}
+                            title="Click to view full year transactions"
+                          >
+                            £{Math.round(row.ytdTotal).toLocaleString()}
+                          </button>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', opacity: 0.3 }}>—</span>
+                        )}
                       </td>
                     </tr>
                   ))}

@@ -115,6 +115,9 @@ export default function App() {
   const [selectedStaffIds, setSelectedStaffIds] = useState([]);
   const [bulkDeptSelect, setBulkDeptSelect] = useState('');
   const [customBulkDept, setCustomBulkDept] = useState('');
+  const [bulkPayrollSelect, setBulkPayrollSelect] = useState('');
+  const [bulkCommissionSelect, setBulkCommissionSelect] = useState('');
+  const [bulkLeaveSelect, setBulkLeaveSelect] = useState('');
 
   // Company Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -869,6 +872,99 @@ export default function App() {
     } catch (err) {
       console.error("Bulk assign department error:", err);
       handleShowToast(`Error updating departments: ${err.message}`, "warning");
+    }
+  };
+
+  const handleBulkAssignPayrollPolicy = async () => {
+    if (!bulkPayrollSelect) return;
+    const isClear = bulkPayrollSelect === 'CLEAR_POLICY';
+    const policyVal = isClear ? '' : bulkPayrollSelect;
+    const policy = payrollPolicies.find(p => p.id === policyVal);
+    const policyLabel = isClear ? 'No Policy (Salaried)' : (policy ? policy.name : 'Unknown Policy');
+
+    if (!window.confirm(`Are you sure you want to assign the payroll template "${policyLabel}" to the ${selectedStaffIds.length} selected staff profiles?`)) {
+      return;
+    }
+
+    try {
+      for (const id of selectedStaffIds) {
+        const member = staff.find(s => s.id === id);
+        if (member) {
+          await firebaseService.saveStaff({
+            ...member,
+            payrollPolicyId: policyVal
+          });
+        }
+      }
+      logActivity("Staff", "UPDATE", `Bulk assigned payroll policy "${policyLabel}" to ${selectedStaffIds.length} staff profiles.`);
+      handleShowToast(`Successfully updated payroll template to "${policyLabel}" for ${selectedStaffIds.length} profiles!`, "success");
+      setSelectedStaffIds([]);
+      setBulkPayrollSelect('');
+    } catch (err) {
+      console.error("Bulk assign payroll error:", err);
+      handleShowToast(`Error updating payroll templates: ${err.message}`, "warning");
+    }
+  };
+
+  const handleBulkAssignCommissionPolicy = async () => {
+    if (!bulkCommissionSelect) return;
+    const isClear = bulkCommissionSelect === 'CLEAR_POLICY';
+    const policyVal = isClear ? '' : bulkCommissionSelect;
+    const policy = commissionPolicies.find(p => p.id === policyVal);
+    const policyLabel = isClear ? 'No Commission Scheme' : (policy ? policy.name : 'Unknown Scheme');
+
+    if (!window.confirm(`Are you sure you want to assign the commission scheme "${policyLabel}" to the ${selectedStaffIds.length} selected staff profiles?`)) {
+      return;
+    }
+
+    try {
+      for (const id of selectedStaffIds) {
+        const member = staff.find(s => s.id === id);
+        if (member) {
+          await firebaseService.saveStaff({
+            ...member,
+            commissionPolicyId: policyVal
+          });
+        }
+      }
+      logActivity("Staff", "UPDATE", `Bulk assigned commission policy "${policyLabel}" to ${selectedStaffIds.length} staff profiles.`);
+      handleShowToast(`Successfully updated commission scheme to "${policyLabel}" for ${selectedStaffIds.length} profiles!`, "success");
+      setSelectedStaffIds([]);
+      setBulkCommissionSelect('');
+    } catch (err) {
+      console.error("Bulk assign commission error:", err);
+      handleShowToast(`Error updating commission schemes: ${err.message}`, "warning");
+    }
+  };
+
+  const handleBulkAssignLeavePolicy = async () => {
+    if (!bulkLeaveSelect) return;
+    const isClear = bulkLeaveSelect === 'CLEAR_POLICY';
+    const policyVal = isClear ? '' : bulkLeaveSelect;
+    const policy = leavePolicies.find(p => p.id === policyVal);
+    const policyLabel = isClear ? 'No Leave Policy' : (policy ? policy.name : 'Unknown Policy');
+
+    if (!window.confirm(`Are you sure you want to assign the leave policy "${policyLabel}" to the ${selectedStaffIds.length} selected staff profiles?`)) {
+      return;
+    }
+
+    try {
+      for (const id of selectedStaffIds) {
+        const member = staff.find(s => s.id === id);
+        if (member) {
+          await firebaseService.saveStaff({
+            ...member,
+            leavePolicyId: policyVal
+          });
+        }
+      }
+      logActivity("Staff", "UPDATE", `Bulk assigned leave policy "${policyLabel}" to ${selectedStaffIds.length} staff profiles.`);
+      handleShowToast(`Successfully updated leave policy to "${policyLabel}" for ${selectedStaffIds.length} profiles!`, "success");
+      setSelectedStaffIds([]);
+      setBulkLeaveSelect('');
+    } catch (err) {
+      console.error("Bulk assign leave error:", err);
+      handleShowToast(`Error updating leave policies: ${err.message}`, "warning");
     }
   };
 
@@ -1918,84 +2014,156 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Bulk actions department assignment toolbar */}
+              {/* Bulk actions policy assignment toolbar */}
               {selectedStaffIds.length > 0 && (
                 <div style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
+                  flexDirection: 'column',
+                  gap: '12px',
                   backgroundColor: 'rgba(99, 102, 241, 0.08)',
                   border: '1px solid rgba(99, 102, 241, 0.25)',
                   borderRadius: 'var(--radius-md)',
-                  padding: '12px 20px',
+                  padding: '16px 20px',
                   marginBottom: '16px',
                   animation: 'fadeIn var(--transition-fast)'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent)' }}>
-                      Selected {selectedStaffIds.length} {selectedStaffIds.length === 1 ? 'profile' : 'profiles'}
-                    </span>
-                    <button 
-                      type="button"
-                      className="btn-secondary" 
-                      onClick={() => setSelectedStaffIds([])}
-                      style={{ padding: '4px 8px', fontSize: '11px' }}
-                    >
-                      Deselect All
-                    </button>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(99,102,241,0.15)', paddingBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent)' }}>
+                        👥 Bulk Manage Selected: {selectedStaffIds.length} {selectedStaffIds.length === 1 ? 'profile' : 'profiles'}
+                      </span>
+                      <button 
+                        type="button"
+                        className="btn-secondary" 
+                        onClick={() => setSelectedStaffIds([])}
+                        style={{ padding: '4px 8px', fontSize: '11px', height: '24px' }}
+                      >
+                        Deselect All
+                      </button>
+                    </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Assign to Department:</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                     
-                    <select 
-                      className="select-filter"
-                      value={bulkDeptSelect}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setBulkDeptSelect(val);
-                        if (val === 'NEW_DEPT') {
-                          const custom = window.prompt("Enter new department name:");
-                          if (custom && custom.trim() !== '') {
-                            setCustomBulkDept(custom.trim());
-                            setBulkDeptSelect('NEW_DEPT');
-                          } else {
-                            setBulkDeptSelect('');
+                    {/* Action 1: Department */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>Dept:</span>
+                      <select 
+                        className="select-filter"
+                        value={bulkDeptSelect}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setBulkDeptSelect(val);
+                          if (val === 'NEW_DEPT') {
+                            const custom = window.prompt("Enter new department name:");
+                            if (custom && custom.trim() !== '') {
+                              setCustomBulkDept(custom.trim());
+                              setBulkDeptSelect('NEW_DEPT');
+                            } else {
+                              setBulkDeptSelect('');
+                            }
                           }
-                        }
-                      }}
-                      style={{ padding: '6px 12px', fontSize: '13px' }}
-                    >
-                      <option value="">-- Choose Department --</option>
-                      {allAvailableDepts.map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                      <option value="NEW_DEPT">+ Add Custom Department...</option>
-                    </select>
+                        }}
+                        style={{ padding: '4px 8px', fontSize: '11px', minWidth: '130px', height: '28px' }}
+                      >
+                        <option value="">-- Choose Dept --</option>
+                        {allAvailableDepts.map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                        <option value="NEW_DEPT">+ Add Custom...</option>
+                      </select>
+                      {bulkDeptSelect === 'NEW_DEPT' && customBulkDept && (
+                        <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: 600 }}>"{customBulkDept}"</span>
+                      )}
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={!bulkDeptSelect || (bulkDeptSelect === 'NEW_DEPT' && !customBulkDept)}
+                        onClick={handleBulkAssignDepartment}
+                        style={{ padding: '4px 10px', fontSize: '11px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        Apply
+                      </button>
+                    </div>
 
-                    {bulkDeptSelect === 'NEW_DEPT' && customBulkDept && (
-                      <span style={{ 
-                        fontSize: '12px', 
-                        fontWeight: 600, 
-                        color: 'var(--accent)',
-                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        border: '1px solid rgba(99, 102, 241, 0.2)'
-                      }}>
-                        Custom: "{customBulkDept}"
-                      </span>
-                    )}
+                    {/* Action 2: Payroll Template */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>Payroll:</span>
+                      <select 
+                        className="select-filter"
+                        value={bulkPayrollSelect}
+                        onChange={(e) => setBulkPayrollSelect(e.target.value)}
+                        style={{ padding: '4px 8px', fontSize: '11px', minWidth: '135px', height: '28px' }}
+                      >
+                        <option value="">-- Choose Template --</option>
+                        <option value="CLEAR_POLICY">-- No Policy (Salaried) --</option>
+                        {payrollPolicies.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={!bulkPayrollSelect}
+                        onClick={handleBulkAssignPayrollPolicy}
+                        style={{ padding: '4px 10px', fontSize: '11px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        Apply
+                      </button>
+                    </div>
 
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      disabled={!bulkDeptSelect || (bulkDeptSelect === 'NEW_DEPT' && !customBulkDept)}
-                      onClick={handleBulkAssignDepartment}
-                      style={{ padding: '6px 16px', fontSize: '13px' }}
-                    >
-                      Apply Department
-                    </button>
+                    {/* Action 3: Commission Scheme */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>Commission:</span>
+                      <select 
+                        className="select-filter"
+                        value={bulkCommissionSelect}
+                        onChange={(e) => setBulkCommissionSelect(e.target.value)}
+                        style={{ padding: '4px 8px', fontSize: '11px', minWidth: '135px', height: '28px' }}
+                      >
+                        <option value="">-- Choose Scheme --</option>
+                        <option value="CLEAR_POLICY">-- No Scheme --</option>
+                        {commissionPolicies.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={!bulkCommissionSelect}
+                        onClick={handleBulkAssignCommissionPolicy}
+                        style={{ padding: '4px 10px', fontSize: '11px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        Apply
+                      </button>
+                    </div>
+
+                    {/* Action 4: Leave Policy */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>Leave:</span>
+                      <select 
+                        className="select-filter"
+                        value={bulkLeaveSelect}
+                        onChange={(e) => setBulkLeaveSelect(e.target.value)}
+                        style={{ padding: '4px 8px', fontSize: '11px', minWidth: '135px', height: '28px' }}
+                      >
+                        <option value="">-- Choose Policy --</option>
+                        <option value="CLEAR_POLICY">-- No Policy --</option>
+                        {leavePolicies.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={!bulkLeaveSelect}
+                        onClick={handleBulkAssignLeavePolicy}
+                        style={{ padding: '4px 10px', fontSize: '11px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        Apply
+                      </button>
+                    </div>
+
                   </div>
                 </div>
               )}

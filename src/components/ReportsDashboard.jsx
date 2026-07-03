@@ -404,7 +404,10 @@ export default function ReportsDashboard({
     const revenue = monthPlacements.reduce((sum, p) => {
       let cellSum = 0;
       p.splits?.forEach(s => {
-        if (activeStaffIds.includes(s.staffId)) {
+        const member = staff.find(st => st.id === s.staffId);
+        if (member) {
+          if (companyFilter !== 'all' && member.companyId !== companyFilter) return;
+          if (deptFilter !== 'all' && member.department !== deptFilter) return;
           const share = (p.netScoreValue * s.percentage) / 100;
           cellSum += toGBP(share, 'GBP');
         }
@@ -1232,7 +1235,10 @@ export default function ReportsDashboard({
                   const revenue = monthPlacements.reduce((sum, p) => {
                     let cellSum = 0;
                     p.splits?.forEach(s => {
-                      if (activeStaffIds.includes(s.staffId)) {
+                      const member = staff.find(st => st.id === s.staffId);
+                      if (member) {
+                        if (companyFilter !== 'all' && member.companyId !== companyFilter) return;
+                        if (deptFilter !== 'all' && member.department !== deptFilter) return;
                         cellSum += toGBP((p.netScoreValue * s.percentage) / 100, 'GBP');
                       }
                     });

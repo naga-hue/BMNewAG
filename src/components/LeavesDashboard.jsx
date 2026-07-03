@@ -964,6 +964,38 @@ export default function LeavesDashboard({
               </select>
             </div>
 
+            {assigningSelectedStaffIds.length > 0 && (
+              <div style={{
+                backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                border: '1px solid rgba(99, 102, 241, 0.2)',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                fontSize: '11px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span style={{ color: 'var(--primary)', fontWeight: 600 }}>
+                  Selected Staff: {assigningSelectedStaffIds.length} member(s)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setAssigningSelectedStaffIds([])}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--danger)',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    padding: 0
+                  }}
+                >
+                  Clear Selection
+                </button>
+              </div>
+            )}
+
             {/* Staff list with checkboxes */}
             <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
               {(() => {
@@ -1109,7 +1141,18 @@ export default function LeavesDashboard({
                 className="btn-primary"
                 onClick={async () => {
                   try {
+                    const filtered = staff.filter(s => {
+                      const term = assigningStaffSearch.toLowerCase();
+                      const matchesSearch = s.fullName.toLowerCase().includes(term) || (s.department || '').toLowerCase().includes(term);
+                      const matchesCompany = assignCompanyFilter === 'all' || s.companyId === assignCompanyFilter;
+                      const matchesDept = assignDeptFilter === 'all' || s.department === assignDeptFilter;
+                      return matchesSearch && matchesCompany && matchesDept;
+                    });
+
                     for (const member of staff) {
+                      const isVisible = filtered.some(f => f.id === member.id);
+                      if (!isVisible) continue;
+
                       const shouldBeMapped = assigningSelectedStaffIds.includes(member.id);
                       const currentlyMapped = member.leavePolicyId === assigningPolicyId;
 

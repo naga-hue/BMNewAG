@@ -59,6 +59,7 @@ export default function PayrollDashboard({
   const [dailyRateDefault, setDailyRateDefault] = useState('0');
   const [expectedDaysPerMonth, setExpectedDaysPerMonth] = useState('21.67');
   const [editingPolicyId, setEditingPolicyId] = useState(null);
+  const [selectedPayrollStaffIds, setSelectedPayrollStaffIds] = useState([]);
 
   // Progressive Tax & NI slab states
   const [payeSlabs, setPayeSlabs] = useState([
@@ -1663,43 +1664,143 @@ ${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleSt
               <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px' }}>
                 Quickly link staff members to payroll templates for real-time projections.
               </p>
+
+              {selectedPayrollStaffIds.length > 0 && (
+                <div style={{
+                  backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                  border: '1px solid rgba(99, 102, 241, 0.2)',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '10px',
+                  gap: '12px'
+                }}>
+                  <span style={{ color: 'var(--primary)', fontWeight: 600 }}>
+                    Selected: {selectedPayrollStaffIds.length} staff member(s)
+                  </span>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <select
+                      id="bulkPayrollPolicySelect"
+                      className="select-filter"
+                      defaultValue=""
+                      style={{ padding: '4px 8px', fontSize: '11px', minWidth: '150px', height: '28px' }}
+                    >
+                      <option value="">-- No Policy (Salaried Default) --</option>
+                      {payrollPolicies.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={async () => {
+                        const selectedVal = document.getElementById('bulkPayrollPolicySelect')?.value || '';
+                        try {
+                          for (const staffId of selectedPayrollStaffIds) {
+                            const s = staff.find(x => x.id === staffId);
+                            if (s && onUpdateStaff) {
+                              await onUpdateStaff({ ...s, payrollPolicyId: selectedVal });
+                            }
+                          }
+                          onShowToast(`Assigned policy template to ${selectedPayrollStaffIds.length} staff members.`, "success");
+                          setSelectedPayrollStaffIds([]);
+                        } catch (err) {
+                          onShowToast(`Error updating policies: ${err.message}`, "warning");
+                        }
+                      }}
+                      style={{ padding: '4px 12px', fontSize: '11px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      Apply
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPayrollStaffIds([])}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--danger)',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        padding: 0
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="table-container" style={{ maxHeight: '200px', overflowY: 'auto' }}>
                 <table className="entity-table dense" style={{ fontSize: '11px' }}>
                   <thead>
                     <tr>
+                      <th style={{ width: '40px', textAlign: 'center' }}>
+                        <input 
+                          type="checkbox"
+                          checked={staff.length > 0 && staff.every(s => selectedPayrollStaffIds.includes(s.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedPayrollStaffIds(staff.map(s => s.id));
+                            } else {
+                              setSelectedPayrollStaffIds([]);
+                            }
+                          }}
+                        />
+                      </th>
                       <th>Recruiter / Staff</th>
                       <th>Assign Policy Template</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {staff.map(s => (
-                      <tr key={s.id}>
-                        <td style={{ fontWeight: 600 }}>{s.fullName} ({s.department})</td>
-                        <td>
-                          <select
-                            className="select-filter"
-                            value={s.payrollPolicyId || ''}
-                            onChange={async (e) => {
-                              const val = e.target.value;
-                              try {
-                                if (onUpdateStaff) {
-                                  await onUpdateStaff({ ...s, payrollPolicyId: val });
-                                  onShowToast(`Assigned policy template to ${s.fullName}`, "success");
+                    {staff.map(s => {
+                      const isChecked = selectedPayrollStaffIds.includes(s.id);
+                      return (
+                        <tr 
+                          key={s.id}
+                          style={{ backgroundColor: isChecked ? 'rgba(99,102,241,0.04)' : 'transparent' }}
+                        >
+                          <td style={{ textAlign: 'center' }}>
+                            <input 
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setSelectedPayrollStaffIds(prev => 
+                                  prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
+                                );
+                              }}
+                            />
+                          </td>
+                          <td style={{ fontWeight: 600 }}>{s.fullName} ({s.department})</td>
+                          <td>
+                            <select
+                              className="select-filter"
+                              value={s.payrollPolicyId || ''}
+                              onChange={async (e) => {
+                                const val = e.target.value;
+                                try {
+                                  if (onUpdateStaff) {
+                                    await onUpdateStaff({ ...s, payrollPolicyId: val });
+                                    onShowToast(`Assigned policy template to ${s.fullName}`, "success");
+                                  }
+                                } catch (err) {
+                                  onShowToast(`Error: ${err.message}`, "warning");
                                 }
-                              } catch (err) {
-                                onShowToast(`Error: ${err.message}`, "warning");
-                              }
-                            }}
-                            style={{ padding: '4px 8px', fontSize: '11px', width: '100%' }}
-                          >
-                            <option value="">-- No Policy (Salaried Default) --</option>
-                            {payrollPolicies.map(p => (
-                              <option key={p.id} value={p.id}>{p.name}</option>
-                            ))}
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
+                              }}
+                              style={{ padding: '4px 8px', fontSize: '11px', width: '100%' }}
+                            >
+                              <option value="">-- No Policy (Salaried Default) --</option>
+                              {payrollPolicies.map(p => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

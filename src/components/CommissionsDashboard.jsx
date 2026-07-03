@@ -30,6 +30,7 @@ export default function CommissionsDashboard({
   onSavePolicy, 
   onDeletePolicy, 
   onUpdateStaff,
+  onSavePlacement,
   onShowToast 
 }) {
   // Compile list of unique departments from both company profiles and active staff records
@@ -338,6 +339,7 @@ export default function CommissionsDashboard({
             mySplitPct: totalSplitPct,
             myBillingShare,
             myCommShare,
+            isPaid,
             paymentStatus: p.clientPaymentStatus,
             clientPaidDate: p.clientPaidDate
           });
@@ -1455,17 +1457,74 @@ export default function CommissionsDashboard({
                               <td>{p.clientCompany}</td>
                               <td>{p.startDate}</td>
                               <td style={{ textAlign: 'right' }}>{symbol}{p.myBillingShare.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                              <td>
-                                <span style={{
-                                  padding: '2px 6px',
-                                  borderRadius: '3px',
-                                  fontSize: '9px',
-                                  fontWeight: 600,
-                                  backgroundColor: p.isPaid ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                  color: p.isPaid ? 'var(--success)' : 'var(--danger)'
-                                }}>
-                                  {p.isPaid ? 'Settled (Paid)' : 'Awaiting Payment'}
-                                </span>
+                               <td>
+                                <select
+                                  value={p.paymentStatus || 'unpaid'}
+                                  onChange={async (e) => {
+                                    const newStatus = e.target.value;
+                                    const matched = placements.find(item => item.id === p.id);
+                                    if (matched) {
+                                      const isPaid = newStatus === 'paid';
+                                      const updated = {
+                                        ...matched,
+                                        clientPaymentStatus: newStatus,
+                                        clientPaidDate: isPaid ? new Date().toISOString().split('T')[0] : ''
+                                      };
+                                      
+                                      setSelectedBreakdownRow(prev => {
+                                        if (!prev) return prev;
+                                        const updatedPlacements = prev.calc.currentPlacements.map(item => {
+                                          if (item.id === p.id) {
+                                            return {
+                                              ...item,
+                                              isPaid,
+                                              paymentStatus: newStatus,
+                                              clientPaidDate: updated.clientPaidDate
+                                            };
+                                          }
+                                          return item;
+                                        });
+
+                                        let newPaidNow = 0;
+                                        let newWithheld = 0;
+                                        updatedPlacements.forEach(x => {
+                                          if (x.isPaid) {
+                                            newPaidNow += x.myCommShare;
+                                          } else {
+                                            newWithheld += x.myCommShare;
+                                          }
+                                        });
+
+                                        return {
+                                          ...prev,
+                                          calc: {
+                                            ...prev.calc,
+                                            currentPlacements: updatedPlacements,
+                                            paidNow: newPaidNow,
+                                            withheld: newWithheld,
+                                            totalPayout: newPaidNow + prev.calc.released
+                                          }
+                                        };
+                                      });
+
+                                      await onSavePlacement(updated);
+                                      onShowToast(`Updated placement status to ${newStatus === 'paid' ? 'Paid' : 'Unpaid'}.`, "success");
+                                    }
+                                  }}
+                                  style={{
+                                    fontSize: '10px',
+                                    padding: '2px 4px',
+                                    borderRadius: '4px',
+                                    backgroundColor: p.isPaid ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                    color: p.isPaid ? 'var(--success)' : 'var(--danger)',
+                                    border: '1px solid var(--border-color)',
+                                    cursor: 'pointer',
+                                    fontWeight: 600
+                                  }}
+                                >
+                                  <option value="unpaid" style={{ backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)' }}>Awaiting Payment</option>
+                                  <option value="paid" style={{ backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)' }}>Settled (Paid)</option>
+                                </select>
                               </td>
                               <td style={{ textAlign: 'right', fontWeight: 600 }}>
                                 {symbol}{p.myCommShare.toLocaleString(undefined, { minimumFractionDigits: 2 })}

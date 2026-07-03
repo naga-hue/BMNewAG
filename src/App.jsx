@@ -2264,6 +2264,7 @@ export default function App() {
               onSavePolicy={handleSaveCommissionPolicy}
               onDeletePolicy={handleDeleteCommissionPolicy}
               onUpdateStaff={handleSaveStaff}
+              onSavePlacement={handleSavePlacement}
               onShowToast={handleShowToast}
             />
           )}

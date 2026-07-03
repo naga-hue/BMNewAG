@@ -43,6 +43,8 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
   const [status, setStatus] = useState('active');
   const [exitDate, setExitDate] = useState('');
   const [noticePeriod, setNoticePeriod] = useState('');
+  const [salaryPaidUntilDate, setSalaryPaidUntilDate] = useState('');
+  const [additionalExitPayment, setAdditionalExitPayment] = useState('');
   const [payrollPolicyId, setPayrollPolicyId] = useState('');
 
   // Step 3: Compensation details state
@@ -110,6 +112,8 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setStatus(staffMember.status || 'active');
       setExitDate(normalizeDateForInput(staffMember.exitDate || ''));
       setNoticePeriod(staffMember.noticePeriod || '');
+      setSalaryPaidUntilDate(normalizeDateForInput(staffMember.salaryPaidUntilDate || ''));
+      setAdditionalExitPayment(staffMember.additionalExitPayment || '');
       setPayrollPolicyId(staffMember.payrollPolicyId || '');
       
       setSalary(staffMember.salary || '');
@@ -139,6 +143,8 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setStatus('active');
       setExitDate('');
       setNoticePeriod('');
+      setSalaryPaidUntilDate('');
+      setAdditionalExitPayment('');
       setPayrollPolicyId('');
       
       setSalary('');
@@ -317,6 +323,8 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       status,
       exitDate: status === 'exited' ? exitDate : '',
       noticePeriod: status === 'exited' ? noticePeriod : '',
+      salaryPaidUntilDate: status === 'exited' ? salaryPaidUntilDate : '',
+      additionalExitPayment: status === 'exited' ? Number(additionalExitPayment) || 0 : 0,
       documents
     };
 
@@ -584,6 +592,25 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                           placeholder="e.g. 1 month, 3 months, 30 days"
                           value={noticePeriod}
                           onChange={(e) => setNoticePeriod(e.target.value)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Salary Paid Until Date (Notice Period)</label>
+                        <input 
+                          type="date" 
+                          className="form-input"
+                          value={salaryPaidUntilDate}
+                          onChange={(e) => setSalaryPaidUntilDate(e.target.value)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Additional Exit Payment Amount</label>
+                        <input 
+                          type="number" 
+                          className="form-input"
+                          placeholder="e.g. 1500"
+                          value={additionalExitPayment}
+                          onChange={(e) => setAdditionalExitPayment(e.target.value)}
                         />
                       </div>
                     </>

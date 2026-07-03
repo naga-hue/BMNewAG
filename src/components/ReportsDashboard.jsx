@@ -21,6 +21,48 @@ const formatGBP = (val) => {
   return '£' + Math.round(val).toLocaleString();
 };
 
+const getDaysWorkedInMonth = (startDateStr, exitDateStr, monthKey) => {
+  const [y, m] = monthKey.split('-').map(Number);
+  const monthStart = new Date(Date.UTC(y, m - 1, 1));
+  const monthEnd = new Date(Date.UTC(y, m, 0));
+  
+  const parseUTC = (dateStr) => {
+    if (!dateStr) return null;
+    const parts = dateStr.split('-');
+    if (parts.length < 3) return null;
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const day = parseInt(parts[2], 10);
+    if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
+    return new Date(Date.UTC(year, month - 1, day));
+  };
+
+  let employeeStart = parseUTC(startDateStr);
+  let employeeExit = parseUTC(exitDateStr);
+
+  if (!employeeStart) {
+    employeeStart = new Date(Date.UTC(2000, 0, 1));
+  }
+
+  if (employeeStart > monthEnd) {
+    return 0;
+  }
+
+  if (employeeExit && employeeExit < monthStart) {
+    return 0;
+  }
+
+  const actualStart = employeeStart > monthStart ? employeeStart : monthStart;
+  const actualExit = (employeeExit && employeeExit < monthEnd)
+    ? employeeExit
+    : monthEnd;
+
+  const diffTime = actualExit.getTime() - actualStart.getTime();
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+  return diffDays > 0 ? diffDays : 0;
+};
+
 export default function ReportsDashboard({
   companies = [],
   staff = [],
@@ -235,10 +277,31 @@ export default function ReportsDashboard({
         commissions: Number(pr.commission) || 0
       };
     }
-    return {
-      salaries: toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP'),
-      commissions: calculateCommissionForRecruiter(s.id, monthKey)
-    };
+    const baseSal = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
+    let salaries = baseSal;
+    let commissions = calculateCommissionForRecruiter(s.id, monthKey);
+
+    if (s.status === 'exited') {
+      const exitMonth = s.exitDate ? s.exitDate.substring(0, 7) : '';
+      const cutoffStr = s.salaryPaidUntilDate || s.exitDate || '';
+      if (cutoffStr) {
+        const cutoffMonth = cutoffStr.substring(0, 7);
+        if (monthKey > cutoffMonth) {
+          salaries = 0;
+          commissions = 0;
+        } else if (monthKey === cutoffMonth) {
+          const [y, m, d] = cutoffStr.split('-').map(Number);
+          const daysInMonth = new Date(y, m, 0).getDate();
+          const proration = Math.min(1.0, Math.max(0.0, d / daysInMonth));
+          salaries = baseSal * proration;
+        }
+      }
+      if (exitMonth && monthKey === exitMonth && s.additionalExitPayment) {
+        salaries += toGBP(Number(s.additionalExitPayment) || 0, s.currency || 'GBP');
+      }
+    }
+
+    return { salaries, commissions };
   };
 
   // Dynamic shared overhead helper
@@ -326,9 +389,8 @@ export default function ReportsDashboard({
   const getFilteredMonthlyData = (monthKey) => {
     // 1. Active staff members matching company & department
     const activeStaff = staff.filter(s => {
-      if (!s.startDate) return false;
-      const startMonthKey = s.startDate.substring(0, 7);
-      if (startMonthKey > monthKey) return false;
+      const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
+      if (daysWorked < 10) return false;
       
       if (companyFilter !== 'all' && s.companyId !== companyFilter) return false;
       if (deptFilter !== 'all' && s.department !== deptFilter) return false;
@@ -360,7 +422,11 @@ export default function ReportsDashboard({
     });
 
     // 5. Operating expenses + shared overhead apportionments
-    const totalGroupHead = staff.filter(s => s.startDate && s.startDate.substring(0, 7) <= monthKey).length || 1;
+    const groupActiveStaff = staff.filter(s => {
+      const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
+      return daysWorked >= 10;
+    });
+    const groupActiveStaffIds = groupActiveStaff.map(s => s.id);
     let overheadsExpenses = 0;
 
     const monthExpenses = expenses.filter(e => e.plMonth === monthKey);
@@ -370,45 +436,87 @@ export default function ReportsDashboard({
       if (exp.allocationType === 'company') {
         const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
         if (targets.length > 0) {
-          const compShare = gbpAmt / targets.length;
-          targets.forEach(targetComp => {
-            const compStaff = staff.filter(s => s.companyId === targetComp && s.startDate && s.startDate.substring(0, 7) <= monthKey);
-            const compHead = compStaff.length || 1;
-            compStaff.forEach(s => {
+          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+            targets.forEach(compId => {
+              const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
+              const companyShare = gbpAmt * (percent / 100);
+              const compStaff = groupActiveStaff.filter(s => s.companyId === compId);
+              const compHead = compStaff.length || 1;
+              const perStaffShare = companyShare / compHead;
+              compStaff.forEach(s => {
+                if (activeStaffIds.includes(s.id)) {
+                  overheadsExpenses += perStaffShare;
+                }
+              });
+            });
+          } else {
+            const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.companyId));
+            const totalHead = eligibleStaff.length || 1;
+            const perStaffShare = gbpAmt / totalHead;
+            eligibleStaff.forEach(s => {
               if (activeStaffIds.includes(s.id)) {
-                overheadsExpenses += compShare / compHead;
+                overheadsExpenses += perStaffShare;
               }
             });
-          });
+          }
         }
       } else if (exp.allocationType === 'department') {
         const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
         if (targets.length > 0) {
-          const deptShare = gbpAmt / targets.length;
-          targets.forEach(targetDept => {
-            const deptStaff = staff.filter(s => s.department === targetDept && s.startDate && s.startDate.substring(0, 7) <= monthKey);
-            const deptHead = deptStaff.length || 1;
-            deptStaff.forEach(s => {
+          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+            targets.forEach(dept => {
+              const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
+              const deptShare = gbpAmt * (percent / 100);
+              const deptStaff = groupActiveStaff.filter(s => s.department === dept);
+              const deptHead = deptStaff.length || 1;
+              const perStaffShare = deptShare / deptHead;
+              deptStaff.forEach(s => {
+                if (activeStaffIds.includes(s.id)) {
+                  overheadsExpenses += perStaffShare;
+                }
+              });
+            });
+          } else {
+            const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.department));
+            const totalHead = eligibleStaff.length || 1;
+            const perStaffShare = gbpAmt / totalHead;
+            eligibleStaff.forEach(s => {
               if (activeStaffIds.includes(s.id)) {
-                overheadsExpenses += deptShare / deptHead;
+                overheadsExpenses += perStaffShare;
               }
             });
-          });
+          }
         }
       } else if (exp.allocationType === 'staff') {
         const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
         if (targets.length > 0) {
-          const perStaffShare = gbpAmt / targets.length;
-          targets.forEach(staffId => {
-            if (activeStaffIds.includes(staffId)) {
-              overheadsExpenses += perStaffShare;
-            }
-          });
+          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+            targets.forEach(staffId => {
+              if (groupActiveStaffIds.includes(staffId)) {
+                const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
+                const perStaffShare = gbpAmt * (percent / 100);
+                if (activeStaffIds.includes(staffId)) {
+                  overheadsExpenses += perStaffShare;
+                }
+              }
+            });
+          } else {
+            const perStaffShare = gbpAmt / targets.length;
+            targets.forEach(staffId => {
+              if (groupActiveStaffIds.includes(staffId)) {
+                if (activeStaffIds.includes(staffId)) {
+                  overheadsExpenses += perStaffShare;
+                }
+              }
+            });
+          }
         }
       } else {
-        // Group-wide overhead
-        activeStaff.forEach(s => {
-          overheadsExpenses += gbpAmt / totalGroupHead;
+        const groupHead = groupActiveStaff.length || 1;
+        groupActiveStaff.forEach(s => {
+          if (activeStaffIds.includes(s.id)) {
+            overheadsExpenses += gbpAmt / groupHead;
+          }
         });
       }
     });
@@ -694,8 +802,11 @@ export default function ReportsDashboard({
                   });
 
                   // Shared overheads
-                  const activeStaffInMonth = staff.filter(st => st.startDate && st.startDate.substring(0, 7) <= mKey);
-                  const totalGroupHead = activeStaffInMonth.length || 1;
+                  const activeStaffInMonth = staff.filter(st => {
+                    const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
+                    return daysWorked >= 10;
+                  });
+                  const activeStaffInMonthIds = activeStaffInMonth.map(st => st.id);
                   const monthExpenses = expenses.filter(e => e.plMonth === mKey);
 
                   monthExpenses.forEach(exp => {
@@ -704,43 +815,88 @@ export default function ReportsDashboard({
                     if (exp.allocationType === 'company') {
                       const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
                       if (targets.length > 0) {
-                        const compShare = gbpAmt / targets.length;
-                        targets.forEach(compId => {
-                          if (companyDataMap[compId]) {
-                            const targetStaff = activeStaffInMonth.filter(st => st.companyId === compId);
-                            const matchCount = targetStaff.filter(st => deptFilter === 'all' || st.department === deptFilter).length;
-                            if (targetStaff.length > 0) {
-                              companyDataMap[compId].overheads += (compShare / targetStaff.length) * matchCount;
+                        if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+                          targets.forEach(compId => {
+                            const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
+                            const companyShare = gbpAmt * (percent / 100);
+                            const compStaff = activeStaffInMonth.filter(st => st.companyId === compId);
+                            const compHead = compStaff.length || 1;
+                            const perStaffShare = companyShare / compHead;
+                            compStaff.forEach(st => {
+                              if (companyDataMap[st.companyId] && (deptFilter === 'all' || st.department === deptFilter)) {
+                                companyDataMap[st.companyId].overheads += perStaffShare;
+                              }
+                            });
+                          });
+                        } else {
+                          const eligibleStaff = activeStaffInMonth.filter(st => targets.includes(st.companyId));
+                          const totalHead = eligibleStaff.length || 1;
+                          const perStaffShare = gbpAmt / totalHead;
+                          eligibleStaff.forEach(st => {
+                            if (companyDataMap[st.companyId] && (deptFilter === 'all' || st.department === deptFilter)) {
+                              companyDataMap[st.companyId].overheads += perStaffShare;
                             }
-                          }
-                        });
+                          });
+                        }
                       }
                     } else if (exp.allocationType === 'department') {
                       const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
                       if (targets.length > 0) {
-                        const deptShare = gbpAmt / targets.length;
-                        targets.forEach(deptName => {
-                          const deptStaff = activeStaffInMonth.filter(st => st.department === deptName);
-                          deptStaff.forEach(st => {
+                        if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+                          targets.forEach(dept => {
+                            const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
+                            const deptShare = gbpAmt * (percent / 100);
+                            const deptStaff = activeStaffInMonth.filter(st => st.department === dept);
+                            const deptHead = deptStaff.length || 1;
+                            const perStaffShare = deptShare / deptHead;
+                            deptStaff.forEach(st => {
+                              if (companyDataMap[st.companyId] && (deptFilter === 'all' || st.department === deptFilter)) {
+                                companyDataMap[st.companyId].overheads += perStaffShare;
+                              }
+                            });
+                          });
+                        } else {
+                          const eligibleStaff = activeStaffInMonth.filter(st => targets.includes(st.department));
+                          const totalHead = eligibleStaff.length || 1;
+                          const perStaffShare = gbpAmt / totalHead;
+                          eligibleStaff.forEach(st => {
                             if (companyDataMap[st.companyId] && (deptFilter === 'all' || st.department === deptFilter)) {
-                              companyDataMap[st.companyId].overheads += deptShare / deptStaff.length;
+                              companyDataMap[st.companyId].overheads += perStaffShare;
                             }
                           });
-                        });
+                        }
                       }
                     } else if (exp.allocationType === 'staff') {
                       const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
-                      targets.forEach(staffId => {
-                        const st = staff.find(st => st.id === staffId);
-                        if (st && companyDataMap[st.companyId] && (deptFilter === 'all' || st.department === deptFilter)) {
-                          companyDataMap[st.companyId].overheads += gbpAmt / targets.length;
+                      if (targets.length > 0) {
+                        if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+                          targets.forEach(staffId => {
+                            if (activeStaffInMonthIds.includes(staffId)) {
+                              const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
+                              const perStaffShare = gbpAmt * (percent / 100);
+                              const st = activeStaffInMonth.find(item => item.id === staffId);
+                              if (st && companyDataMap[st.companyId] && (deptFilter === 'all' || st.department === deptFilter)) {
+                                companyDataMap[st.companyId].overheads += perStaffShare;
+                              }
+                            }
+                          });
+                        } else {
+                          const perStaffShare = gbpAmt / targets.length;
+                          targets.forEach(staffId => {
+                            if (activeStaffInMonthIds.includes(staffId)) {
+                              const st = activeStaffInMonth.find(item => item.id === staffId);
+                              if (st && companyDataMap[st.companyId] && (deptFilter === 'all' || st.department === deptFilter)) {
+                                companyDataMap[st.companyId].overheads += perStaffShare;
+                              }
+                            }
+                          });
                         }
-                      });
+                      }
                     } else {
-                      // Group
+                      const groupHead = activeStaffInMonth.length || 1;
                       activeStaffInMonth.forEach(st => {
                         if (companyDataMap[st.companyId] && (deptFilter === 'all' || st.department === deptFilter)) {
-                          companyDataMap[st.companyId].overheads += gbpAmt / totalGroupHead;
+                          companyDataMap[st.companyId].overheads += gbpAmt / groupHead;
                         }
                       });
                     }
@@ -866,8 +1022,11 @@ export default function ReportsDashboard({
                   });
 
                   // Overheads apportionment
-                  const activeStaffInMonth = staff.filter(st => st.startDate && st.startDate.substring(0, 7) <= mKey);
-                  const totalGroupHead = activeStaffInMonth.length || 1;
+                  const activeStaffInMonth = staff.filter(st => {
+                    const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
+                    return daysWorked >= 10;
+                  });
+                  const activeStaffInMonthIds = activeStaffInMonth.map(st => st.id);
                   const monthExpenses = expenses.filter(e => e.plMonth === mKey);
 
                   monthExpenses.forEach(exp => {
@@ -876,43 +1035,88 @@ export default function ReportsDashboard({
                     if (exp.allocationType === 'company') {
                       const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
                       if (targets.length > 0) {
-                        const compShare = gbpAmt / targets.length;
-                        targets.forEach(compId => {
-                          const compStaff = activeStaffInMonth.filter(st => st.companyId === compId);
-                          compStaff.forEach(st => {
+                        if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+                          targets.forEach(compId => {
+                            const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
+                            const companyShare = gbpAmt * (percent / 100);
+                            const compStaff = activeStaffInMonth.filter(st => st.companyId === compId);
+                            const compHead = compStaff.length || 1;
+                            const perStaffShare = companyShare / compHead;
+                            compStaff.forEach(st => {
+                              if (deptDataMap[st.department] && (companyFilter === 'all' || st.companyId === companyFilter)) {
+                                deptDataMap[st.department].overheads += perStaffShare;
+                              }
+                            });
+                          });
+                        } else {
+                          const eligibleStaff = activeStaffInMonth.filter(st => targets.includes(st.companyId));
+                          const totalHead = eligibleStaff.length || 1;
+                          const perStaffShare = gbpAmt / totalHead;
+                          eligibleStaff.forEach(st => {
                             if (deptDataMap[st.department] && (companyFilter === 'all' || st.companyId === companyFilter)) {
-                              deptDataMap[st.department].overheads += compShare / compStaff.length;
+                              deptDataMap[st.department].overheads += perStaffShare;
                             }
                           });
-                        });
+                        }
                       }
                     } else if (exp.allocationType === 'department') {
                       const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
                       if (targets.length > 0) {
-                        const deptShare = gbpAmt / targets.length;
-                        targets.forEach(deptName => {
-                          if (deptDataMap[deptName]) {
-                            const targetStaff = activeStaffInMonth.filter(st => st.department === deptName);
-                            const matchCount = targetStaff.filter(st => companyFilter === 'all' || st.companyId === companyFilter).length;
-                            if (targetStaff.length > 0) {
-                              deptDataMap[deptName].overheads += (deptShare / targetStaff.length) * matchCount;
+                        if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+                          targets.forEach(dept => {
+                            const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
+                            const deptShare = gbpAmt * (percent / 100);
+                            const deptStaff = activeStaffInMonth.filter(st => st.department === dept);
+                            const deptHead = deptStaff.length || 1;
+                            const perStaffShare = deptShare / deptHead;
+                            deptStaff.forEach(st => {
+                              if (deptDataMap[st.department] && (companyFilter === 'all' || st.companyId === companyFilter)) {
+                                deptDataMap[st.department].overheads += perStaffShare;
+                              }
+                            });
+                          });
+                        } else {
+                          const eligibleStaff = activeStaffInMonth.filter(st => targets.includes(st.department));
+                          const totalHead = eligibleStaff.length || 1;
+                          const perStaffShare = gbpAmt / totalHead;
+                          eligibleStaff.forEach(st => {
+                            if (deptDataMap[st.department] && (companyFilter === 'all' || st.companyId === companyFilter)) {
+                              deptDataMap[st.department].overheads += perStaffShare;
                             }
-                          }
-                        });
+                          });
+                        }
                       }
                     } else if (exp.allocationType === 'staff') {
                       const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
-                      targets.forEach(staffId => {
-                        const st = staff.find(st => st.id === staffId);
-                        if (st && deptDataMap[st.department] && (companyFilter === 'all' || st.companyId === companyFilter)) {
-                          deptDataMap[st.department].overheads += gbpAmt / targets.length;
+                      if (targets.length > 0) {
+                        if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+                          targets.forEach(staffId => {
+                            if (activeStaffInMonthIds.includes(staffId)) {
+                              const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
+                              const perStaffShare = gbpAmt * (percent / 100);
+                              const st = activeStaffInMonth.find(item => item.id === staffId);
+                              if (st && deptDataMap[st.department] && (companyFilter === 'all' || st.companyId === companyFilter)) {
+                                deptDataMap[st.department].overheads += perStaffShare;
+                              }
+                            }
+                          });
+                        } else {
+                          const perStaffShare = gbpAmt / targets.length;
+                          targets.forEach(staffId => {
+                            if (activeStaffInMonthIds.includes(staffId)) {
+                              const st = activeStaffInMonth.find(item => item.id === staffId);
+                              if (st && deptDataMap[st.department] && (companyFilter === 'all' || st.companyId === companyFilter)) {
+                                deptDataMap[st.department].overheads += perStaffShare;
+                              }
+                            }
+                          });
                         }
-                      });
+                      }
                     } else {
-                      // Group
+                      const groupHead = activeStaffInMonth.length || 1;
                       activeStaffInMonth.forEach(st => {
                         if (deptDataMap[st.department] && (companyFilter === 'all' || st.companyId === companyFilter)) {
-                          deptDataMap[st.department].overheads += gbpAmt / totalGroupHead;
+                          deptDataMap[st.department].overheads += gbpAmt / groupHead;
                         }
                       });
                     }
@@ -1013,9 +1217,8 @@ export default function ReportsDashboard({
                   
                   // Active staff matching filter
                   const activeStaff = staff.filter(s => {
-                    if (!s.startDate) return false;
-                    const startMonthKey = s.startDate.substring(0, 7);
-                    if (startMonthKey > pKey) return false;
+                    const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, pKey);
+                    if (daysWorked < 10) return false;
                     
                     if (companyFilter !== 'all' && s.companyId !== companyFilter) return false;
                     if (deptFilter !== 'all' && s.department !== deptFilter) return false;
@@ -1051,41 +1254,85 @@ export default function ReportsDashboard({
                   if (isForecast) {
                     overheadsExpenses = baselineOverhead * (activeStaff.length / (staff.length || 1));
                   } else {
+                    const groupActiveStaff = staff.filter(s => {
+                      const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, pKey);
+                      return daysWorked >= 10;
+                    });
+                    const groupActiveStaffIds = groupActiveStaff.map(s => s.id);
                     const monthExp = expenses.filter(e => e.plMonth === pKey);
-                    const totalGroupHead = staff.filter(s => s.startDate && s.startDate.substring(0, 7) <= pKey).length || 1;
                     
                     monthExp.forEach(exp => {
                       const gbpAmt = toGBP(exp.amount, exp.currency);
                       if (exp.allocationType === 'company') {
                         const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
                         if (targets.length > 0) {
-                          const compShare = gbpAmt / targets.length;
-                          targets.forEach(targetComp => {
-                            const compStaff = staff.filter(s => s.companyId === targetComp && s.startDate && s.startDate.substring(0, 7) <= pKey);
-                            compStaff.forEach(s => {
-                              if (activeStaffIds.includes(s.id)) overheadsExpenses += compShare / (compStaff.length || 1);
+                          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+                            targets.forEach(compId => {
+                              const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
+                              const companyShare = gbpAmt * (percent / 100);
+                              const compStaff = groupActiveStaff.filter(s => s.companyId === compId);
+                              const compHead = compStaff.length || 1;
+                              const perStaffShare = companyShare / compHead;
+                              compStaff.forEach(s => {
+                                if (activeStaffIds.includes(s.id)) overheadsExpenses += perStaffShare;
+                              });
                             });
-                          });
+                          } else {
+                            const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.companyId));
+                            const totalHead = eligibleStaff.length || 1;
+                            const perStaffShare = gbpAmt / totalHead;
+                            eligibleStaff.forEach(s => {
+                              if (activeStaffIds.includes(s.id)) overheadsExpenses += perStaffShare;
+                            });
+                          }
                         }
                       } else if (exp.allocationType === 'department') {
                         const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
                         if (targets.length > 0) {
-                          const deptShare = gbpAmt / targets.length;
-                          targets.forEach(targetDept => {
-                            const deptStaff = staff.filter(s => s.department === targetDept && s.startDate && s.startDate.substring(0, 7) <= pKey);
-                            deptStaff.forEach(s => {
-                              if (activeStaffIds.includes(s.id)) overheadsExpenses += deptShare / (deptStaff.length || 1);
+                          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+                            targets.forEach(dept => {
+                              const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
+                              const deptShare = gbpAmt * (percent / 100);
+                              const deptStaff = groupActiveStaff.filter(s => s.department === dept);
+                              const deptHead = deptStaff.length || 1;
+                              const perStaffShare = deptShare / deptHead;
+                              deptStaff.forEach(s => {
+                                if (activeStaffIds.includes(s.id)) overheadsExpenses += perStaffShare;
+                              });
                             });
-                          });
+                          } else {
+                            const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.department));
+                            const totalHead = eligibleStaff.length || 1;
+                            const perStaffShare = gbpAmt / totalHead;
+                            eligibleStaff.forEach(s => {
+                              if (activeStaffIds.includes(s.id)) overheadsExpenses += perStaffShare;
+                            });
+                          }
                         }
                       } else if (exp.allocationType === 'staff') {
                         const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
-                        targets.forEach(staffId => {
-                          if (activeStaffIds.includes(staffId)) overheadsExpenses += gbpAmt / targets.length;
-                        });
+                        if (targets.length > 0) {
+                          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+                            targets.forEach(staffId => {
+                              if (groupActiveStaffIds.includes(staffId)) {
+                                const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
+                                const perStaffShare = gbpAmt * (percent / 100);
+                                if (activeStaffIds.includes(staffId)) overheadsExpenses += perStaffShare;
+                              }
+                            });
+                          } else {
+                            const perStaffShare = gbpAmt / targets.length;
+                            targets.forEach(staffId => {
+                              if (groupActiveStaffIds.includes(staffId)) {
+                                if (activeStaffIds.includes(staffId)) overheadsExpenses += perStaffShare;
+                              }
+                            });
+                          }
+                        }
                       } else {
-                        activeStaff.forEach(s => {
-                          overheadsExpenses += gbpAmt / totalGroupHead;
+                        const groupHead = groupActiveStaff.length || 1;
+                        groupActiveStaff.forEach(s => {
+                          if (activeStaffIds.includes(s.id)) overheadsExpenses += gbpAmt / groupHead;
                         });
                       }
                     });

@@ -1129,7 +1129,7 @@ export default function ExpensesDashboard({
     }
   };
 
-  const handleBulkUpdateAllocation = async (allocType, allocTarget) => {
+  const handleBulkUpdateAllocation = async (allocType, allocTarget, allocMode = 'auto', manualShares = {}) => {
     if (selectedExpenseIds.length === 0) return;
     try {
       let count = 0;
@@ -1139,7 +1139,9 @@ export default function ExpensesDashboard({
           await onSaveExpense({
             ...original,
             allocationType: allocType,
-            allocationTarget: allocTarget
+            allocationTarget: allocTarget,
+            allocationMode: allocMode,
+            manualAllocationShares: manualShares
           });
           count++;
         }
@@ -4275,7 +4277,7 @@ export default function ExpensesDashboard({
               />
             </div>
 
-            {allocatingType !== 'global' && allocatingRowId !== 'bulk' && (
+            {allocatingType !== 'global' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', backgroundColor: 'var(--bg-secondary)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                 <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Split Allocation Mode:</span>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -4736,7 +4738,7 @@ export default function ExpensesDashboard({
                   }
 
 
-                  if (allocatingType !== 'global' && allocatingRowId !== 'bulk' && allocatingMode === 'manual') {
+                  if (allocatingType !== 'global' && allocatingMode === 'manual') {
                     let totalPercent = 0;
                     finalTarget.forEach(tid => {
                       totalPercent += parseInt(allocatingManualShares[tid] || 0, 10);
@@ -4748,7 +4750,7 @@ export default function ExpensesDashboard({
                   }
 
                   if (allocatingRowId === 'bulk') {
-                    handleBulkUpdateAllocation(allocatingType, finalTarget);
+                    handleBulkUpdateAllocation(allocatingType, finalTarget, allocatingMode, allocatingManualShares);
                   } else if (allocatingRowId === 'manual') {
                     setAllocationType(allocatingType);
                     if (allocatingType === 'staff') {

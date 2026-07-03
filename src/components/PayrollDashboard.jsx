@@ -410,7 +410,27 @@ export default function PayrollDashboard({
     
     // Project base monthly salaries in GBP
     let baselineBasic = toGBP(Number(staffMember.salary || 0) / 12, staffMember.currency || 'GBP');
-    const baselineCommission = calculateCommissionForRecruiter(staffMember.id, month);
+    let baselineCommission = calculateCommissionForRecruiter(staffMember.id, month);
+
+    if (staffMember.status === 'exited') {
+      const exitMonth = staffMember.exitDate ? staffMember.exitDate.substring(0, 7) : '';
+      const cutoffStr = staffMember.salaryPaidUntilDate || staffMember.exitDate || '';
+      if (cutoffStr) {
+        const cutoffMonth = cutoffStr.substring(0, 7);
+        if (month > cutoffMonth) {
+          baselineBasic = 0;
+          baselineCommission = 0;
+        } else if (month === cutoffMonth) {
+          const [y, m, d] = cutoffStr.split('-').map(Number);
+          const daysInMonth = new Date(y, m, 0).getDate();
+          const proration = Math.min(1.0, Math.max(0.0, d / daysInMonth));
+          baselineBasic = baselineBasic * proration;
+        }
+      }
+      if (exitMonth && month === exitMonth && staffMember.additionalExitPayment) {
+        baselineBasic += toGBP(Number(staffMember.additionalExitPayment) || 0, staffMember.currency || 'GBP');
+      }
+    }
 
     // Read policy template
     const policy = payrollPolicies.find(p => p.id === staffMember.payrollPolicyId);

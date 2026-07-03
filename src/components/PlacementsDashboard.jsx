@@ -2141,7 +2141,7 @@ export default function PlacementsDashboard({
                         const memberPlacementsByMonth = Array.from({ length: 12 }, () => []);
                         
                         placements.forEach(p => {
-                          if (!p.startDate) return;
+                          if (!p.startDate || p.status === 'dns') return;
                           const pStart = new Date(p.startDate);
                           if (pStart.getFullYear() !== year) return;
                           
@@ -2211,7 +2211,7 @@ export default function PlacementsDashboard({
 
                   // Calculate column totals from all unique placements to avoid double-counting splits in footer
                   placements.forEach(p => {
-                    if (!p.startDate) return;
+                    if (!p.startDate || p.status === 'dns') return;
                     const pStart = new Date(p.startDate);
                     if (pStart.getFullYear() !== year) return;
                     const monthIdx = pStart.getMonth();

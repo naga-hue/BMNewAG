@@ -1380,27 +1380,23 @@ export default function ExpensesDashboard({
         if (exp.allocationType === 'company') {
           const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
           if (targets.length > 0) {
-            const compShare = gbpAmt / targets.length;
-            targets.forEach(targetComp => {
-              const compStaff = activeStaff.filter(s => s.companyId === targetComp);
-              const compHead = compStaff.length || 1;
-              compStaff.forEach(s => {
-                staffOverhead[s.id][mIdx] += compShare / compHead;
-                staffTrans[s.id][mIdx].push({ ...exp, apportionedShare: compShare / compHead, shareReason: 'Company Apportionment' });
-              });
+            const eligibleStaff = activeStaff.filter(s => targets.includes(s.companyId));
+            const totalHead = eligibleStaff.length || 1;
+            const perStaffShare = gbpAmt / totalHead;
+            eligibleStaff.forEach(s => {
+              staffOverhead[s.id][mIdx] += perStaffShare;
+              staffTrans[s.id][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: 'Company Apportionment' });
             });
           }
         } else if (exp.allocationType === 'department') {
           const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
           if (targets.length > 0) {
-            const deptShare = gbpAmt / targets.length;
-            targets.forEach(targetDept => {
-              const deptStaff = activeStaff.filter(s => s.department === targetDept);
-              const deptHead = deptStaff.length || 1;
-              deptStaff.forEach(s => {
-                staffOverhead[s.id][mIdx] += deptShare / deptHead;
-                staffTrans[s.id][mIdx].push({ ...exp, apportionedShare: deptShare / deptHead, shareReason: 'Department Apportionment' });
-              });
+            const eligibleStaff = activeStaff.filter(s => targets.includes(s.department));
+            const totalHead = eligibleStaff.length || 1;
+            const perStaffShare = gbpAmt / totalHead;
+            eligibleStaff.forEach(s => {
+              staffOverhead[s.id][mIdx] += perStaffShare;
+              staffTrans[s.id][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: 'Department Apportionment' });
             });
           }
         } else if (exp.allocationType === 'staff') {

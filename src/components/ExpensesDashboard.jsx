@@ -4228,7 +4228,7 @@ export default function ExpensesDashboard({
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 9999,
+          zIndex: 10050,
           animation: 'fadeIn 0.2s'
         }}>
           <div style={{

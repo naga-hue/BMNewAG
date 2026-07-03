@@ -2278,6 +2278,7 @@ export default function App() {
               placements={scopedPlacements}
               payrollRecords={payrollRecords}
               payrollPolicies={payrollPolicies}
+              leaveRequests={scopedLeaves}
               expenses={expenses}
               nominalCodes={nominalCodes}
               onSavePayrollRecord={handleSavePayrollRecord}
@@ -2361,6 +2362,8 @@ export default function App() {
               expenses={scopedExpenses}
               commissionPolicies={commissionPolicies}
               payrollRecords={payrollRecords}
+              payrollPolicies={payrollPolicies}
+              leaveRequests={scopedLeaves}
               onShowToast={handleShowToast}
             />
           )}

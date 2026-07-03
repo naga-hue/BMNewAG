@@ -70,6 +70,8 @@ export default function ReportsDashboard({
   expenses = [],
   commissionPolicies = [],
   payrollRecords = [],
+  payrollPolicies = [],
+  leaveRequests = [],
   onShowToast
 }) {
   const [activeTab, setActiveTab] = useState('consolidated'); // consolidated, divisional, departmental, forecast, ratios, leagues
@@ -268,6 +270,22 @@ export default function ReportsDashboard({
     return calculateCashReceivedCommission(member, policy, monthKey, staff, companies, placements);
   };
 
+  const getBusinessDaysInMonth = (monthKey) => {
+    const parts = monthKey.split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    
+    let count = 0;
+    const days = new Date(year, month + 1, 0).getDate();
+    for (let d = 1; d <= days; d++) {
+      const dayOfWeek = new Date(year, month, d).getDay();
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        count++;
+      }
+    }
+    return count || 22;
+  };
+
   // Helper to fetch payroll actual overrides or default projections
   const getStaffPayrollForMonth = (s, monthKey) => {
     const pr = payrollRecords.find(r => r.staffId === s.id && r.month === monthKey);
@@ -277,27 +295,56 @@ export default function ReportsDashboard({
         commissions: Number(pr.commission) || 0
       };
     }
-    const baseSal = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
-    let salaries = baseSal;
-    let commissions = calculateCommissionForRecruiter(s.id, monthKey);
+    
+    let salaries = 0;
+    let commissions = 0;
 
-    if (s.status === 'exited') {
-      const exitMonth = s.exitDate ? s.exitDate.substring(0, 7) : '';
-      const cutoffStr = s.salaryPaidUntilDate || s.exitDate || '';
-      if (cutoffStr) {
-        const cutoffMonth = cutoffStr.substring(0, 7);
-        if (monthKey > cutoffMonth) {
-          salaries = 0;
-          commissions = 0;
-        } else if (monthKey === cutoffMonth) {
-          const [y, m, d] = cutoffStr.split('-').map(Number);
-          const daysInMonth = new Date(y, m, 0).getDate();
-          const proration = Math.min(1.0, Math.max(0.0, d / daysInMonth));
-          salaries = baseSal * proration;
+    if (monthKey > '2026-06') {
+      commissions = calculateCommissionForRecruiter(s.id, monthKey);
+      const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+
+      if (policy && policy.type === 'freelance') {
+        const totalBusinessDays = getBusinessDaysInMonth(monthKey);
+        const approvedLeaves = leaveRequests.filter(req => 
+          req.staffId === s.id && 
+          req.status === 'approved' && 
+          req.startDate && 
+          req.startDate.substring(0, 7) === monthKey
+        );
+        const leaveDays = approvedLeaves.reduce((sum, req) => sum + (Number(req.totalDays) || 0), 0);
+        const attendanceDays = Math.max(0, totalBusinessDays - leaveDays);
+
+        let dailyRate = 0;
+        if (s.attendanceRate && Number(s.attendanceRate) > 0) {
+          dailyRate = Number(s.attendanceRate);
+        } else if (s.salary && Number(s.salary) > 0) {
+          dailyRate = (Number(s.salary) / 12) / totalBusinessDays;
+        } else {
+          dailyRate = Number(policy.dailyRateDefault || 0);
         }
+        salaries = dailyRate * attendanceDays;
+      } else {
+        salaries = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
       }
-      if (exitMonth && monthKey === exitMonth && s.additionalExitPayment) {
-        salaries += toGBP(Number(s.additionalExitPayment) || 0, s.currency || 'GBP');
+
+      if (s.status === 'exited') {
+        const exitMonth = s.exitDate ? s.exitDate.substring(0, 7) : '';
+        const cutoffStr = s.salaryPaidUntilDate || s.exitDate || '';
+        if (cutoffStr) {
+          const cutoffMonth = cutoffStr.substring(0, 7);
+          if (monthKey > cutoffMonth) {
+            salaries = 0;
+            commissions = 0;
+          } else if (monthKey === cutoffMonth) {
+            const [y, m, d] = cutoffStr.split('-').map(Number);
+            const daysInMonth = new Date(y, m, 0).getDate();
+            const proration = Math.min(1.0, Math.max(0.0, d / daysInMonth));
+            salaries = salaries * proration;
+          }
+        }
+        if (exitMonth && monthKey === exitMonth && s.additionalExitPayment) {
+          salaries += toGBP(Number(s.additionalExitPayment) || 0, s.currency || 'GBP');
+        }
       }
     }
 

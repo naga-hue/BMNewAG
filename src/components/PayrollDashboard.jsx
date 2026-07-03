@@ -28,6 +28,7 @@ export default function PayrollDashboard({
   placements = [],
   payrollRecords = [],
   payrollPolicies = [],
+  leaveRequests = [],
   expenses = [],
   nominalCodes = [],
   onSavePayrollRecord,
@@ -126,6 +127,252 @@ export default function PayrollDashboard({
 
   // FX Rates representation
   const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
+
+  const handleDownloadInvoice = (staffMember, monthKey, basic, commission) => {
+    const total = basic + commission;
+    const invoiceNumber = `INV-${monthKey.replace('-', '')}-${staffMember.id.substring(0, 4).toUpperCase()}`;
+    const invoiceDate = new Date().toISOString().split('T')[0];
+    const companyName = companies.find(c => c.id === staffMember.companyId)?.name || 'Humres Technical Recruitment Ltd';
+    
+    const approvedLeaves = leaveRequests?.filter(req => 
+      req.staffId === staffMember.id && 
+      req.status === 'approved' && 
+      req.startDate && 
+      req.startDate.substring(0, 7) === monthKey
+    ) || [];
+    const leaveDays = approvedLeaves.reduce((sum, req) => sum + (Number(req.totalDays) || 0), 0);
+    const totalBusinessDays = getBusinessDaysInMonth(monthKey);
+    const attendanceDays = Math.max(0, totalBusinessDays - leaveDays);
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Please allow popups to download/print the invoice.");
+      return;
+    }
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Invoice - ${invoiceNumber}</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 40px;
+            color: #333;
+          }
+          .invoice-box {
+            max-width: 800px;
+            margin: auto;
+            border: 1px solid #eee;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+            padding: 30px;
+            border-radius: 8px;
+          }
+          .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid #f59e0b;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+          }
+          .header h1 {
+            margin: 0;
+            font-size: 28px;
+            color: #1e3a8a;
+          }
+          .meta-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 40px;
+            font-size: 13px;
+            line-height: 1.6;
+          }
+          .meta-block {
+            flex: 1;
+          }
+          .meta-block h3 {
+            margin: 0 0 8px 0;
+            color: #1e3a8a;
+            font-size: 14px;
+            text-transform: uppercase;
+          }
+          .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 40px;
+          }
+          .table th {
+            background-color: #f8fafc;
+            border-bottom: 2px solid #e2e8f0;
+            color: #475569;
+            font-weight: bold;
+            text-align: left;
+            padding: 12px;
+            font-size: 13px;
+          }
+          .table td {
+            border-bottom: 1px solid #e2e8f0;
+            padding: 12px;
+            font-size: 13px;
+            color: #334155;
+          }
+          .totals-table {
+            width: 300px;
+            margin-left: auto;
+            margin-bottom: 40px;
+          }
+          .totals-table td {
+            padding: 8px 12px;
+            font-size: 13px;
+          }
+          .totals-table tr.grand-total {
+            font-weight: bold;
+            font-size: 16px;
+            color: #1e3a8a;
+            background-color: #fef3c7;
+          }
+          .footer {
+            border-top: 1px solid #e2e8f0;
+            padding-top: 20px;
+            text-align: center;
+            font-size: 11px;
+            color: #64748b;
+            line-height: 1.5;
+          }
+          .print-btn {
+            background-color: #f59e0b;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-bottom: 20px;
+            display: inline-block;
+          }
+          @media print {
+            .print-btn {
+              display: none;
+            }
+            body {
+              padding: 0;
+            }
+            .invoice-box {
+              border: none;
+              box-shadow: none;
+              padding: 0;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div style="text-align: center;">
+          <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+        </div>
+        <div class="invoice-box">
+          <div class="header">
+            <div>
+              <h1 style="color: #f59e0b;">INVOICE</h1>
+              <p style="margin: 5px 0 0 0; font-size: 14px; color: #64748b;">Invoice #: ${invoiceNumber}</p>
+            </div>
+            <div style="text-align: right;">
+              <h2 style="margin: 0; font-size: 18px; color: #334155;">${staffMember.fullName}</h2>
+              <p style="margin: 5px 0 0 0; font-size: 13px; color: #64748b;">${staffMember.jobTitle || 'Freelance Contractor'}</p>
+              <p style="margin: 3px 0 0 0; font-size: 13px; color: #64748b;">${staffMember.email || ''}</p>
+            </div>
+          </div>
+          
+          <div class="meta-info">
+            <div class="meta-block">
+              <h3 style="color: #f59e0b;">Billed To:</h3>
+              <strong>${companyName}</strong><br>
+              Accounts Payable Department<br>
+              Humres Group Head Office
+            </div>
+            <div class="meta-block" style="text-align: right;">
+              <h3 style="color: #f59e0b;">Invoice Date:</h3>
+              ${invoiceDate}<br>
+              <h3 style="color: #f59e0b; margin-top: 10px;">Billing Period:</h3>
+              ${monthKey}
+            </div>
+          </div>
+          
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th style="text-align: center;">Days Worked</th>
+                <th style="text-align: right;">Daily Rate</th>
+                <th style="text-align: right;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <strong>Professional Consulting Services</strong><br>
+                  Base contractor attendance in ${monthKey} (computed from roster calendar business days minus approved leaves).<br>
+                  Total Business Days: ${totalBusinessDays} &bull; Approved Leave Days: ${leaveDays}
+                </td>
+                <td style="text-align: center;">${attendanceDays}</td>
+                <td style="text-align: right;">£${((basic / (attendanceDays || 1))).toFixed(2)}</td>
+                <td style="text-align: right;">£${basic.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              </tr>
+              ${commission > 0 ? `
+              <tr>
+                <td>
+                  <strong>Recruiter Commission Payout</strong><br>
+                  Commission share accrued for placement credits in the billing cycle.
+                </td>
+                <td style="text-align: center;">—</td>
+                <td style="text-align: right;">—</td>
+                <td style="text-align: right;">£${commission.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+              </tr>
+              ` : ''}
+            </tbody>
+          </table>
+          
+          <table class="totals-table">
+            <tr>
+              <td>Subtotal:</td>
+              <td style="text-align: right;">£${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+            </tr>
+            <tr class="grand-total">
+              <td>Total Due:</td>
+              <td style="text-align: right;">£${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+            </tr>
+          </table>
+
+          <div style="margin-top: 50px; font-size: 13px; color: #475569; background: #fffbeb; padding: 15px; border-radius: 6px; border: 1px solid #fef3c7;">
+            <strong>Bank Remittance Account:</strong><br>
+            Bank Name: Lloyds Bank plc<br>
+            Account Name: ${staffMember.fullName}<br>
+            Sort Code: 30-90-09<br>
+            Account Number: 12345678
+          </div>
+          
+          <div class="footer" style="margin-top: 60px;">
+            Thank you for your business. For any billing queries, please contact ${staffMember.email || 'the contractor directly'}.<br>
+            Generated automatically via Humres Group Business Management Suite.
+          </div>
+        </div>
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+            }, 500);
+          }
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
 
   // Save or Update Payroll Policy
   const handleSavePolicySubmit = async (e) => {
@@ -404,6 +651,22 @@ export default function PayrollDashboard({
     return totalCost;
   };
 
+  const getBusinessDaysInMonth = (monthKey) => {
+    const parts = monthKey.split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    
+    let count = 0;
+    const days = new Date(year, month + 1, 0).getDate();
+    for (let d = 1; d <= days; d++) {
+      const dayOfWeek = new Date(year, month, d).getDay();
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        count++;
+      }
+    }
+    return count || 22;
+  };
+
   // Helper to fetch cell status and values
   const getCellData = (staffMember, month) => {
     const record = payrollRecords.find(r => r.staffId === staffMember.id && r.month === month);
@@ -441,9 +704,26 @@ export default function PayrollDashboard({
 
     if (policy) {
       if (policy.type === 'freelance') {
-        const dailyRate = Number(staffMember.attendanceRate || policy.dailyRateDefault || 0);
-        const workingDays = Number(policy.expectedDaysPerMonth || 21.67);
-        const monthlyContractorRateVal = dailyRate * workingDays;
+        const totalBusinessDays = getBusinessDaysInMonth(month);
+        const approvedLeaves = leaveRequests.filter(req => 
+          req.staffId === staffMember.id && 
+          req.status === 'approved' && 
+          req.startDate && 
+          req.startDate.substring(0, 7) === month
+        );
+        const leaveDays = approvedLeaves.reduce((sum, req) => sum + (Number(req.totalDays) || 0), 0);
+        const attendanceDays = Math.max(0, totalBusinessDays - leaveDays);
+
+        let dailyRate = 0;
+        if (staffMember.attendanceRate && Number(staffMember.attendanceRate) > 0) {
+          dailyRate = Number(staffMember.attendanceRate);
+        } else if (staffMember.salary && Number(staffMember.salary) > 0) {
+          dailyRate = (Number(staffMember.salary) / 12) / totalBusinessDays;
+        } else {
+          dailyRate = Number(policy.dailyRateDefault || 0);
+        }
+        
+        const monthlyContractorRateVal = dailyRate * attendanceDays;
         baselineBasic = toGBP(monthlyContractorRateVal, staffMember.currency || 'GBP');
       } else {
         const grossSalaryAndComm = baselineBasic + baselineCommission;
@@ -1662,7 +1942,28 @@ ${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleSt
 
             </div>
 
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px', marginTop: '4px' }}>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px', marginTop: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
+              {(() => {
+                const policy = payrollPolicies.find(p => p.id === selectedCell.staffMember.payrollPolicyId);
+                if (policy && policy.type === 'freelance') {
+                  return (
+                    <button
+                      type="button"
+                      className="btn-accent"
+                      onClick={() => handleDownloadInvoice(
+                        selectedCell.staffMember,
+                        selectedCell.month,
+                        Number(basicSalaryOverride) || 0,
+                        Number(commissionOverride) || 0
+                      )}
+                      style={{ marginRight: 'auto', backgroundColor: '#f59e0b', color: 'white' }}
+                    >
+                      📥 Download Invoice
+                    </button>
+                  );
+                }
+                return null;
+              })()}
               <button 
                 type="button"
                 className="btn-secondary"

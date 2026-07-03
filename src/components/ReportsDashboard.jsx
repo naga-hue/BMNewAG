@@ -420,7 +420,9 @@ export default function ReportsDashboard({
     let commissions = 0;
     activeStaff.forEach(s => {
       const pay = getStaffPayrollForMonth(s, monthKey);
-      salaries += pay.salaries;
+      if (monthKey > '2026-06') {
+        salaries += pay.salaries;
+      }
       commissions += pay.commissions;
     });
 
@@ -799,7 +801,9 @@ export default function ReportsDashboard({
                     
                     if (companyDataMap[s.companyId]) {
                       const pay = getStaffPayrollForMonth(s, mKey);
-                      companyDataMap[s.companyId].salaries += pay.salaries;
+                      if (mKey > '2026-06') {
+                        companyDataMap[s.companyId].salaries += pay.salaries;
+                      }
                       companyDataMap[s.companyId].commissions += pay.commissions;
                     }
                   });
@@ -1019,7 +1023,9 @@ export default function ReportsDashboard({
 
                     if (deptDataMap[s.department]) {
                       const pay = getStaffPayrollForMonth(s, mKey);
-                      deptDataMap[s.department].salaries += pay.salaries;
+                      if (mKey > '2026-06') {
+                        deptDataMap[s.department].salaries += pay.salaries;
+                      }
                       deptDataMap[s.department].commissions += pay.commissions;
                     }
                   });
@@ -1251,7 +1257,9 @@ export default function ReportsDashboard({
 
                   activeStaff.forEach(s => {
                     const pay = getStaffPayrollForMonth(s, pKey);
-                    salaries += pay.salaries;
+                    if (pKey > '2026-06') {
+                      salaries += pay.salaries;
+                    }
                     commissions += pay.commissions;
                   });
 

@@ -309,13 +309,45 @@ export default function StaffDetail({
         currentPlacements: [], 
         releasedPlacements: [], 
         historicalWithheld: [],
-        slabBreakdown: []
+        slabBreakdown: [],
+        commissionableBilling: 0
+      };
+    }
+
+    const getMonthsOfService = (startStr, dateStr) => {
+      if (!startStr) return 999;
+      try {
+        const [startYear, startMonth] = startStr.substring(0, 7).split('-').map(Number);
+        const [payYear, payMonth] = dateStr.split('-').map(Number);
+        return (payYear - startYear) * 12 + (payMonth - startMonth);
+      } catch (e) {
+        return 999;
+      }
+    };
+
+    const monthsOfService = getMonthsOfService(member.startDate, monthStr);
+    const isStarterWaiverActive = policy.starterWaiveThreshold && monthsOfService < 12;
+    const isLocked = policy.effectiveFrom === 'one_year_service' && monthsOfService < 12 && !isStarterWaiverActive;
+
+    if (isLocked) {
+      return { 
+        billing: 0, 
+        baseEarned: 0, 
+        withheld: 0, 
+        paidNow: 0, 
+        released: 0, 
+        totalPayout: 0, 
+        currentPlacements: [], 
+        releasedPlacements: [], 
+        historicalWithheld: [],
+        slabBreakdown: [],
+        commissionableBilling: 0
       };
     }
 
     const [payYear, payMonth] = monthStr.split('-').map(Number);
     
-    // Placements cycle is previous month
+    // Placements evaluated are those starting in the PREVIOUS month
     let cycleYear = payYear;
     let cycleMonth = payMonth - 1;
     if (cycleMonth === 0) {
@@ -323,16 +355,23 @@ export default function StaffDetail({
       cycleYear = payYear - 1;
     }
 
-    const teamMembers = staffList.filter(s => s.reportingManagerId === member.id);
-    const targetStaffIds = policy.type === 'manager' 
-      ? [member.id, ...teamMembers.map(s => s.id)]
-      : [member.id];
+    // Determine target staff members
+    let targetStaffIds = [member.id];
+    if (policy.type === 'manager') {
+      if (policy.assignedDepartments && policy.assignedDepartments.length > 0) {
+        const deptStaff = staffList.filter(s => policy.assignedDepartments.includes(s.department));
+        targetStaffIds = Array.from(new Set([member.id, ...deptStaff.map(s => s.id)]));
+      } else {
+        const teamMembers = staffList.filter(s => s.reportingManagerId === member.id);
+        targetStaffIds = [member.id, ...teamMembers.map(s => s.id)];
+      }
+    }
 
-    // Helper to calculate total recruiter split billing for a start month
+    // Helper to calculate total recruiter split billing for a specific start month
     const getRecruiterBillingForStartMonth = (yearVal, monthVal) => {
       let sum = 0;
       placements.forEach(p => {
-        if (!p.startDate) return;
+        if (!p.startDate || p.status === 'dns') return;
         const pStart = new Date(p.startDate);
         if (pStart.getFullYear() === yearVal && (pStart.getMonth() + 1) === monthVal) {
           p.splits?.forEach(s => {
@@ -345,18 +384,32 @@ export default function StaffDetail({
       return sum;
     };
 
-    // Helper to apply slabs
+    // Helper to apply slabs to a billing amount (normalized to GBP)
     const getPolicyCommission = (billingAmt) => {
-      const thresh = Number(policy.monthlyThreshold) || 0;
+      const policyCompany = companies.find(c => c.id === policy.companyId);
+      const policyCurrency = policyCompany ? policyCompany.currency : 'GBP';
+      
+      const thresh = isStarterWaiverActive ? 0 : toGBP(policy.monthlyThreshold || 0, policyCurrency);
       const commissionable = Math.max(0, billingAmt - thresh);
       const slabs = policy.slabs || [];
-      let earned = 0;
-      let remaining = commissionable;
 
-      if (commissionable > 0) {
+      if (commissionable <= 0) return { earned: 0, commissionable: 0 };
+
+      if (policy.slabType === 'flat_rate') {
+        let highestRate = 0;
         for (const slab of slabs) {
-          const min = Number(slab.minAmount) || 0;
-          const max = Number(slab.maxAmount) || 999999;
+          const min = toGBP(slab.minAmount || 0, policyCurrency);
+          if (commissionable > min) {
+            highestRate = Number(slab.rate) || 0;
+          }
+        }
+        return { earned: (commissionable * highestRate) / 100, commissionable };
+      } else {
+        let earned = 0;
+        let remaining = commissionable;
+        for (const slab of slabs) {
+          const min = toGBP(slab.minAmount || 0, policyCurrency);
+          const max = toGBP(slab.maxAmount || 0, policyCurrency);
           const rate = Number(slab.rate) || 0;
           const slabCap = max - min;
 
@@ -365,13 +418,38 @@ export default function StaffDetail({
           earned += (applicable * rate) / 100;
           remaining -= applicable;
         }
+        return { earned, commissionable };
       }
-      return { earned, commissionable };
     };
 
-    // Current Cycle calculations
+    // Quarterly accumulator helper
+    const getQuarterlyCommissionForMonth = (yearVal, monthVal) => {
+      const quarterIdx = Math.floor((monthVal - 1) / 3);
+      const startMonthOfQuarter = quarterIdx * 3 + 1;
+
+      let cumulativeBilling = 0;
+      for (let m = startMonthOfQuarter; m <= monthVal; m++) {
+        cumulativeBilling += getRecruiterBillingForStartMonth(yearVal, m);
+      }
+      const cumulativeRes = getPolicyCommission(cumulativeBilling);
+
+      let previousBilling = 0;
+      for (let m = startMonthOfQuarter; m <= monthVal - 1; m++) {
+        previousBilling += getRecruiterBillingForStartMonth(yearVal, m);
+      }
+      const previousRes = getPolicyCommission(previousBilling);
+
+      return {
+        earned: Math.max(0, cumulativeRes.earned - previousRes.earned),
+        commissionable: cumulativeRes.commissionable
+      };
+    };
+
+    // 1. Current Cycle calculations (starts in previous month)
     const currentCycleBilling = getRecruiterBillingForStartMonth(cycleYear, cycleMonth);
-    const policyRes = getPolicyCommission(currentCycleBilling);
+    const policyRes = policy.calcInterval === 'quarterly'
+      ? getQuarterlyCommissionForMonth(cycleYear, cycleMonth)
+      : getPolicyCommission(currentCycleBilling);
     const baseEarned = policyRes.earned;
 
     const currentPlacements = [];
@@ -379,7 +457,7 @@ export default function StaffDetail({
     let totalWithheld = 0;
 
     placements.forEach(p => {
-      if (!p.startDate) return;
+      if (!p.startDate || p.status === 'dns') return;
       const pStart = new Date(p.startDate);
       if (pStart.getFullYear() === cycleYear && (pStart.getMonth() + 1) === cycleMonth) {
         const mySplits = p.splits?.filter(s => targetStaffIds.includes(s.staffId)) || [];
@@ -415,13 +493,13 @@ export default function StaffDetail({
       }
     });
 
-    // Releases from prior withholds
+    // 2. Releases from Prior Withholds (starts before the previous month)
     const releasedPlacements = [];
     const historicalWithheld = [];
     let totalReleased = 0;
 
     placements.forEach(p => {
-      if (!p.startDate) return;
+      if (!p.startDate || p.status === 'dns') return;
       const pStart = new Date(p.startDate);
       const pStartYear = pStart.getFullYear();
       const pStartMonth = pStart.getMonth() + 1;
@@ -435,7 +513,9 @@ export default function StaffDetail({
           const myBillingShare = (p.netScoreValue * totalSplitPct) / 100;
 
           const histCycleBilling = getRecruiterBillingForStartMonth(pStartYear, pStartMonth);
-          const histPolicyRes = getPolicyCommission(histCycleBilling);
+          const histPolicyRes = policy.calcInterval === 'quarterly'
+            ? getQuarterlyCommissionForMonth(pStartYear, pStartMonth)
+            : getPolicyCommission(histCycleBilling);
           const histBaseEarned = histPolicyRes.earned;
 
           const myCommShare = histCycleBilling > 0 
@@ -481,24 +561,42 @@ export default function StaffDetail({
 
     // Generate slab breakdown
     const slabBreakdown = [];
-    let remainingBilling = policyRes.commissionable;
-    const sortedSlabs = [...(policy.slabs || [])].sort((a, b) => a.minAmount - b.minAmount);
+    const policyCompany = companies.find(c => c.id === policy.companyId);
+    const currencyObj = policyCompany ? symbolMap[policyCompany.currency] || '£' : '£';
     
-    for (const slab of sortedSlabs) {
-      if (remainingBilling <= 0) break;
-      
-      const slabLimit = slab.maxAmount - slab.minAmount;
-      const slabApplicable = Math.min(remainingBilling, slabLimit);
-      const slabEarned = (slabApplicable * slab.rate) / 100;
-      
-      remainingBilling -= slabApplicable;
-      
+    if (policy.slabType === 'flat_rate') {
+      let highestRate = 0;
+      for (const slab of policy.slabs || []) {
+        if (policyRes.commissionable > slab.minAmount) {
+          highestRate = slab.rate;
+        }
+      }
       slabBreakdown.push({
-        slabRange: `${currencyObj.symbol}${slab.minAmount.toLocaleString()} to ${slab.maxAmount >= 999999 ? '∞' : `${currencyObj.symbol}${slab.maxAmount.toLocaleString()}`}`,
-        rate: slab.rate,
-        applicable: slabApplicable,
-        earned: slabEarned
+        slabRange: `Flat rate tier (exceeds ${currencyObj}${policyRes.commissionable.toLocaleString()})`,
+        rate: highestRate,
+        applicable: policyRes.commissionable,
+        earned: baseEarned
       });
+    } else {
+      let remainingBilling = policyRes.commissionable;
+      const sortedSlabs = [...(policy.slabs || [])].sort((a, b) => a.minAmount - b.minAmount);
+      
+      for (const slab of sortedSlabs) {
+        if (remainingBilling <= 0) break;
+        
+        const slabLimit = slab.maxAmount - slab.minAmount;
+        const slabApplicable = Math.min(remainingBilling, slabLimit);
+        const slabEarned = (slabApplicable * slab.rate) / 100;
+        
+        remainingBilling -= slabApplicable;
+        
+        slabBreakdown.push({
+          slabRange: `${currencyObj}${slab.minAmount.toLocaleString()} to ${slab.maxAmount >= 999999 ? '∞' : `${currencyObj}${slab.maxAmount.toLocaleString()}`}`,
+          rate: slab.rate,
+          applicable: slabApplicable,
+          earned: slabEarned
+        });
+      }
     }
 
     return {

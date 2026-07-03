@@ -74,6 +74,9 @@ export default function CommissionsDashboard({
   const [teamOverridePercent, setTeamOverridePercent] = useState('2.5');
   const [description, setDescription] = useState('');
   const [starterWaiveThreshold, setStarterWaiveThreshold] = useState(false);
+  const [calcInterval, setCalcInterval] = useState('monthly'); // monthly | quarterly
+  const [slabType, setSlabType] = useState('progressive'); // progressive | flat_rate
+  const [assignedDepartments, setAssignedDepartments] = useState([]); // string[]
   const [showForm, setShowForm] = useState(false);
 
   // Slabs setup
@@ -150,7 +153,10 @@ export default function CommissionsDashboard({
       slabs: sortedSlabs,
       teamOverridePercent: type === 'manager' ? Number(teamOverridePercent) : 0,
       description: description.trim(),
-      starterWaiveThreshold
+      starterWaiveThreshold,
+      calcInterval,
+      slabType,
+      assignedDepartments: type === 'manager' ? assignedDepartments : []
     };
 
     try {
@@ -170,6 +176,9 @@ export default function CommissionsDashboard({
       setMonthlyThreshold('3000');
       setTeamOverridePercent('2.5');
       setStarterWaiveThreshold(false);
+      setCalcInterval('monthly');
+      setSlabType('progressive');
+      setAssignedDepartments([]);
       setSlabs([
         { minAmount: 0, maxAmount: 10000, rate: 10 },
         { minAmount: 10000, maxAmount: 15000, rate: 15 },
@@ -251,16 +260,23 @@ export default function CommissionsDashboard({
       cycleYear = payYear - 1;
     }
 
-    const teamMembers = staff.filter(s => s.reportingManagerId === member.id);
-    const targetStaffIds = policy.type === 'manager' 
-      ? [member.id, ...teamMembers.map(s => s.id)]
-      : [member.id];
+    // Determine target staff members
+    let targetStaffIds = [member.id];
+    if (policy.type === 'manager') {
+      if (policy.assignedDepartments && policy.assignedDepartments.length > 0) {
+        const deptStaff = staff.filter(s => policy.assignedDepartments.includes(s.department));
+        targetStaffIds = Array.from(new Set([member.id, ...deptStaff.map(s => s.id)]));
+      } else {
+        const teamMembers = staff.filter(s => s.reportingManagerId === member.id);
+        targetStaffIds = [member.id, ...teamMembers.map(s => s.id)];
+      }
+    }
 
     // Helper to calculate total recruiter split billing for a specific start month
     const getRecruiterBillingForStartMonth = (yearVal, monthVal) => {
       let sum = 0;
       placements.forEach(p => {
-        if (!p.startDate) return;
+        if (!p.startDate || p.status === 'dns') return;
         const pStart = new Date(p.startDate);
         if (pStart.getFullYear() === yearVal && (pStart.getMonth() + 1) === monthVal) {
           p.splits?.forEach(s => {
@@ -278,16 +294,27 @@ export default function CommissionsDashboard({
       const policyCompany = companies.find(c => c.id === policy.companyId);
       const policyCurrency = policyCompany ? policyCompany.currency : 'GBP';
       
-      const thresh = isStarterWaiverActive ? 0 : toGBP(policy.monthlyThreshold, policyCurrency);
+      const thresh = isStarterWaiverActive ? 0 : toGBP(policy.monthlyThreshold || 0, policyCurrency);
       const commissionable = Math.max(0, billingAmt - thresh);
       const slabs = policy.slabs || [];
-      let earned = 0;
-      let remaining = commissionable;
 
-      if (commissionable > 0) {
+      if (commissionable <= 0) return 0;
+
+      if (policy.slabType === 'flat_rate') {
+        let highestRate = 0;
         for (const slab of slabs) {
-          const min = toGBP(slab.minAmount, policyCurrency);
-          const max = toGBP(slab.maxAmount, policyCurrency);
+          const min = toGBP(slab.minAmount || 0, policyCurrency);
+          if (commissionable > min) {
+            highestRate = Number(slab.rate) || 0;
+          }
+        }
+        return (commissionable * highestRate) / 100;
+      } else {
+        let earned = 0;
+        let remaining = commissionable;
+        for (const slab of slabs) {
+          const min = toGBP(slab.minAmount || 0, policyCurrency);
+          const max = toGBP(slab.maxAmount || 0, policyCurrency);
           const rate = Number(slab.rate) || 0;
           const slabCap = max - min;
 
@@ -296,20 +323,42 @@ export default function CommissionsDashboard({
           earned += (applicable * rate) / 100;
           remaining -= applicable;
         }
+        return earned;
       }
-      return earned;
+    };
+
+    // Quarterly accumulator helper
+    const getQuarterlyCommissionForMonth = (yearVal, monthVal) => {
+      const quarterIdx = Math.floor((monthVal - 1) / 3);
+      const startMonthOfQuarter = quarterIdx * 3 + 1;
+
+      let cumulativeBilling = 0;
+      for (let m = startMonthOfQuarter; m <= monthVal; m++) {
+        cumulativeBilling += getRecruiterBillingForStartMonth(yearVal, m);
+      }
+      const cumulativeCommission = getPolicyCommission(cumulativeBilling);
+
+      let previousBilling = 0;
+      for (let m = startMonthOfQuarter; m <= monthVal - 1; m++) {
+        previousBilling += getRecruiterBillingForStartMonth(yearVal, m);
+      }
+      const previousCommission = getPolicyCommission(previousBilling);
+
+      return Math.max(0, cumulativeCommission - previousCommission);
     };
 
     // 1. Current Cycle calculations (starts in previous month)
     const currentCycleBilling = getRecruiterBillingForStartMonth(cycleYear, cycleMonth);
-    const baseEarned = getPolicyCommission(currentCycleBilling);
+    const baseEarned = policy.calcInterval === 'quarterly'
+      ? getQuarterlyCommissionForMonth(cycleYear, cycleMonth)
+      : getPolicyCommission(currentCycleBilling);
 
     const currentPlacements = [];
     let totalPaidNow = 0;
     let totalWithheld = 0;
 
     placements.forEach(p => {
-      if (!p.startDate) return;
+      if (!p.startDate || p.status === 'dns') return;
       const pStart = new Date(p.startDate);
       if (pStart.getFullYear() === cycleYear && (pStart.getMonth() + 1) === cycleMonth) {
         const mySplits = p.splits?.filter(s => targetStaffIds.includes(s.staffId)) || [];
@@ -317,7 +366,6 @@ export default function CommissionsDashboard({
           const totalSplitPct = mySplits.reduce((acc, s) => acc + s.percentage, 0);
           const myBillingShare = (p.netScoreValue * totalSplitPct) / 100;
           
-          // Proportional commission share
           const myCommShare = currentCycleBilling > 0 
             ? (myBillingShare / currentCycleBilling) * baseEarned 
             : 0;
@@ -353,7 +401,7 @@ export default function CommissionsDashboard({
     let totalReleased = 0;
 
     placements.forEach(p => {
-      if (!p.startDate) return;
+      if (!p.startDate || p.status === 'dns') return;
       const pStart = new Date(p.startDate);
       const pStartYear = pStart.getFullYear();
       const pStartMonth = pStart.getMonth() + 1;
@@ -369,7 +417,9 @@ export default function CommissionsDashboard({
 
           // Reconstruct historical month's aggregate
           const histCycleBilling = getRecruiterBillingForStartMonth(pStartYear, pStartMonth);
-          const histBaseEarned = getPolicyCommission(histCycleBilling);
+          const histBaseEarned = policy.calcInterval === 'quarterly'
+            ? getQuarterlyCommissionForMonth(pStartYear, pStartMonth)
+            : getPolicyCommission(histCycleBilling);
 
           const myCommShare = histCycleBilling > 0 
             ? (myBillingShare / histCycleBilling) * histBaseEarned 
@@ -655,6 +705,67 @@ export default function CommissionsDashboard({
                 </div>
               </div>
 
+              <div className="form-group-row">
+                <div className="form-group">
+                  <label className="form-label">Calculation Interval <span>*</span></label>
+                  <select 
+                    className="select-filter"
+                    value={calcInterval}
+                    onChange={(e) => setCalcInterval(e.target.value)}
+                    style={{ width: '100%', padding: '10px' }}
+                  >
+                    <option value="monthly">Monthly Accumulation</option>
+                    <option value="quarterly">Quarterly Accumulation (Jan-Mar, Apr-Jun, etc.)</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Slab Calculation Method <span>*</span></label>
+                  <select 
+                    className="select-filter"
+                    value={slabType}
+                    onChange={(e) => setSlabType(e.target.value)}
+                    style={{ width: '100%', padding: '10px' }}
+                  >
+                    <option value="progressive">Progressive (Rate applies only to tier amount)</option>
+                    <option value="flat_rate">Flat Rate Tier (Rate of highest matching tier applies to entire revenue)</option>
+                  </select>
+                </div>
+              </div>
+
+              {type === 'manager' && (
+                <div className="form-group" style={{ border: '1px solid var(--border-color)', padding: '16px', borderRadius: '8px', marginTop: '4px', backgroundColor: 'var(--bg-secondary)' }}>
+                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: '8px' }}>
+                    🏢 Target Departments for Calculation (Optional)
+                  </label>
+                  <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '0 0 12px 0' }}>
+                    Select specific departments to aggregate billing for this manager. If none are selected, it defaults to recruiters reporting directly to this manager.
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px' }}>
+                    {Array.from(new Set(staff.map(s => s.department).filter(Boolean))).sort().map(dept => (
+                      <div key={dept} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <input
+                          type="checkbox"
+                          id={`dept-chk-${dept}`}
+                          checked={assignedDepartments.includes(dept)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setAssignedDepartments(prev => [...prev, dept]);
+                            } else {
+                              setAssignedDepartments(prev => prev.filter(d => d !== dept));
+                            }
+                          }}
+                          style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                        />
+                        <label htmlFor={`dept-chk-${dept}`} style={{ fontSize: '12px', cursor: 'pointer', userSelect: 'none', margin: 0 }}>
+                          {dept}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Starter Waiver Checkbox Banner */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', marginTop: '8px' }}>
                 <input 
@@ -832,6 +943,9 @@ export default function CommissionsDashboard({
                           setTeamOverridePercent(String(p.teamOverridePercent || 2.5));
                           setSlabs(p.slabs || []);
                           setStarterWaiveThreshold(p.starterWaiveThreshold || false);
+                          setCalcInterval(p.calcInterval || 'monthly');
+                          setSlabType(p.slabType || 'progressive');
+                          setAssignedDepartments(p.assignedDepartments || []);
                           setShowForm(true);
                           window.scrollTo({ top: 0, behavior: 'smooth' });
                         }}

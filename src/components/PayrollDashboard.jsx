@@ -502,16 +502,23 @@ export default function PayrollDashboard({
       cycleYear = payYear - 1;
     }
 
-    const teamMembers = staffList.filter(s => s.reportingManagerId === member.id);
-    const targetStaffIds = policy.type === 'manager' 
-      ? [member.id, ...teamMembers.map(s => s.id)]
-      : [member.id];
+    // Determine target staff members
+    let targetStaffIds = [member.id];
+    if (policy.type === 'manager') {
+      if (policy.assignedDepartments && policy.assignedDepartments.length > 0) {
+        const deptStaff = staffList.filter(s => policy.assignedDepartments.includes(s.department));
+        targetStaffIds = Array.from(new Set([member.id, ...deptStaff.map(s => s.id)]));
+      } else {
+        const teamMembers = staffList.filter(s => s.reportingManagerId === member.id);
+        targetStaffIds = [member.id, ...teamMembers.map(s => s.id)];
+      }
+    }
 
     // Helper to calculate total recruiter split billing for a specific start month
     const getRecruiterBillingForStartMonth = (yearVal, monthVal) => {
       let sum = 0;
       placementsList.forEach(p => {
-        if (!p.startDate) return;
+        if (!p.startDate || p.status === 'dns') return;
         const pStart = new Date(p.startDate);
         if (pStart.getFullYear() === yearVal && (pStart.getMonth() + 1) === monthVal) {
           p.splits?.forEach(s => {
@@ -529,16 +536,27 @@ export default function PayrollDashboard({
       const policyCompany = companiesList.find(c => c.id === policy.companyId);
       const policyCurrency = policyCompany ? policyCompany.currency : 'GBP';
       
-      const thresh = isStarterWaiverActive ? 0 : toGBP(policy.monthlyThreshold, policyCurrency);
+      const thresh = isStarterWaiverActive ? 0 : toGBP(policy.monthlyThreshold || 0, policyCurrency);
       const commissionable = Math.max(0, billingAmt - thresh);
       const slabs = policy.slabs || [];
-      let earned = 0;
-      let remaining = commissionable;
 
-      if (commissionable > 0) {
+      if (commissionable <= 0) return 0;
+
+      if (policy.slabType === 'flat_rate') {
+        let highestRate = 0;
         for (const slab of slabs) {
-          const min = toGBP(slab.minAmount, policyCurrency);
-          const max = toGBP(slab.maxAmount, policyCurrency);
+          const min = toGBP(slab.minAmount || 0, policyCurrency);
+          if (commissionable > min) {
+            highestRate = Number(slab.rate) || 0;
+          }
+        }
+        return (commissionable * highestRate) / 100;
+      } else {
+        let earned = 0;
+        let remaining = commissionable;
+        for (const slab of slabs) {
+          const min = toGBP(slab.minAmount || 0, policyCurrency);
+          const max = toGBP(slab.maxAmount || 0, policyCurrency);
           const rate = Number(slab.rate) || 0;
           const slabCap = max - min;
 
@@ -547,18 +565,40 @@ export default function PayrollDashboard({
           earned += (applicable * rate) / 100;
           remaining -= applicable;
         }
+        return earned;
       }
-      return earned;
+    };
+
+    // Quarterly accumulator helper
+    const getQuarterlyCommissionForMonth = (yearVal, monthVal) => {
+      const quarterIdx = Math.floor((monthVal - 1) / 3);
+      const startMonthOfQuarter = quarterIdx * 3 + 1;
+
+      let cumulativeBilling = 0;
+      for (let m = startMonthOfQuarter; m <= monthVal; m++) {
+        cumulativeBilling += getRecruiterBillingForStartMonth(yearVal, m);
+      }
+      const cumulativeCommission = getPolicyCommission(cumulativeBilling);
+
+      let previousBilling = 0;
+      for (let m = startMonthOfQuarter; m <= monthVal - 1; m++) {
+        previousBilling += getRecruiterBillingForStartMonth(yearVal, m);
+      }
+      const previousCommission = getPolicyCommission(previousBilling);
+
+      return Math.max(0, cumulativeCommission - previousCommission);
     };
 
     // 1. Current Cycle calculations (starts in previous month)
     const currentCycleBilling = getRecruiterBillingForStartMonth(cycleYear, cycleMonth);
-    const baseEarned = getPolicyCommission(currentCycleBilling);
+    const baseEarned = policy.calcInterval === 'quarterly'
+      ? getQuarterlyCommissionForMonth(cycleYear, cycleMonth)
+      : getPolicyCommission(currentCycleBilling);
 
     let totalPaidNow = 0;
 
     placementsList.forEach(p => {
-      if (!p.startDate) return;
+      if (!p.startDate || p.status === 'dns') return;
       const pStart = new Date(p.startDate);
       if (pStart.getFullYear() === cycleYear && (pStart.getMonth() + 1) === cycleMonth) {
         const mySplits = p.splits?.filter(s => targetStaffIds.includes(s.staffId)) || [];
@@ -582,7 +622,7 @@ export default function PayrollDashboard({
     let totalReleased = 0;
 
     placementsList.forEach(p => {
-      if (!p.startDate) return;
+      if (!p.startDate || p.status === 'dns') return;
       const pStart = new Date(p.startDate);
       const pStartYear = pStart.getFullYear();
       const pStartMonth = pStart.getMonth() + 1;
@@ -596,7 +636,9 @@ export default function PayrollDashboard({
           const myBillingShare = (p.netScoreValue * totalSplitPct) / 100;
 
           const histCycleBilling = getRecruiterBillingForStartMonth(pStartYear, pStartMonth);
-          const histBaseEarned = getPolicyCommission(histCycleBilling);
+          const histBaseEarned = policy.calcInterval === 'quarterly'
+            ? getQuarterlyCommissionForMonth(pStartYear, pStartMonth)
+            : getPolicyCommission(histCycleBilling);
 
           const myCommShare = histCycleBilling > 0 
             ? (myBillingShare / histCycleBilling) * histBaseEarned 

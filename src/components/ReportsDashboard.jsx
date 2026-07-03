@@ -422,8 +422,8 @@ export default function ReportsDashboard({
       const pay = getStaffPayrollForMonth(s, monthKey);
       if (monthKey > '2026-06') {
         salaries += pay.salaries;
+        commissions += pay.commissions;
       }
-      commissions += pay.commissions;
     });
 
     // 5. Operating expenses + shared overhead apportionments
@@ -803,8 +803,8 @@ export default function ReportsDashboard({
                       const pay = getStaffPayrollForMonth(s, mKey);
                       if (mKey > '2026-06') {
                         companyDataMap[s.companyId].salaries += pay.salaries;
+                        companyDataMap[s.companyId].commissions += pay.commissions;
                       }
-                      companyDataMap[s.companyId].commissions += pay.commissions;
                     }
                   });
 
@@ -1025,8 +1025,8 @@ export default function ReportsDashboard({
                       const pay = getStaffPayrollForMonth(s, mKey);
                       if (mKey > '2026-06') {
                         deptDataMap[s.department].salaries += pay.salaries;
+                        deptDataMap[s.department].commissions += pay.commissions;
                       }
-                      deptDataMap[s.department].commissions += pay.commissions;
                     }
                   });
 
@@ -1259,8 +1259,8 @@ export default function ReportsDashboard({
                     const pay = getStaffPayrollForMonth(s, pKey);
                     if (pKey > '2026-06') {
                       salaries += pay.salaries;
+                      commissions += pay.commissions;
                     }
-                    commissions += pay.commissions;
                   });
 
                   // Overheads

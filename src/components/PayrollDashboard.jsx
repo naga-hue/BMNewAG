@@ -29,6 +29,7 @@ export default function PayrollDashboard({
   payrollRecords = [],
   payrollPolicies = [],
   leaveRequests = [],
+  holidays = [],
   expenses = [],
   nominalCodes = [],
   onSavePayrollRecord,

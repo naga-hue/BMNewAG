@@ -1355,6 +1355,319 @@ export default function ExpensesDashboard({
     }).filter(r => r.ytdTotal > 0 || recipientSearchQuery.trim() !== '');
   }, [recipientRows, expenses, recipientCompanyFilter, recipientNominalFilter, recipientSearchQuery]);
 
+  const { staffOverheadMap, staffTransactionsMap, flatRowsForMatrix, computedMatrixData } = useMemo(() => {
+    const staffOverhead = {};
+    const staffTrans = {};
+    staff.forEach(s => {
+      staffOverhead[s.id] = Array(12).fill(0);
+      staffTrans[s.id] = Array.from({ length: 12 }, () => []);
+    });
+
+    const yearExpenses = (expenses || []).filter(e => e.plMonth && e.plMonth.startsWith(matrixYear));
+
+    for (let mIdx = 0; mIdx < 12; mIdx++) {
+      const monthKey = `${matrixYear}-${String(mIdx + 1).padStart(2, '0')}`;
+      const activeStaff = staff.filter(s => {
+        const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
+        return daysWorked >= 10;
+      });
+      const activeStaffIds = activeStaff.map(s => s.id);
+      const monthExpenses = yearExpenses.filter(e => e.plMonth === monthKey);
+
+      monthExpenses.forEach(exp => {
+        const gbpAmt = toGBP(exp.amount, exp.currency);
+
+        if (exp.allocationType === 'company') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+          if (targets.length > 0) {
+            const compShare = gbpAmt / targets.length;
+            targets.forEach(targetComp => {
+              const compStaff = activeStaff.filter(s => s.companyId === targetComp);
+              const compHead = compStaff.length || 1;
+              compStaff.forEach(s => {
+                staffOverhead[s.id][mIdx] += compShare / compHead;
+                staffTrans[s.id][mIdx].push({ ...exp, apportionedShare: compShare / compHead, shareReason: 'Company Apportionment' });
+              });
+            });
+          }
+        } else if (exp.allocationType === 'department') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+          if (targets.length > 0) {
+            const deptShare = gbpAmt / targets.length;
+            targets.forEach(targetDept => {
+              const deptStaff = activeStaff.filter(s => s.department === targetDept);
+              const deptHead = deptStaff.length || 1;
+              deptStaff.forEach(s => {
+                staffOverhead[s.id][mIdx] += deptShare / deptHead;
+                staffTrans[s.id][mIdx].push({ ...exp, apportionedShare: deptShare / deptHead, shareReason: 'Department Apportionment' });
+              });
+            });
+          }
+        } else if (exp.allocationType === 'staff') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
+          if (targets.length > 0) {
+            const perStaffShare = gbpAmt / targets.length;
+            targets.forEach(staffId => {
+              if (activeStaffIds.includes(staffId)) {
+                staffOverhead[staffId][mIdx] += perStaffShare;
+                staffTrans[staffId][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: 'Direct Staff Split' });
+              }
+            });
+          }
+        } else {
+          const groupHead = activeStaff.length || 1;
+          activeStaff.forEach(s => {
+            staffOverhead[s.id][mIdx] += gbpAmt / groupHead;
+            staffTrans[s.id][mIdx].push({ ...exp, apportionedShare: gbpAmt / groupHead, shareReason: 'Group-wide Allocation' });
+          });
+        }
+      });
+    }
+
+    const computedData = [];
+
+    if (matrixGroupingMode === 'nominal-first') {
+      const visibleCompanies = companies.filter(c => matrixCompanyFilter === 'all' || c.id === matrixCompanyFilter);
+      const visibleCompaniesIds = visibleCompanies.map(c => c.id);
+
+      activeNominalCodes.forEach(nominal => {
+        const nominalMonths = Array(12).fill(0);
+        const nominalTransactionsByMonth = Array.from({ length: 12 }, () => []);
+        const companiesMap = {};
+
+        staff.forEach(member => {
+          if (matrixStaffFilter !== 'all' && member.id !== matrixStaffFilter) return false;
+          if (matrixDeptFilter !== 'all' && member.department !== matrixDeptFilter) return false;
+          if (!visibleCompaniesIds.includes(member.companyId)) return false;
+
+          const memberTransactionsByMonth = staffTrans[member.id] || Array.from({ length: 12 }, () => []);
+
+          for (let m = 0; m < 12; m++) {
+            const monthTrans = memberTransactionsByMonth[m] || [];
+            monthTrans.forEach(t => {
+              if (t.nominalCode !== nominal.code) return;
+
+              const compId = member.companyId;
+              const compName = companies.find(c => c.id === compId)?.name || 'Unknown Company';
+              const payee = (() => {
+                if (t.recipientType === 'vendor' && t.recipientId) {
+                  const v = vendors.find(item => item.id === t.recipientId);
+                  if (v) return v.name;
+                }
+                if (t.recipientType === 'staff' && t.recipientId) {
+                  const s = staff.find(item => item.id === t.recipientId);
+                  if (s) return s.fullName;
+                }
+                return (t.payee || 'Unknown Payee').split(' [Ref:')[0].trim();
+              })();
+              const share = t.apportionedShare !== undefined ? t.apportionedShare : toGBP(t.amount, t.currency);
+
+              if (!companiesMap[compName]) {
+                companiesMap[compName] = {
+                  id: compId,
+                  months: Array(12).fill(0),
+                  transactionsByMonth: Array.from({ length: 12 }, () => []),
+                  parties: {}
+                };
+              }
+
+              companiesMap[compName].months[m] += share;
+              companiesMap[compName].transactionsByMonth[m].push(t);
+
+              if (!companiesMap[compName].parties[payee]) {
+                companiesMap[compName].parties[payee] = {
+                  months: Array(12).fill(0),
+                  transactionsByMonth: Array.from({ length: 12 }, () => [])
+                };
+              }
+
+              companiesMap[compName].parties[payee].months[m] += share;
+              companiesMap[compName].parties[payee].transactionsByMonth[m].push(t);
+
+              nominalMonths[m] += share;
+              nominalTransactionsByMonth[m].push(t);
+            });
+          }
+        });
+
+        const compRows = [];
+        Object.keys(companiesMap).sort().forEach(compName => {
+          const compData = companiesMap[compName];
+          const partyRows = [];
+
+          Object.keys(compData.parties).sort().forEach(payee => {
+            const partyData = compData.parties[payee];
+            partyRows.push({
+              id: `party-${nominal.code}-${compData.id}-${payee}`,
+              name: payee,
+              type: 'party',
+              targetVal: payee,
+              months: partyData.months,
+              transactionsByMonth: partyData.transactionsByMonth,
+              total: partyData.months.reduce((a, b) => a + b, 0),
+              children: []
+            });
+          });
+
+          compRows.push({
+            id: `company-${nominal.code}-${compData.id}`,
+            name: compName,
+            type: 'company',
+            targetVal: compName,
+            months: compData.months,
+            transactionsByMonth: compData.transactionsByMonth,
+            total: compData.months.reduce((a, b) => a + b, 0),
+            children: partyRows
+          });
+        });
+
+        computedData.push({
+          id: `nominal-${nominal.code}`,
+          name: nominal.code,
+          type: 'nominal',
+          targetVal: nominal.code,
+          months: nominalMonths,
+          transactionsByMonth: nominalTransactionsByMonth,
+          total: nominalMonths.reduce((a, b) => a + b, 0),
+          children: compRows
+        });
+      });
+
+    } else {
+      const visibleCompanies = companies.filter(c => matrixCompanyFilter === 'all' || c.id === matrixCompanyFilter);
+      visibleCompanies.forEach(company => {
+        const companyStaff = staff.filter(s => {
+          if (s.companyId !== company.id) return false;
+          if (matrixDeptFilter !== 'all' && s.department !== matrixDeptFilter) return false;
+          if (matrixStaffFilter !== 'all' && s.id !== matrixStaffFilter) return false;
+          return true;
+        });
+
+        const companyMonths = Array(12).fill(0);
+        const companyTransactionsByMonth = Array.from({ length: 12 }, () => []);
+        const nominalsMap = {};
+
+        companyStaff.forEach(member => {
+          const memberTransactionsByMonth = staffTrans[member.id] || Array.from({ length: 12 }, () => []);
+
+          for (let m = 0; m < 12; m++) {
+            const monthTrans = memberTransactionsByMonth[m] || [];
+            monthTrans.forEach(t => {
+              const nom = t.nominalCode || 'Uncategorized';
+              const payee = (() => {
+                if (t.recipientType === 'vendor' && t.recipientId) {
+                  const v = vendors.find(item => item.id === t.recipientId);
+                  if (v) return v.name;
+                }
+                if (t.recipientType === 'staff' && t.recipientId) {
+                  const s = staff.find(item => item.id === t.recipientId);
+                  if (s) return s.fullName;
+                }
+                return (t.payee || 'Unknown Payee').split(' [Ref:')[0].trim();
+              })();
+              const share = t.apportionedShare !== undefined ? t.apportionedShare : toGBP(t.amount, t.currency);
+
+              if (!nominalsMap[nom]) {
+                nominalsMap[nom] = {
+                  months: Array(12).fill(0),
+                  transactionsByMonth: Array.from({ length: 12 }, () => []),
+                  parties: {}
+                };
+              }
+
+              nominalsMap[nom].months[m] += share;
+              nominalsMap[nom].transactionsByMonth[m].push(t);
+
+              if (!nominalsMap[nom].parties[payee]) {
+                nominalsMap[nom].parties[payee] = {
+                  months: Array(12).fill(0),
+                  transactionsByMonth: Array.from({ length: 12 }, () => [])
+                };
+              }
+
+              nominalsMap[nom].parties[payee].months[m] += share;
+              nominalsMap[nom].parties[payee].transactionsByMonth[m].push(t);
+
+              companyMonths[m] += share;
+              companyTransactionsByMonth[m].push(t);
+            });
+          }
+        });
+
+        const nominalRows = [];
+        Object.keys(nominalsMap).sort().forEach(nom => {
+          const nomData = nominalsMap[nom];
+          const partyRows = [];
+
+          Object.keys(nomData.parties).sort().forEach(payee => {
+            const partyData = nomData.parties[payee];
+            partyRows.push({
+              id: `party-${company.id}-${nom}-${payee}`,
+              name: payee,
+              type: 'party',
+              targetVal: payee,
+              months: partyData.months,
+              transactionsByMonth: partyData.transactionsByMonth,
+              total: partyData.months.reduce((a, b) => a + b, 0),
+              children: []
+            });
+          });
+
+          nominalRows.push({
+            id: `nominal-${company.id}-${nom}`,
+            name: nom,
+            type: 'nominal',
+            targetVal: nom,
+            months: nomData.months,
+            transactionsByMonth: nomData.transactionsByMonth,
+            total: nomData.months.reduce((a, b) => a + b, 0),
+            children: partyRows
+          });
+        });
+
+        computedData.push({
+          id: `company-${company.id}`,
+          name: company.name,
+          type: 'company',
+          targetVal: company.name,
+          months: companyMonths,
+          transactionsByMonth: companyTransactionsByMonth,
+          total: companyMonths.reduce((a, b) => a + b, 0),
+          children: nominalRows
+        });
+      });
+    }
+
+    const flatRows = [];
+    computedData.forEach(compRow => {
+      flatRows.push(compRow);
+      if (matrixExpandedKeys[compRow.id]) {
+        compRow.children.forEach(nomRow => {
+          flatRows.push(nomRow);
+          if (matrixExpandedKeys[nomRow.id]) {
+            nomRow.children.forEach(partyRow => {
+              flatRows.push(partyRow);
+            });
+          }
+        });
+      }
+    });
+
+    return { staffOverheadMap: staffOverhead, staffTransactionsMap: staffTrans, flatRowsForMatrix: flatRows, computedMatrixData: computedData };
+  }, [
+    staff,
+    expenses,
+    matrixYear,
+    matrixGroupingMode,
+    matrixCompanyFilter,
+    matrixDeptFilter,
+    matrixStaffFilter,
+    companies,
+    activeNominalCodes,
+    vendors,
+    matrixExpandedKeys
+  ]);
+
   // Filter Ledger transactions list
   const filteredExpenses = (expenses || []).filter(exp => {
     if (!exp) return false;
@@ -3037,303 +3350,6 @@ export default function ExpensesDashboard({
           SUB-TAB 3: YTD EXPENSES ALLOCATION MATRIX
           ============================================================== */}
       {activeSubTab === 'matrix' && (() => {
-        // 1. Calculate the overhead spread for each active recruiter for the selected year
-        const staffOverheadMap = {};
-        const staffTransactionsMap = {};
-        staff.forEach(s => {
-          staffOverheadMap[s.id] = Array(12).fill(0);
-          staffTransactionsMap[s.id] = Array.from({ length: 12 }, () => []);
-        });
-
-        const yearExpenses = (expenses || []).filter(e => e.plMonth && e.plMonth.startsWith(matrixYear));
-
-        for (let mIdx = 0; mIdx < 12; mIdx++) {
-          const monthKey = `${matrixYear}-${String(mIdx + 1).padStart(2, '0')}`;
-          const activeStaff = staff.filter(s => {
-            const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
-            return daysWorked >= 10;
-          });
-          const activeStaffIds = activeStaff.map(s => s.id);
-          const monthExpenses = yearExpenses.filter(e => e.plMonth === monthKey);
-
-          monthExpenses.forEach(exp => {
-            const gbpAmt = toGBP(exp.amount, exp.currency);
-
-            if (exp.allocationType === 'company') {
-              const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-              if (targets.length > 0) {
-                const compShare = gbpAmt / targets.length;
-                targets.forEach(targetComp => {
-                  const compStaff = activeStaff.filter(s => s.companyId === targetComp);
-                  const compHead = compStaff.length || 1;
-                  compStaff.forEach(s => {
-                    staffOverheadMap[s.id][mIdx] += compShare / compHead;
-                    staffTransactionsMap[s.id][mIdx].push({ ...exp, apportionedShare: compShare / compHead, shareReason: 'Company Apportionment' });
-                  });
-                });
-              }
-            } else if (exp.allocationType === 'department') {
-              const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-              if (targets.length > 0) {
-                const deptShare = gbpAmt / targets.length;
-                targets.forEach(targetDept => {
-                  const deptStaff = activeStaff.filter(s => s.department === targetDept);
-                  const deptHead = deptStaff.length || 1;
-                  deptStaff.forEach(s => {
-                    staffOverheadMap[s.id][mIdx] += deptShare / deptHead;
-                    staffTransactionsMap[s.id][mIdx].push({ ...exp, apportionedShare: deptShare / deptHead, shareReason: 'Department Apportionment' });
-                  });
-                });
-              }
-            } else if (exp.allocationType === 'staff') {
-              const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
-              if (targets.length > 0) {
-                const perStaffShare = gbpAmt / targets.length;
-                targets.forEach(staffId => {
-                  if (activeStaffIds.includes(staffId)) {
-                    staffOverheadMap[staffId][mIdx] += perStaffShare;
-                    staffTransactionsMap[staffId][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: 'Direct Staff Split' });
-                  }
-                });
-              }
-            } else {
-              // Group-wide overhead
-              const groupHead = activeStaff.length || 1;
-              activeStaff.forEach(s => {
-                staffOverheadMap[s.id][mIdx] += gbpAmt / groupHead;
-                staffTransactionsMap[s.id][mIdx].push({ ...exp, apportionedShare: gbpAmt / groupHead, shareReason: 'Group-wide Allocation' });
-              });
-            }
-          });
-        }
-
-        // 2. Build the hierarchical tree data structure: Company-first or Nominal-first
-        const computedMatrixData = [];
-
-        if (matrixGroupingMode === 'nominal-first') {
-          // Nominal -> Company -> Party
-          const visibleCompanies = companies.filter(c => matrixCompanyFilter === 'all' || c.id === matrixCompanyFilter);
-          const visibleCompaniesIds = visibleCompanies.map(c => c.id);
-
-          const nominalsMap = {}; // nominal -> { months: [], transactionsByMonth: [], companies: { compId -> { months: [], transactionsByMonth: [], parties: { payee -> { months: [], transactionsByMonth: [] } } } } }
-
-          staff.forEach(member => {
-            if (matrixCompanyFilter !== 'all' && member.companyId !== matrixCompanyFilter) return;
-            if (matrixDeptFilter !== 'all' && member.department !== matrixDeptFilter) return;
-            if (matrixStaffFilter !== 'all' && member.id !== matrixStaffFilter) return;
-
-            const memberTransactionsByMonth = staffTransactionsMap[member.id] || Array.from({ length: 12 }, () => []);
-
-            for (let m = 0; m < 12; m++) {
-              const monthTrans = memberTransactionsByMonth[m] || [];
-              monthTrans.forEach(t => {
-                const nom = t.nominalCode || 'Uncategorized';
-                const compId = member.companyId;
-                if (!visibleCompaniesIds.includes(compId)) return;
-
-                const payee = (() => {
-                  if (t.recipientType === 'vendor' && t.recipientId) {
-                    const v = vendors.find(item => item.id === t.recipientId);
-                    if (v) return v.name;
-                  }
-                  if (t.recipientType === 'staff' && t.recipientId) {
-                    const s = staff.find(item => item.id === t.recipientId);
-                    if (s) return s.fullName;
-                  }
-                  return (t.payee || 'Unknown Payee').split(' [Ref:')[0].trim();
-                })();
-                const share = t.apportionedShare !== undefined ? t.apportionedShare : toGBP(t.amount, t.currency);
-
-                if (!nominalsMap[nom]) {
-                  nominalsMap[nom] = {
-                    months: Array(12).fill(0),
-                    transactionsByMonth: Array.from({ length: 12 }, () => []),
-                    companies: {}
-                  };
-                }
-
-                if (!nominalsMap[nom].companies[compId]) {
-                  nominalsMap[nom].companies[compId] = {
-                    months: Array(12).fill(0),
-                    transactionsByMonth: Array.from({ length: 12 }, () => []),
-                    parties: {}
-                  };
-                }
-
-                if (!nominalsMap[nom].companies[compId].parties[payee]) {
-                  nominalsMap[nom].companies[compId].parties[payee] = {
-                    months: Array(12).fill(0),
-                    transactionsByMonth: Array.from({ length: 12 }, () => [])
-                  };
-                }
-
-                nominalsMap[nom].months[m] += share;
-                nominalsMap[nom].transactionsByMonth[m].push(t);
-
-                nominalsMap[nom].companies[compId].months[m] += share;
-                nominalsMap[nom].companies[compId].transactionsByMonth[m].push(t);
-
-                nominalsMap[nom].companies[compId].parties[payee].months[m] += share;
-                nominalsMap[nom].companies[compId].parties[payee].transactionsByMonth[m].push(t);
-              });
-            }
-          });
-
-          Object.keys(nominalsMap).sort().forEach(nom => {
-            const nomData = nominalsMap[nom];
-            const compRows = [];
-
-            Object.keys(nomData.companies).sort().forEach(compId => {
-              const compData = nomData.companies[compId];
-              const compObj = companies.find(c => c.id === compId);
-              const compName = compObj ? compObj.name : 'Unknown Company';
-              const partyRows = [];
-
-              Object.keys(compData.parties).sort().forEach(payee => {
-                const partyData = compData.parties[payee];
-                partyRows.push({
-                  id: `party-${nom}-${compId}-${payee}`,
-                  name: payee,
-                  type: 'party',
-                  targetVal: payee,
-                  months: partyData.months,
-                  transactionsByMonth: partyData.transactionsByMonth,
-                  total: partyData.months.reduce((a, b) => a + b, 0),
-                  children: []
-                });
-              });
-
-              compRows.push({
-                id: `company-${nom}-${compId}`,
-                name: compName,
-                type: 'company',
-                targetVal: compName,
-                months: compData.months,
-                transactionsByMonth: compData.transactionsByMonth,
-                total: compData.months.reduce((a, b) => a + b, 0),
-                children: partyRows
-              });
-            });
-
-            computedMatrixData.push({
-              id: `nominal-${nom}`,
-              name: nom,
-              type: 'nominal',
-              targetVal: nom,
-              months: nomData.months,
-              transactionsByMonth: nomData.transactionsByMonth,
-              total: nomData.months.reduce((a, b) => a + b, 0),
-              children: compRows
-            });
-          });
-
-        } else {
-          // Default: Company -> Nominal -> Party
-          const visibleCompanies = companies.filter(c => matrixCompanyFilter === 'all' || c.id === matrixCompanyFilter);
-          visibleCompanies.forEach(company => {
-            const companyStaff = staff.filter(s => {
-              if (s.companyId !== company.id) return false;
-              if (matrixDeptFilter !== 'all' && s.department !== matrixDeptFilter) return false;
-              if (matrixStaffFilter !== 'all' && s.id !== matrixStaffFilter) return false;
-              return true;
-            });
-
-            const companyMonths = Array(12).fill(0);
-            const companyTransactionsByMonth = Array.from({ length: 12 }, () => []);
-            const nominalsMap = {};
-
-            companyStaff.forEach(member => {
-              const memberTransactionsByMonth = staffTransactionsMap[member.id] || Array.from({ length: 12 }, () => []);
-
-              for (let m = 0; m < 12; m++) {
-                const monthTrans = memberTransactionsByMonth[m] || [];
-                monthTrans.forEach(t => {
-                  const nom = t.nominalCode || 'Uncategorized';
-                  const payee = (() => {
-                    if (t.recipientType === 'vendor' && t.recipientId) {
-                      const v = vendors.find(item => item.id === t.recipientId);
-                      if (v) return v.name;
-                    }
-                    if (t.recipientType === 'staff' && t.recipientId) {
-                      const s = staff.find(item => item.id === t.recipientId);
-                      if (s) return s.fullName;
-                    }
-                    return (t.payee || 'Unknown Payee').split(' [Ref:')[0].trim();
-                  })();
-                  const share = t.apportionedShare !== undefined ? t.apportionedShare : toGBP(t.amount, t.currency);
-
-                  if (!nominalsMap[nom]) {
-                    nominalsMap[nom] = {
-                      months: Array(12).fill(0),
-                      transactionsByMonth: Array.from({ length: 12 }, () => []),
-                      parties: {}
-                    };
-                  }
-
-                  nominalsMap[nom].months[m] += share;
-                  nominalsMap[nom].transactionsByMonth[m].push(t);
-
-                  if (!nominalsMap[nom].parties[payee]) {
-                    nominalsMap[nom].parties[payee] = {
-                      months: Array(12).fill(0),
-                      transactionsByMonth: Array.from({ length: 12 }, () => [])
-                    };
-                  }
-
-                  nominalsMap[nom].parties[payee].months[m] += share;
-                  nominalsMap[nom].parties[payee].transactionsByMonth[m].push(t);
-
-                  companyMonths[m] += share;
-                  companyTransactionsByMonth[m].push(t);
-                });
-              }
-            });
-
-            const nominalRows = [];
-            Object.keys(nominalsMap).sort().forEach(nom => {
-              const nomData = nominalsMap[nom];
-              const partyRows = [];
-
-              Object.keys(nomData.parties).sort().forEach(payee => {
-                const partyData = nomData.parties[payee];
-                partyRows.push({
-                  id: `party-${company.id}-${nom}-${payee}`,
-                  name: payee,
-                  type: 'party',
-                  targetVal: payee,
-                  months: partyData.months,
-                  transactionsByMonth: partyData.transactionsByMonth,
-                  total: partyData.months.reduce((a, b) => a + b, 0),
-                  children: []
-                });
-              });
-
-              nominalRows.push({
-                id: `nominal-${company.id}-${nom}`,
-                name: nom,
-                type: 'nominal',
-                targetVal: nom,
-                months: nomData.months,
-                transactionsByMonth: nomData.transactionsByMonth,
-                total: nomData.months.reduce((a, b) => a + b, 0),
-                children: partyRows
-              });
-            });
-
-            computedMatrixData.push({
-              id: `company-${company.id}`,
-              name: company.name,
-              type: 'company',
-              targetVal: company.name,
-              months: companyMonths,
-              transactionsByMonth: companyTransactionsByMonth,
-              total: companyMonths.reduce((a, b) => a + b, 0),
-              children: nominalRows
-            });
-          });
-        }
-
-        // 3. Compute col totals dynamically from visible companies
         const colTotals = Array(12).fill(0);
         computedMatrixData.forEach(compRow => {
           for (let m = 0; m < 12; m++) {
@@ -3342,21 +3358,7 @@ export default function ExpensesDashboard({
         });
         const grandTotal = colTotals.reduce((a, b) => a + b, 0);
 
-        // 4. Flatten based on expand states
-        const flatRowsForMatrix = [];
-        computedMatrixData.forEach(compRow => {
-          flatRowsForMatrix.push(compRow);
-          if (matrixExpandedKeys[compRow.id]) {
-            compRow.children.forEach(nomRow => {
-              flatRowsForMatrix.push(nomRow);
-              if (matrixExpandedKeys[nomRow.id]) {
-                nomRow.children.forEach(partyRow => {
-                  flatRowsForMatrix.push(partyRow);
-                });
-              }
-            });
-          }
-        });
+
 
         const toggleKey = (key) => {
           setMatrixExpandedKeys(prev => ({

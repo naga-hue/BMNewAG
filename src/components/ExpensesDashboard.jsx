@@ -3666,334 +3666,6 @@ export default function ExpensesDashboard({
               </table>
             </div>
 
-            {/* Expenses Drill-down Modal overlay */}
-            {drilldownMonthIdx !== null && drilldownRowId !== null && (
-              <div style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                zIndex: 9999,
-                animation: 'fadeIn 0.2s'
-              }}>
-                <div style={{
-                  backgroundColor: 'var(--bg-card)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '12px',
-                  width: '90%',
-                  maxWidth: '850px',
-                  padding: '24px',
-                  boxShadow: 'var(--shadow-xl)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '16px'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-                    <div>
-                      <h3 style={{ fontSize: '15px', fontWeight: 600 }}>
-                        🏦 Expenses Drill-down: {drilldownTargetVal}
-                      </h3>
-                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                        Period: {drilldownMonthIdx === 'ytd' ? 'Full Year YTD' : `${["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][drilldownMonthIdx]} ${matrixYear}`}
-                      </span>
-                    </div>
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        setDrilldownMonthIdx(null);
-                        setDrilldownRowId(null);
-                        setDrilldownRowType('');
-                        setDrilldownTargetVal('');
-                      }}
-                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  {/* List Table */}
-                  <div style={{ maxHeight: '350px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
-                    <table className="entity-table dense" style={{ fontSize: '11px', width: '100%' }}>
-                      <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1 }}>
-                        <tr>
-                          <th>Date</th>
-                          <th>P&L Month</th>
-                          <th>Payee / Vendor</th>
-                          <th>Nominal Category</th>
-                          <th style={{ textAlign: 'right' }}>Total Cost (Gross)</th>
-                          <th style={{ textAlign: 'right' }}>Your Share / Apportionment</th>
-                          <th>Apportionment Rule</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(() => {
-                          let matchedRow = flatRowsForMatrix.find(r => r.id === drilldownRowId);
-                          
-                          if (drilldownRowType === 'recipient') {
-                            const [rtype, rid] = drilldownRowId.split(':');
-                            const matchedStaff = staff.find(s => s.id === rid);
-                            const matchedVendor = vendors.find(v => v.id === rid);
-                            const name = rtype === 'staff' ? matchedStaff?.fullName : matchedVendor?.name;
-
-                            const recipientTransactionsByMonth = Array.from({ length: 12 }, () => []);
-                            for (let m = 0; m < 12; m++) {
-                              const monthKey = `2026-${String(m + 1).padStart(2, '0')}`;
-                              const monthlyTransactions = expenses.filter(e => {
-                                if (e.plMonth !== monthKey) return false;
-                                if (e.recipientType === rtype && e.recipientId === rid) return true;
-                                if (!e.recipientType || e.recipientType === 'other') {
-                                  const payeeLower = (e.payee || '').toLowerCase();
-                                  const nameLower = (name || '').toLowerCase();
-                                  return payeeLower.includes(nameLower) || nameLower.includes(payeeLower);
-                                }
-                                return false;
-                              });
-                              recipientTransactionsByMonth[m].push(...monthlyTransactions);
-                            }
-
-                            matchedRow = {
-                              id: drilldownRowId,
-                              name: name || 'Recipient',
-                              transactionsByMonth: recipientTransactionsByMonth
-                            };
-                          } else if (drilldownRowId === 'group-total') {
-                            const allGroupTransactionsByMonth = Array.from({ length: 12 }, () => []);
-                            flatRowsForMatrix.forEach(r => {
-                              if (r.type === 'party') {
-                                for (let m = 0; m < 12; m++) {
-                                  allGroupTransactionsByMonth[m].push(...(r.transactionsByMonth[m] || []));
-                                }
-                              }
-                            });
-                            matchedRow = {
-                              id: 'group-total',
-                              name: 'Group Expenses Total',
-                              transactionsByMonth: allGroupTransactionsByMonth
-                            };
-                          }
-
-                          if (!matchedRow) return null;
-
-                          // De-duplicate transactions
-                          const uniq = [];
-                          const seen = new Set();
-                          
-                          if (drilldownMonthIdx === 'ytd') {
-                            for (let m = 0; m < 12; m++) {
-                              (matchedRow.transactionsByMonth[m] || []).forEach(t => {
-                                if (!seen.has(t.id)) {
-                                  seen.add(t.id);
-                                  uniq.push(t);
-                                }
-                              });
-                            }
-                          } else {
-                            (matchedRow.transactionsByMonth[drilldownMonthIdx] || []).forEach(t => {
-                              if (!seen.has(t.id)) {
-                                seen.add(t.id);
-                                uniq.push(t);
-                              }
-                            });
-                          }
-
-                          if (uniq.length === 0) {
-                            return (
-                              <tr>
-                                <td colSpan="7" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
-                                  No expenses allocated in this month.
-                                </td>
-                              </tr>
-                            );
-                          }
-
-                          return uniq.map(t => (
-                            <tr key={t.id}>
-                              <td>{t.date}</td>
-                              <td>
-                                <input 
-                                  type="month"
-                                  value={t.plMonth || ''}
-                                  onChange={(e) => {
-                                    const newVal = e.target.value;
-                                    const original = expenses.find(exp => exp.id === t.id);
-                                    if (original && newVal) {
-                                      onSaveExpense({
-                                        ...original,
-                                        plMonth: newVal
-                                      });
-                                      onShowToast("P&L Month updated.", "success");
-                                    }
-                                  }}
-                                  className="select-filter"
-                                  style={{
-                                    fontSize: '11px',
-                                    padding: '2px 4px',
-                                    fontWeight: 600,
-                                    width: '100px',
-                                    background: 'var(--bg-secondary)',
-                                    border: '1px solid var(--border-color)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text-primary)',
-                                    cursor: 'pointer'
-                                  }}
-                                />
-                              </td>
-                              <td>
-                                <select
-                                  value={t.recipientType && t.recipientType !== 'other' ? `${t.recipientType}:${t.recipientId}` : 'other'}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    const original = expenses.find(exp => exp.id === t.id);
-                                    if (original) {
-                                      if (val === 'other') {
-                                        onSaveExpense({
-                                          ...original,
-                                          recipientType: 'other',
-                                          recipientId: ''
-                                        });
-                                        onShowToast("Payee mapping cleared.", "success");
-                                      } else {
-                                        const [type, id] = val.split(':');
-                                        const mappedName = type === 'vendor' 
-                                          ? vendors.find(v => v.id === id)?.name 
-                                          : staff.find(s => s.id === id)?.fullName;
-                                        
-                                        onSaveExpense({
-                                          ...original,
-                                          recipientType: type,
-                                          recipientId: id,
-                                          payee: mappedName || original.payee
-                                        });
-                                        onShowToast("Payee mapping updated.", "success");
-                                      }
-                                    }
-                                  }}
-                                  className="select-filter"
-                                  style={{ 
-                                    padding: '2px 4px', 
-                                    fontSize: '11px', 
-                                    width: '100%', 
-                                    minWidth: '155px',
-                                    background: 'var(--bg-secondary)',
-                                    color: 'var(--text-primary)',
-                                    border: '1px solid var(--border-color)',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer'
-                                  }}
-                                >
-                                  <option value="other">General: {t.payee.split(' [Ref:')[0]}</option>
-                                  <optgroup label="Registered Vendors">
-                                    {vendors.map(v => (
-                                      <option key={v.id} value={`vendor:${v.id}`}>{v.name}</option>
-                                    ))}
-                                  </optgroup>
-                                  <optgroup label="Staff / Consultants">
-                                    {staff.map(s => (
-                                      <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
-                                    ))}
-                                  </optgroup>
-                                </select>
-                              </td>
-                              <td>
-                                <select
-                                  value={t.nominalCode || ''}
-                                  onChange={(e) => {
-                                    const newNominal = e.target.value;
-                                    const original = expenses.find(exp => exp.id === t.id);
-                                    if (original) {
-                                      onSaveExpense({
-                                        ...original,
-                                        nominalCode: newNominal
-                                      });
-                                      onShowToast("Nominal code updated.", "success");
-                                    }
-                                  }}
-                                  className="select-filter"
-                                  style={{ fontSize: '11px', padding: '2px 4px', width: '100%', minWidth: '130px' }}
-                                >
-                                  <option value="">-- Unmapped --</option>
-                                  {activeNominalCodes.map(nc => (
-                                    <option key={nc.code} value={nc.code}>{nc.code}</option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td style={{ textAlign: 'right' }}>
-                                £{toGBP(t.amount, t.currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </td>
-                              <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>
-                                £{(t.apportionedShare !== undefined ? t.apportionedShare : toGBP(t.amount, t.currency)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </td>
-                              <td>
-                                <span 
-                                  onClick={() => {
-                                    const original = expenses.find(exp => exp.id === t.id);
-                                    if (original) {
-                                      setAllocatingRowId(original.id);
-                                      const rawTarget = original.allocationTarget || [];
-                                      const targetArray = Array.isArray(rawTarget) ? rawTarget : [rawTarget].filter(Boolean);
-                                      const type = original.allocationType || 'company';
-                                      const validTarget = type === 'company'
-                                        ? targetArray.filter(tid => companies.some(c => c.id === tid))
-                                        : type === 'department'
-                                          ? targetArray.filter(d => allAvailableDepts.includes(d))
-                                          : targetArray;
-                                      setAllocatingType(type);
-                                      setAllocatingTarget(validTarget);
-                                      setAllocatingStaffIds(type === 'staff' ? targetArray.filter(sid => staff.some(s => s.id === sid)) : []);
-                                      setExpandedSections({
-                                        company: original.allocationType === 'company' || !original.allocationType,
-                                        department: original.allocationType === 'department',
-                                        staff: original.allocationType === 'staff'
-                                      });
-                                      setAllocationSearch('');
-                                    }
-                                  }}
-                                  title="Click to modify allocation target"
-                                  style={{
-                                    fontSize: '9px',
-                                    padding: '2px 6px',
-                                    borderRadius: '4px',
-                                    fontWeight: 600,
-                                    backgroundColor: 'rgba(99, 102, 241, 0.08)',
-                                    color: 'var(--accent)',
-                                    border: '1px dashed rgba(99, 102, 241, 0.3)',
-                                    cursor: 'pointer',
-                                    display: 'inline-block'
-                                  }}
-                                >
-                                  {t.shareReason || 'Direct Cost'} ✏️
-                                </span>
-                              </td>
-                            </tr>
-                          ));
-                        })()}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-                    <button 
-                      type="button"
-                      className="btn-primary"
-                      onClick={() => {
-                        setDrilldownMonthIdx(null);
-                        setDrilldownRowId(null);
-                        setDrilldownRowType('');
-                        setDrilldownTargetVal('');
-                      }}
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
           </div>
         );
       })()}
@@ -5053,6 +4725,341 @@ export default function ExpensesDashboard({
                 }}
               >
                 Save Link
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Expenses Drill-down Modal overlay */}
+      {drilldownMonthIdx !== null && drilldownRowId !== null && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          animation: 'fadeIn 0.2s'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            width: '90%',
+            maxWidth: '850px',
+            padding: '24px',
+            boxShadow: 'var(--shadow-xl)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '15px', fontWeight: 600 }}>
+                  🏦 Expenses Drill-down: {drilldownTargetVal}
+                </h3>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  Period: {drilldownMonthIdx === 'ytd' ? 'Full Year YTD' : `${["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][drilldownMonthIdx]} ${matrixYear}`}
+                </span>
+              </div>
+              <button 
+                type="button"
+                onClick={() => {
+                  setDrilldownMonthIdx(null);
+                  setDrilldownRowId(null);
+                  setDrilldownRowType('');
+                  setDrilldownTargetVal('');
+                }}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '18px', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* List Table */}
+            <div style={{ maxHeight: '350px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+              <table className="entity-table dense" style={{ fontSize: '11px', width: '100%' }}>
+                <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1 }}>
+                  <tr>
+                    <th>Date</th>
+                    <th>P&L Month</th>
+                    <th>Payee / Vendor</th>
+                    <th>Nominal Category</th>
+                    <th style={{ textAlign: 'right' }}>Total Cost (Gross)</th>
+                    <th style={{ textAlign: 'right' }}>Your Share / Apportionment</th>
+                    <th>Apportionment Rule</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    let matchedRow = null;
+                    const hasFlatRows = typeof flatRowsForMatrix !== 'undefined' && flatRowsForMatrix;
+                    
+                    if (hasFlatRows) {
+                      matchedRow = flatRowsForMatrix.find(r => r.id === drilldownRowId);
+                    }
+                    
+                    if (drilldownRowType === 'recipient') {
+                      const [rtype, rid] = drilldownRowId.split(':');
+                      const matchedStaff = staff.find(s => s.id === rid);
+                      const matchedVendor = vendors.find(v => v.id === rid);
+                      const name = rtype === 'staff' ? matchedStaff?.fullName : matchedVendor?.name;
+
+                      const recipientTransactionsByMonth = Array.from({ length: 12 }, () => []);
+                      for (let m = 0; m < 12; m++) {
+                        const monthKey = `2026-${String(m + 1).padStart(2, '0')}`;
+                        const monthlyTransactions = expenses.filter(e => {
+                          if (e.plMonth !== monthKey) return false;
+                          if (e.recipientType === rtype && e.recipientId === rid) return true;
+                          if (!e.recipientType || e.recipientType === 'other') {
+                            const payeeLower = (e.payee || '').toLowerCase();
+                            const nameLower = (name || '').toLowerCase();
+                            return payeeLower.includes(nameLower) || nameLower.includes(payeeLower);
+                          }
+                          return false;
+                        });
+                        recipientTransactionsByMonth[m].push(...monthlyTransactions);
+                      }
+
+                      matchedRow = {
+                        id: drilldownRowId,
+                        name: name || 'Recipient',
+                        transactionsByMonth: recipientTransactionsByMonth
+                      };
+                    } else if (drilldownRowId === 'group-total') {
+                      const allGroupTransactionsByMonth = Array.from({ length: 12 }, () => []);
+                      if (hasFlatRows) {
+                        flatRowsForMatrix.forEach(r => {
+                          if (r.type === 'party') {
+                            for (let m = 0; m < 12; m++) {
+                              allGroupTransactionsByMonth[m].push(...(r.transactionsByMonth[m] || []));
+                            }
+                          }
+                        });
+                      }
+                      matchedRow = {
+                        id: 'group-total',
+                        name: 'Group Expenses Total',
+                        transactionsByMonth: allGroupTransactionsByMonth
+                      };
+                    }
+
+                    if (!matchedRow) return null;
+
+                    // De-duplicate transactions
+                    const uniq = [];
+                    const seen = new Set();
+                    
+                    if (drilldownMonthIdx === 'ytd') {
+                      for (let m = 0; m < 12; m++) {
+                        (matchedRow.transactionsByMonth[m] || []).forEach(t => {
+                          if (!seen.has(t.id)) {
+                            seen.add(t.id);
+                            uniq.push(t);
+                          }
+                        });
+                      }
+                    } else {
+                      (matchedRow.transactionsByMonth[drilldownMonthIdx] || []).forEach(t => {
+                        if (!seen.has(t.id)) {
+                          seen.add(t.id);
+                          uniq.push(t);
+                        }
+                      });
+                    }
+
+                    if (uniq.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan="7" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
+                            No expenses allocated in this month.
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return uniq.map(t => (
+                      <tr key={t.id}>
+                        <td>{t.date}</td>
+                        <td>
+                          <input 
+                            type="month"
+                            value={t.plMonth || ''}
+                            onChange={(e) => {
+                              const newVal = e.target.value;
+                              const original = expenses.find(exp => exp.id === t.id);
+                              if (original && newVal) {
+                                onSaveExpense({
+                                  ...original,
+                                  plMonth: newVal
+                                });
+                                onShowToast("P&L Month updated.", "success");
+                              }
+                            }}
+                            className="select-filter"
+                            style={{
+                              fontSize: '11px',
+                              padding: '2px 4px',
+                              fontWeight: 600,
+                              width: '100px',
+                              background: 'var(--bg-secondary)',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '4px',
+                              color: 'var(--text-primary)',
+                              cursor: 'pointer'
+                            }}
+                          />
+                        </td>
+                        <td>
+                          <select
+                            value={t.recipientType && t.recipientType !== 'other' ? `${t.recipientType}:${t.recipientId}` : 'other'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const original = expenses.find(exp => exp.id === t.id);
+                              if (original) {
+                                if (val === 'other') {
+                                  onSaveExpense({
+                                    ...original,
+                                    recipientType: 'other',
+                                    recipientId: ''
+                                  });
+                                  onShowToast("Payee mapping cleared.", "success");
+                                } else {
+                                  const [type, id] = val.split(':');
+                                  const mappedName = type === 'vendor' 
+                                    ? vendors.find(v => v.id === id)?.name 
+                                    : staff.find(s => s.id === id)?.fullName;
+                                  
+                                  onSaveExpense({
+                                    ...original,
+                                    recipientType: type,
+                                    recipientId: id,
+                                    payee: mappedName || original.payee
+                                  });
+                                  onShowToast("Payee mapping updated.", "success");
+                                }
+                              }
+                            }}
+                            className="select-filter"
+                            style={{ 
+                              padding: '2px 4px', 
+                              fontSize: '11px', 
+                              width: '100%', 
+                              minWidth: '155px',
+                              background: 'var(--bg-secondary)',
+                              color: 'var(--text-primary)',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '4px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <option value="other">General: {t.payee.split(' [Ref:')[0]}</option>
+                            <optgroup label="Registered Vendors">
+                              {vendors.map(v => (
+                                <option key={v.id} value={`vendor:${v.id}`}>{v.name}</option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="Staff / Consultants">
+                              {staff.map(s => (
+                                <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
+                              ))}
+                            </optgroup>
+                          </select>
+                        </td>
+                        <td>
+                          <select
+                            value={t.nominalCode || ''}
+                            onChange={(e) => {
+                              const newNominal = e.target.value;
+                              const original = expenses.find(exp => exp.id === t.id);
+                              if (original) {
+                                onSaveExpense({
+                                  ...original,
+                                  nominalCode: newNominal
+                                });
+                                onShowToast("Nominal code updated.", "success");
+                              }
+                            }}
+                            className="select-filter"
+                            style={{ fontSize: '11px', padding: '2px 4px', width: '100%', minWidth: '130px' }}
+                          >
+                            <option value="">-- Unmapped --</option>
+                            {activeNominalCodes.map(nc => (
+                              <option key={nc.code} value={nc.code}>{nc.code}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          £{toGBP(t.amount, t.currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--danger)' }}>
+                          £{(t.apportionedShare !== undefined ? t.apportionedShare : toGBP(t.amount, t.currency)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td>
+                          <span 
+                            onClick={() => {
+                              const original = expenses.find(exp => exp.id === t.id);
+                              if (original) {
+                                setAllocatingRowId(original.id);
+                                const rawTarget = original.allocationTarget || [];
+                                const targetArray = Array.isArray(rawTarget) ? rawTarget : [rawTarget].filter(Boolean);
+                                const type = original.allocationType || 'company';
+                                const validTarget = type === 'company'
+                                  ? targetArray.filter(tid => companies.some(c => c.id === tid))
+                                  : type === 'department'
+                                    ? targetArray.filter(d => allAvailableDepts.includes(d))
+                                    : targetArray;
+                                setAllocatingType(type);
+                                setAllocatingTarget(validTarget);
+                                setAllocatingStaffIds(type === 'staff' ? targetArray.filter(sid => staff.some(s => s.id === sid)) : []);
+                                setExpandedSections({
+                                  company: original.allocationType === 'company' || !original.allocationType,
+                                  department: original.allocationType === 'department',
+                                  staff: original.allocationType === 'staff'
+                                });
+                                setAllocationSearch('');
+                              }
+                            }}
+                            title="Click to modify allocation target"
+                            style={{
+                              fontSize: '9px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontWeight: 600,
+                              backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                              color: 'var(--accent)',
+                              border: '1px dashed rgba(99, 102, 241, 0.3)',
+                              cursor: 'pointer',
+                              display: 'inline-block'
+                            }}
+                          >
+                            {t.shareReason || 'Direct Cost'} ✏️
+                          </span>
+                        </td>
+                      </tr>
+                    ));
+                  })()}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+              <button 
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  setDrilldownMonthIdx(null);
+                  setDrilldownRowId(null);
+                  setDrilldownRowType('');
+                  setDrilldownTargetVal('');
+                }}
+              >
+                Close
               </button>
             </div>
           </div>

@@ -921,7 +921,7 @@ export default function PlacementsDashboard({
           if (splitObj) {
             const allocation = (p.netScoreValue * splitObj.percentage) / 100;
             totalBilling += allocation;
-            placementCount++;
+            placementCount += (Number(splitObj.percentage) || 0) / 100;
           }
         }
       });
@@ -1999,7 +1999,7 @@ export default function PlacementsDashboard({
                         £{row.totalBilling.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                       <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                        {row.placementCount} {row.placementCount === 1 ? 'placement' : 'placements'} (split allocations)
+                        {Number(row.placementCount.toFixed(2))} {Number(row.placementCount.toFixed(2)) === 1 ? 'placement' : 'placements'} (split allocations)
                       </div>
                     </div>
                   </div>

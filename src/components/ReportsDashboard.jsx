@@ -89,6 +89,7 @@ export default function ReportsDashboard({
   const [startMonth, setStartMonth] = useState('2026-01');
   const [endMonth, setEndMonth] = useState('2026-12');
   const [expandedExpenses, setExpandedExpenses] = useState(false);
+  const [selectedRecruiterPlacements, setSelectedRecruiterPlacements] = useState(null); // { recruiterName, placements: [...] }
 
   // Generate months range dynamically
   const generateMonthsRange = (start, end) => {
@@ -1917,14 +1918,20 @@ export default function ReportsDashboard({
                   if (companyFilter !== 'all' && rec.companyId !== companyFilter) return null;
                   if (deptFilter !== 'all' && rec.department !== deptFilter) return null;
 
-                  const recPlacementsCount = placements.filter(p => {
+                  const recPlacements = placements.filter(p => {
                     if (!p.startDate || p.status === 'dns') return false;
                     const startMonthKey = p.startDate.substring(0, 7);
                     if (startMonthKey < startMonth || startMonthKey > endMonth) return false;
                     return p.splits?.some(s => s.staffId === rec.id);
-                  }).length;
+                  });
 
-                  return { rec, count: recPlacementsCount };
+                  const splitWeightedCount = recPlacements.reduce((sum, p) => {
+                    const split = p.splits.find(s => s.staffId === rec.id);
+                    const percentage = split ? (Number(split.percentage) || 0) : 0;
+                    return sum + (percentage / 100);
+                  }, 0);
+
+                  return { rec, count: splitWeightedCount, rawPlacements: recPlacements };
                 })
                 .filter(Boolean)
                 .filter(item => item.count > 0)
@@ -1944,8 +1951,26 @@ export default function ReportsDashboard({
                   <tr key={item.rec.id}>
                     <td style={{ fontWeight: 700 }}>#{idx + 1}</td>
                     <td>{item.rec.fullName}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>
-                      {item.count} {item.count === 1 ? 'placement' : 'placements'}
+                    <td style={{ textAlign: 'right' }}>
+                      <button 
+                        onClick={() => setSelectedRecruiterPlacements({
+                          recruiterName: item.rec.fullName,
+                          placements: item.rawPlacements,
+                          recruiterId: item.rec.id
+                        })}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--accent)',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                          padding: 0,
+                          fontSize: 'inherit'
+                        }}
+                      >
+                        {Number(item.count.toFixed(2))} {Number(item.count.toFixed(2)) === 1 ? 'placement' : 'placements'}
+                      </button>
                     </td>
                   </tr>
                 ));
@@ -2229,6 +2254,150 @@ export default function ReportsDashboard({
               </div>
             );
           })()}
+        </div>
+      )}
+
+      {/* Placements Details Popup Modal */}
+      {selectedRecruiterPlacements && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          padding: '20px',
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div className="table-container" style={{
+            width: '100%',
+            maxWidth: '900px',
+            maxHeight: '85vh',
+            backgroundColor: 'var(--bg-primary)',
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--border-color)',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: 'var(--shadow-lg)'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid var(--border-color)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>
+                  Placements Breakdown: {selectedRecruiterPlacements.recruiterName}
+                </h3>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Showing split allocations for period {startMonth} to {endMonth}
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedRecruiterPlacements(null)}
+                style={{
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  color: 'var(--text-primary)'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+              <table className="entity-table dense">
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                    <th>Placement ID</th>
+                    <th>Client</th>
+                    <th>Candidate</th>
+                    <th>Start Date</th>
+                    <th style={{ textAlign: 'right' }}>Total Net Fee</th>
+                    <th style={{ textAlign: 'right' }}>Split %</th>
+                    <th style={{ textAlign: 'right', fontWeight: 600 }}>Allocation (GBP)</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedRecruiterPlacements.placements.map(p => {
+                    const splitObj = p.splits?.find(s => s.staffId === selectedRecruiterPlacements.recruiterId);
+                    const splitPct = splitObj ? (Number(splitObj.percentage) || 0) : 0;
+                    const allocationVal = (Number(p.netScoreValue) * splitPct) / 100;
+                    const feeGBP = toGBP(p.netScoreValue, 'GBP');
+                    const allocationGBP = toGBP(allocationVal, 'GBP');
+                    
+                    return (
+                      <tr key={p.id}>
+                        <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{p.pId || p.id}</td>
+                        <td>{p.clientName}</td>
+                        <td>{p.candidateName}</td>
+                        <td>{p.startDate}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{formatGBP(feeGBP)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{splitPct}%</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--success)' }}>
+                          {formatGBP(allocationGBP)}
+                        </td>
+                        <td>
+                          <span style={{
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            backgroundColor: p.status === 'active' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+                            color: p.status === 'active' ? 'var(--success)' : 'var(--warning)',
+                            border: `1px solid ${p.status === 'active' ? 'var(--success)' : 'var(--warning)'}33`
+                          }}>
+                            {p.status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {selectedRecruiterPlacements.placements.length === 0 && (
+                    <tr>
+                      <td colSpan="8" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-secondary)' }}>
+                        No placement records found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '12px 20px',
+              borderTop: '1px solid var(--border-color)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              backgroundColor: 'var(--bg-secondary)'
+            }}>
+              <button
+                className="btn-primary"
+                onClick={() => setSelectedRecruiterPlacements(null)}
+                style={{ padding: '8px 16px', fontSize: '13px' }}
+              >
+                Close Breakdown
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

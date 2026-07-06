@@ -360,65 +360,63 @@ export default function ReportsDashboard({
     let salaries = 0;
     let commissions = 0;
 
-    if (monthKey > '2026-06') {
-      commissions = calculateCommissionForRecruiter(s.id, monthKey);
-      const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+    commissions = calculateCommissionForRecruiter(s.id, monthKey);
+    const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
 
-      if (policy && policy.type === 'freelance') {
-        const totalBusinessDays = getBusinessDaysInMonth(monthKey, s);
-        const approvedLeaves = leaveRequests.filter(req => 
-          req.staffId === s.id && 
-          req.status === 'approved' && 
-          req.startDate && 
-          req.startDate.substring(0, 7) === monthKey
-        );
-        const leaveDays = approvedLeaves.reduce((sum, req) => sum + (Number(req.totalDays) || 0), 0);
-        const attendanceDays = Math.max(0, totalBusinessDays - leaveDays);
+    if (policy && policy.type === 'freelance') {
+      const totalBusinessDays = getBusinessDaysInMonth(monthKey, s);
+      const approvedLeaves = leaveRequests.filter(req => 
+        req.staffId === s.id && 
+        req.status === 'approved' && 
+        req.startDate && 
+        req.startDate.substring(0, 7) === monthKey
+      );
+      const leaveDays = approvedLeaves.reduce((sum, req) => sum + (Number(req.totalDays) || 0), 0);
+      const attendanceDays = Math.max(0, totalBusinessDays - leaveDays);
 
-        let dailyRate = 0;
-        if (s.attendanceRate && Number(s.attendanceRate) > 0) {
-          dailyRate = Number(s.attendanceRate);
-        } else if (s.salary && Number(s.salary) > 0) {
-          dailyRate = (Number(s.salary) / 12) / totalBusinessDays;
-        } else {
-          dailyRate = Number(policy.dailyRateDefault || 0);
-        }
-        salaries = toGBP(dailyRate * attendanceDays, s.currency || 'GBP');
+      let dailyRate = 0;
+      if (s.attendanceRate && Number(s.attendanceRate) > 0) {
+        dailyRate = Number(s.attendanceRate);
+      } else if (s.salary && Number(s.salary) > 0) {
+        dailyRate = (Number(s.salary) / 12) / totalBusinessDays;
       } else {
-        salaries = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
+        dailyRate = Number(policy.dailyRateDefault || 0);
       }
+      salaries = toGBP(dailyRate * attendanceDays, s.currency || 'GBP');
+    } else {
+      salaries = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
+    }
 
-      if (s.status === 'exited') {
-        const exitMonth = s.exitDate ? s.exitDate.substring(0, 7) : '';
-        const cutoffStr = s.salaryPaidUntilDate || s.exitDate || '';
-        if (cutoffStr) {
-          const cutoffMonth = cutoffStr.substring(0, 7);
-          if (monthKey > cutoffMonth) {
-            salaries = 0;
-            commissions = 0;
-          } else if (monthKey === cutoffMonth) {
-            const [y, m, d] = cutoffStr.split('-').map(Number);
-            const daysInMonth = new Date(y, m, 0).getDate();
-            const proration = Math.min(1.0, Math.max(0.0, d / daysInMonth));
-            salaries = salaries * proration;
-          }
-        }
-        if (exitMonth && monthKey === exitMonth && s.additionalExitPayment) {
-          salaries += toGBP(Number(s.additionalExitPayment) || 0, s.currency || 'GBP');
-        }
-      }
-
-      if (s.startDate) {
-        const startMonth = s.startDate.substring(0, 7);
-        if (monthKey < startMonth) {
+    if (s.status === 'exited') {
+      const exitMonth = s.exitDate ? s.exitDate.substring(0, 7) : '';
+      const cutoffStr = s.salaryPaidUntilDate || s.exitDate || '';
+      if (cutoffStr) {
+        const cutoffMonth = cutoffStr.substring(0, 7);
+        if (monthKey > cutoffMonth) {
           salaries = 0;
           commissions = 0;
-        } else if (monthKey === startMonth) {
-          const [y, m, d] = s.startDate.split('-').map(Number);
+        } else if (monthKey === cutoffMonth) {
+          const [y, m, d] = cutoffStr.split('-').map(Number);
           const daysInMonth = new Date(y, m, 0).getDate();
-          const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
+          const proration = Math.min(1.0, Math.max(0.0, d / daysInMonth));
           salaries = salaries * proration;
         }
+      }
+      if (exitMonth && monthKey === exitMonth && s.additionalExitPayment) {
+        salaries += toGBP(Number(s.additionalExitPayment) || 0, s.currency || 'GBP');
+      }
+    }
+
+    if (s.startDate) {
+      const startMonth = s.startDate.substring(0, 7);
+      if (monthKey < startMonth) {
+        salaries = 0;
+        commissions = 0;
+      } else if (monthKey === startMonth) {
+        const [y, m, d] = s.startDate.split('-').map(Number);
+        const daysInMonth = new Date(y, m, 0).getDate();
+        const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
+        salaries = salaries * proration;
       }
     }
 

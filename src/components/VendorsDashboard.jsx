@@ -1360,109 +1360,255 @@ export default function VendorsDashboard({
       {/* ==============================================================
           SUB-TAB 3: EXPENSE FORECASTING
           ============================================================== */}
-      {activeSubTab === 'forecast' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {activeSubTab === 'forecast' && (() => {
+        const activeCurrencySymbol = symbolMap[forecastCurrency] || '£';
+
+        const forecastMonths = [
+          { label: 'Jan', year: 2026, monthIndex: 0 },
+          { label: 'Feb', year: 2026, monthIndex: 1 },
+          { label: 'Mar', year: 2026, monthIndex: 2 },
+          { label: 'Apr', year: 2026, monthIndex: 3 },
+          { label: 'May', year: 2026, monthIndex: 4 },
+          { label: 'Jun', year: 2026, monthIndex: 5 },
+          { label: 'Jul', year: 2026, monthIndex: 6 },
+          { label: 'Aug', year: 2026, monthIndex: 7 },
+          { label: 'Sep', year: 2026, monthIndex: 8 },
+          { label: 'Oct', year: 2026, monthIndex: 9 },
+          { label: 'Nov', year: 2026, monthIndex: 10 },
+          { label: 'Dec', year: 2026, monthIndex: 11 }
+        ];
+
+        const softwareContracts = contracts.filter(c => c.quantityPurchased > 1);
+        const leaseContracts = contracts.filter(c => c.quantityPurchased === 1);
+
+        const getContractCostForMonth = (c, year, monthIndex) => {
+          const cStart = new Date(c.startDate + '-02');
+          const cEnd = new Date(c.endDate + '-02');
+          const currentMonthDate = new Date(year, monthIndex, 1);
           
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <h2 style={{ fontSize: '18px', fontWeight: 600 }}>12-Month Expense Forecaster</h2>
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Forecast future expenditures across your software assets, rentals, and unassigned license seat capacities (includes tax details).</p>
-            </div>
+          if (cStart <= new Date(year, monthIndex + 1, 0) && cEnd >= currentMonthDate) {
+            let monthlyTotal = 0;
+            const unitCostGBP = toGBP(c.unitCost, c.currency);
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600 }}>Forecast Currency:</span>
-              <select 
-                className="select-filter"
-                value={forecastCurrency}
-                onChange={(e) => setForecastCurrency(e.target.value)}
-              >
-                <option value="GBP">GBP (£)</option>
-                <option value="USD">USD ($)</option>
-                <option value="AED">AED (AED)</option>
-                <option value="INR">INR (₹)</option>
-                <option value="ZAR">ZAR (R)</option>
-              </select>
+            let unitCostTarget = unitCostGBP;
+            if (forecastCurrency !== 'GBP') {
+              unitCostTarget = unitCostGBP / (FX_RATES[forecastCurrency] || 1.0);
+            }
+            
+            if (c.costInterval === 'monthly') {
+              monthlyTotal = unitCostTarget * c.quantityPurchased;
+            } else if (c.costInterval === 'annual') {
+              monthlyTotal = (unitCostTarget * c.quantityPurchased) / 12;
+            } else if (c.costInterval === 'one_time' && cEnd.getMonth() === monthIndex && cEnd.getFullYear() === year) {
+              monthlyTotal = unitCostTarget * c.quantityPurchased;
+            }
+
+            const taxFactor = 1 + (Number(c.taxRate || 0) / 100);
+            return monthlyTotal * taxFactor;
+          }
+          return 0;
+        };
+
+        const monthlyFixedTotal = Array(12).fill(0);
+        const monthlyAssignedTotal = Array(12).fill(0);
+        const monthlyUnusedTotal = Array(12).fill(0);
+
+        forecastMonths.forEach((m, idx) => {
+          contracts.forEach(c => {
+            const cost = getContractCostForMonth(c, m.year, m.monthIndex);
+            if (cost > 0) {
+              if (c.quantityPurchased === 1) {
+                monthlyFixedTotal[idx] += cost;
+              } else {
+                const assignedCount = assetAssignments.filter(a => a.contractId === c.id).length;
+                const unusedCount = Math.max(0, c.quantityPurchased - assignedCount);
+                
+                const unitCostGBP = toGBP(c.unitCost, c.currency);
+                let unitCostTarget = unitCostGBP;
+                if (forecastCurrency !== 'GBP') {
+                  unitCostTarget = unitCostGBP / (FX_RATES[forecastCurrency] || 1.0);
+                }
+                const taxFactor = 1 + (Number(c.taxRate || 0) / 100);
+                const costPerSeat = unitCostTarget * taxFactor;
+
+                monthlyAssignedTotal[idx] += assignedCount * costPerSeat;
+                monthlyUnusedTotal[idx] += unusedCount * costPerSeat;
+              }
+            }
+          });
+        });
+
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h2 style={{ fontSize: '18px', fontWeight: 600 }}>12-Month Expense & Vendor Matrix (Jan - Dec 2026)</h2>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  View full year-to-date and forecasted software license seat allocations, landlord leases, and unused capacities in a spreadsheet row ledger.
+                </p>
+              </div>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600 }}>Forecast Currency:</span>
+                <select 
+                  className="select-filter"
+                  value={forecastCurrency}
+                  onChange={(e) => setForecastCurrency(e.target.value)}
+                >
+                  <option value="GBP">GBP (£)</option>
+                  <option value="USD">USD ($)</option>
+                  <option value="AED">AED (AED)</option>
+                  <option value="INR">INR (₹)</option>
+                  <option value="ZAR">ZAR (R)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="table-container" style={{ overflowX: 'auto' }}>
+              <table className="entity-table dense" style={{ minWidth: '1100px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                    <th style={{ minWidth: '180px' }}>Vendor & Contract / Expense Row</th>
+                    <th>Type</th>
+                    {forecastMonths.map((m, idx) => (
+                      <th key={idx} style={{ textAlign: 'right', fontSize: '11px' }}>{m.label}</th>
+                    ))}
+                    <th style={{ textAlign: 'right', fontWeight: 700 }}>Total ({activeCurrencySymbol})</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Category 1: Software Licenses & Seat Pools */}
+                  <tr style={{ backgroundColor: 'rgba(59, 130, 246, 0.04)' }}>
+                    <td colSpan="15" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--primary)' }}>
+                      SOFTWARE LICENSES (SEAT POOLS)
+                    </td>
+                  </tr>
+                  {softwareContracts.map(c => {
+                    let rowSum = 0;
+                    return (
+                      <tr key={c.id}>
+                        <td style={{ fontWeight: 600, paddingLeft: '16px' }}>{c.name}</td>
+                        <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Software Seat Pool</td>
+                        {forecastMonths.map((m, idx) => {
+                          const val = getContractCostForMonth(c, m.year, m.monthIndex);
+                          rowSum += val;
+                          return (
+                            <td key={idx} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                              {val > 0 ? Math.round(val).toLocaleString() : '-'}
+                            </td>
+                          );
+                        })}
+                        <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', color: 'var(--primary)' }}>
+                          {Math.round(rowSum).toLocaleString()}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {softwareContracts.length === 0 && (
+                    <tr>
+                      <td colSpan="15" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>
+                        No software seat pool contracts found.
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* Category 2: Leases & Fixed Contracts */}
+                  <tr style={{ backgroundColor: 'rgba(16, 185, 129, 0.04)' }}>
+                    <td colSpan="15" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--success)' }}>
+                      LANDLORD LEASES & FIXED VENDORS
+                    </td>
+                  </tr>
+                  {leaseContracts.map(c => {
+                    let rowSum = 0;
+                    return (
+                      <tr key={c.id}>
+                        <td style={{ fontWeight: 600, paddingLeft: '16px' }}>{c.name}</td>
+                        <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Fixed Cost / Lease</td>
+                        {forecastMonths.map((m, idx) => {
+                          const val = getContractCostForMonth(c, m.year, m.monthIndex);
+                          rowSum += val;
+                          return (
+                            <td key={idx} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                              {val > 0 ? Math.round(val).toLocaleString() : '-'}
+                            </td>
+                          );
+                        })}
+                        <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', color: 'var(--success)' }}>
+                          {Math.round(rowSum).toLocaleString()}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {leaseContracts.length === 0 && (
+                    <tr>
+                      <td colSpan="15" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>
+                        No leases or fixed cost vendor contracts found.
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* Summary Breakdowns */}
+                  <tr style={{ borderTop: '2px solid var(--border-color)', fontWeight: 600 }}>
+                    <td colSpan="2" style={{ color: 'var(--text-secondary)' }}>Subtotal: Fixed Leases & Rents (incl. tax)</td>
+                    {monthlyFixedTotal.map((val, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                        {val > 0 ? Math.round(val).toLocaleString() : '0'}
+                      </td>
+                    ))}
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                      {Math.round(monthlyFixedTotal.reduce((a, b) => a + b, 0)).toLocaleString()}
+                    </td>
+                  </tr>
+
+                  <tr style={{ fontWeight: 600 }}>
+                    <td colSpan="2" style={{ color: 'var(--text-secondary)' }}>Subtotal: Assigned Software Seats (incl. tax)</td>
+                    {monthlyAssignedTotal.map((val, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                        {val > 0 ? Math.round(val).toLocaleString() : '0'}
+                      </td>
+                    ))}
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                      {Math.round(monthlyAssignedTotal.reduce((a, b) => a + b, 0)).toLocaleString()}
+                    </td>
+                  </tr>
+
+                  <tr style={{ fontWeight: 600 }}>
+                    <td colSpan="2" style={{ color: 'var(--warning)' }}>Subtotal: Unused Seats Waste (incl. tax)</td>
+                    {monthlyUnusedTotal.map((val, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', fontFamily: 'monospace', color: 'var(--warning)' }}>
+                        {val > 0 ? Math.round(val).toLocaleString() : '0'}
+                      </td>
+                    ))}
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', color: 'var(--warning)' }}>
+                      {Math.round(monthlyUnusedTotal.reduce((a, b) => a + b, 0)).toLocaleString()}
+                    </td>
+                  </tr>
+
+                  <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 700, fontSize: '13px', borderTop: '2px solid var(--border-color)' }}>
+                    <td colSpan="2" style={{ color: 'var(--accent)' }}>GRAND TOTAL SPEND ({activeCurrencySymbol})</td>
+                    {forecastMonths.map((m, idx) => {
+                      const mTotal = monthlyFixedTotal[idx] + monthlyAssignedTotal[idx] + monthlyUnusedTotal[idx];
+                      return (
+                        <td key={idx} style={{ textAlign: 'right', fontFamily: 'monospace', color: 'var(--accent)' }}>
+                          {Math.round(mTotal).toLocaleString()}
+                        </td>
+                      );
+                    })}
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', color: 'var(--accent)', fontSize: '14px' }}>
+                      {Math.round(
+                        monthlyFixedTotal.reduce((a, b) => a + b, 0) +
+                        monthlyAssignedTotal.reduce((a, b) => a + b, 0) +
+                        monthlyUnusedTotal.reduce((a, b) => a + b, 0)
+                      ).toLocaleString()}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
-
-          {/* Forecasting Month Cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {forecastPoints.map((point, idx) => (
-              <div 
-                key={idx} 
-                className="doc-card" 
-                style={{ 
-                  padding: '16px', 
-                  alignItems: 'center', 
-                  backgroundColor: 'var(--bg-card)',
-                  borderLeft: point.renewals.length > 0 ? '4px solid var(--warning)' : '1px solid var(--border-color)' 
-                }}
-              >
-                <div style={{ flex: 1, display: 'flex', gap: '16px', alignItems: 'center' }}>
-                  <div style={{ width: '100px', fontWeight: 700, fontSize: '15px' }}>{point.month}</div>
-                  
-                  {/* Spend distribution progress preview */}
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div style={{ display: 'flex', fontSize: '11px', color: 'var(--text-secondary)', gap: '16px' }}>
-                      <span>Fixed Rents/Leases: <strong>{activeCurrencySymbol}{Math.round(point.fixed).toLocaleString()}</strong></span>
-                      <span>Assigned Seats: <strong>{activeCurrencySymbol}{Math.round(point.assigned).toLocaleString()}</strong></span>
-                      <span>Unused License Waste: <strong style={{ color: 'var(--warning)' }}>{activeCurrencySymbol}{Math.round(point.unused).toLocaleString()}</strong></span>
-                    </div>
-
-                    {/* visual bar splits */}
-                    <div style={{ 
-                      width: '100%', 
-                      height: '6px', 
-                      backgroundColor: 'var(--bg-secondary)', 
-                      borderRadius: '3px',
-                      display: 'flex',
-                      overflow: 'hidden'
-                    }}>
-                      {point.total > 0 && (
-                        <>
-                          <div style={{ width: `${(point.fixed / point.total) * 100}%`, height: '100%', backgroundColor: 'var(--primary)' }} title="Fixed leases" />
-                          <div style={{ width: `${(point.assigned / point.total) * 100}%`, height: '100%', backgroundColor: 'var(--success)' }} title="Assigned seats" />
-                          <div style={{ width: `${(point.unused / point.total) * 100}%`, height: '100%', backgroundColor: 'var(--warning)' }} title="Unused seats waste" />
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Expirations alert */}
-                <div style={{ width: '220px', padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  {point.renewals.map((rName, i) => (
-                    <span 
-                      key={i} 
-                      style={{ 
-                        fontSize: '10px', 
-                        color: 'var(--warning)', 
-                        background: 'rgba(245,158,11,0.06)',
-                        border: '1px solid rgba(245,158,11,0.2)',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                    >
-                      <AlertTriangle size={10} /> Expiring: {rName}
-                    </span>
-                  ))}
-                </div>
-
-                <div style={{ textAlign: 'right', width: '150px' }}>
-                  <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--success)' }}>
-                    {activeCurrencySymbol}{Math.round(point.total).toLocaleString()}
-                  </span>
-                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Est. Spend (incl. tax)</div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-        </div>
-      )}
+        );
+      })()}
 
       {/* Batch Software License Assignment Modal */}
       {multiAssignContract && (() => {

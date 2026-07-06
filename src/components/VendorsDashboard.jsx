@@ -132,6 +132,43 @@ export default function VendorsDashboard({
   // Forecast currency selector
   const [forecastCurrency, setForecastCurrency] = useState('GBP');
 
+  // Handle inline seat allocation
+  const handleAllocateSeatInline = async (e, contractId, contractName) => {
+    e.preventDefault();
+    const staffId = e.target.elements.staffSelect.value;
+    if (!staffId) return;
+
+    const staffMember = staff.find(s => s.id === staffId);
+    if (!staffMember) return;
+
+    const newAssignment = {
+      id: `ass-${Date.now()}`,
+      contractId: contractId,
+      staffId: staffId,
+      assignedDate: new Date().toISOString().split('T')[0]
+    };
+
+    try {
+      await onSaveAssetAssignment(newAssignment);
+      onShowToast(`Assigned license "${contractName}" seat to ${staffMember.fullName}.`, 'success');
+      e.target.reset();
+    } catch (err) {
+      onShowToast(`Error allocating seat: ${err.message}`, 'warning');
+    }
+  };
+
+  // Handle inline seat release
+  const handleReleaseSeat = async (assignmentId, contractName, staffName) => {
+    if (window.confirm(`Are you sure you want to release the "${contractName}" license seat from ${staffName}?`)) {
+      try {
+        await onDeleteAssetAssignment(assignmentId);
+        onShowToast(`Released "${contractName}" seat for ${staffName} back to pool.`, 'info');
+      } catch (err) {
+        onShowToast(`Error releasing seat: ${err.message}`, 'warning');
+      }
+    }
+  };
+
   // Load defaults when lists load
   React.useEffect(() => {
     if (vendors.length > 0 && !contractVendorId) {
@@ -1112,12 +1149,99 @@ export default function VendorsDashboard({
                           backgroundColor: 'var(--primary)' 
                         }} />
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px' }}>
-                        <span>
-                          <strong>{assignedCount} Assigned</strong> ({assigned.map(a => staff.find(s => s.id === a.staffId)?.fullName).filter(Boolean).join(', ') || 'None'})
-                        </span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px', alignItems: 'center' }}>
+                        <span><strong>{assignedCount} Assigned</strong></span>
                         <span><strong>{c.quantityPurchased} Seats Total</strong></span>
                       </div>
+
+                      {/* Interactive badges of assigned staff */}
+                      {assigned.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                          {assigned.map(a => {
+                            const member = staff.find(s => s.id === a.staffId);
+                            if (!member) return null;
+                            return (
+                              <span 
+                                key={a.id} 
+                                className="badge" 
+                                style={{ 
+                                  display: 'inline-flex', 
+                                  alignItems: 'center', 
+                                  gap: '6px', 
+                                  backgroundColor: 'rgba(59, 130, 246, 0.08)', 
+                                  color: 'var(--primary)', 
+                                  border: '1px solid rgba(59, 130, 246, 0.2)', 
+                                  padding: '4px 10px', 
+                                  borderRadius: '4px', 
+                                  fontSize: '12px' 
+                                }}
+                              >
+                                {member.fullName}
+                                <button 
+                                  onClick={() => handleReleaseSeat(a.id, c.name, member.fullName)}
+                                  style={{ 
+                                    background: 'none', 
+                                    border: 'none', 
+                                    color: 'var(--danger)', 
+                                    cursor: 'pointer', 
+                                    padding: 0, 
+                                    fontWeight: 700, 
+                                    fontSize: '12px',
+                                    display: 'flex',
+                                    alignItems: 'center'
+                                  }}
+                                  title="Release license seat"
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Inline Allocate Seat Form */}
+                      {unusedCount > 0 && (() => {
+                        const nonAssignedStaff = staff.filter(s => s.status !== 'exited' && !assigned.some(a => a.staffId === s.id));
+                        if (nonAssignedStaff.length === 0) return null;
+                        
+                        return (
+                          <form 
+                            onSubmit={(e) => handleAllocateSeatInline(e, c.id, c.name)} 
+                            style={{ 
+                              display: 'flex', 
+                              gap: '8px', 
+                              alignItems: 'center', 
+                              marginTop: '14px',
+                              backgroundColor: 'rgba(255,255,255,0.01)',
+                              padding: '8px',
+                              borderRadius: '4px',
+                              border: '1px dashed var(--border-color)',
+                              width: 'fit-content'
+                            }}
+                          >
+                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Allocate Seat:</span>
+                            <select 
+                              className="select-filter"
+                              name="staffSelect"
+                              style={{ padding: '4px 8px', fontSize: '12px', minWidth: '160px' }}
+                              required
+                            >
+                              <option value="">-- Choose Staff --</option>
+                              {nonAssignedStaff.map(s => (
+                                <option key={s.id} value={s.id}>{s.fullName}</option>
+                              ))}
+                            </select>
+                            <button 
+                              type="submit" 
+                              className="btn-primary" 
+                              style={{ padding: '4px 10px', fontSize: '11px' }}
+                            >
+                              Assign
+                            </button>
+                          </form>
+                        );
+                      })()}
                     </div>
 
                     {/* Unused cost account routing picker */}

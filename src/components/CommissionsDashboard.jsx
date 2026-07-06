@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { toGBP, formatGBP } from '../utils/currency';
 import { 
   TrendingUp, 
@@ -52,7 +52,14 @@ export default function CommissionsDashboard({
     return depts.sort();
   })();
 
-  const [activeSubTab, setActiveSubTab] = useState('policies'); // policies, assignments, payroll
+  const [activeSubTab, setActiveSubTab] = useState('policies'); // policies, assignments, payroll, matrix
+
+  // YTD Commission Matrix states
+  const [matrixYear, setMatrixYear] = useState('2026');
+  const [matrixMeasure, setMatrixMeasure] = useState('payout'); // payout, base
+  const [matrixSearch, setMatrixSearch] = useState('');
+  const [matrixCompany, setMatrixCompany] = useState('all');
+  const [matrixDept, setMatrixDept] = useState('all');
 
   const [editingPolicyId, setEditingPolicyId] = useState(null);
   const [assigningSchemeId, setAssigningSchemeId] = useState(null);
@@ -509,6 +516,69 @@ export default function CommissionsDashboard({
     }
   };
 
+  // YTD Commission Matrix Calculation
+  const matrixMonths = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+  const matrixData = useMemo(() => {
+    const filtered = staff.filter(s => {
+      // Must have a commission policy assigned
+      if (!s.commissionPolicyId) return false;
+      
+      // Match search query
+      if (matrixSearch && !s.fullName.toLowerCase().includes(matrixSearch.toLowerCase())) {
+        return false;
+      }
+      
+      // Match company filter
+      if (matrixCompany !== 'all' && s.companyId !== matrixCompany) {
+        return false;
+      }
+      
+      // Match department filter
+      if (matrixDept !== 'all' && s.department !== matrixDept) {
+        return false;
+      }
+      
+      return true;
+    });
+
+    const rows = filtered.map(member => {
+      const policy = commissionPolicies.find(p => p.id === member.commissionPolicyId);
+      const monthlyValues = {};
+      let rowTotal = 0;
+
+      matrixMonths.forEach(m => {
+        const monthStr = `${matrixYear}-${m}`;
+        const calc = calculateCashReceivedCommission(member, policy, monthStr);
+        const val = matrixMeasure === 'payout' ? calc.totalPayout : calc.baseEarned;
+        monthlyValues[m] = val;
+        rowTotal += val;
+      });
+
+      return {
+        member,
+        policy,
+        monthlyValues,
+        rowTotal
+      };
+    });
+
+    // Sort rows by rowTotal descending by default
+    rows.sort((a, b) => b.rowTotal - a.rowTotal);
+
+    const colTotals = {};
+    let grandTotal = 0;
+    matrixMonths.forEach(m => {
+      colTotals[m] = rows.reduce((sum, r) => sum + r.monthlyValues[m], 0);
+      grandTotal += colTotals[m];
+    });
+
+    return {
+      rows,
+      colTotals,
+      grandTotal
+    };
+  }, [staff, commissionPolicies, placements, matrixYear, matrixSearch, matrixCompany, matrixDept, matrixMeasure]);
+
   // Compile full payroll listing for selected month
   const getPayrollLedger = () => {
     let totalBilled = 0;
@@ -576,7 +646,8 @@ export default function CommissionsDashboard({
         {[
           { key: 'policies', label: 'Commission Schemes' },
           { key: 'assignments', label: 'Recruiter Assignments' },
-          { key: 'payroll', label: 'Commissions Payroll Ledger' }
+          { key: 'payroll', label: 'Commissions Payroll Ledger' },
+          { key: 'matrix', label: 'YTD Commission Matrix' }
         ].map(t => (
           <button
             key={t.key}
@@ -2013,6 +2084,216 @@ export default function CommissionsDashboard({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ==============================================================
+          SUB-TAB 4: YTD COMMISSION MATRIX
+          ============================================================== */}
+      {activeSubTab === 'matrix' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+            <div>
+              <h2 style={{ fontSize: '18px', fontWeight: 600 }}>YTD Month-wise Commission Payout Matrix</h2>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                Recruiter-level commission summaries aggregated by calendar months for the selected fiscal year.
+              </p>
+            </div>
+
+            {/* Quick Export Button */}
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                const headers = ['Recruiter Name', 'Scheme Name', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'YTD Total'];
+                const csvRows = [headers.join(',')];
+                matrixData.rows.forEach(r => {
+                  const row = [
+                    `"${r.member.fullName}"`,
+                    `"${r.policy ? r.policy.name : 'None'}"`,
+                    ...matrixMonths.map(m => r.monthlyValues[m].toFixed(2)),
+                    r.rowTotal.toFixed(2)
+                  ];
+                  csvRows.push(row.join(','));
+                });
+                
+                // Add totals row
+                const totalsRow = [
+                  '"Total Payouts"',
+                  '""',
+                  ...matrixMonths.map(m => matrixData.colTotals[m].toFixed(2)),
+                  matrixData.grandTotal.toFixed(2)
+                ];
+                csvRows.push(totalsRow.join(','));
+
+                const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.setAttribute('href', url);
+                a.setAttribute('download', `YTD_Commission_Matrix_${matrixYear}.csv`);
+                a.click();
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px' }}
+            >
+              📥 Export CSV Matrix
+            </button>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="controls-card" style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', padding: '16px', backgroundColor: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: '200px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Search Recruiter:</span>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Search by name..."
+                value={matrixSearch}
+                onChange={(e) => setMatrixSearch(e.target.value)}
+                style={{ padding: '8px 12px', fontSize: '13px' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '150px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Company Filter:</span>
+              <select
+                className="select-filter"
+                value={matrixCompany}
+                onChange={(e) => setMatrixCompany(e.target.value)}
+                style={{ padding: '8px', fontSize: '13px' }}
+              >
+                <option value="all">All Companies</option>
+                {companies.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '150px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Department Filter:</span>
+              <select
+                className="select-filter"
+                value={matrixDept}
+                onChange={(e) => setMatrixDept(e.target.value)}
+                style={{ padding: '8px', fontSize: '13px' }}
+              >
+                <option value="all">All Departments</option>
+                {allAvailableDepts.map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '100px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Fiscal Year:</span>
+              <select
+                className="select-filter"
+                value={matrixYear}
+                onChange={(e) => setMatrixYear(e.target.value)}
+                style={{ padding: '8px', fontSize: '13px' }}
+              >
+                <option value="2026">2026</option>
+                <option value="2025">2025</option>
+                <option value="2027">2027</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '180px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Matrix Measure:</span>
+              <select
+                className="select-filter"
+                value={matrixMeasure}
+                onChange={(e) => setMatrixMeasure(e.target.value)}
+                style={{ padding: '8px', fontSize: '13px', fontWeight: 600, color: 'var(--accent)' }}
+              >
+                <option value="payout">Net Payable Payout (Cash)</option>
+                <option value="base">Base Earned Commission</option>
+              </select>
+            </div>
+
+          </div>
+
+          {/* Matrix Table */}
+          <div className="table-container" style={{ overflowX: 'auto', width: '100%' }}>
+            <table className="entity-table dense" style={{ minWidth: '1200px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '2px solid var(--border-color)' }}>
+                  <th style={{ minWidth: '180px', fontWeight: 700, padding: '12px' }}>Recruiter Name</th>
+                  <th style={{ minWidth: '150px', fontWeight: 700, padding: '12px' }}>Scheme Name</th>
+                  {matrixMonths.map(m => {
+                    const monthName = new Date(`2026-${m}-02`).toLocaleDateString(undefined, { month: 'short' });
+                    return <th key={m} style={{ textAlign: 'right', fontWeight: 700, padding: '12px' }}>{monthName}</th>;
+                  })}
+                  <th style={{ textAlign: 'right', fontWeight: 700, padding: '12px', backgroundColor: 'rgba(99, 102, 241, 0.05)', color: 'var(--accent)' }}>YTD Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matrixData.rows.map((row) => (
+                  <tr key={row.member.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ fontWeight: 600, padding: '12px' }}>
+                      <span 
+                        style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }}
+                        onClick={() => {
+                          // Simulate opening the breakdown modal by setting activeSubTab to 'payroll' and selectedBreakdownRow
+                          setPayrollMonth(`${matrixYear}-06`); // default to June or last month
+                          const fullCalc = calculateCashReceivedCommission(row.member, row.policy, `${matrixYear}-06`);
+                          setSelectedBreakdownRow({
+                            member: row.member,
+                            policy: row.policy,
+                            calc: fullCalc
+                          });
+                          setActiveSubTab('payroll');
+                        }}
+                      >
+                        {row.member.fullName}
+                      </span>
+                    </td>
+                    <td style={{ color: 'var(--text-secondary)', padding: '12px' }}>
+                      {row.policy ? row.policy.name : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>None Mapped</span>}
+                    </td>
+                    {matrixMonths.map(m => {
+                      const val = row.monthlyValues[m];
+                      return (
+                        <td key={m} style={{ textAlign: 'right', padding: '12px', color: val > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                          {val > 0 ? formatGBP(val) : '—'}
+                        </td>
+                      );
+                    })}
+                    <td style={{ textAlign: 'right', fontWeight: 700, padding: '12px', backgroundColor: 'rgba(99, 102, 241, 0.02)', color: 'var(--accent)' }}>
+                      {formatGBP(row.rowTotal)}
+                    </td>
+                  </tr>
+                ))}
+
+                {matrixData.rows.length === 0 && (
+                  <tr>
+                    <td colSpan={15} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                      No recruiters match the selected filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              
+              {/* Bottom Totals Row */}
+              {matrixData.rows.length > 0 && (
+                <tfoot>
+                  <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--border-color)' }}>
+                    <td colSpan={2} style={{ padding: '12px' }}>Total Payouts (GBP)</td>
+                    {matrixMonths.map(m => (
+                      <td key={m} style={{ textAlign: 'right', padding: '12px', color: 'var(--text-primary)' }}>
+                        {formatGBP(matrixData.colTotals[m])}
+                      </td>
+                    ))}
+                    <td style={{ textAlign: 'right', padding: '12px', backgroundColor: 'rgba(99, 102, 241, 0.05)', color: 'var(--accent)' }}>
+                      {formatGBP(matrixData.grandTotal)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+
         </div>
       )}
 

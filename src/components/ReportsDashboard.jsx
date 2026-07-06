@@ -371,7 +371,7 @@ export default function ReportsDashboard({
         } else {
           dailyRate = Number(policy.dailyRateDefault || 0);
         }
-        salaries = dailyRate * attendanceDays;
+        salaries = toGBP(dailyRate * attendanceDays, s.currency || 'GBP');
       } else {
         salaries = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
       }

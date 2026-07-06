@@ -1733,10 +1733,14 @@ export default function ReportsDashboard({
                   if (companyFilter !== 'all' && s.companyId !== companyFilter) return false;
                   if (deptFilter !== 'all' && s.department !== deptFilter) return false;
                   
+                  const hasPlacements = placements.some(p => p.splits?.some(sp => sp.staffId === s.id));
+                  
                   return (
                     s.department === 'Recruitment' || 
                     s.department === 'Sales & Marketing' ||
-                    s.jobTitle.toLowerCase().includes('consultant')
+                    (s.jobTitle || '').toLowerCase().includes('consultant') ||
+                    !!s.commissionPolicyId ||
+                    hasPlacements
                   );
                 });
 

@@ -823,6 +823,27 @@ export default function PayrollDashboard({
       }
     }
 
+    if (staffMember.startDate) {
+      const startMonth = staffMember.startDate.substring(0, 7);
+      if (month < startMonth) {
+        baselineBasic = 0;
+        baselineCommission = 0;
+        projectedEmployerNi = 0;
+        projectedEmployerPension = 0;
+        projectedEmployeeTaxNic = 0;
+        projectedEmployeePension = 0;
+      } else if (month === startMonth) {
+        const [y, m, d] = staffMember.startDate.split('-').map(Number);
+        const daysInMonth = new Date(y, m, 0).getDate();
+        const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
+        baselineBasic = baselineBasic * proration;
+        projectedEmployerNi = projectedEmployerNi * proration;
+        projectedEmployerPension = projectedEmployerPension * proration;
+        projectedEmployeeTaxNic = projectedEmployeeTaxNic * proration;
+        projectedEmployeePension = projectedEmployeePension * proration;
+      }
+    }
+
     if (record) {
       return {
         isReconciled: !!record.isReconciled,

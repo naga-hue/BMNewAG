@@ -2534,6 +2534,9 @@ export default function App() {
               payrollPolicies={payrollPolicies}
               leaveRequests={scopedLeaves}
               holidays={holidays}
+              nominalCodes={nominalCodes}
+              vendors={vendors}
+              contracts={contracts}
               onShowToast={handleShowToast}
             />
           )}

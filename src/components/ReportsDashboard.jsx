@@ -73,6 +73,9 @@ export default function ReportsDashboard({
   payrollPolicies = [],
   leaveRequests = [],
   holidays = [],
+  nominalCodes = [],
+  vendors = [],
+  contracts = [],
   onShowToast
 }) {
   const [activeTab, setActiveTab] = useState('consolidated'); // consolidated, divisional, departmental, forecast, ratios, leagues
@@ -82,6 +85,7 @@ export default function ReportsDashboard({
   const [deptFilter, setDeptFilter] = useState('all');
   const [startMonth, setStartMonth] = useState('2026-01');
   const [endMonth, setEndMonth] = useState('2026-12');
+  const [expandedExpenses, setExpandedExpenses] = useState(false);
 
   // Generate months range dynamically
   const generateMonthsRange = (start, end) => {
@@ -395,6 +399,19 @@ export default function ReportsDashboard({
           salaries += toGBP(Number(s.additionalExitPayment) || 0, s.currency || 'GBP');
         }
       }
+
+      if (s.startDate) {
+        const startMonth = s.startDate.substring(0, 7);
+        if (monthKey < startMonth) {
+          salaries = 0;
+          commissions = 0;
+        } else if (monthKey === startMonth) {
+          const [y, m, d] = s.startDate.split('-').map(Number);
+          const daysInMonth = new Date(y, m, 0).getDate();
+          const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
+          salaries = salaries * proration;
+        }
+      }
     }
 
     return { salaries, commissions };
@@ -481,6 +498,251 @@ export default function ReportsDashboard({
     };
   };
 
+  const calculateSlabCost = (amount, slabs) => {
+    let cost = 0;
+    let remaining = amount;
+    for (const slab of slabs) {
+      const min = Number(slab.minAmount || 0);
+      const max = Number(slab.maxAmount || 99999999);
+      const rate = Number(slab.rate || 0);
+      const cap = max - min;
+      if (remaining <= 0) break;
+      const applicable = Math.min(remaining, cap);
+      cost += (applicable * rate) / 100;
+      remaining -= applicable;
+    }
+    return cost;
+  };
+
+  const getNominalBreakdownForMonth = (monthKey) => {
+    const breakdown = {};
+    nominalCodes.forEach(nc => {
+      breakdown[nc.code] = 0;
+    });
+
+    const defaultCodes = [
+      "7001 - Office Rentals & Leasing",
+      "7002 - Software Licenses & SaaS",
+      "7003 - Staff Payroll & Wages",
+      "7004 - Freelancers & Subcontractors"
+    ];
+    defaultCodes.forEach(code => {
+      if (breakdown[code] === undefined) {
+        breakdown[code] = 0;
+      }
+    });
+
+    const activeStaff = staff.filter(s => {
+      const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
+      if (daysWorked < 10) return false;
+      if (companyFilter !== 'all' && s.companyId !== companyFilter) return false;
+      if (deptFilter !== 'all' && s.department !== deptFilter) return false;
+      return true;
+    });
+    const activeStaffIds = activeStaff.map(s => s.id);
+
+    const groupActiveStaff = staff.filter(s => {
+      const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
+      return daysWorked >= 10;
+    });
+    const groupActiveStaffIds = groupActiveStaff.map(s => s.id);
+
+    if (monthKey < '2026-07') {
+      const monthExpenses = expenses.filter(e => e.plMonth === monthKey);
+      monthExpenses.forEach(exp => {
+        const gbpAmt = toGBP(exp.amount, exp.currency);
+        let allocatedGbp = 0;
+
+        if (exp.allocationType === 'company') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+          if (targets.length > 0) {
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(compId => {
+                const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
+                const companyShare = gbpAmt * (percent / 100);
+                const compStaff = groupActiveStaff.filter(s => s.companyId === compId);
+                const compHead = compStaff.length || 1;
+                const perStaffShare = companyShare / compHead;
+                compStaff.forEach(s => {
+                  if (activeStaffIds.includes(s.id)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                });
+              });
+            } else {
+              const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.companyId));
+              const totalHead = eligibleStaff.length || 1;
+              const perStaffShare = gbpAmt / totalHead;
+              eligibleStaff.forEach(s => {
+                if (activeStaffIds.includes(s.id)) {
+                  allocatedGbp += perStaffShare;
+                }
+              });
+            }
+          }
+        } else if (exp.allocationType === 'department') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+          if (targets.length > 0) {
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(dept => {
+                const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
+                const deptShare = gbpAmt * (percent / 100);
+                const deptStaff = groupActiveStaff.filter(s => s.department === dept);
+                const deptHead = deptStaff.length || 1;
+                const perStaffShare = deptShare / deptHead;
+                deptStaff.forEach(s => {
+                  if (activeStaffIds.includes(s.id)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                });
+              });
+            } else {
+              const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.department));
+              const totalHead = eligibleStaff.length || 1;
+              const perStaffShare = gbpAmt / totalHead;
+              eligibleStaff.forEach(s => {
+                if (activeStaffIds.includes(s.id)) {
+                  allocatedGbp += perStaffShare;
+                }
+              });
+            }
+          }
+        } else if (exp.allocationType === 'staff') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
+          if (targets.length > 0) {
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(staffId => {
+                if (groupActiveStaffIds.includes(staffId)) {
+                  const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
+                  const perStaffShare = gbpAmt * (percent / 100);
+                  if (activeStaffIds.includes(staffId)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                }
+              });
+            } else {
+              const perStaffShare = gbpAmt / targets.length;
+              targets.forEach(staffId => {
+                if (groupActiveStaffIds.includes(staffId)) {
+                  if (activeStaffIds.includes(staffId)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                }
+              });
+            }
+          }
+        } else {
+          const groupHead = groupActiveStaff.length || 1;
+          groupActiveStaff.forEach(s => {
+            if (activeStaffIds.includes(s.id)) {
+              allocatedGbp += gbpAmt / groupHead;
+            }
+          });
+        }
+
+        const matchedKey = Object.keys(breakdown).find(k => k.startsWith(exp.nominalCode) || k === exp.nominalCode);
+        if (matchedKey) {
+          breakdown[matchedKey] += allocatedGbp;
+        } else {
+          breakdown["7002 - Software Licenses & SaaS"] += allocatedGbp;
+        }
+      });
+    } else {
+      activeStaff.forEach(s => {
+        const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+        if (policy) {
+          if (policy.type === 'freelance') {
+            const totalBusinessDays = getBusinessDaysInMonth(monthKey, s);
+            const approvedLeaves = leaveRequests.filter(req => 
+              req.staffId === s.id && 
+              req.status === 'approved' && 
+              req.startDate && 
+              req.startDate.substring(0, 7) === monthKey
+            );
+            const leaveDays = approvedLeaves.reduce((sum, req) => sum + (Number(req.totalDays) || 0), 0);
+            const attendanceDays = Math.max(0, totalBusinessDays - leaveDays);
+
+            let dailyRate = 0;
+            if (s.attendanceRate && Number(s.attendanceRate) > 0) {
+              dailyRate = Number(s.attendanceRate);
+            } else if (s.salary && Number(s.salary) > 0) {
+              dailyRate = (Number(s.salary) / 12) / totalBusinessDays;
+            } else {
+              dailyRate = Number(policy.dailyRateDefault || 0);
+            }
+
+            let val = toGBP(dailyRate * attendanceDays, s.currency || 'GBP');
+            if (s.startDate && s.startDate.substring(0, 7) === monthKey) {
+              const [y, m, d] = s.startDate.split('-').map(Number);
+              const daysInMonth = new Date(y, m, 0).getDate();
+              const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
+              val = val * proration;
+            }
+            breakdown["7004 - Freelancers & Subcontractors"] += val;
+          } else {
+            let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
+            let proration = 1.0;
+            if (s.startDate && s.startDate.substring(0, 7) === monthKey) {
+              const [y, m, d] = s.startDate.split('-').map(Number);
+              const daysInMonth = new Date(y, m, 0).getDate();
+              proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
+              basicGBP = basicGBP * proration;
+            }
+
+            let empNi = 0;
+            let empPension = 0;
+            const comm = calculateCommissionForRecruiter(s.id, monthKey);
+            const gross = basicGBP + comm;
+
+            if (policy.employerNiSlabs && policy.employerNiSlabs.length > 0) {
+              empNi = calculateSlabCost(gross, policy.employerNiSlabs);
+            } else if (policy.employerNiRate > 0) {
+              const thresholdGBP = toGBP(Number(policy.employerNiThreshold || 0), 'GBP');
+              const taxableNiAmount = Math.max(0, gross - thresholdGBP);
+              empNi = (taxableNiAmount * Number(policy.employerNiRate)) / 100;
+            }
+            if (policy.employerPensionRate > 0) {
+              empPension = (gross * Number(policy.employerPensionRate)) / 100;
+            }
+
+            empNi = empNi * proration;
+            empPension = empPension * proration;
+            breakdown["7003 - Staff Payroll & Wages"] += (empNi + empPension);
+          }
+        }
+      });
+
+      contracts.forEach(contract => {
+        if (!contract.startDate || !contract.endDate) return;
+        const startM = contract.startDate.substring(0, 7);
+        const endM = contract.endDate.substring(0, 7);
+
+        if (monthKey >= startM && monthKey <= endM) {
+          if (companyFilter !== 'all' && contract.companyId !== companyFilter) return;
+
+          let cost = 0;
+          if (contract.costInterval === 'monthly') {
+            cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
+          } else if (contract.costInterval === 'annual') {
+            cost = (Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1)) / 12;
+          } else if (contract.costInterval === 'one-time' && startM === monthKey) {
+            cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
+          }
+
+          const gbpCost = toGBP(cost, contract.currency || 'GBP');
+          const nameLower = contract.name.toLowerCase();
+          if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
+            breakdown["7001 - Office Rentals & Leasing"] += gbpCost;
+          } else {
+            breakdown["7002 - Software Licenses & SaaS"] += gbpCost;
+          }
+        }
+      });
+    }
+
+    return breakdown;
+  };
+
   // Filtered monthly calculations row generator
   const getFilteredMonthlyData = (monthKey) => {
     // 1. Active staff members matching company & department
@@ -523,104 +785,8 @@ export default function ReportsDashboard({
     });
 
     // 5. Operating expenses + shared overhead apportionments
-    const groupActiveStaff = staff.filter(s => {
-      const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
-      return daysWorked >= 10;
-    });
-    const groupActiveStaffIds = groupActiveStaff.map(s => s.id);
-    let overheadsExpenses = 0;
-
-    const monthExpenses = expenses.filter(e => e.plMonth === monthKey);
-    monthExpenses.forEach(exp => {
-      const gbpAmt = toGBP(exp.amount, exp.currency);
-
-      if (exp.allocationType === 'company') {
-        const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-        if (targets.length > 0) {
-          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
-            targets.forEach(compId => {
-              const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
-              const companyShare = gbpAmt * (percent / 100);
-              const compStaff = groupActiveStaff.filter(s => s.companyId === compId);
-              const compHead = compStaff.length || 1;
-              const perStaffShare = companyShare / compHead;
-              compStaff.forEach(s => {
-                if (activeStaffIds.includes(s.id)) {
-                  overheadsExpenses += perStaffShare;
-                }
-              });
-            });
-          } else {
-            const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.companyId));
-            const totalHead = eligibleStaff.length || 1;
-            const perStaffShare = gbpAmt / totalHead;
-            eligibleStaff.forEach(s => {
-              if (activeStaffIds.includes(s.id)) {
-                overheadsExpenses += perStaffShare;
-              }
-            });
-          }
-        }
-      } else if (exp.allocationType === 'department') {
-        const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-        if (targets.length > 0) {
-          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
-            targets.forEach(dept => {
-              const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
-              const deptShare = gbpAmt * (percent / 100);
-              const deptStaff = groupActiveStaff.filter(s => s.department === dept);
-              const deptHead = deptStaff.length || 1;
-              const perStaffShare = deptShare / deptHead;
-              deptStaff.forEach(s => {
-                if (activeStaffIds.includes(s.id)) {
-                  overheadsExpenses += perStaffShare;
-                }
-              });
-            });
-          } else {
-            const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.department));
-            const totalHead = eligibleStaff.length || 1;
-            const perStaffShare = gbpAmt / totalHead;
-            eligibleStaff.forEach(s => {
-              if (activeStaffIds.includes(s.id)) {
-                overheadsExpenses += perStaffShare;
-              }
-            });
-          }
-        }
-      } else if (exp.allocationType === 'staff') {
-        const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
-        if (targets.length > 0) {
-          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
-            targets.forEach(staffId => {
-              if (groupActiveStaffIds.includes(staffId)) {
-                const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
-                const perStaffShare = gbpAmt * (percent / 100);
-                if (activeStaffIds.includes(staffId)) {
-                  overheadsExpenses += perStaffShare;
-                }
-              }
-            });
-          } else {
-            const perStaffShare = gbpAmt / targets.length;
-            targets.forEach(staffId => {
-              if (groupActiveStaffIds.includes(staffId)) {
-                if (activeStaffIds.includes(staffId)) {
-                  overheadsExpenses += perStaffShare;
-                }
-              }
-            });
-          }
-        }
-      } else {
-        const groupHead = groupActiveStaff.length || 1;
-        groupActiveStaff.forEach(s => {
-          if (activeStaffIds.includes(s.id)) {
-            overheadsExpenses += gbpAmt / groupHead;
-          }
-        });
-      }
-    });
+    const nominalBreakdown = getNominalBreakdownForMonth(monthKey);
+    const overheadsExpenses = Object.values(nominalBreakdown).reduce((sum, v) => sum + v, 0);
 
     const grossProfit = revenue - commissions;
     const totalOverheads = salaries + overheadsExpenses;
@@ -634,6 +800,7 @@ export default function ReportsDashboard({
       grossProfit,
       totalOverheads,
       netProfit,
+      nominalBreakdown,
       headcount: activeStaff.length
     };
   };
@@ -819,7 +986,50 @@ export default function ReportsDashboard({
                       <td colSpan={monthsList.length + 1} />
                     </tr>
                     {renderRow('Base Wages & Salaries', 'salaries', false, true)}
-                    {renderRow('Apportioned Overheads & SaaS', 'overheadsExpenses', false, true)}
+                    {/* Apportioned Overheads & SaaS (Expandable) */}
+                    <tr style={{ fontWeight: 400 }}>
+                      <td style={{ paddingLeft: '24px', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setExpandedExpenses(!expandedExpenses)}>
+                        <span style={{ fontSize: '10px', color: 'var(--accent)' }}>{expandedExpenses ? '▼' : '▶'}</span>
+                        <span>Apportioned Overheads & SaaS</span>
+                      </td>
+                      {rowData.map((row, idx) => (
+                        <td key={idx} style={{ textAlign: 'right' }}>
+                          {formatGBP(row.overheadsExpenses || 0)}
+                        </td>
+                      ))}
+                      <td style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                        {formatGBP(rowData.reduce((acc, row) => acc + (row.overheadsExpenses || 0), 0))}
+                      </td>
+                    </tr>
+
+                    {/* Sub-rows for each nominal code category when expanded */}
+                    {expandedExpenses && (() => {
+                      const codeKeys = Array.from(new Set(
+                        rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
+                      )).sort();
+
+                      return codeKeys.map(code => {
+                        const ytdSum = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
+                        return (
+                          <tr key={code} style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                            <td style={{ paddingLeft: '48px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span style={{ color: 'var(--text-muted)' }}>↳</span> {code}
+                            </td>
+                            {rowData.map((row, idx) => {
+                              const val = row.nominalBreakdown?.[code] || 0;
+                              return (
+                                <td key={idx} style={{ textAlign: 'right', opacity: val > 0 ? 0.9 : 0.4 }}>
+                                  {val > 0 ? formatGBP(val) : '—'}
+                                </td>
+                              );
+                            })}
+                            <td style={{ textAlign: 'right', fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)', opacity: ytdSum > 0 ? 0.9 : 0.4 }}>
+                              {formatGBP(ytdSum)}
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
                     {renderRow('Total Indirect Overheads', 'totalOverheads', true, true, 'var(--text-secondary)')}
 
                     <tr style={{ borderTop: '2px solid var(--border-color)' }} />

@@ -1719,9 +1719,11 @@ export default function ReportsDashboard({
               <tr>
                 <th>Recruiter Name</th>
                 <th>Department / Company</th>
-                <th style={{ textAlign: 'right' }}>Annualized Salary (GBP)</th>
-                <th style={{ textAlign: 'right' }}>Period Billings Generated (GBP)</th>
-                <th style={{ textAlign: 'right', fontWeight: 700 }}>Salary-to-Billings Ratio</th>
+                <th style={{ textAlign: 'right' }}>Wages Paid (GBP)</th>
+                <th style={{ textAlign: 'right' }}>Commissions Paid (GBP)</th>
+                <th style={{ textAlign: 'right', fontWeight: 600 }}>Total Compensation (GBP)</th>
+                <th style={{ textAlign: 'right' }}>Revenue Generated (GBP)</th>
+                <th style={{ textAlign: 'right', fontWeight: 700 }}>Cost-to-Revenue Ratio</th>
                 <th>ROI Grading Status</th>
               </tr>
             </thead>
@@ -1742,7 +1744,7 @@ export default function ReportsDashboard({
                 if (recruitersList.length === 0) {
                   return (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-secondary)' }}>
+                      <td colSpan="8" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-secondary)' }}>
                         No recruiters found matching the filtered company or department.
                       </td>
                     </tr>
@@ -1754,7 +1756,7 @@ export default function ReportsDashboard({
                   
                   // Period Billings (within selected start and end months range)
                   const periodPlacements = placements.filter(p => {
-                    if (!p.startDate) return false;
+                    if (!p.startDate || p.status === 'dns') return false;
                     const startMonthKey = p.startDate.substring(0, 7);
                     if (startMonthKey < startMonth || startMonthKey > endMonth) return false;
                     return p.splits?.some(s => s.staffId === rec.id);
@@ -1766,8 +1768,16 @@ export default function ReportsDashboard({
                     return sum + toGBP(share, 'GBP');
                   }, 0);
 
-                  const annualSalaryGBP = toGBP(rec.salary, rec.currency);
-                  const ratio = periodBillings > 0 ? (annualSalaryGBP / periodBillings) * 100 : 0;
+                  // Calculate actual wages & commissions paid during selected period
+                  let wagesPaid = 0;
+                  let commissionsPaid = 0;
+                  monthsList.forEach(m => {
+                    const pay = getStaffPayrollForMonth(rec, m);
+                    wagesPaid += pay.salaries;
+                    commissionsPaid += pay.commissions;
+                  });
+                  const totalPaid = wagesPaid + commissionsPaid;
+                  const ratio = periodBillings > 0 ? (totalPaid / periodBillings) * 100 : 0;
 
                   let statusText = 'Low ROI / No Billings';
                   let statusColor = 'var(--danger)';
@@ -1793,7 +1803,9 @@ export default function ReportsDashboard({
                     <tr key={rec.id}>
                       <td style={{ fontWeight: 600 }}>{rec.fullName}</td>
                       <td>{rec.department} &bull; {employer ? employer.name : 'Group'}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{formatGBP(annualSalaryGBP)}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{formatGBP(wagesPaid)}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{formatGBP(commissionsPaid)}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{formatGBP(totalPaid)}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: 'var(--success)' }}>
                         {formatGBP(periodBillings)}
                       </td>

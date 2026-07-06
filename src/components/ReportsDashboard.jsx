@@ -6,7 +6,10 @@ import {
   Building2, 
   Award, 
   Percent, 
-  Info
+  Info,
+  Globe,
+  PieChart,
+  Coins
 } from 'lucide-react';
 
 const FX_RATES = {
@@ -514,7 +517,7 @@ export default function ReportsDashboard({
     return cost;
   };
 
-  const getNominalBreakdownForMonth = (monthKey) => {
+  const getNominalBreakdownForMonth = (monthKey, overrideCompanyId = null) => {
     const breakdown = {};
     nominalCodes.forEach(nc => {
       breakdown[nc.code] = 0;
@@ -535,7 +538,8 @@ export default function ReportsDashboard({
     const activeStaff = staff.filter(s => {
       const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
       if (daysWorked < 10) return false;
-      if (companyFilter !== 'all' && s.companyId !== companyFilter) return false;
+      const compF = overrideCompanyId || companyFilter;
+      if (compF !== 'all' && s.companyId !== compF) return false;
       if (deptFilter !== 'all' && s.department !== deptFilter) return false;
       return true;
     });
@@ -891,12 +895,15 @@ export default function ReportsDashboard({
         gap: '4px'
       }}>
         {[
-          { key: 'consolidated', label: 'Company P&L Matrix', icon: <BarChart3 size={14} /> },
-          { key: 'divisional', label: 'Divisional Comparisons', icon: <Building2 size={14} /> },
-          { key: 'departmental', label: 'Departmental Comparisons', icon: <Users size={14} /> },
-          { key: 'forecast', label: 'Forecast Desk', icon: <TrendingUp size={14} /> },
-          { key: 'ratios', label: 'Salary-to-Billings Ratio', icon: <Percent size={14} /> },
-          { key: 'leagues', label: 'Recruiter Leagues', icon: <Award size={14} /> }
+          { key: 'divisional', label: 'Divisional P&L', icon: <Building2 size={14} /> },
+          { key: 'ratios', label: 'Salary-to-billings', icon: <Percent size={14} /> },
+          { key: 'leagues_billings', label: 'Recruiter billings', icon: <TrendingUp size={14} /> },
+          { key: 'leagues_placements', label: 'Recruiter placements', icon: <Award size={14} /> },
+          { key: 'consolidated', label: 'Humres P&L', icon: <BarChart3 size={14} /> },
+          { key: 'departmental', label: 'Departmental split', icon: <Users size={14} /> },
+          { key: 'india', label: 'India financials', icon: <Globe size={14} /> },
+          { key: 'overheads', label: 'Shared overheads', icon: <PieChart size={14} /> },
+          { key: 'forecast', label: 'Forecast Desk', icon: <Coins size={14} /> }
         ].map(t => (
           <button
             key={t.key}
@@ -1818,125 +1825,402 @@ export default function ReportsDashboard({
       {/* ==============================================================
           TAB 6: RECRUITER LEAGUES
           ============================================================== */}
-      {activeTab === 'leagues' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-          
-          {/* Billings rank */}
-          <div className="table-container" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 600 }}>Rankings by Period Billings</h3>
-            <table className="entity-table dense">
-              <thead>
-                <tr>
-                  <th style={{ width: '50px' }}>Rank</th>
-                  <th>Recruiter Name</th>
-                  <th style={{ textAlign: 'right' }}>Total Billings</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  const billingsRankList = staff.map(rec => {
-                    // Filter by company/department
-                    if (companyFilter !== 'all' && rec.companyId !== companyFilter) return null;
-                    if (deptFilter !== 'all' && rec.department !== deptFilter) return null;
+      {/* ==============================================================
+          TAB 6: RECRUITER BILLINGS LEAGUE
+          ============================================================== */}
+      {activeTab === 'leagues_billings' && (
+        <div className="table-container" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Rankings by Period Billings</h3>
+          <table className="entity-table dense">
+            <thead>
+              <tr>
+                <th style={{ width: '60px' }}>Rank</th>
+                <th>Recruiter Name</th>
+                <th style={{ textAlign: 'right' }}>Total Billings (GBP)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                const billingsRankList = staff.map(rec => {
+                  if (companyFilter !== 'all' && rec.companyId !== companyFilter) return null;
+                  if (deptFilter !== 'all' && rec.department !== deptFilter) return null;
 
-                    const recPlacements = placements.filter(p => {
-                      if (!p.startDate) return false;
-                      const startMonthKey = p.startDate.substring(0, 7);
-                      if (startMonthKey < startMonth || startMonthKey > endMonth) return false;
-                      return p.splits?.some(s => s.staffId === rec.id);
-                    });
+                  const recPlacements = placements.filter(p => {
+                    if (!p.startDate || p.status === 'dns') return false;
+                    const startMonthKey = p.startDate.substring(0, 7);
+                    if (startMonthKey < startMonth || startMonthKey > endMonth) return false;
+                    return p.splits?.some(s => s.staffId === rec.id);
+                  });
 
-                    const totalVal = recPlacements.reduce((sum, p) => {
-                      const split = p.splits.find(s => s.staffId === rec.id);
-                      const share = split ? (p.netScoreValue * split.percentage) / 100 : 0;
-                      return sum + toGBP(share, 'GBP');
-                    }, 0);
+                  const totalVal = recPlacements.reduce((sum, p) => {
+                    const split = p.splits.find(s => s.staffId === rec.id);
+                    const share = split ? (p.netScoreValue * split.percentage) / 100 : 0;
+                    return sum + toGBP(share, 'GBP');
+                  }, 0);
 
-                    return { rec, totalVal };
-                  })
-                  .filter(Boolean)
-                  .filter(item => item.totalVal > 0)
-                  .sort((a, b) => b.totalVal - a.totalVal);
+                  return { rec, totalVal };
+                })
+                .filter(Boolean)
+                .filter(item => item.totalVal > 0)
+                .sort((a, b) => b.totalVal - a.totalVal);
 
-                  if (billingsRankList.length === 0) {
-                    return (
-                      <tr>
-                        <td colSpan="3" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-secondary)' }}>
-                          No billings logged.
-                        </td>
-                      </tr>
-                    );
-                  }
-
-                  return billingsRankList.map((item, idx) => (
-                    <tr key={item.rec.id}>
-                      <td style={{ fontWeight: 700 }}>#{idx + 1}</td>
-                      <td>{item.rec.fullName}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
-                        {formatGBP(item.totalVal)}
+                if (billingsRankList.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan="3" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-secondary)' }}>
+                        No billings logged matching active filters.
                       </td>
                     </tr>
-                  ));
-                })()}
-              </tbody>
-            </table>
-          </div>
+                  );
+                }
 
-          {/* Volume rank */}
-          <div className="table-container" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 600 }}>Rankings by Placement Count</h3>
-            <table className="entity-table dense">
-              <thead>
-                <tr>
-                  <th style={{ width: '50px' }}>Rank</th>
-                  <th>Recruiter Name</th>
-                  <th style={{ textAlign: 'right' }}>Placements Count</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  const volumeRankList = staff.map(rec => {
-                    // Filter by company/department
-                    if (companyFilter !== 'all' && rec.companyId !== companyFilter) return null;
-                    if (deptFilter !== 'all' && rec.department !== deptFilter) return null;
+                return billingsRankList.map((item, idx) => (
+                  <tr key={item.rec.id}>
+                    <td style={{ fontWeight: 700 }}>#{idx + 1}</td>
+                    <td>{item.rec.fullName}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
+                      {formatGBP(item.totalVal)}
+                    </td>
+                  </tr>
+                ));
+              })()}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-                    const recPlacementsCount = placements.filter(p => {
-                      if (!p.startDate) return false;
-                      const startMonthKey = p.startDate.substring(0, 7);
-                      if (startMonthKey < startMonth || startMonthKey > endMonth) return false;
-                      return p.splits?.some(s => s.staffId === rec.id);
-                    }).length;
+      {/* ==============================================================
+          TAB 7: RECRUITER PLACEMENTS LEAGUE
+          ============================================================== */}
+      {activeTab === 'leagues_placements' && (
+        <div className="table-container" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Rankings by Placement Count</h3>
+          <table className="entity-table dense">
+            <thead>
+              <tr>
+                <th style={{ width: '60px' }}>Rank</th>
+                <th>Recruiter Name</th>
+                <th style={{ textAlign: 'right' }}>Placements Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                const volumeRankList = staff.map(rec => {
+                  if (companyFilter !== 'all' && rec.companyId !== companyFilter) return null;
+                  if (deptFilter !== 'all' && rec.department !== deptFilter) return null;
 
-                    return { rec, count: recPlacementsCount };
-                  })
-                  .filter(Boolean)
-                  .filter(item => item.count > 0)
-                  .sort((a, b) => b.count - a.count);
+                  const recPlacementsCount = placements.filter(p => {
+                    if (!p.startDate || p.status === 'dns') return false;
+                    const startMonthKey = p.startDate.substring(0, 7);
+                    if (startMonthKey < startMonth || startMonthKey > endMonth) return false;
+                    return p.splits?.some(s => s.staffId === rec.id);
+                  }).length;
 
-                  if (volumeRankList.length === 0) {
-                    return (
-                      <tr>
-                        <td colSpan="3" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-secondary)' }}>
-                          No placements recorded.
-                        </td>
-                      </tr>
-                    );
-                  }
+                  return { rec, count: recPlacementsCount };
+                })
+                .filter(Boolean)
+                .filter(item => item.count > 0)
+                .sort((a, b) => b.count - a.count);
 
-                  return volumeRankList.map((item, idx) => (
-                    <tr key={item.rec.id}>
-                      <td style={{ fontWeight: 700 }}>#{idx + 1}</td>
-                      <td>{item.rec.fullName}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>
-                        {item.count} {item.count === 1 ? 'placement' : 'placements'}
+                if (volumeRankList.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan="3" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-secondary)' }}>
+                        No placements recorded matching active filters.
                       </td>
                     </tr>
-                  ));
-                })()}
-              </tbody>
-            </table>
-          </div>
+                  );
+                }
 
+                return volumeRankList.map((item, idx) => (
+                  <tr key={item.rec.id}>
+                    <td style={{ fontWeight: 700 }}>#{idx + 1}</td>
+                    <td>{item.rec.fullName}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>
+                      {item.count} {item.count === 1 ? 'placement' : 'placements'}
+                    </td>
+                  </tr>
+                ));
+              })()}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ==============================================================
+          TAB 8: INDIA FINANCIALS
+          ============================================================== */}
+      {activeTab === 'india' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {(() => {
+            const indiaCompanyId = 'comp-1782806277433';
+            const indiaCompany = companies.find(c => c.id === indiaCompanyId);
+            
+            const toINR = (gbpVal) => (Number(gbpVal) || 0) / 0.0094;
+            const formatINR = (inrVal) => '₹' + Math.round(inrVal).toLocaleString('en-IN');
+
+            const rowData = monthsList.map(m => {
+              const activeStaff = staff.filter(s => {
+                if (s.companyId !== indiaCompanyId) return false;
+                const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, m);
+                return daysWorked >= 10;
+              });
+
+              const monthPlacements = placements.filter(p => p.startDate && p.startDate.substring(0, 7) === m);
+              const revenue = monthPlacements.reduce((sum, p) => {
+                let cellSum = 0;
+                p.splits?.forEach(s => {
+                  const member = staff.find(st => st.id === s.staffId);
+                  if (member && member.companyId === indiaCompanyId) {
+                    const share = (p.netScoreValue * s.percentage) / 100;
+                    cellSum += toGBP(share, 'GBP');
+                  }
+                });
+                return sum + cellSum;
+              }, 0);
+
+              let salaries = 0;
+              let commissions = 0;
+              activeStaff.forEach(s => {
+                const pay = getStaffPayrollForMonth(s, m);
+                if (m > '2026-06') {
+                  salaries += pay.salaries;
+                  commissions += pay.commissions;
+                }
+              });
+
+              const nominalBreakdown = getNominalBreakdownForMonth(m, indiaCompanyId);
+              const overheadsExpenses = Object.values(nominalBreakdown).reduce((sum, v) => sum + v, 0);
+
+              const grossProfit = revenue - commissions;
+              const totalOverheads = salaries + overheadsExpenses;
+              const netProfit = revenue - commissions - totalOverheads;
+
+              return {
+                month: m,
+                revenue: toINR(revenue),
+                salaries: toINR(salaries),
+                commissions: toINR(commissions),
+                overheadsExpenses: toINR(overheadsExpenses),
+                grossProfit: toINR(grossProfit),
+                totalOverheads: toINR(totalOverheads),
+                netProfit: toINR(netProfit),
+                nominalBreakdown: Object.fromEntries(
+                  Object.entries(nominalBreakdown).map(([k, v]) => [k, toINR(v)])
+                ),
+                headcount: activeStaff.length
+              };
+            });
+
+            const renderIndiaRow = (label, key, isBold = false, isSub = false, color = 'var(--text-primary)') => {
+              const ytdSum = rowData.reduce((acc, row) => acc + (row[key] || 0), 0);
+              return (
+                <tr style={{ fontWeight: isBold ? 700 : 400 }}>
+                  <td style={{ paddingLeft: isSub ? '24px' : '12px', color }}>{label}</td>
+                  {rowData.map((row, idx) => (
+                    <td key={idx} style={{ textAlign: 'right', color }}>
+                      {formatINR(row[key] || 0)}
+                    </td>
+                  ))}
+                  <td style={{ textAlign: 'right', fontWeight: 700, color, backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                    {formatINR(ytdSum)}
+                  </td>
+                </tr>
+              );
+            };
+
+            return (
+              <div className="table-container" style={{ overflowX: 'auto', width: '100%' }}>
+                <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <h3 style={{ fontSize: '15px', fontWeight: 600 }}>India Offshore Sourcing Entity P&L Matrix</h3>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      Financial statement for **{indiaCompany ? indiaCompany.name : 'Talent-H'}** denominated in Indian Rupees (INR ₹) based on exchange rate conversions.
+                    </p>
+                  </div>
+                </div>
+
+                <table className="entity-table dense" style={{ minWidth: '1200px' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                      <th style={{ minWidth: '220px', fontWeight: 700 }}>P&L Account Line Items (INR)</th>
+                      {monthsList.map(m => {
+                        const label = new Date(m + '-02').toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+                        return <th key={m} style={{ textAlign: 'right', fontWeight: 700 }}>{label}</th>;
+                      })}
+                      <th style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.04)' }}>Period Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
+                      <td>Revenue Credits (INR)</td>
+                      <td colSpan={monthsList.length + 1} />
+                    </tr>
+                    {renderIndiaRow('Net Placements Fee Billings', 'revenue', false, true, 'var(--success)')}
+                    
+                    <tr style={{ borderBottom: '1px solid var(--border-color)' }} />
+                    
+                    <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
+                      <td>Direct cost (INR)</td>
+                      <td colSpan={monthsList.length + 1} />
+                    </tr>
+                    {renderIndiaRow('Accrued Recruiter Commissions', 'commissions', false, true, 'var(--danger)')}
+
+                    <tr style={{ borderBottom: '1px solid var(--border-color)' }} />
+
+                    {renderIndiaRow('Gross Profit Margin', 'grossProfit', true, false, 'var(--accent)')}
+
+                    <tr style={{ borderBottom: '1px dashed var(--border-color)', height: '8px' }} />
+
+                    <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
+                      <td>Overheads & Staff Expenses (INR)</td>
+                      <td colSpan={monthsList.length + 1} />
+                    </tr>
+                    {renderIndiaRow('Base Wages & Salaries', 'salaries', false, true)}
+                    {renderIndiaRow('Apportioned Overheads & SaaS', 'overheadsExpenses', false, true)}
+                    {renderIndiaRow('Total Indirect Overheads', 'totalOverheads', true, true, 'var(--text-secondary)')}
+
+                    <tr style={{ borderTop: '2px solid var(--border-color)' }} />
+                    
+                    <tr style={{ fontWeight: 700, backgroundColor: 'rgba(16, 185, 129, 0.04)', fontSize: '13px' }}>
+                      <td style={{ color: 'var(--success)' }}>EBITDA Net Profit Margin</td>
+                      {rowData.map((row, idx) => (
+                        <td key={idx} style={{ textAlign: 'right', color: row.netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                          {formatINR(row.netProfit)}
+                        </td>
+                      ))}
+                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                        {formatINR(rowData.reduce((acc, r) => acc + r.netProfit, 0))}
+                      </td>
+                    </tr>
+
+                    <tr style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                      <td>Active Headcount</td>
+                      {rowData.map((row, idx) => (
+                        <td key={idx} style={{ textAlign: 'right' }}>
+                          {row.headcount} active
+                        </td>
+                      ))}
+                      <td style={{ textAlign: 'right', backgroundColor: 'rgba(255,255,255,0.02)' }}>—</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ==============================================================
+          TAB 9: SHARED OVERHEADS ALLOCATION
+          ============================================================== */}
+      {activeTab === 'overheads' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {(() => {
+            const targetMonth = startMonth;
+
+            const monthExpenses = expenses.filter(e => e.plMonth === targetMonth);
+            const totalSharedPool = monthExpenses.reduce((sum, exp) => {
+              if (exp.allocationType === 'company' || exp.allocationType === 'department' || exp.allocationType === 'staff') {
+                return sum;
+              }
+              return sum + toGBP(exp.amount, exp.currency);
+            }, 0);
+
+            const activeStaff = staff.filter(s => {
+              const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, targetMonth);
+              return daysWorked >= 10;
+            });
+
+            const totalHeadcount = activeStaff.length || 1;
+            const perStaffShare = totalSharedPool / totalHeadcount;
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <h3 style={{ fontSize: '15px', fontWeight: 600 }}>Shared Overheads Apportionment Ledger</h3>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      Shows how unallocated company-wide overhead expenses are split equally across headcount for **{targetMonth}**.
+                    </p>
+                  </div>
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600 }}>Select Allocation Month:</span>
+                    <input
+                      type="month"
+                      className="select-filter"
+                      value={startMonth}
+                      onChange={(e) => setStartMonth(e.target.value)}
+                      style={{ padding: '6px' }}
+                    />
+                  </div>
+                </div>
+
+                <div className="metrics-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                  <div className="metric-card" style={{ '--card-accent': 'var(--primary)', padding: '16px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Shared Overheads Pool ({targetMonth})</span>
+                    <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px' }}>{formatGBP(totalSharedPool)}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Total unallocated company expenses</div>
+                  </div>
+
+                  <div className="metric-card" style={{ '--card-accent': 'var(--accent)', padding: '16px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Apportionment Headcount</span>
+                    <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px' }}>{totalHeadcount} Consultants</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Active members (worked &gt;= 10 days)</div>
+                  </div>
+
+                  <div className="metric-card" style={{ '--card-accent': 'var(--success)', padding: '16px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Apportioned Share / Recruiter</span>
+                    <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '4px', color: 'var(--accent)' }}>{formatGBP(perStaffShare)}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Equal split share per head</div>
+                  </div>
+                </div>
+
+                <div className="table-container">
+                  <table className="entity-table dense">
+                    <thead>
+                      <tr>
+                        <th>Recruiter Name</th>
+                        <th>Company Profile</th>
+                        <th>Department</th>
+                        <th style={{ textAlign: 'right' }}>Direct Wages (GBP)</th>
+                        <th style={{ textAlign: 'right' }}>Shared Overheads Share (GBP)</th>
+                        <th style={{ textAlign: 'right', fontWeight: 700 }}>Total Allocated Cost (GBP)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeStaff.map(s => {
+                        const employer = companies.find(c => c.id === s.companyId);
+                        const pay = getStaffPayrollForMonth(s, targetMonth);
+                        const directWages = pay.salaries;
+                        const totalCost = directWages + perStaffShare;
+
+                        return (
+                          <tr key={s.id}>
+                            <td style={{ fontWeight: 600 }}>{s.fullName}</td>
+                            <td>{employer ? employer.name : 'Unknown'}</td>
+                            <td>{s.department || 'Operations'}</td>
+                            <td style={{ textAlign: 'right' }}>{formatGBP(directWages)}</td>
+                            <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{formatGBP(perStaffShare)}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--primary)' }}>{formatGBP(totalCost)}</td>
+                          </tr>
+                        );
+                      })}
+
+                      {activeStaff.length === 0 && (
+                        <tr>
+                          <td colSpan="6" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                            No active staff members found in this month.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 

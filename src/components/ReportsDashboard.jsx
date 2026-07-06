@@ -1728,20 +1728,11 @@ export default function ReportsDashboard({
             </thead>
             <tbody>
               {(() => {
-                // Filter staff members by company/dept/recruiter role
+                // Filter staff members by company/dept (show all staff)
                 const recruitersList = staff.filter(s => {
                   if (companyFilter !== 'all' && s.companyId !== companyFilter) return false;
                   if (deptFilter !== 'all' && s.department !== deptFilter) return false;
-                  
-                  const hasPlacements = placements.some(p => p.splits?.some(sp => sp.staffId === s.id));
-                  
-                  return (
-                    s.department === 'Recruitment' || 
-                    s.department === 'Sales & Marketing' ||
-                    (s.jobTitle || '').toLowerCase().includes('consultant') ||
-                    !!s.commissionPolicyId ||
-                    hasPlacements
-                  );
+                  return true;
                 });
 
                 const activeRecs = recruitersList.filter(s => s.status !== 'exited');

@@ -80,6 +80,9 @@ export default function VendorsDashboard({
   const [paymentDueDate, setPaymentDueDate] = useState('');
   const [paymentReminderDate, setPaymentReminderDate] = useState('');
   const [showContractForm, setShowContractForm] = useState(false);
+  const [multiAssignContract, setMultiAssignContract] = useState(null);
+  const [selectedStaffIds, setSelectedStaffIds] = useState([]);
+  const [staffSortKey, setStaffSortKey] = useState('name'); // name, company
 
   const availableDeptsForChosenCompany = useMemo(() => {
     if (!unusedCompanyId) return ['Operations', 'Recruitment', 'Finance', 'Marketing', 'Sales'];
@@ -166,6 +169,43 @@ export default function VendorsDashboard({
       } catch (err) {
         onShowToast(`Error releasing seat: ${err.message}`, 'warning');
       }
+    }
+  };
+
+  // Handle batch seat allocations
+  const handleBatchAllocateSeats = async () => {
+    if (!multiAssignContract) return;
+    if (selectedStaffIds.length === 0) {
+      onShowToast("Please select at least one staff member.", "warning");
+      return;
+    }
+
+    const assigned = assetAssignments.filter(a => a.contractId === multiAssignContract.id);
+    const assignedCount = assigned.length;
+    const unusedCount = Math.max(0, multiAssignContract.quantityPurchased - assignedCount);
+
+    if (selectedStaffIds.length > unusedCount) {
+      onShowToast(`Cannot allocate ${selectedStaffIds.length} seats. Only ${unusedCount} seats are left in the pool.`, 'warning');
+      return;
+    }
+
+    try {
+      const promises = selectedStaffIds.map(staffId => {
+        const newAssignment = {
+          id: `ass-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          contractId: multiAssignContract.id,
+          staffId: staffId,
+          assignedDate: new Date().toISOString().split('T')[0]
+        };
+        return onSaveAssetAssignment(newAssignment);
+      });
+
+      await Promise.all(promises);
+      onShowToast(`Successfully allocated ${selectedStaffIds.length} seat(s) for "${multiAssignContract.name}".`, 'success');
+      setMultiAssignContract(null);
+      setSelectedStaffIds([]);
+    } catch (err) {
+      onShowToast(`Error allocating seats: ${err.message}`, 'warning');
     }
   };
 
@@ -1205,41 +1245,61 @@ export default function VendorsDashboard({
                         const nonAssignedStaff = staff.filter(s => s.status !== 'exited' && !assigned.some(a => a.staffId === s.id));
                         if (nonAssignedStaff.length === 0) return null;
                         
+                        const sortedStaffSingle = [...nonAssignedStaff].sort((a, b) => a.fullName.localeCompare(b.fullName));
+
                         return (
-                          <form 
-                            onSubmit={(e) => handleAllocateSeatInline(e, c.id, c.name)} 
-                            style={{ 
-                              display: 'flex', 
-                              gap: '8px', 
-                              alignItems: 'center', 
-                              marginTop: '14px',
-                              backgroundColor: 'rgba(255,255,255,0.01)',
-                              padding: '8px',
-                              borderRadius: '4px',
-                              border: '1px dashed var(--border-color)',
-                              width: 'fit-content'
-                            }}
-                          >
-                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Allocate Seat:</span>
-                            <select 
-                              className="select-filter"
-                              name="staffSelect"
-                              style={{ padding: '4px 8px', fontSize: '12px', minWidth: '160px' }}
-                              required
+                          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '14px', flexWrap: 'wrap' }}>
+                            <form 
+                              onSubmit={(e) => handleAllocateSeatInline(e, c.id, c.name)} 
+                              style={{ 
+                                display: 'flex', 
+                                gap: '8px', 
+                                alignItems: 'center', 
+                                backgroundColor: 'rgba(255,255,255,0.01)',
+                                padding: '8px',
+                                borderRadius: '4px',
+                                border: '1px dashed var(--border-color)',
+                                width: 'fit-content'
+                              }}
                             >
-                              <option value="">-- Choose Staff --</option>
-                              {nonAssignedStaff.map(s => (
-                                <option key={s.id} value={s.id}>{s.fullName}</option>
-                              ))}
-                            </select>
-                            <button 
-                              type="submit" 
-                              className="btn-primary" 
-                              style={{ padding: '4px 10px', fontSize: '11px' }}
+                              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Allocate Seat:</span>
+                              <select 
+                                className="select-filter"
+                                name="staffSelect"
+                                style={{ padding: '4px 8px', fontSize: '12px', minWidth: '160px' }}
+                                required
+                              >
+                                <option value="">-- Choose Staff --</option>
+                                {sortedStaffSingle.map(s => {
+                                  const comp = companies.find(comp => comp.id === s.companyId);
+                                  return (
+                                    <option key={s.id} value={s.id}>
+                                      {s.fullName} ({comp ? comp.name : 'Group'})
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                              <button 
+                                type="submit" 
+                                className="btn-primary" 
+                                style={{ padding: '4px 10px', fontSize: '11px' }}
+                              >
+                                Assign
+                              </button>
+                            </form>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMultiAssignContract(c);
+                                setSelectedStaffIds([]);
+                              }}
+                              className="btn-secondary"
+                              style={{ padding: '8px 14px', fontSize: '11px', height: 'fit-content', border: '1px solid var(--accent)', color: 'var(--accent)' }}
                             >
-                              Assign
+                              ＋ Allocate to Multiple Users...
                             </button>
-                          </form>
+                          </div>
                         );
                       })()}
                     </div>
@@ -1403,6 +1463,216 @@ export default function VendorsDashboard({
 
         </div>
       )}
+
+      {/* Batch Software License Assignment Modal */}
+      {multiAssignContract && (() => {
+        const assigned = assetAssignments.filter(a => a.contractId === multiAssignContract.id);
+        const assignedCount = assigned.length;
+        const unusedCount = Math.max(0, multiAssignContract.quantityPurchased - assignedCount);
+
+        const nonAssignedStaff = staff.filter(s => s.status !== 'exited' && !assigned.some(a => a.staffId === s.id));
+        
+        const sortedStaff = [...nonAssignedStaff].sort((a, b) => {
+          if (staffSortKey === 'company') {
+            const compA = companies.find(c => c.id === a.companyId)?.name || 'Group';
+            const compB = companies.find(c => c.id === b.companyId)?.name || 'Group';
+            const compCompare = compA.localeCompare(compB);
+            if (compCompare !== 0) return compCompare;
+          }
+          return a.fullName.localeCompare(b.fullName);
+        });
+
+        const toggleStaffSelection = (staffId) => {
+          if (selectedStaffIds.includes(staffId)) {
+            setSelectedStaffIds(selectedStaffIds.filter(id => id !== staffId));
+          } else {
+            setSelectedStaffIds([...selectedStaffIds, staffId]);
+          }
+        };
+
+        const toggleAllStaff = () => {
+          if (selectedStaffIds.length === sortedStaff.length) {
+            setSelectedStaffIds([]);
+          } else {
+            setSelectedStaffIds(sortedStaff.map(s => s.id));
+          }
+        };
+
+        return (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+            padding: '20px',
+            backdropFilter: 'blur(4px)'
+          }}>
+            <div className="table-container" style={{
+              width: '100%',
+              maxWidth: '600px',
+              maxHeight: '80vh',
+              backgroundColor: 'var(--bg-primary)',
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--border-color)',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: 'var(--shadow-lg)'
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>
+                    Allocate Seats: {multiAssignContract.name}
+                  </h3>
+                  <span style={{ fontSize: '12px', color: selectedStaffIds.length > unusedCount ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                    Selected <strong>{selectedStaffIds.length}</strong> of <strong>{unusedCount}</strong> available seats remaining
+                  </span>
+                </div>
+                <button
+                  onClick={() => setMultiAssignContract(null)}
+                  style={{
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '50%',
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    color: 'var(--text-primary)'
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Toolbar */}
+              <div style={{
+                padding: '12px 20px',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                backgroundColor: 'var(--bg-secondary)',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    id="selectAllMulti"
+                    checked={sortedStaff.length > 0 && selectedStaffIds.length === sortedStaff.length}
+                    onChange={toggleAllStaff}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <label htmlFor="selectAllMulti" style={{ fontSize: '12px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>
+                    Select All ({sortedStaff.length})
+                  </label>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Sort List by:</span>
+                  <select
+                    className="select-filter"
+                    value={staffSortKey}
+                    onChange={(e) => setStaffSortKey(e.target.value)}
+                    style={{ padding: '3px 6px', fontSize: '11px' }}
+                  >
+                    <option value="name">Staff Name</option>
+                    <option value="company">Company Entity</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Staff List Checkboxes */}
+              <div style={{ padding: '10px 20px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {sortedStaff.map(s => {
+                  const comp = companies.find(c => c.id === s.companyId);
+                  const isChecked = selectedStaffIds.includes(s.id);
+                  
+                  return (
+                    <div 
+                      key={s.id} 
+                      onClick={() => toggleStaffSelection(s.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '8px 12px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        backgroundColor: isChecked ? 'rgba(59, 130, 246, 0.04)' : 'transparent',
+                        border: isChecked ? '1px solid rgba(59, 130, 246, 0.15)' : '1px solid transparent',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        readOnly
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>{s.fullName}</span>
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                          {comp ? comp.name : 'Group'} &bull; {s.department || 'Operations'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {sortedStaff.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                    All active staff members are already assigned to this license pool.
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div style={{
+                padding: '12px 20px',
+                borderTop: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                backgroundColor: 'var(--bg-secondary)',
+                gap: '12px'
+              }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setMultiAssignContract(null)}
+                  style={{ padding: '8px 16px', fontSize: '13px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={handleBatchAllocateSeats}
+                  disabled={selectedStaffIds.length === 0 || selectedStaffIds.length > unusedCount}
+                  style={{ padding: '8px 16px', fontSize: '13px' }}
+                >
+                  Allocate {selectedStaffIds.length} Seats
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

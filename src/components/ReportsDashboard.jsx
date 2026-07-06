@@ -895,15 +895,11 @@ export default function ReportsDashboard({
         gap: '4px'
       }}>
         {[
-          { key: 'divisional', label: 'Divisional P&L', icon: <Building2 size={14} /> },
-          { key: 'ratios', label: 'Salary-to-billings', icon: <Percent size={14} /> },
+          { key: 'consolidated', label: 'Group P&L', icon: <BarChart3 size={14} /> },
+          { key: 'ratios', label: 'Salary to billings', icon: <Percent size={14} /> },
           { key: 'leagues_billings', label: 'Recruiter billings', icon: <TrendingUp size={14} /> },
           { key: 'leagues_placements', label: 'Recruiter placements', icon: <Award size={14} /> },
-          { key: 'consolidated', label: 'Humres P&L', icon: <BarChart3 size={14} /> },
-          { key: 'departmental', label: 'Departmental split', icon: <Users size={14} /> },
-          { key: 'india', label: 'India financials', icon: <Globe size={14} /> },
-          { key: 'overheads', label: 'Shared overheads', icon: <PieChart size={14} /> },
-          { key: 'forecast', label: 'Forecast Desk', icon: <Coins size={14} /> }
+          { key: 'forecast', label: 'Forecast desk', icon: <Coins size={14} /> }
         ].map(t => (
           <button
             key={t.key}

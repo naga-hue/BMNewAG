@@ -1472,15 +1472,27 @@ export default function VendorsDashboard({
 
         const nonAssignedStaff = staff.filter(s => s.status !== 'exited' && !assigned.some(a => a.staffId === s.id));
         
-        const sortedStaff = [...nonAssignedStaff].sort((a, b) => {
-          if (staffSortKey === 'company') {
-            const compA = companies.find(c => c.id === a.companyId)?.name || 'Group';
-            const compB = companies.find(c => c.id === b.companyId)?.name || 'Group';
-            const compCompare = compA.localeCompare(compB);
-            if (compCompare !== 0) return compCompare;
+        // Group staff by company
+        const staffByCompany = {};
+        nonAssignedStaff.forEach(s => {
+          const compId = s.companyId || 'group';
+          if (!staffByCompany[compId]) {
+            staffByCompany[compId] = [];
           }
-          return a.fullName.localeCompare(b.fullName);
+          staffByCompany[compId].push(s);
         });
+
+        // Map and sort companies
+        const groupedCompanies = Object.keys(staffByCompany).map(compId => {
+          const comp = companies.find(c => c.id === compId);
+          const compName = comp ? comp.name : 'Group / Other';
+          const sortedUsers = staffByCompany[compId].sort((a, b) => a.fullName.localeCompare(b.fullName));
+          return {
+            id: compId,
+            name: compName,
+            users: sortedUsers
+          };
+        }).sort((a, b) => a.name.localeCompare(b.name));
 
         const toggleStaffSelection = (staffId) => {
           if (selectedStaffIds.includes(staffId)) {
@@ -1491,10 +1503,11 @@ export default function VendorsDashboard({
         };
 
         const toggleAllStaff = () => {
-          if (selectedStaffIds.length === sortedStaff.length) {
+          const allUserIds = nonAssignedStaff.map(s => s.id);
+          if (selectedStaffIds.length === allUserIds.length) {
             setSelectedStaffIds([]);
           } else {
-            setSelectedStaffIds(sortedStaff.map(s => s.id));
+            setSelectedStaffIds(allUserIds);
           }
         };
 
@@ -1515,8 +1528,8 @@ export default function VendorsDashboard({
           }}>
             <div className="table-container" style={{
               width: '100%',
-              maxWidth: '600px',
-              maxHeight: '80vh',
+              maxWidth: '650px',
+              maxHeight: '85vh',
               backgroundColor: 'var(--bg-primary)',
               borderRadius: 'var(--radius-lg)',
               border: '1px solid var(--border-color)',
@@ -1567,75 +1580,110 @@ export default function VendorsDashboard({
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                backgroundColor: 'var(--bg-secondary)',
-                gap: '12px'
+                backgroundColor: 'var(--bg-secondary)'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <input
                     type="checkbox"
                     id="selectAllMulti"
-                    checked={sortedStaff.length > 0 && selectedStaffIds.length === sortedStaff.length}
+                    checked={nonAssignedStaff.length > 0 && selectedStaffIds.length === nonAssignedStaff.length}
                     onChange={toggleAllStaff}
                     style={{ cursor: 'pointer' }}
                   />
                   <label htmlFor="selectAllMulti" style={{ fontSize: '12px', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>
-                    Select All ({sortedStaff.length})
+                    Select All ({nonAssignedStaff.length})
                   </label>
                 </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Sort List by:</span>
-                  <select
-                    className="select-filter"
-                    value={staffSortKey}
-                    onChange={(e) => setStaffSortKey(e.target.value)}
-                    style={{ padding: '3px 6px', fontSize: '11px' }}
-                  >
-                    <option value="name">Staff Name</option>
-                    <option value="company">Company Entity</option>
-                  </select>
-                </div>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Grouped by Company Entity</span>
               </div>
 
-              {/* Staff List Checkboxes */}
-              <div style={{ padding: '10px 20px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {sortedStaff.map(s => {
-                  const comp = companies.find(c => c.id === s.companyId);
-                  const isChecked = selectedStaffIds.includes(s.id);
-                  
+              {/* Grouped Staff List */}
+              <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {groupedCompanies.map(comp => {
+                  const companyUserIds = comp.users.map(u => u.id);
+                  const selectedInCompany = companyUserIds.filter(id => selectedStaffIds.includes(id));
+                  const isAllCompanySelected = companyUserIds.length > 0 && selectedInCompany.length === companyUserIds.length;
+                  const isPartiallySelected = selectedInCompany.length > 0 && selectedInCompany.length < companyUserIds.length;
+
+                  const toggleCompanySelection = () => {
+                    if (isAllCompanySelected) {
+                      setSelectedStaffIds(selectedStaffIds.filter(id => !companyUserIds.includes(id)));
+                    } else {
+                      const otherSelected = selectedStaffIds.filter(id => !companyUserIds.includes(id));
+                      setSelectedStaffIds([...otherSelected, ...companyUserIds]);
+                    }
+                  };
+
                   return (
-                    <div 
-                      key={s.id} 
-                      onClick={() => toggleStaffSelection(s.id)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        padding: '8px 12px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        backgroundColor: isChecked ? 'rgba(59, 130, 246, 0.04)' : 'transparent',
-                        border: isChecked ? '1px solid rgba(59, 130, 246, 0.15)' : '1px solid transparent',
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        readOnly
-                        style={{ cursor: 'pointer' }}
-                      />
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>{s.fullName}</span>
-                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                          {comp ? comp.name : 'Group'} &bull; {s.department || 'Operations'}
+                    <div key={comp.id} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {/* Company Header Row */}
+                      <div 
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          backgroundColor: 'var(--bg-secondary)',
+                          padding: '6px 12px',
+                          borderRadius: '4px',
+                          border: '1px solid var(--border-color)',
+                          userSelect: 'none'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isAllCompanySelected}
+                          ref={el => {
+                            if (el) el.indeterminate = isPartiallySelected;
+                          }}
+                          onChange={toggleCompanySelection}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                          {comp.name} ({comp.users.length})
                         </span>
+                      </div>
+
+                      {/* Expanded Company Users */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '24px' }}>
+                        {comp.users.map(s => {
+                          const isChecked = selectedStaffIds.includes(s.id);
+                          return (
+                            <div 
+                              key={s.id} 
+                              onClick={() => toggleStaffSelection(s.id)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                padding: '6px 12px',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                backgroundColor: isChecked ? 'rgba(59, 130, 246, 0.04)' : 'transparent',
+                                border: isChecked ? '1px solid rgba(59, 130, 246, 0.15)' : '1px solid transparent',
+                                transition: 'all 0.1s ease'
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                readOnly
+                                style={{ cursor: 'pointer' }}
+                              />
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>{s.fullName}</span>
+                                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                  {s.department || 'Operations'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   );
                 })}
 
-                {sortedStaff.length === 0 && (
+                {nonAssignedStaff.length === 0 && (
                   <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)', fontSize: '13px' }}>
                     All active staff members are already assigned to this license pool.
                   </div>

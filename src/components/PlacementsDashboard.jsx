@@ -47,7 +47,7 @@ export default function PlacementsDashboard({
   onClearAllPlacements,
   onShowToast
 }) {
-  const [activeSubTab, setActiveSubTab] = useState('registry'); // registry, import, leaderboard
+  const [activeSubTab, setActiveSubTab] = useState('matrix'); // matrix, registry, import, leaderboard
 
   // Registry states
   const [searchQuery, setSearchQuery] = useState('');
@@ -912,8 +912,10 @@ export default function PlacementsDashboard({
       let placementCount = 0;
 
       placements.forEach(p => {
-        // Leaderboard groups based on scoredDate cycle month
-        const pDate = new Date(p.scoredDate);
+        if (p.status === 'dns') return;
+        const dateStr = p.startDate || p.scoredDate || '';
+        if (!dateStr) return;
+        const pDate = new Date(dateStr);
         if (pDate.getFullYear() === year && (pDate.getMonth() + 1) === month) {
           const splitObj = p.splits?.find(s => s.staffId === member.id);
           if (splitObj) {
@@ -1095,8 +1097,8 @@ export default function PlacementsDashboard({
         gap: '4px'
       }}>
         {[
-          { key: 'registry', label: 'Placements Log Desk' },
           { key: 'matrix', label: 'YTD Client Placements Matrix' },
+          { key: 'registry', label: 'Placements Log Desk' },
           { key: 'import', label: 'CSV Spreadsheet Importer' },
           { key: 'leaderboard', label: 'Monthly Billing Rankings' }
         ].map(t => (

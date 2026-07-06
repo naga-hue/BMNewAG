@@ -90,6 +90,10 @@ export default function ReportsDashboard({
   const [endMonth, setEndMonth] = useState('2026-12');
   const [expandedExpenses, setExpandedExpenses] = useState(false);
   const [selectedRecruiterPlacements, setSelectedRecruiterPlacements] = useState(null); // { recruiterName, placements: [...] }
+  const [expandedExitedRatios, setExpandedExitedRatios] = useState(false);
+  const [expandedExitedLeaguesBillings, setExpandedExitedLeaguesLeaguesBillings] = useState(false);
+  const [expandedExitedLeaguesPlacements, setExpandedExitedLeaguesLeaguesPlacements] = useState(false);
+  const [expandedExitedOverheads, setExpandedExitedOverheads] = useState(false);
 
   // Generate months range dynamically
   const generateMonthsRange = (start, end) => {
@@ -1738,6 +1742,9 @@ export default function ReportsDashboard({
                   );
                 });
 
+                const activeRecs = recruitersList.filter(s => s.status !== 'exited');
+                const exitedRecs = recruitersList.filter(s => s.status === 'exited');
+
                 if (recruitersList.length === 0) {
                   return (
                     <tr>
@@ -1748,7 +1755,7 @@ export default function ReportsDashboard({
                   );
                 }
 
-                return recruitersList.map(rec => {
+                const renderRecRow = (rec) => {
                   const employer = companies.find(c => c.id === rec.companyId);
                   
                   // Period Billings (within selected start and end months range)
@@ -1797,8 +1804,10 @@ export default function ReportsDashboard({
                   }
 
                   return (
-                    <tr key={rec.id}>
-                      <td style={{ fontWeight: 600 }}>{rec.fullName}</td>
+                    <tr key={rec.id} style={{ opacity: rec.status === 'exited' ? 0.75 : 1 }}>
+                      <td style={{ fontWeight: 600 }}>
+                        {rec.fullName} {rec.status === 'exited' && <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 500, marginLeft: '4px' }}>(Exited)</span>}
+                      </td>
                       <td>{rec.department} &bull; {employer ? employer.name : 'Group'}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{formatGBP(wagesPaid)}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{formatGBP(commissionsPaid)}</td>
@@ -1824,7 +1833,27 @@ export default function ReportsDashboard({
                       </td>
                     </tr>
                   );
-                });
+                };
+
+                return (
+                  <>
+                    {activeRecs.map(renderRecRow)}
+                    {exitedRecs.length > 0 && (
+                      <>
+                        <tr 
+                          onClick={() => setExpandedExitedRatios(!expandedExitedRatios)}
+                          style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'pointer', userSelect: 'none' }}
+                        >
+                          <td colSpan="8" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            <span style={{ marginRight: '6px' }}>{expandedExitedRatios ? '▼' : '▶'}</span>
+                            Exited Staff ({exitedRecs.length})
+                          </td>
+                        </tr>
+                        {expandedExitedRatios && exitedRecs.map(renderRecRow)}
+                      </>
+                    )}
+                  </>
+                );
               })()}
             </tbody>
           </table>
@@ -1883,15 +1912,44 @@ export default function ReportsDashboard({
                   );
                 }
 
-                return billingsRankList.map((item, idx) => (
-                  <tr key={item.rec.id}>
-                    <td style={{ fontWeight: 700 }}>#{idx + 1}</td>
-                    <td>{item.rec.fullName}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
-                      {formatGBP(item.totalVal)}
-                    </td>
-                  </tr>
-                ));
+                const activeRank = billingsRankList.filter(item => item.rec.status !== 'exited');
+                const exitedRank = billingsRankList.filter(item => item.rec.status === 'exited');
+
+                return (
+                  <>
+                    {activeRank.map((item, idx) => (
+                      <tr key={item.rec.id}>
+                        <td style={{ fontWeight: 700 }}>#{idx + 1}</td>
+                        <td>{item.rec.fullName}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
+                          {formatGBP(item.totalVal)}
+                        </td>
+                      </tr>
+                    ))}
+                    {exitedRank.length > 0 && (
+                      <>
+                        <tr 
+                          onClick={() => setExpandedExitedLeaguesLeaguesBillings(!expandedExitedLeaguesBillings)}
+                          style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'pointer', userSelect: 'none' }}
+                        >
+                          <td colSpan="3" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            <span style={{ marginRight: '6px' }}>{expandedExitedLeaguesBillings ? '▼' : '▶'}</span>
+                            Exited Staff ({exitedRank.length})
+                          </td>
+                        </tr>
+                        {expandedExitedLeaguesBillings && exitedRank.map((item, idx) => (
+                          <tr key={item.rec.id} style={{ opacity: 0.75 }}>
+                            <td style={{ fontWeight: 700, color: 'var(--text-muted)' }}>—</td>
+                            <td>{item.rec.fullName} <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(Exited)</span></td>
+                            <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
+                              {formatGBP(item.totalVal)}
+                            </td>
+                          </tr>
+                        ))}
+                      </>
+                    )}
+                  </>
+                );
               })()}
             </tbody>
           </table>
@@ -1947,33 +2005,80 @@ export default function ReportsDashboard({
                   );
                 }
 
-                return volumeRankList.map((item, idx) => (
-                  <tr key={item.rec.id}>
-                    <td style={{ fontWeight: 700 }}>#{idx + 1}</td>
-                    <td>{item.rec.fullName}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      <button 
-                        onClick={() => setSelectedRecruiterPlacements({
-                          recruiterName: item.rec.fullName,
-                          placements: item.rawPlacements,
-                          recruiterId: item.rec.id
-                        })}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--accent)',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          textDecoration: 'underline',
-                          padding: 0,
-                          fontSize: 'inherit'
-                        }}
-                      >
-                        {Number(item.count.toFixed(2))} {Number(item.count.toFixed(2)) === 1 ? 'placement' : 'placements'}
-                      </button>
-                    </td>
-                  </tr>
-                ));
+                const activeRank = volumeRankList.filter(item => item.rec.status !== 'exited');
+                const exitedRank = volumeRankList.filter(item => item.rec.status === 'exited');
+
+                return (
+                  <>
+                    {activeRank.map((item, idx) => (
+                      <tr key={item.rec.id}>
+                        <td style={{ fontWeight: 700 }}>#{idx + 1}</td>
+                        <td>{item.rec.fullName}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          <button 
+                            onClick={() => setSelectedRecruiterPlacements({
+                              recruiterName: item.rec.fullName,
+                              placements: item.rawPlacements,
+                              recruiterId: item.rec.id
+                            })}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--accent)',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              textDecoration: 'underline',
+                              padding: 0,
+                              fontSize: 'inherit'
+                            }}
+                          >
+                            {Number(item.count.toFixed(2))} {Number(item.count.toFixed(2)) === 1 ? 'placement' : 'placements'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {exitedRank.length > 0 && (
+                      <>
+                        <tr 
+                          onClick={() => setExpandedExitedLeaguesLeaguesPlacements(!expandedExitedLeaguesPlacements)}
+                          style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'pointer', userSelect: 'none' }}
+                        >
+                          <td colSpan="3" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            <span style={{ marginRight: '6px' }}>{expandedExitedLeaguesPlacements ? '▼' : '▶'}</span>
+                            Exited Staff ({exitedRank.length})
+                          </td>
+                        </tr>
+                        {expandedExitedLeaguesPlacements && exitedRank.map((item, idx) => (
+                          <tr key={item.rec.id} style={{ opacity: 0.75 }}>
+                            <td style={{ fontWeight: 700, color: 'var(--text-muted)' }}>—</td>
+                            <td>{item.rec.fullName} <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(Exited)</span></td>
+                            <td style={{ textAlign: 'right' }}>
+                              <button 
+                                onClick={() => setSelectedRecruiterPlacements({
+                                  recruiterName: item.rec.fullName,
+                                  placements: item.rawPlacements,
+                                  recruiterId: item.rec.id
+                                })}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'var(--accent)',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  textDecoration: 'underline',
+                                  padding: 0,
+                                  fontSize: 'inherit'
+                                }}
+                              >
+                                {Number(item.count.toFixed(2))} {Number(item.count.toFixed(2)) === 1 ? 'placement' : 'placements'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </>
+                    )}
+                  </>
+                );
               })()}
             </tbody>
           </table>
@@ -2223,23 +2328,63 @@ export default function ReportsDashboard({
                       </tr>
                     </thead>
                     <tbody>
-                      {activeStaff.map(s => {
-                        const employer = companies.find(c => c.id === s.companyId);
-                        const pay = getStaffPayrollForMonth(s, targetMonth);
-                        const directWages = pay.salaries;
-                        const totalCost = directWages + perStaffShare;
+                      {(() => {
+                        const activeStaffFiltered = activeStaff.filter(s => s.status !== 'exited');
+                        const exitedStaffFiltered = activeStaff.filter(s => s.status === 'exited');
 
                         return (
-                          <tr key={s.id}>
-                            <td style={{ fontWeight: 600 }}>{s.fullName}</td>
-                            <td>{employer ? employer.name : 'Unknown'}</td>
-                            <td>{s.department || 'Operations'}</td>
-                            <td style={{ textAlign: 'right' }}>{formatGBP(directWages)}</td>
-                            <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{formatGBP(perStaffShare)}</td>
-                            <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--primary)' }}>{formatGBP(totalCost)}</td>
-                          </tr>
+                          <>
+                            {activeStaffFiltered.map(s => {
+                              const employer = companies.find(c => c.id === s.companyId);
+                              const pay = getStaffPayrollForMonth(s, targetMonth);
+                              const directWages = pay.salaries;
+                              const totalCost = directWages + perStaffShare;
+
+                              return (
+                                <tr key={s.id}>
+                                  <td style={{ fontWeight: 600 }}>{s.fullName}</td>
+                                  <td>{employer ? employer.name : 'Unknown'}</td>
+                                  <td>{s.department || 'Operations'}</td>
+                                  <td style={{ textAlign: 'right' }}>{formatGBP(directWages)}</td>
+                                  <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{formatGBP(perStaffShare)}</td>
+                                  <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--primary)' }}>{formatGBP(totalCost)}</td>
+                                </tr>
+                              );
+                            })}
+
+                            {exitedStaffFiltered.length > 0 && (
+                              <>
+                                <tr 
+                                  onClick={() => setExpandedExitedOverheads(!expandedExitedOverheads)}
+                                  style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'pointer', userSelect: 'none' }}
+                                >
+                                  <td colSpan="6" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                    <span style={{ marginRight: '6px' }}>{expandedExitedOverheads ? '▼' : '▶'}</span>
+                                    Exited Staff ({exitedStaffFiltered.length})
+                                  </td>
+                                </tr>
+                                {expandedExitedOverheads && exitedStaffFiltered.map(s => {
+                                  const employer = companies.find(c => c.id === s.companyId);
+                                  const pay = getStaffPayrollForMonth(s, targetMonth);
+                                  const directWages = pay.salaries;
+                                  const totalCost = directWages + perStaffShare;
+
+                                  return (
+                                    <tr key={s.id} style={{ opacity: 0.75 }}>
+                                      <td style={{ fontWeight: 600 }}>{s.fullName} <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(Exited)</span></td>
+                                      <td>{employer ? employer.name : 'Unknown'}</td>
+                                      <td>{s.department || 'Operations'}</td>
+                                      <td style={{ textAlign: 'right' }}>{formatGBP(directWages)}</td>
+                                      <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{formatGBP(perStaffShare)}</td>
+                                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--primary)' }}>{formatGBP(totalCost)}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </>
+                            )}
+                          </>
                         );
-                      })}
+                      })()}
 
                       {activeStaff.length === 0 && (
                         <tr>

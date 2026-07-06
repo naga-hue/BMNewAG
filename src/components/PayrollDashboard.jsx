@@ -61,6 +61,7 @@ export default function PayrollDashboard({
   const [expectedDaysPerMonth, setExpectedDaysPerMonth] = useState('21.67');
   const [editingPolicyId, setEditingPolicyId] = useState(null);
   const [selectedPayrollStaffIds, setSelectedPayrollStaffIds] = useState([]);
+  const [showExitedRoster, setShowExitedRoster] = useState(false);
 
   // Progressive Tax & NI slab states
   const [payeSlabs, setPayeSlabs] = useState([
@@ -1050,9 +1051,12 @@ export default function PayrollDashboard({
     return matchesSearch && matchesCompany && matchesDept;
   });
 
-  // Roster Grouping Logic: Group by Company, then by Department
+  // Roster Grouping Logic: Group by Company, then by Department (active staff only)
   const groupedRoster = {};
-  filteredStaff.forEach(s => {
+  const activeStaffList = filteredStaff.filter(s => s.status !== 'exited');
+  const exitedStaffList = filteredStaff.filter(s => s.status === 'exited');
+
+  activeStaffList.forEach(s => {
     const compId = s.companyId || 'unassigned';
     const dept = s.department || 'Other';
 
@@ -1349,6 +1353,96 @@ ${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleSt
                   </React.Fragment>
                 );
               })}
+
+            {exitedStaffList.length > 0 && (
+              <>
+                <tr 
+                  onClick={() => setShowExitedRoster(!showExitedRoster)}
+                  style={{ backgroundColor: 'rgba(239, 68, 68, 0.04)', cursor: 'pointer', userSelect: 'none' }}
+                >
+                  <td colSpan={MONTHS.length + 3} style={{ fontWeight: 700, padding: '10px 12px', fontSize: '11px', color: 'var(--danger)', borderRight: '2px solid var(--border-color)', left: 0, position: 'sticky', zIndex: 5 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ marginRight: '6px' }}>{showExitedRoster ? '▼' : '▶'}</span>
+                      EXITED STAFF ({exitedStaffList.length})
+                    </div>
+                  </td>
+                </tr>
+
+                {showExitedRoster && exitedStaffList.map(s => {
+                  let annualSum = 0;
+                  const symbol = symbolMap[s.currency || 'GBP'] || '£';
+
+                  return (
+                    <tr key={s.id} style={{ opacity: 0.75 }}>
+                      <td style={{ 
+                        left: 0, 
+                        position: 'sticky', 
+                        backgroundColor: 'var(--bg-card)', 
+                        zIndex: 6, 
+                        borderRight: '2px solid var(--border-color)',
+                        padding: '8px 12px' 
+                      }}>
+                        <div style={{ fontWeight: 600, fontSize: '12px' }}>
+                          {s.fullName}
+                          <span style={{ marginLeft: '4px', fontSize: '8px', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.2)', padding: '1px 3px', borderRadius: '3px' }}>Exited</span>
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{s.jobTitle}</div>
+                      </td>
+
+                      <td style={{ fontSize: '11px', borderRight: '1px solid var(--border-color)' }}>
+                        {symbol}{Number(s.salary).toLocaleString()} / yr
+                      </td>
+
+                      {MONTHS.map(m => {
+                        const cell = getCellData(s, m);
+                        annualSum += cell.total;
+
+                        return (
+                          <td 
+                            key={m}
+                            onClick={() => handleCellClick(s, m)}
+                            style={{ 
+                              textAlign: 'center', 
+                              cursor: 'pointer', 
+                              fontSize: '11px',
+                              fontWeight: cell.isReconciled ? 600 : 400,
+                              position: 'relative',
+                              transition: 'all 0.15s'
+                            }}
+                            className={`payroll-cell ${cell.isReconciled ? 'reconciled' : 'projected'}`}
+                            title={`${s.fullName} - ${m}\nSalary (Gross): £${Math.round(cell.basic).toLocaleString()}\nComm: £${Math.round(cell.commission).toLocaleString()}\nClick to edit override`}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                              <span>£{Math.round(cell.total).toLocaleString()}</span>
+                              {cell.isReconciled ? (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', fontSize: '8px', fontWeight: 700, color: 'var(--success)', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '1px 4px', borderRadius: '3px' }}>
+                                  <CheckCircle2 size={7} /> Paid
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '8px', color: 'var(--text-muted)' }}>
+                                  Proj
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        );
+                      })}
+
+                      <td style={{ 
+                        textAlign: 'right', 
+                        fontWeight: 700, 
+                        fontFamily: 'monospace', 
+                        borderLeft: '2px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-secondary)',
+                        fontSize: '12px'
+                      }}>
+                        £{Math.round(annualSum).toLocaleString()}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </>
+            )}
 
             {/* Matrix totals Row */}
             <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 700 }}>

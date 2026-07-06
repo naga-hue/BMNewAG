@@ -103,6 +103,9 @@ export default function CommissionsDashboard({
 
   const [sortBy, setSortBy] = useState('fullName');
   const [sortOrder, setSortOrder] = useState('asc'); // asc or desc
+  const [expandedExitedAssignments, setExpandedExitedAssignments] = useState(false);
+  const [expandedExitedPayroll, setExpandedExitedPayroll] = useState(false);
+  const [expandedExitedMatrix, setExpandedExitedMatrix] = useState(false);
 
   const handleHeaderClick = (columnKey) => {
     if (sortBy === columnKey) {
@@ -1156,12 +1159,16 @@ export default function CommissionsDashboard({
                     );
                   }
 
-                  return sortedAssignmentsStaff.map(s => {
-                    const employer = companies.find(c => c.id === s.companyId);
+                  const activeAssignments = sortedAssignmentsStaff.filter(s => s.status !== 'exited');
+                  const exitedAssignments = sortedAssignmentsStaff.filter(s => s.status === 'exited');
 
+                  const renderAssignRow = (s) => {
+                    const employer = companies.find(c => c.id === s.companyId);
                     return (
-                      <tr key={s.id}>
-                        <td style={{ fontWeight: 600 }}>{s.fullName}</td>
+                      <tr key={s.id} style={{ opacity: s.status === 'exited' ? 0.75 : 1 }}>
+                        <td style={{ fontWeight: 600 }}>
+                          {s.fullName} {s.status === 'exited' && <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 500, marginLeft: '4px' }}>(Exited)</span>}
+                        </td>
                         <td>{employer ? employer.name : 'Group'}</td>
                         <td>{s.jobTitle}</td>
                         <td>
@@ -1184,7 +1191,27 @@ export default function CommissionsDashboard({
                         </td>
                       </tr>
                     );
-                  });
+                  };
+
+                  return (
+                    <>
+                      {activeAssignments.map(renderAssignRow)}
+                      {exitedAssignments.length > 0 && (
+                        <>
+                          <tr 
+                            onClick={() => setExpandedExitedAssignments(!expandedExitedAssignments)}
+                            style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'pointer', userSelect: 'none' }}
+                          >
+                            <td colSpan="4" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)' }}>
+                              <span style={{ marginRight: '6px' }}>{expandedExitedAssignments ? '▼' : '▶'}</span>
+                              Exited Staff ({exitedAssignments.length})
+                            </td>
+                          </tr>
+                          {expandedExitedAssignments && exitedAssignments.map(renderAssignRow)}
+                        </>
+                      )}
+                    </>
+                  );
                 })()}
               </tbody>
             </table>
@@ -1384,115 +1411,138 @@ export default function CommissionsDashboard({
                     );
                   }
 
-                  return sortedLedger.map(row => {
-                  const matchedComp = companies.find(c => c.id === row.member.companyId);
-                  const symbol = matchedComp ? (symbolMap[matchedComp.currency] || '£') : '£';
+                  const activeLedger = sortedLedger.filter(row => row.member.status !== 'exited');
+                  const exitedLedger = sortedLedger.filter(row => row.member.status === 'exited');
+
+                  const renderPayrollRow = (row) => {
+                    const matchedComp = companies.find(c => c.id === row.member.companyId);
+                    const symbol = matchedComp ? (symbolMap[matchedComp.currency] || '£') : '£';
+
+                    return (
+                      <tr key={row.member.id} style={{ opacity: row.member.status === 'exited' ? 0.75 : 1 }}>
+                        <td>
+                          <div 
+                            style={{ fontWeight: 600, color: 'var(--accent)', cursor: 'pointer', textDecoration: 'none' }}
+                            onClick={() => setSelectedBreakdownRow(row)}
+                            title="Click to view detailed calculations"
+                          >
+                            {row.member.fullName} 🔍 {row.member.status === 'exited' && <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 500 }}>(Exited)</span>}
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{row.member.jobTitle}</div>
+                        </td>
+                        <td style={{ fontSize: '11px' }}>{row.policy ? row.policy.name : '—'}</td>
+                        
+                        {/* Cycle billings (previous month starts) */}
+                        <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                          {symbol}{row.calc.billing.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </td>
+                        
+                        {/* Base earned */}
+                        <td style={{ textAlign: 'right' }}>
+                          {symbol}{row.calc.baseEarned.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </td>
+  
+                        {/* Withheld portion (unpaid invoices in cycle) */}
+                        <td style={{ textAlign: 'right', color: row.calc.withheld > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                          {row.calc.withheld > 0 ? `-${symbol}${row.calc.withheld.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}
+                        </td>
+  
+                        {/* Released portion (priors settled this month) */}
+                        <td style={{ textAlign: 'right', color: row.calc.released > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
+                          {row.calc.released > 0 ? `+${symbol}${row.calc.released.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}
+                        </td>
+  
+                        {/* Net payout (Paid Now + Released) */}
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: row.calc.totalPayout > 0 ? 'var(--success)' : 'var(--text-primary)' }}>
+                          {symbol}{row.calc.totalPayout.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </td>
+  
+                        <td>
+                          {row.calc.totalPayout <= 0 ? (
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', backgroundColor: 'var(--bg-secondary)', padding: '2px 8px', borderRadius: '4px' }}>
+                              No Payout Due
+                            </span>
+                          ) : row.isPaid ? (
+                            <span style={{ 
+                              fontSize: '11px', 
+                              fontWeight: 700, 
+                              color: 'var(--success)', 
+                              backgroundColor: 'rgba(16, 185, 129, 0.1)', 
+                              padding: '3px 8px', 
+                              borderRadius: '4px',
+                              border: '1px solid rgba(16, 185, 129, 0.2)' 
+                            }}>
+                              Paid Statement
+                            </span>
+                          ) : (
+                            <span style={{ 
+                              fontSize: '11px', 
+                              fontWeight: 700, 
+                              color: 'var(--danger)', 
+                              backgroundColor: 'rgba(239, 68, 68, 0.1)', 
+                              padding: '3px 8px', 
+                              borderRadius: '4px',
+                              border: '1px solid rgba(239, 68, 68, 0.2)' 
+                            }}>
+                              Payable (Unpaid)
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+                            <button 
+                              type="button"
+                              className="btn-secondary"
+                              onClick={() => setSelectedBreakdownRow(row)}
+                              style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '3px' }}
+                            >
+                              🔍 Breakdown
+                            </button>
+                            {row.calc.totalPayout > 0 && (
+                              row.isPaid ? (
+                                <button 
+                                  className="btn-secondary"
+                                  onClick={() => handleTogglePayment(row.member, false)}
+                                  style={{ padding: '4px 8px', fontSize: '11px' }}
+                                >
+                                  Reset to Unpaid
+                                </button>
+                              ) : (
+                                <button 
+                                  className="btn-primary"
+                                  onClick={() => handleTogglePayment(row.member, true)}
+                                  style={{ padding: '4px 8px', fontSize: '11px', backgroundColor: 'var(--success)', borderColor: 'var(--success)' }}
+                                >
+                                  Mark as Paid
+                                </button>
+                              )
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  };
 
                   return (
-                    <tr key={row.member.id}>
-                      <td>
-                        <div 
-                          style={{ fontWeight: 600, color: 'var(--accent)', cursor: 'pointer', textDecoration: 'none' }}
-                          onClick={() => setSelectedBreakdownRow(row)}
-                          title="Click to view detailed calculations"
-                        >
-                          {row.member.fullName} 🔍
-                        </div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{row.member.jobTitle}</div>
-                      </td>
-                      <td style={{ fontSize: '11px' }}>{row.policy ? row.policy.name : '—'}</td>
-                      
-                      {/* Cycle billings (previous month starts) */}
-                      <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                        {symbol}{row.calc.billing.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </td>
-                      
-                      {/* Base earned */}
-                      <td style={{ textAlign: 'right' }}>
-                        {symbol}{row.calc.baseEarned.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </td>
-
-                      {/* Withheld portion (unpaid invoices in cycle) */}
-                      <td style={{ textAlign: 'right', color: row.calc.withheld > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
-                        {row.calc.withheld > 0 ? `-${symbol}${row.calc.withheld.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}
-                      </td>
-
-                      {/* Released portion (priors settled this month) */}
-                      <td style={{ textAlign: 'right', color: row.calc.released > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
-                        {row.calc.released > 0 ? `+${symbol}${row.calc.released.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}
-                      </td>
-
-                      {/* Net payout (Paid Now + Released) */}
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: row.calc.totalPayout > 0 ? 'var(--success)' : 'var(--text-primary)' }}>
-                        {symbol}{row.calc.totalPayout.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </td>
-
-                      <td>
-                        {row.calc.totalPayout <= 0 ? (
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', backgroundColor: 'var(--bg-secondary)', padding: '2px 8px', borderRadius: '4px' }}>
-                            No Payout Due
-                          </span>
-                        ) : row.isPaid ? (
-                          <span style={{ 
-                            fontSize: '11px', 
-                            fontWeight: 700, 
-                            color: 'var(--success)', 
-                            backgroundColor: 'rgba(16, 185, 129, 0.1)', 
-                            padding: '3px 8px', 
-                            borderRadius: '4px',
-                            border: '1px solid rgba(16, 185, 129, 0.2)' 
-                          }}>
-                            Paid Statement
-                          </span>
-                        ) : (
-                          <span style={{ 
-                            fontSize: '11px', 
-                            fontWeight: 700, 
-                            color: 'var(--danger)', 
-                            backgroundColor: 'rgba(239, 68, 68, 0.1)', 
-                            padding: '3px 8px', 
-                            borderRadius: '4px',
-                            border: '1px solid rgba(239, 68, 68, 0.2)' 
-                          }}>
-                            Payable (Unpaid)
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-                          <button 
-                            type="button"
-                            className="btn-secondary"
-                            onClick={() => setSelectedBreakdownRow(row)}
-                            style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '3px' }}
+                    <>
+                      {activeLedger.map(renderPayrollRow)}
+                      {exitedLedger.length > 0 && (
+                        <>
+                          <tr 
+                            onClick={() => setExpandedExitedPayroll(!expandedExitedPayroll)}
+                            style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'pointer', userSelect: 'none' }}
                           >
-                            🔍 Breakdown
-                          </button>
-                          {row.calc.totalPayout > 0 && (
-                            row.isPaid ? (
-                              <button 
-                                className="btn-secondary"
-                                onClick={() => handleTogglePayment(row.member, false)}
-                                style={{ padding: '4px 8px', fontSize: '11px' }}
-                              >
-                                Reset to Unpaid
-                              </button>
-                            ) : (
-                              <button 
-                                className="btn-primary"
-                                onClick={() => handleTogglePayment(row.member, true)}
-                                style={{ padding: '4px 8px', fontSize: '11px', backgroundColor: 'var(--success)', borderColor: 'var(--success)' }}
-                              >
-                                Mark as Paid
-                              </button>
-                            )
-                          )}
-                        </div>
-                      </td>
-                    </tr>
+                            <td colSpan="9" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)' }}>
+                              <span style={{ marginRight: '6px' }}>{expandedExitedPayroll ? '▼' : '▶'}</span>
+                              Exited Staff ({exitedLedger.length})
+                            </td>
+                          </tr>
+                          {expandedExitedPayroll && exitedLedger.map(renderPayrollRow)}
+                        </>
+                      )}
+                    </>
                   );
-                });
-              })()}
+                })()}
               {ledgerData.list.length === 0 && (
                   <tr>
                     <td colSpan="9" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
@@ -2229,42 +2279,68 @@ export default function CommissionsDashboard({
                 </tr>
               </thead>
               <tbody>
-                {matrixData.rows.map((row) => (
-                  <tr key={row.member.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ fontWeight: 600, padding: '12px' }}>
-                      <span 
-                        style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }}
-                        onClick={() => {
-                          // Simulate opening the breakdown modal by setting activeSubTab to 'payroll' and selectedBreakdownRow
-                          setPayrollMonth(`${matrixYear}-06`); // default to June or last month
-                          const fullCalc = calculateCashReceivedCommission(row.member, row.policy, `${matrixYear}-06`);
-                          setSelectedBreakdownRow({
-                            member: row.member,
-                            policy: row.policy,
-                            calc: fullCalc
-                          });
-                          setActiveSubTab('payroll');
-                        }}
-                      >
-                        {row.member.fullName}
-                      </span>
-                    </td>
-                    <td style={{ color: 'var(--text-secondary)', padding: '12px' }}>
-                      {row.policy ? row.policy.name : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>None Mapped</span>}
-                    </td>
-                    {matrixMonths.map(m => {
-                      const val = row.monthlyValues[m];
-                      return (
-                        <td key={m} style={{ textAlign: 'right', padding: '12px', color: val > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                          {val > 0 ? formatGBP(val) : '—'}
-                        </td>
-                      );
-                    })}
-                    <td style={{ textAlign: 'right', fontWeight: 700, padding: '12px', backgroundColor: 'rgba(99, 102, 241, 0.02)', color: 'var(--accent)' }}>
-                      {formatGBP(row.rowTotal)}
-                    </td>
-                  </tr>
-                ))}
+                {(() => {
+                  const activeMatrixRows = matrixData.rows.filter(row => row.member.status !== 'exited');
+                  const exitedMatrixRows = matrixData.rows.filter(row => row.member.status === 'exited');
+
+                  const renderMatrixRow = (row) => (
+                    <tr key={row.member.id} style={{ borderBottom: '1px solid var(--border-color)', opacity: row.member.status === 'exited' ? 0.75 : 1 }}>
+                      <td style={{ fontWeight: 600, padding: '12px' }}>
+                        <span 
+                          style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }}
+                          onClick={() => {
+                            // Simulate opening the breakdown modal by setting activeSubTab to 'payroll' and selectedBreakdownRow
+                            setPayrollMonth(`${matrixYear}-06`); // default to June or last month
+                            const fullCalc = calculateCashReceivedCommission(row.member, row.policy, `${matrixYear}-06`);
+                            setSelectedBreakdownRow({
+                              member: row.member,
+                              policy: row.policy,
+                              calc: fullCalc
+                            });
+                            setActiveSubTab('payroll');
+                          }}
+                        >
+                          {row.member.fullName}
+                        </span>
+                        {row.member.status === 'exited' && <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 500, marginLeft: '4px' }}>(Exited)</span>}
+                      </td>
+                      <td style={{ color: 'var(--text-secondary)', padding: '12px' }}>
+                        {row.policy ? row.policy.name : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>None Mapped</span>}
+                      </td>
+                      {matrixMonths.map(m => {
+                        const val = row.monthlyValues[m];
+                        return (
+                          <td key={m} style={{ textAlign: 'right', padding: '12px', color: val > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                            {val > 0 ? formatGBP(val) : '—'}
+                          </td>
+                        );
+                      })}
+                      <td style={{ textAlign: 'right', fontWeight: 700, padding: '12px', backgroundColor: 'rgba(99, 102, 241, 0.02)', color: 'var(--accent)' }}>
+                        {formatGBP(row.rowTotal)}
+                      </td>
+                    </tr>
+                  );
+
+                  return (
+                    <>
+                      {activeMatrixRows.map(renderMatrixRow)}
+                      {exitedMatrixRows.length > 0 && (
+                        <>
+                          <tr 
+                            onClick={() => setExpandedExitedMatrix(!expandedExitedMatrix)}
+                            style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'pointer', userSelect: 'none' }}
+                          >
+                            <td colSpan={15} style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)', padding: '12px' }}>
+                              <span style={{ marginRight: '6px' }}>{expandedExitedMatrix ? '▼' : '▶'}</span>
+                              Exited Staff ({exitedMatrixRows.length})
+                            </td>
+                          </tr>
+                          {expandedExitedMatrix && exitedMatrixRows.map(renderMatrixRow)}
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
 
                 {matrixData.rows.length === 0 && (
                   <tr>

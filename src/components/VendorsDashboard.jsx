@@ -140,6 +140,8 @@ export default function VendorsDashboard({
     e.preventDefault();
     const staffId = e.target.elements.staffSelect.value;
     const qty = parseInt(e.target.elements.quantityInput?.value || 1, 10);
+    const email = e.target.elements.emailInput?.value || '';
+    const notes = e.target.elements.notesInput?.value || '';
     if (!staffId) return;
 
     const staffMember = staff.find(s => s.id === staffId);
@@ -151,7 +153,9 @@ export default function VendorsDashboard({
           id: `ass-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 7)}`,
           contractId: contractId,
           staffId: staffId,
-          assignedDate: new Date().toISOString().split('T')[0]
+          assignedDate: new Date().toISOString().split('T')[0],
+          email: qty === 1 ? email : (email ? `${email} (Seat ${i+1})` : ''),
+          notes: qty === 1 ? notes : (notes ? `${notes} (Seat ${i+1})` : '')
         };
         await onSaveAssetAssignment(newAssignment);
       }
@@ -174,6 +178,25 @@ export default function VendorsDashboard({
       } catch (err) {
         onShowToast(`Error releasing seat: ${err.message}`, 'warning');
       }
+    }
+  };
+
+  // Handle updating allocation fields inline (email or notes)
+  const handleUpdateAssignmentField = async (assignmentId, field, value) => {
+    const assignment = assetAssignments.find(a => a.id === assignmentId);
+    if (!assignment) return;
+    if (assignment[field] === value) return;
+
+    const updated = {
+      ...assignment,
+      [field]: value
+    };
+
+    try {
+      await onSaveAssetAssignment(updated);
+      onShowToast(`Updated seat ${field} successfully.`, 'success');
+    } catch (err) {
+      onShowToast(`Error updating seat ${field}: ${err.message}`, 'warning');
     }
   };
 
@@ -1199,47 +1222,49 @@ export default function VendorsDashboard({
                         <span><strong>{c.quantityPurchased} Seats Total</strong></span>
                       </div>
 
-                      {/* Interactive badges of assigned staff */}
+                      {/* Interactive table list of assigned seats */}
                       {assigned.length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '12px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1.5fr 60px', gap: '8px', padding: '6px 12px', backgroundColor: 'var(--bg-secondary)', fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            <div>Staff Member</div>
+                            <div>Email / Alias</div>
+                            <div>Notes</div>
+                            <div style={{ textAlign: 'center' }}>Release</div>
+                          </div>
                           {assigned.map(a => {
                             const member = staff.find(s => s.id === a.staffId);
                             if (!member) return null;
                             return (
-                              <span 
-                                key={a.id} 
-                                className="badge" 
-                                style={{ 
-                                  display: 'inline-flex', 
-                                  alignItems: 'center', 
-                                  gap: '6px', 
-                                  backgroundColor: 'rgba(59, 130, 246, 0.08)', 
-                                  color: 'var(--primary)', 
-                                  border: '1px solid rgba(59, 130, 246, 0.2)', 
-                                  padding: '4px 10px', 
-                                  borderRadius: '4px', 
-                                  fontSize: '12px' 
-                                }}
-                              >
-                                {member.fullName}
-                                <button 
-                                  onClick={() => handleReleaseSeat(a.id, c.name, member.fullName)}
-                                  style={{ 
-                                    background: 'none', 
-                                    border: 'none', 
-                                    color: 'var(--danger)', 
-                                    cursor: 'pointer', 
-                                    padding: 0, 
-                                    fontWeight: 700, 
-                                    fontSize: '12px',
-                                    display: 'flex',
-                                    alignItems: 'center'
-                                  }}
-                                  title="Release license seat"
-                                >
-                                  ✕
-                                </button>
-                              </span>
+                              <div key={a.id} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1.5fr 60px', gap: '8px', padding: '6px 12px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'rgba(255,255,255,0.01)', alignItems: 'center', fontSize: '12px' }}>
+                                <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{member.fullName}</div>
+                                <div>
+                                  <input 
+                                    type="text" 
+                                    placeholder="Enter Email/Alias" 
+                                    defaultValue={a.email || ''} 
+                                    onBlur={(e) => handleUpdateAssignmentField(a.id, 'email', e.target.value)}
+                                    style={{ width: '100%', padding: '3px 8px', fontSize: '11px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
+                                  />
+                                </div>
+                                <div>
+                                  <input 
+                                    type="text" 
+                                    placeholder="Add notes (e.g. branch, role)" 
+                                    defaultValue={a.notes || ''} 
+                                    onBlur={(e) => handleUpdateAssignmentField(a.id, 'notes', e.target.value)}
+                                    style={{ width: '100%', padding: '3px 8px', fontSize: '11px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
+                                  />
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                  <button 
+                                    onClick={() => handleReleaseSeat(a.id, c.name, member.fullName)}
+                                    style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px' }}
+                                    title="Release license seat"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              </div>
                             );
                           })}
                         </div>
@@ -1302,6 +1327,38 @@ export default function VendorsDashboard({
                                   borderRadius: '4px' 
                                 }}
                                 required
+                              />
+
+                              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', marginLeft: '8px' }}>Email:</span>
+                              <input 
+                                type="text" 
+                                name="emailInput"
+                                placeholder="Email / Alias"
+                                style={{ 
+                                  width: '120px', 
+                                  padding: '4px 6px', 
+                                  fontSize: '12px', 
+                                  background: 'var(--bg-secondary)', 
+                                  border: '1px solid var(--border-color)', 
+                                  color: 'var(--text-primary)', 
+                                  borderRadius: '4px' 
+                                }}
+                              />
+
+                              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', marginLeft: '8px' }}>Notes:</span>
+                              <input 
+                                type="text" 
+                                name="notesInput"
+                                placeholder="Add notes..."
+                                style={{ 
+                                  width: '120px', 
+                                  padding: '4px 6px', 
+                                  fontSize: '12px', 
+                                  background: 'var(--bg-secondary)', 
+                                  border: '1px solid var(--border-color)', 
+                                  color: 'var(--text-primary)', 
+                                  borderRadius: '4px' 
+                                }}
                               />
 
                               <button 

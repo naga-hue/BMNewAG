@@ -51,6 +51,7 @@ export default function VendorsDashboard({
 }) {
   const [activeSubTab, setActiveSubTab] = useState('vendors'); // vendors, contracts, allocations, forecast
   const [selectedVendorProfileId, setSelectedVendorProfileId] = useState(null);
+  const [presetCategory, setPresetCategory] = useState('Software License');
 
   // Editing trackers
   const [editingVendorId, setEditingVendorId] = useState(null);
@@ -262,6 +263,13 @@ export default function VendorsDashboard({
     setEditingVendorId(vendor.id);
     setShowVendorForm(true);
     setShowContractForm(false);
+
+    const presets = ['Software License', 'Office Rental', 'Telecom', 'AI Service', 'Other'];
+    if (presets.includes(vendor.category)) {
+      setPresetCategory(vendor.category);
+    } else {
+      setPresetCategory('custom');
+    }
   };
 
   // Submit Vendor
@@ -295,6 +303,7 @@ export default function VendorsDashboard({
       setVendorEmail('');
       setVendorPhone('');
       setVendorDesc('');
+      setPresetCategory('Software License');
       setEditingVendorId(null);
       setShowVendorForm(false);
     } catch (err) {
@@ -610,8 +619,16 @@ export default function VendorsDashboard({
                     <label className="form-label">Category <span>*</span></label>
                     <select 
                       className="select-filter"
-                      value={vendorCategory}
-                      onChange={(e) => setVendorCategory(e.target.value)}
+                      value={presetCategory}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setPresetCategory(val);
+                        if (val !== 'custom') {
+                          setVendorCategory(val);
+                        } else {
+                          setVendorCategory('');
+                        }
+                      }}
                       style={{ width: '100%', padding: '10px' }}
                     >
                       <option value="Software License">Software Licenses (Office, CRM, etc.)</option>
@@ -619,7 +636,20 @@ export default function VendorsDashboard({
                       <option value="Telecom">Telecom & Phone Systems</option>
                       <option value="AI Service">AI Services (OpenAI, Anthropic)</option>
                       <option value="Other">Other Vendors</option>
+                      <option value="custom">Custom / New Category...</option>
                     </select>
+                    {(presetCategory === 'custom' || !['Software License', 'Office Rental', 'Telecom', 'AI Service', 'Other'].includes(vendorCategory)) && (
+                      <div style={{ marginTop: '8px' }}>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          placeholder="Type custom category..."
+                          value={vendorCategory}
+                          onChange={(e) => setVendorCategory(e.target.value)}
+                          required
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="form-group-row">
@@ -1054,6 +1084,8 @@ export default function VendorsDashboard({
               setVendorEmail('');
               setVendorPhone('');
               setVendorDesc('');
+              setPresetCategory('Software License');
+              setVendorCategory('Software License');
               setShowVendorForm(prev => !prev);
             }}>
               <Plus size={16} /> Add Vendor Partner
@@ -1084,8 +1116,16 @@ export default function VendorsDashboard({
                   <label className="form-label">Category <span>*</span></label>
                   <select 
                     className="select-filter"
-                    value={vendorCategory}
-                    onChange={(e) => setVendorCategory(e.target.value)}
+                    value={presetCategory}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPresetCategory(val);
+                      if (val !== 'custom') {
+                        setVendorCategory(val);
+                      } else {
+                        setVendorCategory('');
+                      }
+                    }}
                     style={{ width: '100%', padding: '10px' }}
                   >
                     <option value="Software License">Software Licenses (Office, CRM, etc.)</option>
@@ -1093,7 +1133,20 @@ export default function VendorsDashboard({
                     <option value="Telecom">Telecom & Phone Systems</option>
                     <option value="AI Service">AI Services (OpenAI, Anthropic)</option>
                     <option value="Other">Other Vendors</option>
+                    <option value="custom">Custom / New Category...</option>
                   </select>
+                  {(presetCategory === 'custom' || !['Software License', 'Office Rental', 'Telecom', 'AI Service', 'Other'].includes(vendorCategory)) && (
+                    <div style={{ marginTop: '8px' }}>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        placeholder="Type custom category..."
+                        value={vendorCategory}
+                        onChange={(e) => setVendorCategory(e.target.value)}
+                        required
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1155,22 +1208,36 @@ export default function VendorsDashboard({
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
               {vendors.map(v => (
-                <div key={v.id} style={{ 
-                  flex: '1 1 300px', 
-                  backgroundColor: 'var(--bg-card)', 
-                  border: '1px solid var(--border-color)', 
-                  padding: '12px', 
-                  borderRadius: '6px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px'
-                }}>
+                <div 
+                  key={v.id} 
+                  onClick={() => setSelectedVendorProfileId(v.id)}
+                  style={{ 
+                    flex: '1 1 300px', 
+                    backgroundColor: 'var(--bg-card)', 
+                    border: '1px solid var(--border-color)', 
+                    padding: '12px', 
+                    borderRadius: '6px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--accent)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.08)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border-color)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>{v.name}</span>
                       <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600, textTransform: 'uppercase' }}>{v.category}</span>
                     </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
+                    <div style={{ display: 'flex', gap: '6px' }} onClick={(e) => e.stopPropagation()}>
                       <button className="btn-icon" onClick={() => handleEditVendor(v)} title="Edit Vendor">
                         <Edit3 size={11} />
                       </button>
@@ -1194,40 +1261,57 @@ export default function VendorsDashboard({
                     )}
                   </div>
 
-                  <button 
-                    className="btn-secondary" 
-                    onClick={() => {
-                      setActiveSubTab('contracts');
-                      setEditingContractId(null);
-                      setContractName('');
-                      setContractVendorId(v.id);
-                      setUnitCost('');
-                      setQuantityPurchased('1');
-                      setTaxRate('20.0');
-                      setStartDate('');
-                      setEndDate('');
-                      setRenewalDate('');
-                      setPaymentDueDate('');
-                      setPaymentReminderDate('');
-                      setShowContractForm(true);
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    style={{ 
-                      marginTop: '4px', 
-                      padding: '4px 8px', 
-                      fontSize: '11px', 
-                      justifyContent: 'center', 
-                      width: '100%', 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: '4px',
-                      border: '1px dashed var(--accent)',
-                      color: 'var(--accent)',
-                      borderRadius: '4px'
-                    }}
-                  >
-                    <Plus size={12} /> Add Contract / Lease
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }} onClick={(e) => e.stopPropagation()}>
+                    <button 
+                      className="btn-secondary"
+                      onClick={() => setSelectedVendorProfileId(v.id)}
+                      style={{ 
+                        flex: 1,
+                        padding: '4px 8px', 
+                        fontSize: '11px', 
+                        justifyContent: 'center', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '4px',
+                        borderRadius: '4px'
+                      }}
+                    >
+                      View Profile ➔
+                    </button>
+                    <button 
+                      className="btn-secondary" 
+                      onClick={() => {
+                        setActiveSubTab('contracts');
+                        setEditingContractId(null);
+                        setContractName('');
+                        setContractVendorId(v.id);
+                        setUnitCost('');
+                        setQuantityPurchased('1');
+                        setTaxRate('20.0');
+                        setStartDate('');
+                        setEndDate('');
+                        setRenewalDate('');
+                        setPaymentDueDate('');
+                        setPaymentReminderDate('');
+                        setShowContractForm(true);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      style={{ 
+                        flex: 1.2,
+                        padding: '4px 8px', 
+                        fontSize: '11px', 
+                        justifyContent: 'center', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '4px',
+                        border: '1px dashed var(--accent)',
+                        color: 'var(--accent)',
+                        borderRadius: '4px'
+                      }}
+                    >
+                      <Plus size={12} /> Add Contract
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

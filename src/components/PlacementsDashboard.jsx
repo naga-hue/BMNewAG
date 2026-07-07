@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import MultiSelectFilter from './MultiSelectFilter';
 import { 
   Building2, 
   Plus, 
@@ -54,8 +55,8 @@ export default function PlacementsDashboard({
   const [statusFilter, setStatusFilter] = useState('all'); // all, active, dns, rebate
   const [consultantFilter, setConsultantFilter] = useState('all');
   const [startMonthFilter, setStartMonthFilter] = useState('all');
-  const [internalCompanyFilter, setInternalCompanyFilter] = useState('all');
-  const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [internalCompanyFilter, setInternalCompanyFilter] = useState(['all']);
+  const [departmentFilter, setDepartmentFilter] = useState(['all']);
 
   // Compile list of unique departments from both company profiles and active staff records
   const allAvailableDepts = (() => {
@@ -954,14 +955,14 @@ export default function PlacementsDashboard({
       if (pStart.getMonth() !== Number(startMonthFilter)) return false;
     }
 
-    if (internalCompanyFilter !== 'all') {
-      if (!p.internalCompany || p.internalCompany !== internalCompanyFilter) return false;
+    if (!internalCompanyFilter.includes('all')) {
+      if (!p.internalCompany || !internalCompanyFilter.includes(p.internalCompany)) return false;
     }
 
-    if (departmentFilter !== 'all') {
+    if (!departmentFilter.includes('all')) {
       const matchDept = p.splits?.some(s => {
         const staffObj = staff.find(member => member.id === s.staffId);
-        return staffObj?.department === departmentFilter;
+        return staffObj && departmentFilter.includes(staffObj.department);
       });
       if (!matchDept) return false;
     }
@@ -1041,7 +1042,7 @@ export default function PlacementsDashboard({
   // Compute matching split ratio weight helper
   const getPlacementSplitWeight = (p) => {
     // If no filters are active, return full 100% weight (1.0)
-    if (consultantFilter === 'all' && departmentFilter === 'all' && internalCompanyFilter === 'all') {
+    if (consultantFilter === 'all' && departmentFilter.includes('all') && internalCompanyFilter.includes('all')) {
       return 1.0;
     }
 
@@ -1055,8 +1056,8 @@ export default function PlacementsDashboard({
       const rec = staff.find(st => st.id === s.staffId);
 
       if (consultantFilter !== 'all' && s.staffId !== consultantFilter) match = false;
-      if (departmentFilter !== 'all' && (!rec || rec.department !== departmentFilter)) match = false;
-      if (internalCompanyFilter !== 'all' && (!rec || rec.companyId !== internalCompanyFilter)) match = false;
+      if (!departmentFilter.includes('all') && (!rec || !departmentFilter.includes(rec.department))) match = false;
+      if (!internalCompanyFilter.includes('all') && (!rec || !internalCompanyFilter.includes(rec.companyId))) match = false;
 
       if (match) {
         matchingPercentage += Number(s.percentage) || 0;
@@ -1082,6 +1083,16 @@ export default function PlacementsDashboard({
     return acc + ((p.rebateAmount || 0) * w);
   }, 0);
   const totalNet = filteredPlacements.reduce((acc, p) => acc + ((p.netScoreValue || 0) * getPlacementSplitWeight(p)), 0);
+
+  const companyOptions = [
+    { value: 'all', label: 'All Internal Companies' },
+    ...companies.map(c => ({ value: c.name, label: c.name }))
+  ];
+
+  const departmentOptionsList = [
+    { value: 'all', label: 'All Departments' },
+    ...allAvailableDepts.map(d => ({ value: d, label: d }))
+  ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -1486,29 +1497,19 @@ export default function PlacementsDashboard({
                 ))}
               </select>
 
-              {/* Internal Company Filter */}
-              <select 
-                className="select-filter"
-                value={internalCompanyFilter}
-                onChange={(e) => setInternalCompanyFilter(e.target.value)}
-              >
-                <option value="all">All Internal Companies</option>
-                {companies.map(c => (
-                  <option key={c.id} value={c.name}>{c.name}</option>
-                ))}
-              </select>
+              <MultiSelectFilter
+                options={companyOptions}
+                selectedValues={internalCompanyFilter}
+                onChange={(vals) => setInternalCompanyFilter(vals)}
+                placeholder="Select Companies"
+              />
 
-              {/* Department Filter */}
-              <select 
-                className="select-filter"
-                value={departmentFilter}
-                onChange={(e) => setDepartmentFilter(e.target.value)}
-              >
-                <option value="all">All Departments</option>
-                {allAvailableDepts.map(d => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
+              <MultiSelectFilter
+                options={departmentOptionsList}
+                selectedValues={departmentFilter}
+                onChange={(vals) => setDepartmentFilter(vals)}
+                placeholder="Select Departments"
+              />
             </div>
 
             <button 

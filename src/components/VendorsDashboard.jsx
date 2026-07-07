@@ -139,22 +139,27 @@ export default function VendorsDashboard({
   const handleAllocateSeatInline = async (e, contractId, contractName) => {
     e.preventDefault();
     const staffId = e.target.elements.staffSelect.value;
+    const qty = parseInt(e.target.elements.quantityInput?.value || 1, 10);
     if (!staffId) return;
 
     const staffMember = staff.find(s => s.id === staffId);
     if (!staffMember) return;
 
-    const newAssignment = {
-      id: `ass-${Date.now()}`,
-      contractId: contractId,
-      staffId: staffId,
-      assignedDate: new Date().toISOString().split('T')[0]
-    };
-
     try {
-      await onSaveAssetAssignment(newAssignment);
-      onShowToast(`Assigned license "${contractName}" seat to ${staffMember.fullName}.`, 'success');
+      for (let i = 0; i < qty; i++) {
+        const newAssignment = {
+          id: `ass-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 7)}`,
+          contractId: contractId,
+          staffId: staffId,
+          assignedDate: new Date().toISOString().split('T')[0]
+        };
+        await onSaveAssetAssignment(newAssignment);
+      }
+      onShowToast(`Assigned ${qty} license seat(s) of "${contractName}" to ${staffMember.fullName}.`, 'success');
       e.target.reset();
+      if (e.target.elements.quantityInput) {
+        e.target.elements.quantityInput.value = "1";
+      }
     } catch (err) {
       onShowToast(`Error allocating seat: ${err.message}`, 'warning');
     }
@@ -1242,10 +1247,10 @@ export default function VendorsDashboard({
 
                       {/* Inline Allocate Seat Form */}
                       {unusedCount > 0 && (() => {
-                        const nonAssignedStaff = staff.filter(s => s.status !== 'exited' && !assigned.some(a => a.staffId === s.id));
-                        if (nonAssignedStaff.length === 0) return null;
+                        const activeStaffList = staff.filter(s => s.status !== 'exited');
+                        if (activeStaffList.length === 0) return null;
                         
-                        const sortedStaffSingle = [...nonAssignedStaff].sort((a, b) => a.fullName.localeCompare(b.fullName));
+                        const sortedStaffSingle = [...activeStaffList].sort((a, b) => a.fullName.localeCompare(b.fullName));
 
                         return (
                           <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '14px', flexWrap: 'wrap' }}>
@@ -1279,10 +1284,30 @@ export default function VendorsDashboard({
                                   );
                                 })}
                               </select>
+                              
+                              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', marginLeft: '8px' }}>Qty:</span>
+                              <input 
+                                type="number" 
+                                name="quantityInput"
+                                min="1"
+                                max={unusedCount}
+                                defaultValue="1"
+                                style={{ 
+                                  width: '55px', 
+                                  padding: '4px 6px', 
+                                  fontSize: '12px', 
+                                  background: 'var(--bg-secondary)', 
+                                  border: '1px solid var(--border-color)', 
+                                  color: 'var(--text-primary)', 
+                                  borderRadius: '4px' 
+                                }}
+                                required
+                              />
+
                               <button 
                                 type="submit" 
                                 className="btn-primary" 
-                                style={{ padding: '4px 10px', fontSize: '11px' }}
+                                style={{ padding: '4px 10px', fontSize: '11px', marginLeft: '4px' }}
                               >
                                 Assign
                               </button>

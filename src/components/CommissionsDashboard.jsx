@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import MultiSelectFilter from './MultiSelectFilter';
 import { toGBP, formatGBP } from '../utils/currency';
 import { 
   TrendingUp, 
@@ -52,22 +53,32 @@ export default function CommissionsDashboard({
     return depts.sort();
   })();
 
+  const companyOptions = [
+    { value: 'all', label: 'All Companies' },
+    ...companies.map(c => ({ value: c.id, label: c.name }))
+  ];
+
+  const departmentOptionsList = [
+    { value: 'all', label: 'All Departments' },
+    ...allAvailableDepts.map(d => ({ value: d, label: d }))
+  ];
+
   const [activeSubTab, setActiveSubTab] = useState('policies'); // policies, assignments, payroll, matrix
 
   // YTD Commission Matrix states
   const [matrixYear, setMatrixYear] = useState('2026');
   const [matrixMeasure, setMatrixMeasure] = useState('payout'); // payout, base
   const [matrixSearch, setMatrixSearch] = useState('');
-  const [matrixCompany, setMatrixCompany] = useState('all');
-  const [matrixDept, setMatrixDept] = useState('all');
+  const [matrixCompany, setMatrixCompany] = useState(['all']);
+  const [matrixDept, setMatrixDept] = useState(['all']);
 
   const [editingPolicyId, setEditingPolicyId] = useState(null);
   const [assigningSchemeId, setAssigningSchemeId] = useState(null);
   const [assigningSchemeName, setAssigningSchemeName] = useState('');
   const [assigningStaffSearch, setAssigningStaffSearch] = useState('');
   const [assigningSelectedStaffIds, setAssigningSelectedStaffIds] = useState([]);
-  const [assignCompanyFilter, setAssignCompanyFilter] = useState('all');
-  const [assignDeptFilter, setAssignDeptFilter] = useState('all');
+  const [assignCompanyFilter, setAssignCompanyFilter] = useState(['all']);
+  const [assignDeptFilter, setAssignDeptFilter] = useState(['all']);
   const [assignSortBy, setAssignSortBy] = useState('fullName');
   const [assignSortOrder, setAssignSortOrder] = useState('asc');
   const [selectedBreakdownRow, setSelectedBreakdownRow] = useState(null);
@@ -97,8 +108,8 @@ export default function CommissionsDashboard({
   const [payrollMonth, setPayrollMonth] = useState('2026-06');
 
   // Filters & Sorting states
-  const [companyFilter, setCompanyFilter] = useState('all');
-  const [deptFilter, setDeptFilter] = useState('all');
+  const [companyFilter, setCompanyFilter] = useState(['all']);
+  const [deptFilter, setDeptFilter] = useState(['all']);
   const [staffFilter, setStaffFilter] = useState('all');
 
   const [sortBy, setSortBy] = useState('fullName');
@@ -532,12 +543,12 @@ export default function CommissionsDashboard({
       }
       
       // Match company filter
-      if (matrixCompany !== 'all' && s.companyId !== matrixCompany) {
+      if (!matrixCompany.includes('all') && !matrixCompany.includes(s.companyId)) {
         return false;
       }
       
       // Match department filter
-      if (matrixDept !== 'all' && s.department !== matrixDept) {
+      if (!matrixDept.includes('all') && !matrixDept.includes(s.department)) {
         return false;
       }
       
@@ -1070,27 +1081,22 @@ export default function CommissionsDashboard({
           {/* Universal Filters Toolbar */}
           <div className="controls-row" style={{ marginTop: 0 }}>
             <div className="search-filter-group" style={{ flexWrap: 'wrap', gap: '8px' }}>
-              <select 
-                className="select-filter"
-                value={companyFilter}
-                onChange={(e) => setCompanyFilter(e.target.value)}
-              >
-                <option value="all">All Companies</option>
-                {companies.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+              <MultiSelectFilter
+                options={companyOptions}
+                selectedValues={companyFilter}
+                onChange={(vals) => {
+                  setCompanyFilter(vals);
+                  setDeptFilter(['all']);
+                }}
+                placeholder="Select Companies"
+              />
 
-              <select 
-                className="select-filter"
-                value={deptFilter}
-                onChange={(e) => setDeptFilter(e.target.value)}
-              >
-                <option value="all">All Departments</option>
-                {allAvailableDepts.map(d => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
+              <MultiSelectFilter
+                options={departmentOptionsList}
+                selectedValues={deptFilter}
+                onChange={(vals) => setDeptFilter(vals)}
+                placeholder="Select Departments"
+              />
 
               <select 
                 className="select-filter"
@@ -1124,8 +1130,8 @@ export default function CommissionsDashboard({
               <tbody>
                 {(() => {
                   const filteredAssignmentsStaff = staff.filter(s => {
-                    if (companyFilter !== 'all' && s.companyId !== companyFilter) return false;
-                    if (deptFilter !== 'all' && s.department !== deptFilter) return false;
+                    if (!companyFilter.includes('all') && !companyFilter.includes(s.companyId)) return false;
+                    if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) return false;
                     if (staffFilter !== 'all' && s.id !== staffFilter) return false;
                     return true;
                   });
@@ -1303,27 +1309,22 @@ export default function CommissionsDashboard({
           {/* Universal Filters Toolbar */}
           <div className="controls-row" style={{ marginTop: 0 }}>
             <div className="search-filter-group" style={{ flexWrap: 'wrap', gap: '8px' }}>
-              <select 
-                className="select-filter"
-                value={companyFilter}
-                onChange={(e) => setCompanyFilter(e.target.value)}
-              >
-                <option value="all">All Companies</option>
-                {companies.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+              <MultiSelectFilter
+                options={companyOptions}
+                selectedValues={companyFilter}
+                onChange={(vals) => {
+                  setCompanyFilter(vals);
+                  setDeptFilter(['all']);
+                }}
+                placeholder="Select Companies"
+              />
 
-              <select 
-                className="select-filter"
-                value={deptFilter}
-                onChange={(e) => setDeptFilter(e.target.value)}
-              >
-                <option value="all">All Departments</option>
-                {allAvailableDepts.map(d => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
+              <MultiSelectFilter
+                options={departmentOptionsList}
+                selectedValues={deptFilter}
+                onChange={(vals) => setDeptFilter(vals)}
+                placeholder="Select Departments"
+              />
 
               <select 
                 className="select-filter"
@@ -1370,8 +1371,8 @@ export default function CommissionsDashboard({
                 {(() => {
                   const filteredLedger = ledgerData.list.filter(row => {
                     const s = row.member;
-                    if (companyFilter !== 'all' && s.companyId !== companyFilter) return false;
-                    if (deptFilter !== 'all' && s.department !== deptFilter) return false;
+                    if (!companyFilter.includes('all') && !companyFilter.includes(s.companyId)) return false;
+                    if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) return false;
                     if (staffFilter !== 'all' && s.id !== staffFilter) return false;
                     return true;
                   });
@@ -1944,28 +1945,24 @@ export default function CommissionsDashboard({
                   style={{ fontSize: '13px', padding: '8px 12px', height: '36px' }}
                 />
               </div>
-              <select
-                className="select-filter"
-                value={assignCompanyFilter}
-                onChange={(e) => setAssignCompanyFilter(e.target.value)}
-                style={{ fontSize: '12px', padding: '8px 12px', minWidth: '130px', height: '36px' }}
-              >
-                <option value="all">All Companies</option>
-                {companies.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <select
-                className="select-filter"
-                value={assignDeptFilter}
-                onChange={(e) => setAssignDeptFilter(e.target.value)}
-                style={{ fontSize: '12px', padding: '8px 12px', minWidth: '130px', height: '36px' }}
-              >
-                <option value="all">All Departments</option>
-                {Array.from(new Set(staff.map(s => s.department).filter(Boolean))).sort().map(d => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
+              <MultiSelectFilter
+                options={companyOptions}
+                selectedValues={assignCompanyFilter}
+                onChange={(vals) => {
+                  setAssignCompanyFilter(vals);
+                  setAssignDeptFilter(['all']);
+                }}
+                placeholder="Select Companies"
+                style={{ maxWidth: '160px' }}
+              />
+
+              <MultiSelectFilter
+                options={departmentOptionsList}
+                selectedValues={assignDeptFilter}
+                onChange={(vals) => setAssignDeptFilter(vals)}
+                placeholder="Select Departments"
+                style={{ maxWidth: '160px' }}
+              />
             </div>
 
             {/* Staff list with checkboxes */}
@@ -1975,8 +1972,8 @@ export default function CommissionsDashboard({
                 const filtered = staff.filter(s => {
                   const term = assigningStaffSearch.toLowerCase();
                   const matchesSearch = s.fullName.toLowerCase().includes(term) || (s.department || '').toLowerCase().includes(term);
-                  const matchesCompany = assignCompanyFilter === 'all' || s.companyId === assignCompanyFilter;
-                  const matchesDept = assignDeptFilter === 'all' || s.department === assignDeptFilter;
+                  const matchesCompany = assignCompanyFilter.includes('all') || assignCompanyFilter.includes(s.companyId);
+                  const matchesDept = assignDeptFilter.includes('all') || assignDeptFilter.includes(s.department);
                   return matchesSearch && matchesCompany && matchesDept;
                 });
 
@@ -2207,32 +2204,25 @@ export default function CommissionsDashboard({
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '150px' }}>
               <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Company Filter:</span>
-              <select
-                className="select-filter"
-                value={matrixCompany}
-                onChange={(e) => setMatrixCompany(e.target.value)}
-                style={{ padding: '8px', fontSize: '13px' }}
-              >
-                <option value="all">All Companies</option>
-                {companies.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+              <MultiSelectFilter
+                options={companyOptions}
+                selectedValues={matrixCompany}
+                onChange={(vals) => {
+                  setMatrixCompany(vals);
+                  setMatrixDept(['all']);
+                }}
+                placeholder="Select Companies"
+              />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '150px' }}>
               <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Department Filter:</span>
-              <select
-                className="select-filter"
-                value={matrixDept}
-                onChange={(e) => setMatrixDept(e.target.value)}
-                style={{ padding: '8px', fontSize: '13px' }}
-              >
-                <option value="all">All Departments</option>
-                {allAvailableDepts.map(d => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
+              <MultiSelectFilter
+                options={departmentOptionsList}
+                selectedValues={matrixDept}
+                onChange={(vals) => setMatrixDept(vals)}
+                placeholder="Select Departments"
+              />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '100px' }}>

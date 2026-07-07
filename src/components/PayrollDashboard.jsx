@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import MultiSelectFilter from './MultiSelectFilter';
 import { 
   DollarSign, 
   CheckCircle2, 
@@ -41,8 +42,8 @@ export default function PayrollDashboard({
   onShowToast
 }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCompanyId, setSelectedCompanyId] = useState('all');
-  const [selectedDept, setSelectedDept] = useState('all');
+  const [selectedCompanyId, setSelectedCompanyId] = useState(['all']);
+  const [selectedDept, setSelectedDept] = useState(['all']);
   const [selectedStatus, setSelectedStatus] = useState('all'); // all, reconciled, projected
   const [activeSubTab, setActiveSubTab] = useState('grid'); // grid, policies
 
@@ -1037,8 +1038,8 @@ export default function PayrollDashboard({
   const filteredStaff = staff.filter(s => {
     const matchesSearch = s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           (s.jobTitle || '').toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCompany = selectedCompanyId === 'all' || s.companyId === selectedCompanyId;
-    const matchesDept = selectedDept === 'all' || s.department === selectedDept;
+    const matchesCompany = selectedCompanyId.includes('all') || selectedCompanyId.includes(s.companyId);
+    const matchesDept = selectedDept.includes('all') || selectedDept.includes(s.department);
     
     // Status check (reconciled vs projected)
     if (selectedStatus !== 'all') {
@@ -1088,6 +1089,16 @@ export default function PayrollDashboard({
       reconciledCount: countReconciled
     };
   });
+
+  const companyOptions = [
+    { value: 'all', label: 'All Group Companies' },
+    ...companies.map(c => ({ value: c.id, label: c.name }))
+  ];
+
+  const departmentOptionsList = [
+    { value: 'all', label: 'All Departments' },
+    ...departments.map(d => ({ value: d, label: d }))
+  ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%' }}>
@@ -1161,27 +1172,22 @@ export default function PayrollDashboard({
             />
           </div>
 
-          <select 
-            className="select-filter"
-            value={selectedCompanyId}
-            onChange={(e) => setSelectedCompanyId(e.target.value)}
-          >
-            <option value="all">All Group Companies</option>
-            {companies.map(c => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+          <MultiSelectFilter
+            options={companyOptions}
+            selectedValues={selectedCompanyId}
+            onChange={(vals) => {
+              setSelectedCompanyId(vals);
+              setSelectedDept(['all']);
+            }}
+            placeholder="Select Companies"
+          />
 
-          <select 
-            className="select-filter"
-            value={selectedDept}
-            onChange={(e) => setSelectedDept(e.target.value)}
-          >
-            <option value="all">All Departments</option>
-            {departments.map(d => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
+          <MultiSelectFilter
+            options={departmentOptionsList}
+            selectedValues={selectedDept}
+            onChange={(vals) => setSelectedDept(vals)}
+            placeholder="Select Departments"
+          />
 
           <select 
             className="select-filter"
@@ -1226,7 +1232,7 @@ export default function PayrollDashboard({
             
             {/* Iterating Companies */}
             {companies
-              .filter(c => selectedCompanyId === 'all' || c.id === selectedCompanyId)
+              .filter(c => selectedCompanyId.includes('all') || selectedCompanyId.includes(c.id))
               .map(c => {
                 const depts = groupedRoster[c.id];
                 if (!depts || Object.keys(depts).length === 0) return null;
@@ -1246,7 +1252,7 @@ export default function PayrollDashboard({
 
                     {/* Iterating Departments inside Company */}
                     {Object.keys(depts)
-                      .filter(d => selectedDept === 'all' || d === selectedDept)
+                      .filter(d => selectedDept.includes('all') || selectedDept.includes(d))
                       .map(d => {
                         const members = depts[d];
                         if (members.length === 0) return null;

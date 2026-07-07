@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import MultiSelectFilter from './MultiSelectFilter';
 import { toGBP } from '../utils/currency';
 import { 
   Building2, 
@@ -142,8 +143,8 @@ export default function ExpensesDashboard({
   const [searchQuery, setSearchQuery] = useState('');
   const [nominalFilter, setNominalFilter] = useState('all');
   const [plMonthFilter, setPlMonthFilter] = useState('all');
-  const [companyFilter, setCompanyFilter] = useState('all');
-  const [deptFilter, setDeptFilter] = useState('all');
+  const [companyFilter, setCompanyFilter] = useState(['all']);
+  const [deptFilter, setDeptFilter] = useState(['all']);
   const [staffFilter, setStaffFilter] = useState('all');
   const [bankAccountFilter, setBankAccountFilter] = useState('all');
   const [vendorFilter, setVendorFilter] = useState('all');
@@ -155,9 +156,9 @@ export default function ExpensesDashboard({
     let targetCompanies = companies;
     let targetStaff = staff;
 
-    if (companyFilter !== 'all') {
-      targetCompanies = companies.filter(c => c.id === companyFilter);
-      targetStaff = staff.filter(s => s.companyId === companyFilter);
+    if (!companyFilter.includes('all')) {
+      targetCompanies = companies.filter(c => companyFilter.includes(c.id));
+      targetStaff = staff.filter(s => companyFilter.includes(s.companyId));
     }
 
     targetCompanies.forEach(c => {
@@ -175,19 +176,19 @@ export default function ExpensesDashboard({
   }, [companyFilter, companies, staff]);
 
   // Matrix Filter states
-  const [matrixCompanyFilter, setMatrixCompanyFilter] = useState('all');
-  const [matrixDeptFilter, setMatrixDeptFilter] = useState('all');
+  const [matrixCompanyFilter, setMatrixCompanyFilter] = useState(['all']);
+  const [matrixDeptFilter, setMatrixDeptFilter] = useState(['all']);
   const [matrixStaffFilter, setMatrixStaffFilter] = useState('all');
   const [matrixGroupingMode, setMatrixGroupingMode] = useState('company-first'); // 'company-first' or 'nominal-first'
 
   const matrixFilteredDepts = useMemo(() => {
     const depts = [];
-    const targetCompanies = matrixCompanyFilter === 'all' 
+    const targetCompanies = matrixCompanyFilter.includes('all') 
       ? companies 
-      : companies.filter(c => c.id === matrixCompanyFilter);
-    const targetStaff = matrixCompanyFilter === 'all' 
+      : companies.filter(c => matrixCompanyFilter.includes(c.id));
+    const targetStaff = matrixCompanyFilter.includes('all') 
       ? staff 
-      : staff.filter(s => s.companyId === matrixCompanyFilter);
+      : staff.filter(s => matrixCompanyFilter.includes(s.companyId));
 
     targetCompanies.forEach(c => {
       (c.departments || []).forEach(d => {
@@ -351,7 +352,7 @@ export default function ExpensesDashboard({
   const [linkingMonth, setLinkingMonth] = useState('2026-06');
 
   // Recipient Payments Matrix states
-  const [recipientCompanyFilter, setRecipientCompanyFilter] = useState('all');
+  const [recipientCompanyFilter, setRecipientCompanyFilter] = useState(['all']);
   const [recipientNominalFilter, setRecipientNominalFilter] = useState('all');
   const [recipientSearchQuery, setRecipientSearchQuery] = useState('');
 
@@ -1334,7 +1335,7 @@ export default function ExpensesDashboard({
         const monthKey = `2026-${String(m + 1).padStart(2, '0')}`;
         const matchingExps = expenses.filter(e => {
           if (e.plMonth !== monthKey) return false;
-          if (recipientCompanyFilter !== 'all' && e.bankCompanyId !== recipientCompanyFilter) return false;
+          if (!recipientCompanyFilter.includes('all') && !recipientCompanyFilter.includes(e.bankCompanyId)) return false;
           if (recipientNominalFilter !== 'all' && e.nominalCode !== recipientNominalFilter) return false;
           
           if (row.rawType === 'staff') {
@@ -1474,7 +1475,7 @@ export default function ExpensesDashboard({
     const computedData = [];
 
     if (matrixGroupingMode === 'nominal-first') {
-      const visibleCompanies = companies.filter(c => matrixCompanyFilter === 'all' || c.id === matrixCompanyFilter);
+      const visibleCompanies = companies.filter(c => matrixCompanyFilter.includes('all') || matrixCompanyFilter.includes(c.id));
       const visibleCompaniesIds = visibleCompanies.map(c => c.id);
 
       activeNominalCodes.forEach(nominal => {
@@ -1484,7 +1485,7 @@ export default function ExpensesDashboard({
 
         staff.forEach(member => {
           if (matrixStaffFilter !== 'all' && member.id !== matrixStaffFilter) return false;
-          if (matrixDeptFilter !== 'all' && member.department !== matrixDeptFilter) return false;
+          if (!matrixDeptFilter.includes('all') && !matrixDeptFilter.includes(member.department)) return false;
           if (!visibleCompaniesIds.includes(member.companyId)) return false;
 
           const memberTransactionsByMonth = staffTrans[member.id] || Array.from({ length: 12 }, () => []);
@@ -1581,11 +1582,11 @@ export default function ExpensesDashboard({
       });
 
     } else {
-      const visibleCompanies = companies.filter(c => matrixCompanyFilter === 'all' || c.id === matrixCompanyFilter);
+      const visibleCompanies = companies.filter(c => matrixCompanyFilter.includes('all') || matrixCompanyFilter.includes(c.id));
       visibleCompanies.forEach(company => {
         const companyStaff = staff.filter(s => {
           if (s.companyId !== company.id) return false;
-          if (matrixDeptFilter !== 'all' && s.department !== matrixDeptFilter) return false;
+          if (!matrixDeptFilter.includes('all') && !matrixDeptFilter.includes(s.department)) return false;
           if (matrixStaffFilter !== 'all' && s.id !== matrixStaffFilter) return false;
           return true;
         });
@@ -1726,15 +1727,15 @@ export default function ExpensesDashboard({
     if (bankAccountFilter !== 'all' && exp.bankAccountId !== bankAccountFilter) return false;
 
     // Company filter
-    if (companyFilter !== 'all') {
+    if (!companyFilter.includes('all')) {
       const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-      if (exp.allocationType !== 'company' || !targets.includes(companyFilter)) return false;
+      if (exp.allocationType !== 'company' || !targets.some(t => companyFilter.includes(t))) return false;
     }
 
     // Department filter
-    if (deptFilter !== 'all') {
+    if (!deptFilter.includes('all')) {
       const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-      if (exp.allocationType !== 'department' || !targets.includes(deptFilter)) return false;
+      if (exp.allocationType !== 'department' || !targets.some(t => deptFilter.includes(t))) return false;
     }
 
     // Staff filter
@@ -1780,6 +1781,26 @@ export default function ExpensesDashboard({
       });
     }
   });
+
+  const companyOptions = [
+    { value: 'all', label: 'All Companies' },
+    ...companies.map(c => ({ value: c.id, label: c.name }))
+  ];
+
+  const ledgerDeptOptions = [
+    { value: 'all', label: 'All Departments' },
+    ...filteredAvailableDepts.map(d => ({ value: d, label: d }))
+  ];
+
+  const matrixDeptOptions = [
+    { value: 'all', label: 'All Departments' },
+    ...matrixFilteredDepts.map(d => ({ value: d, label: d }))
+  ];
+
+  const allDeptOptions = [
+    { value: 'all', label: 'All Departments' },
+    ...Array.from(new Set(staff.map(s => s.department).filter(Boolean))).sort().map(d => ({ value: d, label: d }))
+  ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -2229,31 +2250,23 @@ export default function ExpensesDashboard({
                 ))}
               </select>
 
-              <select 
-                className="select-filter"
-                value={companyFilter}
-                onChange={(e) => {
-                  setCompanyFilter(e.target.value);
-                  setDeptFilter('all');
+              <MultiSelectFilter
+                options={companyOptions}
+                selectedValues={companyFilter}
+                onChange={(vals) => {
+                  setCompanyFilter(vals);
+                  setDeptFilter(['all']);
                   setStaffFilter('all');
                 }}
-              >
-                <option value="all">All Companies</option>
-                {companies.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+                placeholder="Select Companies"
+              />
 
-              <select 
-                className="select-filter"
-                value={deptFilter}
-                onChange={(e) => setDeptFilter(e.target.value)}
-              >
-                <option value="all">All Departments</option>
-                {filteredAvailableDepts.map(d => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
+              <MultiSelectFilter
+                options={ledgerDeptOptions}
+                selectedValues={deptFilter}
+                onChange={(vals) => setDeptFilter(vals)}
+                placeholder="Select Departments"
+              />
 
               <select 
                 className="select-filter"
@@ -2262,7 +2275,7 @@ export default function ExpensesDashboard({
               >
                 <option value="all">All Staff Allocated</option>
                 {staff
-                  .filter(s => companyFilter === 'all' || s.companyId === companyFilter)
+                  .filter(s => companyFilter.includes('all') || companyFilter.includes(s.companyId))
                   .map(s => (
                     <option key={s.id} value={s.id}>{s.fullName}</option>
                   ))}
@@ -3456,36 +3469,26 @@ export default function ExpensesDashboard({
                   <option value="2027">2027</option>
                 </select>
 
-                <select
-                  className="select-filter"
-                  value={matrixCompanyFilter}
-                  onChange={(e) => {
-                    setMatrixCompanyFilter(e.target.value);
-                    setMatrixDeptFilter('all');
+                <MultiSelectFilter
+                  options={companyOptions}
+                  selectedValues={matrixCompanyFilter}
+                  onChange={(vals) => {
+                    setMatrixCompanyFilter(vals);
+                    setMatrixDeptFilter(['all']);
                     setMatrixStaffFilter('all');
                   }}
-                  style={{ padding: '6px', fontSize: '12px', minWidth: '130px' }}
-                >
-                  <option value="all">🏢 All Companies</option>
-                  {companies.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                  placeholder="Select Companies"
+                />
 
-                <select
-                  className="select-filter"
-                  value={matrixDeptFilter}
-                  onChange={(e) => {
-                    setMatrixDeptFilter(e.target.value);
+                <MultiSelectFilter
+                  options={matrixDeptOptions}
+                  selectedValues={matrixDeptFilter}
+                  onChange={(vals) => {
+                    setMatrixDeptFilter(vals);
                     setMatrixStaffFilter('all');
                   }}
-                  style={{ padding: '6px', fontSize: '12px', minWidth: '130px' }}
-                >
-                  <option value="all">📂 All Departments</option>
-                  {matrixFilteredDepts.map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
+                  placeholder="Select Departments"
+                />
 
                 <select
                   className="select-filter"
@@ -3495,11 +3498,11 @@ export default function ExpensesDashboard({
                 >
                   <option value="all">👥 All Recruiters</option>
                   {(() => {
-                    const visibleStaff = matrixCompanyFilter === 'all'
+                    const visibleStaff = matrixCompanyFilter.includes('all')
                       ? staff
-                      : staff.filter(s => s.companyId === matrixCompanyFilter);
+                      : staff.filter(s => matrixCompanyFilter.includes(s.companyId));
                     const activeVisibleStaff = visibleStaff.filter(s => {
-                      if (matrixDeptFilter !== 'all' && s.department !== matrixDeptFilter) return false;
+                      if (!matrixDeptFilter.includes('all') && !matrixDeptFilter.includes(s.department)) return false;
                       return true;
                     });
                     return activeVisibleStaff.map(s => (
@@ -3797,17 +3800,12 @@ export default function ExpensesDashboard({
             }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>ENTITY COMPANY</span>
-                <select
-                  className="select-filter"
-                  value={recipientCompanyFilter}
-                  onChange={(e) => setRecipientCompanyFilter(e.target.value)}
-                  style={{ width: '180px', padding: '8px', fontSize: '13px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
-                >
-                  <option value="all">All Companies</option>
-                  {companies.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                <MultiSelectFilter
+                  options={companyOptions}
+                  selectedValues={recipientCompanyFilter}
+                  onChange={(vals) => setRecipientCompanyFilter(vals)}
+                  placeholder="Select Companies"
+                />
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

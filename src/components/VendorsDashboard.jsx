@@ -638,34 +638,72 @@ export default function VendorsDashboard({
                   padding: '12px', 
                   borderRadius: '6px',
                   display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start'
+                  flexDirection: 'column',
+                  gap: '8px'
                 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>{v.name}</span>
-                    <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600, textTransform: 'uppercase' }}>{v.category}</span>
-                    <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                      {v.contactEmail && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Mail size={10} />{v.contactEmail}</span>
-                      )}
-                      {v.phone && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Phone size={10} />{v.phone}</span>
-                      )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>{v.name}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600, textTransform: 'uppercase' }}>{v.category}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button className="btn-icon" onClick={() => handleEditVendor(v)} title="Edit Vendor">
+                        <Edit3 size={11} />
+                      </button>
+                      <button className="btn-icon delete" onClick={() => {
+                        if (window.confirm(`Are you sure you want to delete vendor "${v.name}"?`)) {
+                          onDeleteVendor(v.id);
+                          onShowToast(`Deleted vendor "${v.name}"`, "info");
+                        }
+                      }} title="Delete Vendor">
+                        <Trash2 size={11} />
+                      </button>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button className="btn-icon" onClick={() => handleEditVendor(v)} title="Edit Vendor">
-                      <Edit3 size={11} />
-                    </button>
-                    <button className="btn-icon delete" onClick={() => {
-                      if (window.confirm(`Are you sure you want to delete vendor "${v.name}"?`)) {
-                        onDeleteVendor(v.id);
-                        onShowToast(`Deleted vendor "${v.name}"`, "info");
-                      }
-                    }} title="Delete Vendor">
-                      <Trash2 size={11} />
-                    </button>
+
+                  <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    {v.contactEmail && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Mail size={10} />{v.contactEmail}</span>
+                    )}
+                    {v.phone && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Phone size={10} />{v.phone}</span>
+                    )}
                   </div>
+
+                  <button 
+                    className="btn-secondary" 
+                    onClick={() => {
+                      setActiveSubTab('contracts');
+                      setEditingContractId(null);
+                      setContractName('');
+                      setContractVendorId(v.id);
+                      setUnitCost('');
+                      setQuantityPurchased('1');
+                      setTaxRate('20.0');
+                      setStartDate('');
+                      setEndDate('');
+                      setRenewalDate('');
+                      setPaymentDueDate('');
+                      setPaymentReminderDate('');
+                      setShowContractForm(true);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    style={{ 
+                      marginTop: '4px', 
+                      padding: '4px 8px', 
+                      fontSize: '11px', 
+                      justifyContent: 'center', 
+                      width: '100%', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '4px',
+                      border: '1px dashed var(--accent)',
+                      color: 'var(--accent)',
+                      borderRadius: '4px'
+                    }}
+                  >
+                    <Plus size={12} /> Add Contract / Lease
+                  </button>
                 </div>
               ))}
             </div>

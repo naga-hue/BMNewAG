@@ -50,6 +50,7 @@ export default function VendorsDashboard({
   onShowToast 
 }) {
   const [activeSubTab, setActiveSubTab] = useState('vendors'); // vendors, contracts, allocations, forecast
+  const [selectedVendorProfileId, setSelectedVendorProfileId] = useState(null);
 
   // Editing trackers
   const [editingVendorId, setEditingVendorId] = useState(null);
@@ -513,9 +514,532 @@ export default function VendorsDashboard({
       </div>
 
       {/* ==============================================================
-          SUB-TAB 1: VENDOR REGISTER DIRECTORY
+          VENDOR PROFILE DETAILS SCREEN
           ============================================================== */}
-      {activeSubTab === 'vendors' && (
+      {selectedVendorProfileId ? (() => {
+        const v = vendors.find(vend => vend.id === selectedVendorProfileId);
+        if (!v) {
+          setSelectedVendorProfileId(null);
+          return null;
+        }
+
+        const vendorContracts = contracts.filter(c => c.vendorId === v.id);
+
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', animation: 'fadeIn 0.2s' }}>
+            {/* Header / Back Action */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button 
+                className="btn-secondary" 
+                onClick={() => {
+                  setSelectedVendorProfileId(null);
+                  setShowContractForm(false);
+                  setShowVendorForm(false);
+                }}
+                style={{ padding: '8px 14px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                ← Back to Vendor Directory
+              </button>
+              
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button className="btn-secondary" onClick={() => handleEditVendor(v)} title="Edit Vendor Details">
+                  <Edit3 size={14} /> Edit Partner
+                </button>
+                <button className="btn-secondary delete" onClick={() => {
+                  if (window.confirm(`Are you sure you want to delete vendor "${v.name}"?`)) {
+                    onDeleteVendor(v.id);
+                    onShowToast(`Deleted vendor "${v.name}"`, "info");
+                    setSelectedVendorProfileId(null);
+                  }
+                }} title="Delete Vendor Partner">
+                  <Trash2 size={14} /> Delete Partner
+                </button>
+              </div>
+            </div>
+
+            {/* Vendor Details Card */}
+            <div className="entity-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', borderLeft: '4px solid var(--primary)', height: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h2 style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>{v.name}</h2>
+                  <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{v.category}</span>
+                </div>
+              </div>
+              {v.description && (
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', fontStyle: 'italic', margin: '4px 0 8px 0', lineHeight: 1.4 }}>
+                  {v.description}
+                </p>
+              )}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '12px', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: '12px', marginTop: '4px' }}>
+                {v.contactEmail && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Mail size={12} />
+                    <strong>Email:</strong> <a href={`mailto:${v.contactEmail}`} style={{ color: 'var(--accent)' }}>{v.contactEmail}</a>
+                  </span>
+                )}
+                {v.phone && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Phone size={12} />
+                    <strong>Phone:</strong> <a href={`tel:${v.phone}`} style={{ color: 'var(--accent)' }}>{v.phone}</a>
+                  </span>
+                )}
+                <span>
+                  <strong>Active Contracts:</strong> {vendorContracts.length}
+                </span>
+              </div>
+            </div>
+
+            {/* Edit Vendor Form (if visible) */}
+            {showVendorForm && (
+              <form onSubmit={handleVendorSubmit} className="detail-section" style={{ border: '1px solid var(--primary)', animation: 'fadeIn 0.2s' }}>
+                <div className="section-title" style={{ fontSize: '13px', color: 'var(--primary)' }}>
+                  <Plus size={14} /> Update Vendor Company Details
+                </div>
+                <div className="form-group-row">
+                  <div className="form-group">
+                    <label className="form-label">Vendor Name <span>*</span></label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      value={vendorName}
+                      onChange={(e) => setVendorName(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Category <span>*</span></label>
+                    <select 
+                      className="select-filter"
+                      value={vendorCategory}
+                      onChange={(e) => setVendorCategory(e.target.value)}
+                      style={{ width: '100%', padding: '10px' }}
+                    >
+                      <option value="Software License">Software Licenses (Office, CRM, etc.)</option>
+                      <option value="Office Rental">Office Rentals & Landlords</option>
+                      <option value="Telecom">Telecom & Phone Systems</option>
+                      <option value="AI Service">AI Services (OpenAI, Anthropic)</option>
+                      <option value="Other">Other Vendors</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-group-row">
+                  <div className="form-group">
+                    <label className="form-label">Contact Email</label>
+                    <input 
+                      type="email" 
+                      className="form-input" 
+                      value={vendorEmail}
+                      onChange={(e) => setVendorEmail(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Contact Phone</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      value={vendorPhone}
+                      onChange={(e) => setVendorPhone(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Notes & Description</label>
+                  <textarea 
+                    className="form-input" 
+                    rows="2"
+                    value={vendorDesc}
+                    onChange={(e) => setVendorDesc(e.target.value)}
+                    style={{ resize: 'vertical' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button type="submit" className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
+                    Update Vendor Company
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => {
+                    setShowVendorForm(false);
+                    setEditingVendorId(null);
+                  }}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Contracts & Licenses list */}
+            <div className="detail-section" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Building2 size={16} /> Contracts & Landlord Leases ({vendorContracts.length})
+                </h3>
+                <button 
+                  className="btn-primary" 
+                  onClick={() => {
+                    setEditingContractId(null);
+                    setContractName('');
+                    setContractVendorId(v.id);
+                    setUnitCost('');
+                    setQuantityPurchased('1');
+                    setTaxRate('20.0');
+                    setStartDate('');
+                    setEndDate('');
+                    setRenewalDate('');
+                    setPaymentDueDate('');
+                    setPaymentReminderDate('');
+                    setShowContractForm(prev => !prev);
+                  }}
+                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                >
+                  <Plus size={14} /> Register New Contract
+                </button>
+              </div>
+
+              {/* Add/Edit Contract inline Form */}
+              {showContractForm && (
+                <form onSubmit={handleContractSubmit} className="detail-section" style={{ border: '1px solid var(--primary)', backgroundColor: 'var(--bg-secondary)', animation: 'fadeIn 0.2s', padding: '16px', marginTop: '4px' }}>
+                  <div className="section-title" style={{ fontSize: '12px', color: 'var(--primary)' }}>
+                    <Plus size={12} /> {editingContractId ? 'Modify Contract Agreement' : 'Register Contract Agreement'}
+                  </div>
+                  <div className="form-group-row">
+                    <div className="form-group" style={{ flex: 2 }}>
+                      <label className="form-label">Agreement Name <span>*</span></label>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        placeholder="e.g. Office 365 Seats Group Plan"
+                        value={contractName}
+                        onChange={(e) => setContractName(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label className="form-label">Billed Entity (Cost Center) <span>*</span></label>
+                      <select 
+                        className="select-filter"
+                        value={unusedCompanyId}
+                        onChange={(e) => handleCompanyChange(e.target.value)}
+                        style={{ width: '100%', padding: '10px' }}
+                        required
+                      >
+                        {companies.map(comp => (
+                          <option key={comp.id} value={comp.id}>{comp.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="form-group-row">
+                    <div className="form-group">
+                      <label className="form-label">Seat Cost (excl. tax) <span>*</span></label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        className="form-input" 
+                        placeholder="Cost per seat / unit"
+                        value={unitCost}
+                        onChange={(e) => setUnitCost(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Seat Quantity Purchased <span>*</span></label>
+                      <input 
+                        type="number" 
+                        className="form-input" 
+                        placeholder="1 for standard contract"
+                        value={quantityPurchased}
+                        onChange={(e) => setQuantityPurchased(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Cost Currency</label>
+                      <select 
+                        className="select-filter"
+                        value={contractCurrency}
+                        onChange={(e) => setContractCurrency(e.target.value)}
+                        style={{ width: '100%', padding: '10px' }}
+                      >
+                        <option value="GBP">GBP (£)</option>
+                        <option value="USD">USD ($)</option>
+                        <option value="AED">AED (Dh)</option>
+                        <option value="INR">INR (₹)</option>
+                        <option value="ZAR">ZAR (R)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="form-group-row">
+                    <div className="form-group">
+                      <label className="form-label">VAT Rate (%)</label>
+                      <input 
+                        type="number" 
+                        step="0.1"
+                        className="form-input" 
+                        value={taxRate}
+                        onChange={(e) => setTaxRate(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Cost Interval</label>
+                      <select 
+                        className="select-filter"
+                        value={costInterval}
+                        onChange={(e) => setCostInterval(e.target.value)}
+                        style={{ width: '100%', padding: '10px' }}
+                      >
+                        <option value="monthly">Monthly Recurring</option>
+                        <option value="quarterly">Quarterly Recurring</option>
+                        <option value="annual">Annually Recurring</option>
+                        <option value="one-off">One-Off / Direct Pay</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="form-group-row">
+                    <div className="form-group">
+                      <label className="form-label">Start Date</label>
+                      <input 
+                        type="date" 
+                        className="form-input" 
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">End Date</label>
+                      <input 
+                        type="date" 
+                        className="form-input" 
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Next Renewal</label>
+                      <input 
+                        type="date" 
+                        className="form-input" 
+                        value={renewalDate}
+                        onChange={(e) => setRenewalDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-group-row">
+                    <div className="form-group">
+                      <label className="form-label">Payment Due Date</label>
+                      <input 
+                        type="date" 
+                        className="form-input" 
+                        value={paymentDueDate}
+                        onChange={(e) => setPaymentDueDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Reminder Date</label>
+                      <input 
+                        type="date" 
+                        className="form-input" 
+                        value={paymentReminderDate}
+                        onChange={(e) => setPaymentReminderDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Default Unassigned Dept</label>
+                      <select 
+                        className="select-filter"
+                        value={unusedDept}
+                        onChange={(e) => setUnusedDept(e.target.value)}
+                        style={{ width: '100%', padding: '10px' }}
+                      >
+                        {availableDeptsForChosenCompany.map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
+                    <button type="submit" className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
+                      {editingContractId ? 'Save Modifications' : 'Register Contract'}
+                    </button>
+                    <button type="button" className="btn-secondary" onClick={() => {
+                      setShowContractForm(false);
+                      setEditingContractId(null);
+                    }}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* List of Contracts */}
+              {vendorContracts.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--text-muted)', border: '1px dashed var(--border-color)', borderRadius: '6px' }}>
+                  No active contracts or leases registered under this vendor partner.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {vendorContracts.map(c => {
+                    const assigned = assetAssignments.filter(a => a.contractId === c.id);
+                    const assignedCount = assigned.length;
+                    const unusedCount = Math.max(0, c.quantityPurchased - assignedCount);
+                    const symbol = symbolMap[c.currency] || '£';
+                    const taxFactor = 1 + ((c.taxRate || 0) / 100);
+                    const costPerSeatWithTax = c.unitCost * taxFactor;
+                    const unusedCostWithTax = unusedCount * costPerSeatWithTax;
+                    const matchedCompany = companies.find(comp => comp.id === c.companyId);
+
+                    return (
+                      <div key={c.id} className="entity-card" style={{ height: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>{c.name}</h4>
+                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                              Billed to: <strong>{matchedCompany ? matchedCompany.name : 'Group'}</strong> &bull; Cost: <strong>{symbol}{c.unitCost}/mo</strong> {c.taxRate > 0 && `(+${c.taxRate}% VAT)`} &bull; Qty: <strong>{c.quantityPurchased}</strong>
+                            </span>
+                          </div>
+                          
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--warning)' }}>
+                                Unused: {symbol}{unusedCostWithTax.toFixed(2)}/mo
+                              </span>
+                              <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                                {unusedCount} unallocated seats
+                              </div>
+                            </div>
+                            <button className="btn-icon" onClick={() => {
+                              // Edit Contract details
+                              setEditingContractId(c.id);
+                              setContractName(c.name);
+                              setUnusedCompanyId(c.companyId || companies[0].id);
+                              setUnitCost(c.unitCost || '');
+                              setQuantityPurchased(c.quantityPurchased || '1');
+                              setContractCurrency(c.currency || 'GBP');
+                              setTaxRate(c.taxRate || '20.0');
+                              setCostInterval(c.costInterval || 'monthly');
+                              setStartDate(c.startDate || '');
+                              setEndDate(c.endDate || '');
+                              setRenewalDate(c.renewalDate || '');
+                              setPaymentDueDate(c.paymentDueDate || '');
+                              setPaymentReminderDate(c.paymentReminderDate || '');
+                              setUnusedDept(c.unusedDept || 'Operations');
+                              setShowContractForm(true);
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }} title="Edit Contract details">
+                              <Edit3 size={11} />
+                            </button>
+                            <button className="btn-icon delete" onClick={() => {
+                              if (window.confirm(`Are you sure you want to delete contract "${c.name}"?`)) {
+                                onDeleteContract(c.id);
+                                onShowToast(`Deleted contract "${c.name}"`, "info");
+                              }
+                            }} title="Delete Contract">
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* If seat pool */}
+                        {c.quantityPurchased > 1 && (
+                          <div>
+                            {/* Progress bar */}
+                            <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--bg-secondary)', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div style={{ width: `${Math.min(100, (assignedCount / c.quantityPurchased) * 100)}%`, height: '100%', backgroundColor: 'var(--primary)' }} />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                              <span><strong>{assignedCount} Assigned</strong></span>
+                              <span><strong>{c.quantityPurchased} Seats Total</strong></span>
+                            </div>
+
+                            {/* Assignments Grid */}
+                            {assigned.length > 0 && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px', border: '1px solid var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1.5fr 40px', gap: '8px', padding: '6px 12px', backgroundColor: 'var(--bg-secondary)', fontSize: '9px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                                  <div>Staff Member</div>
+                                  <div>Email / Alias</div>
+                                  <div>Notes</div>
+                                  <div style={{ textAlign: 'center' }}>Release</div>
+                                </div>
+                                {assigned.map(a => {
+                                  const member = staff.find(s => s.id === a.staffId);
+                                  if (!member) return null;
+                                  return (
+                                    <div key={a.id} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1.5fr 40px', gap: '8px', padding: '6px 12px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'rgba(255,255,255,0.01)', alignItems: 'center', fontSize: '11px' }}>
+                                      <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{member.fullName}</div>
+                                      <div>
+                                        <input 
+                                          type="text" 
+                                          placeholder="Enter Email/Alias" 
+                                          defaultValue={a.email || ''} 
+                                          onBlur={(e) => handleUpdateAssignmentField(a.id, 'email', e.target.value)}
+                                          style={{ width: '100%', padding: '2px 6px', fontSize: '10px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
+                                        />
+                                      </div>
+                                      <div>
+                                        <input 
+                                          type="text" 
+                                          placeholder="Add notes..." 
+                                          defaultValue={a.notes || ''} 
+                                          onBlur={(e) => handleUpdateAssignmentField(a.id, 'notes', e.target.value)}
+                                          style={{ width: '100%', padding: '2px 6px', fontSize: '10px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
+                                        />
+                                      </div>
+                                      <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                        <button 
+                                          onClick={() => handleReleaseSeat(a.id, c.name, member.fullName)}
+                                          style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Allocate Seat Form */}
+                            {unusedCount > 0 && (() => {
+                              const activeStaffList = staff.filter(s => s.status !== 'exited');
+                              if (activeStaffList.length === 0) return null;
+                              const sortedStaffSingle = [...activeStaffList].sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+                              return (
+                                <form 
+                                  onSubmit={(e) => handleAllocateSeatInline(e, c.id, c.name)} 
+                                  style={{ display: 'flex', gap: '8px', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.01)', padding: '6px', borderRadius: '4px', border: '1px dashed var(--border-color)', width: 'fit-content', flexWrap: 'wrap', marginTop: '10px' }}
+                                >
+                                  <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)' }}>Allocate:</span>
+                                  <select name="staffSelect" className="select-filter" style={{ padding: '3px 6px', fontSize: '11px', minWidth: '130px' }} required>
+                                    <option value="">-- Choose Staff --</option>
+                                    {sortedStaffSingle.map(s => (
+                                      <option key={s.id} value={s.id}>{s.fullName}</option>
+                                    ))}
+                                  </select>
+                                  <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)' }}>Qty:</span>
+                                  <input type="number" name="quantityInput" min="1" max={unusedCount} defaultValue="1" style={{ width: '45px', padding: '3px 4px', fontSize: '11px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }} required />
+                                  <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)' }}>Email:</span>
+                                  <input type="text" name="emailInput" placeholder="Email/Alias" style={{ width: '100px', padding: '3px 4px', fontSize: '11px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }} />
+                                  <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)' }}>Notes:</span>
+                                  <input type="text" name="notesInput" placeholder="Notes..." style={{ width: '100px', padding: '3px 4px', fontSize: '11px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }} />
+                                  <button type="submit" className="btn-primary" style={{ padding: '3px 8px', fontSize: '10px' }}>Assign</button>
+                                </form>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })() : (
+        <>
+          {/* ==============================================================
+              SUB-TAB 1: VENDOR REGISTER DIRECTORY
+              ============================================================== */}
+          {activeSubTab === 'vendors' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1729,6 +2253,8 @@ export default function VendorsDashboard({
           </div>
         );
       })()}
+        </>
+      )}
 
       {/* Batch Software License Assignment Modal */}
       {multiAssignContract && (() => {

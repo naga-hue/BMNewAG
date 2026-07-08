@@ -42,6 +42,7 @@ import CompanyDetail from './components/CompanyDetail';
 import CompanyForm from './components/CompanyForm';
 import StaffDetail from './components/StaffDetail';
 import StaffForm from './components/StaffForm';
+import StaffExitModal from './components/StaffExitModal';
 import BulkStaffImportModal from './components/BulkStaffImportModal';
 import LeavesDashboard from './components/LeavesDashboard';
 import CommissionsDashboard from './components/CommissionsDashboard';
@@ -136,11 +137,8 @@ export default function App() {
       setSelectedStaff(s);
       setIsStaffDetailOpen(true);
     } else {
-      if (window.confirm(`"${s.fullName}" is currently Active. Do you want to begin their exit formalities by configuring their exit date and notice parameters?`)) {
-        setEditingStaff(s);
-        setStaffFormInitialStep(2);
-        setIsStaffFormOpen(true);
-      }
+      setExitModalStaff(s);
+      setIsExitModalOpen(true);
     }
   };
 
@@ -156,6 +154,8 @@ export default function App() {
   const [isStaffFormOpen, setIsStaffFormOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null);
   const [staffFormInitialStep, setStaffFormInitialStep] = useState(1);
+  const [isExitModalOpen, setIsExitModalOpen] = useState(false);
+  const [exitModalStaff, setExitModalStaff] = useState(null);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [selectedStaffIds, setSelectedStaffIds] = useState([]);
   const [bulkDeptSelect, setBulkDeptSelect] = useState('');
@@ -2688,6 +2688,18 @@ export default function App() {
         companies={companies}
         leavePolicies={leavePolicies}
         onShowToast={handleShowToast}
+      />
+
+      {/* Staff Exit Processing Modal */}
+      <StaffExitModal 
+        isOpen={isExitModalOpen}
+        onClose={() => {
+          setIsExitModalOpen(false);
+          setExitModalStaff(null);
+        }}
+        staffMember={exitModalStaff}
+        onSave={handleSaveStaff}
+        companies={companies}
       />
 
       {/* Micro-interaction Toasts list */}

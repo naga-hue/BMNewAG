@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Shield, CheckSquare, Square, Save, Users, Key, FileText, Settings, Edit3, Trash2, Plus, AlertTriangle } from 'lucide-react';
+import { Shield, CheckSquare, Square, Save, Users, Key, FileText, Settings, Edit3, Trash2, Plus, AlertTriangle, Upload } from 'lucide-react';
+import { firebaseService } from '../services/firebase';
 
 const MODULES_LIST = [
   { key: 'directory', label: 'Company Directory' },
@@ -34,6 +35,8 @@ export default function RBACDashboard({
   const [lhAddressOverride, setLhAddressOverride] = useState('');
   const [lhSignatureText, setLhSignatureText] = useState('');
   const [lhAccentColor, setLhAccentColor] = useState('#3b82f6');
+  const [lhLetterheadBgUrl, setLhLetterheadBgUrl] = useState('');
+  const [isUploadingLh, setIsUploadingLh] = useState(false);
 
   // Template editing states
   const [editingTemplateId, setEditingTemplateId] = useState(null);
@@ -80,8 +83,25 @@ export default function RBACDashboard({
       setLhAddressOverride(comp.addressOverride || '');
       setLhSignatureText(comp.signatureText || 'Authorized Signatory');
       setLhAccentColor(comp.accentColor || '#3b82f6');
+      setLhLetterheadBgUrl(comp.letterheadBgUrl || '');
     }
   }, [selectedLhCompanyId, companies]);
+
+  const handleUploadLetterheadBg = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !selectedLhCompanyId) return;
+    setIsUploadingLh(true);
+    try {
+      const url = await firebaseService.uploadLetterheadBg(selectedLhCompanyId, file);
+      setLhLetterheadBgUrl(url);
+      onShowToast("Letterhead background uploaded successfully!", "success");
+    } catch (err) {
+      console.error("Upload letterhead background error:", err);
+      onShowToast("Upload failed: " + err.message, "danger");
+    } finally {
+      setIsUploadingLh(false);
+    }
+  };
 
   // Handle Save Letterhead
   const handleSaveLetterhead = async () => {
@@ -93,7 +113,8 @@ export default function RBACDashboard({
       logoUrl: lhLogoUrl,
       addressOverride: lhAddressOverride,
       signatureText: lhSignatureText,
-      accentColor: lhAccentColor
+      accentColor: lhAccentColor,
+      letterheadBgUrl: lhLetterheadBgUrl
     };
 
     try {
@@ -507,6 +528,33 @@ Yours sincerely,
             value={lhLogoUrl}
             onChange={(e) => setLhLogoUrl(e.target.value)}
           />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Or Upload Custom Letterhead Background Image (Optional)</label>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <input 
+              type="file" 
+              accept="image/*" 
+              onChange={handleUploadLetterheadBg}
+              style={{ display: 'none' }}
+              id="lh-bg-upload-file"
+            />
+            <label htmlFor="lh-bg-upload-file" className="btn-secondary" style={{ cursor: 'pointer', padding: '8px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+              <Upload size={14} style={{ marginRight: '4px' }} /> {isUploadingLh ? 'Uploading...' : 'Choose Letterhead Image'}
+            </label>
+            {lhLetterheadBgUrl && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--success)' }}>✓ Letterhead Loaded</span>
+                <button type="button" className="btn-secondary" onClick={() => setLhLetterheadBgUrl('')} style={{ padding: '4px 8px', fontSize: '10px', color: 'var(--danger)', border: 'none', background: 'none', cursor: 'pointer' }}>
+                  Remove
+                </button>
+              </div>
+            )}
+          </div>
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+            If uploaded, letters will print text directly on top of this background (hiding the generated text logo/address headers).
+          </span>
         </div>
 
         <div className="form-group">

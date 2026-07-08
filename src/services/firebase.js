@@ -1326,5 +1326,22 @@ export const firebaseService = {
       localStorage.setItem('bm-email-notifications', JSON.stringify(list));
       return notification;
     }
+  },
+
+  async uploadLetterheadBg(companyId, file) {
+    if (isConfigured && storage) {
+      const fileRef = ref(storage, `companies/${companyId}/letterheadBg_${file.name}`);
+      const snapshot = await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(snapshot.ref);
+      return url;
+    } else {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          resolve(reader.result);
+        };
+        reader.readAsDataURL(file);
+      });
+    }
   }
 };

@@ -158,6 +158,7 @@ Yours sincerely,
   const [lhLogoUrl, setLhLogoUrl] = useState('');
   const [lhAddress, setLhAddress] = useState('');
   const [lhSignatureText, setLhSignatureText] = useState('');
+  const [lhLetterheadBgUrl, setLhLetterheadBgUrl] = useState('');
 
   // Update docContent when template changes or company letterhead selection changes
   React.useEffect(() => {
@@ -181,6 +182,7 @@ Yours sincerely,
         setLhLogoUrl(resolvedCompany.logoUrl || '');
         setLhAddress(resolvedCompany.addressOverride || resolvedCompany.address || '');
         setLhSignatureText(resolvedCompany.signatureText || 'Authorized Signatory');
+        setLhLetterheadBgUrl(resolvedCompany.letterheadBgUrl || '');
       }
     }
   }, [docCompanyId, companies, staffMember]);
@@ -202,12 +204,16 @@ Yours sincerely,
     const resolvedCompany = companies.find(c => c.id === docCompanyId) || employerCompany || { name: 'Humres Group' };
     
     text = text.replace(/{{staff_name}}/g, staffMember.fullName || '');
+    text = text.replace(/{{candidate_name}}/g, staffMember.fullName || '');
     text = text.replace(/{{staff_address}}/g, staffMember.address || 'Address Not Set');
+    text = text.replace(/{{candidate_address}}/g, staffMember.address || 'Address Not Set');
     text = text.replace(/{{job_title}}/g, staffMember.jobTitle || '');
     text = text.replace(/{{start_date}}/g, staffMember.startDate || '');
+    text = text.replace(/{{date_of_joining}}/g, staffMember.startDate || '');
     text = text.replace(/{{department}}/g, staffMember.department || '');
     text = text.replace(/{{company_name}}/g, resolvedCompany.name || '');
     text = text.replace(/{{salary}}/g, `${currencyObj.symbol}${Number(staffMember.salary || 0).toLocaleString()}`);
+    text = text.replace(/{{candidate_salary}}/g, `${currencyObj.symbol}${Number(staffMember.salary || 0).toLocaleString()}`);
     text = text.replace(/{{last_working_date}}/g, staffMember.lastWorkingDate || 'Not Specified');
     text = text.replace(/{{notice_period}}/g, staffMember.noticePeriod || 'None');
     text = text.replace(/{{notice_pay_period}}/g, staffMember.noticePayPeriod || 'None');
@@ -219,6 +225,7 @@ Yours sincerely,
                       'Next Payroll';
     text = text.replace(/{{notice_pay_terms}}/g, termsText);
     text = text.replace(/{{signature}}/g, lhSignatureText || 'Authorized Signatory');
+    text = text.replace(/{{signature_authority}}/g, lhSignatureText || 'Authorized Signatory');
     
     return text;
   };
@@ -232,8 +239,15 @@ Yours sincerely,
         <head>
           <title>Print Document - ${staffMember.fullName}</title>
           <style>
-            @page { size: A4; margin: 20mm; }
+            @page { size: A4; margin: 0; }
             body { margin: 0; font-family: serif; color: #000; background: #fff; line-height: 1.6; }
+            #print-letterhead-content {
+              width: 210mm;
+              height: 297mm;
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
             a { color: #000; text-decoration: none; }
           </style>
         </head>
@@ -1497,6 +1511,8 @@ Yours sincerely,
                             backgroundColor: '#fff', 
                             color: '#000', 
                             padding: '30px', 
+                            padding: lhLetterheadBgUrl ? '120px 60px 100px 60px' : '40px',
+                            backgroundColor: '#ffffff',
                             border: '1px solid var(--border-color)', 
                             borderRadius: '6px',
                             fontFamily: 'serif',
@@ -1506,10 +1522,15 @@ Yours sincerely,
                             justifyContent: 'space-between',
                             boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
                             lineHeight: 1.5,
-                            overflowY: 'auto'
+                            overflowY: 'auto',
+                            backgroundImage: lhLetterheadBgUrl ? `url(${lhLetterheadBgUrl})` : 'none',
+                            backgroundSize: '100% 100%',
+                            backgroundPosition: 'center',
+                            backgroundRepeat: 'no-repeat'
                           }}>
                             {/* Header */}
-                            <div style={{ borderBottom: '2px solid #3b82f6', paddingBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            {!lhLetterheadBgUrl && (
+                              <div style={{ borderBottom: '2px solid #3b82f6', paddingBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                               <div>
                                 {lhLogoUrl ? (
                                   <img src={lhLogoUrl} alt="Logo" style={{ maxHeight: '35px', marginBottom: '6px' }} />
@@ -1528,6 +1549,7 @@ Yours sincerely,
                                 Tel: {selectedCompany?.pointOfContact?.phone || ''}
                               </div>
                             </div>
+                            )}
 
                             {/* Body */}
                             <div style={{ flex: 1, padding: '20px 0', fontSize: '12px', whiteSpace: 'pre-wrap', color: '#111827', textAlign: 'left' }}>
@@ -1535,15 +1557,17 @@ Yours sincerely,
                             </div>
 
                             {/* Footer */}
-                            <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '8px', color: '#6b7280' }}>
-                              <div>
-                                <strong>Legal Entity:</strong> {selectedCompany?.legalName || selectedCompany?.name || ''}
+                            {!lhLetterheadBgUrl && (
+                              <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '8px', color: '#6b7280' }}>
+                                <div>
+                                  <strong>Legal Entity:</strong> {selectedCompany?.legalName || selectedCompany?.name || ''}
+                                </div>
+                                <div>
+                                  {selectedCompany?.registrationNumber && `Reg No: ${selectedCompany.registrationNumber}`}
+                                  {selectedCompany?.vatNumber && ` | VAT: ${selectedCompany.vatNumber}`}
+                                </div>
                               </div>
-                              <div>
-                                {selectedCompany?.registrationNumber && `Reg No: ${selectedCompany.registrationNumber}`}
-                                {selectedCompany?.vatNumber && ` | VAT: ${selectedCompany.vatNumber}`}
-                              </div>
-                            </div>
+                            )}
                           </div>
                         );
                       })()}

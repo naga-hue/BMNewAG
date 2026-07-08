@@ -238,7 +238,7 @@ button, input, select, textarea {
   padding: 0 40px;
   position: sticky;
   top: 0;
-  background-color: rgba(var(--bg-primary), 0.8);
+  background-color: var(--bg-primary);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   z-index: 90;
@@ -1296,4 +1296,92 @@ button, input, select, textarea {
   padding: 10px 14px;
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* Sidebar Toggle Collapse & Minimize Styles */
+:root {
+  --sidebar-collapsed-width: 80px;
+}
+
+.sidebar {
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar.minimized {
+  width: var(--sidebar-collapsed-width);
+  padding: 24px 12px;
+  align-items: center;
+}
+
+.sidebar.minimized .logo-container {
+  margin-bottom: 24px;
+  justify-content: center;
+}
+
+.sidebar.minimized .logo-container .logo-text-block {
+  display: none;
+}
+
+.sidebar.minimized .logo-container .sidebar-toggle-btn {
+  margin: 0 auto;
+}
+
+.sidebar.minimized .nav-links span {
+  display: none;
+}
+
+.sidebar.minimized .nav-item {
+  justify-content: center;
+  padding: 10px;
+}
+
+.sidebar.minimized .nav-item svg {
+  margin-right: 0 !important;
+}
+
+.sidebar.minimized .sidebar-footer {
+  align-items: center;
+}
+
+.sidebar.minimized .sidebar-footer div:not(.avatar) {
+  display: none;
+}
+
+.sidebar.minimized .user-profile {
+  justify-content: center;
+}
+
+.sidebar.minimized .user-profile div {
+  margin-right: 0 !important;
+}
+
+.sidebar.minimized .user-profile button {
+  display: none;
+}
+
+.main-canvas {
+  transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1), max-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.main-canvas.sidebar-minimized {
+  margin-left: var(--sidebar-collapsed-width);
+  max-width: calc(100vw - var(--sidebar-collapsed-width));
+}
+
+.sidebar-toggle-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.sidebar-toggle-btn:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }

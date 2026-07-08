@@ -27,7 +27,9 @@ import {
   History,
   Key,
   Upload,
-  LogOut
+  LogOut,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 import { initialCompanies } from './mockData';
@@ -103,6 +105,17 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [letterTemplates, setLetterTemplates] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
+  
+  // Persistent Sidebar minimize state
+  const [isSidebarMinimized, setIsSidebarMinimized] = useState(() => {
+    return localStorage.getItem('bm-sidebar-minimized') === 'true';
+  });
+
+  const handleToggleSidebar = () => {
+    const newVal = !isSidebarMinimized;
+    setIsSidebarMinimized(newVal);
+    localStorage.setItem('bm-sidebar-minimized', String(newVal));
+  };
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -1415,14 +1428,26 @@ export default function App() {
     <div className="app-container">
       
       {/* Sidebar Navigation */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${isSidebarMinimized ? 'minimized' : ''}`}>
         <div>
-          <div className="logo-container">
-            <div className="logo-icon">H</div>
-            <div>
-              <div className="logo-text">Humres Group</div>
-              <div className="logo-subtitle">Management Suite</div>
+          <div className="logo-container" style={{ display: 'flex', alignItems: 'center', justifyContent: isSidebarMinimized ? 'center' : 'space-between', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div className="logo-icon">H</div>
+              {!isSidebarMinimized && (
+                <div className="logo-text-block" style={{ animation: 'fadeIn var(--transition-fast)' }}>
+                  <div className="logo-text">Humres Group</div>
+                  <div className="logo-subtitle">Management Suite</div>
+                </div>
+              )}
             </div>
+            <button 
+              onClick={handleToggleSidebar}
+              className="sidebar-toggle-btn"
+              title={isSidebarMinimized ? "Expand Sidebar" : "Minimize Sidebar"}
+              style={{ marginLeft: isSidebarMinimized ? '0' : '8px' }}
+            >
+              {isSidebarMinimized ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            </button>
           </div>
           
           <nav>
@@ -1652,7 +1677,7 @@ export default function App() {
       </aside>
 
       {/* Main Canvas */}
-      <main className="main-canvas">
+      <main className={`main-canvas ${isSidebarMinimized ? 'sidebar-minimized' : ''}`}>
         
         {/* Top Header */}
         <header className="top-header">

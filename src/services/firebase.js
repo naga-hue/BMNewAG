@@ -5,7 +5,8 @@ import {
   doc, 
   setDoc, 
   deleteDoc, 
-  onSnapshot 
+  onSnapshot,
+  enableIndexedDbPersistence
 } from 'firebase/firestore';
 import { 
   getStorage, 
@@ -38,6 +39,16 @@ if (isConfigured) {
   try {
     app = initializeApp(firebaseConfig);
     db = getFirestore(app);
+    
+    // Enable offline persistence
+    enableIndexedDbPersistence(db).catch((err) => {
+      if (err.code === 'failed-precondition') {
+        console.warn("Firestore persistence failed-precondition: multiple tabs open.");
+      } else if (err.code === 'unimplemented') {
+        console.warn("Firestore persistence unimplemented in this browser.");
+      }
+    });
+
     storage = getStorage(app);
     console.log("Firebase Backend initialized successfully!");
   } catch (error) {

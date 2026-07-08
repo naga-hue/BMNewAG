@@ -273,28 +273,26 @@ export default function App() {
     const unsubscribe = firebaseService.subscribeCompanies((updatedList) => {
       const sorted = [...updatedList].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       setCompanies(sorted);
-      if (selectedCompany) {
-        const refreshed = sorted.find(c => c.id === selectedCompany.id);
-        if (refreshed) {
-          setSelectedCompany(refreshed);
-        }
-      }
     }, initialCompanies);
 
     return () => unsubscribe();
-  }, [selectedCompany]);
+  }, []);
+
+  // Update selectedCompany when companies list updates
+  useEffect(() => {
+    if (selectedCompany) {
+      const refreshed = companies.find(c => c.id === selectedCompany.id);
+      if (refreshed && refreshed !== selectedCompany) {
+        setSelectedCompany(refreshed);
+      }
+    }
+  }, [companies]);
 
   // Sync staff from Firebase Service (with LocalStorage fallback)
   useEffect(() => {
     const unsubscribe = firebaseService.subscribeStaff((updatedList) => {
       const sorted = [...updatedList].sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
       setStaff(sorted);
-      if (selectedStaff) {
-        const refreshed = sorted.find(s => s.id === selectedStaff.id);
-        if (refreshed) {
-          setSelectedStaff(refreshed);
-        }
-      }
 
       // Auto-restore or synchronize active logged-in user profile
       const storedId = localStorage.getItem('bm-logged-in-user-id');
@@ -319,7 +317,17 @@ export default function App() {
     }, initialStaff);
 
     return () => unsubscribe();
-  }, [selectedStaff]);
+  }, []);
+
+  // Update selectedStaff when staff list updates
+  useEffect(() => {
+    if (selectedStaff) {
+      const refreshed = staff.find(s => s.id === selectedStaff.id);
+      if (refreshed && refreshed !== selectedStaff) {
+        setSelectedStaff(refreshed);
+      }
+    }
+  }, [staff]);
 
   // Sync leave policies
   useEffect(() => {
@@ -378,13 +386,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Sync commission policies
-  useEffect(() => {
-    const unsubscribe = firebaseService.subscribeCommissionPolicies((updatedList) => {
-      setCommissionPolicies(updatedList);
-    }, initialCommissionPolicies);
-    return () => unsubscribe();
-  }, []);
+
 
   // Sync placements
   useEffect(() => {

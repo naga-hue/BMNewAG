@@ -46,6 +46,7 @@ import StaffDetail from './components/StaffDetail';
 import StaffForm from './components/StaffForm';
 import StaffExitModal from './components/StaffExitModal';
 import ExitEmailTriggerModal from './components/ExitEmailTriggerModal';
+import CreditControlDashboard from './components/CreditControlDashboard';
 import BulkStaffImportModal from './components/BulkStaffImportModal';
 import LeavesDashboard from './components/LeavesDashboard';
 import CommissionsDashboard from './components/CommissionsDashboard';
@@ -75,7 +76,7 @@ export default function App() {
     permissions: {
       role: 'admin',
       dataScope: 'all',
-      allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors', 'logs', 'reports', 'rbac']
+      allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors', 'logs', 'reports', 'rbac', 'credit_control']
     }
   };
 
@@ -1619,6 +1620,18 @@ export default function App() {
                 </li>
               )}
 
+              {currentUser.permissions.allowedModules.includes('credit_control') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'credit_control' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('credit_control')}
+                  >
+                    <FileText size={18} />
+                    <span>Credit Control</span>
+                  </div>
+                </li>
+              )}
+
               {currentUser.permissions.allowedModules.includes('expenses') && (
                 <li>
                   <div 
@@ -1754,7 +1767,8 @@ export default function App() {
                activeTab === 'logs' ? 'System Audit Trail Logs' :
                activeTab === 'reports' ? 'Profit & Loss / Group Reports' :
                activeTab === 'rbac' ? 'User Access & Roles Control' :
-               activeTab === 'placements' ? 'Sales & Placements Dashboard' : 'Vendors & Asset Management'}
+               activeTab === 'placements' ? 'Sales & Placements Dashboard' :
+               activeTab === 'credit_control' ? 'Credit Control & Invoices Ledger' : 'Vendors & Asset Management'}
             </h1>
           </div>
           
@@ -2690,6 +2704,18 @@ export default function App() {
               onDeletePlacement={handleDeletePlacement}
               onSavePlacementsBatch={handleSavePlacementsBatch}
               onClearAllPlacements={handleClearAllPlacements}
+              onShowToast={handleShowToast}
+            />
+          )}
+
+          {/* TAB 7.5: Credit Control Invoices */}
+          {activeTab === 'credit_control' && (
+            <CreditControlDashboard 
+              placements={scopedPlacements}
+              companies={companies}
+              staff={scopedStaff}
+              currentUser={currentUser}
+              onUpdatePlacement={handleSavePlacement}
               onShowToast={handleShowToast}
             />
           )}

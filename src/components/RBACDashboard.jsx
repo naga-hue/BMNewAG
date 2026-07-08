@@ -10,6 +10,7 @@ const MODULES_LIST = [
   { key: 'placements', label: 'Sales & Placements' },
   { key: 'expenses', label: 'Expense Ledger' },
   { key: 'vendors', label: 'Vendors & Assets' },
+  { key: 'credit_control', label: 'Credit Control Invoices' },
   { key: 'logs', label: 'Audit Trail Logs' },
   { key: 'reports', label: 'Profit & Loss / Reports' }
 ];

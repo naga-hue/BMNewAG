@@ -98,6 +98,13 @@ export default function PlacementsDashboard({
   const [clientPaymentStatusInput, setClientPaymentStatusInput] = useState('unpaid'); // paid, unpaid
   const [clientPaidDateInput, setClientPaidDateInput] = useState('');
 
+  // Credit Control Invoice States
+  const [invoiceTypeInput, setInvoiceTypeInput] = useState('direct');
+  const [invoiceTriggerTypeInput, setInvoiceTriggerTypeInput] = useState('start-date');
+  const [invoiceTriggerCustomDateInput, setInvoiceTriggerCustomDateInput] = useState('');
+  const [paymentTermsInput, setPaymentTermsInput] = useState('30');
+  const [paymentTermsCustomDaysInput, setPaymentTermsCustomDaysInput] = useState('');
+
   // CSV Import Wizard states
   const [csvFile, setCsvFile] = useState(null);
   const [csvHeaders, setCsvHeaders] = useState([]);
@@ -180,6 +187,17 @@ export default function PlacementsDashboard({
       : [{ staffId: '', percentage: 100 }]);
     setClientPaymentStatusInput(placement.clientPaymentStatus || 'unpaid');
     setClientPaidDateInput(placement.clientPaidDate || '');
+    setInvoiceTypeInput(placement.invoiceType || 'direct');
+    setInvoiceTriggerTypeInput(placement.invoiceTriggerType || 'start-date');
+    setInvoiceTriggerCustomDateInput(placement.invoiceTriggerCustomDate || '');
+    const terms = String(placement.paymentTermsDays || '30');
+    if (['7', '10', '30', '31'].includes(terms)) {
+      setPaymentTermsInput(terms);
+      setPaymentTermsCustomDaysInput('');
+    } else {
+      setPaymentTermsInput('custom');
+      setPaymentTermsCustomDaysInput(terms);
+    }
     
     setShowLogForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -221,6 +239,65 @@ export default function PlacementsDashboard({
     const deductions = Number(deductionsInput) || 0;
     const netScore = Math.max(0, gross - deductions);
 
+    const pType = invoiceTypeInput;
+    const pTrigger = invoiceTriggerTypeInput;
+    let raisedDate = '';
+    if (pTrigger === 'start-date') {
+      raisedDate = startDateInput;
+    } else if (pTrigger === 'offer-accepted') {
+      raisedDate = scoredDateInput;
+    } else {
+      raisedDate = invoiceTriggerCustomDateInput || new Date().toISOString().split('T')[0];
+    }
+
+    const termDays = paymentTermsInput === 'custom' 
+      ? (Number(paymentTermsCustomDaysInput) || 30) 
+      : Number(paymentTermsInput);
+
+    const calculateDueDate = (rDate, days) => {
+      if (!rDate) return '';
+      try {
+        const parts = rDate.split('-');
+        const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        if (!isNaN(d.getTime())) {
+          d.setDate(d.getDate() + Number(days));
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const dayVal = String(d.getDate()).padStart(2, '0');
+          return `${y}-${m}-${dayVal}`;
+        }
+      } catch (e) {}
+      return rDate;
+    };
+
+    const dueDate = calculateDueDate(raisedDate, termDays);
+
+    const vatVal = Math.round(gross * 0.20 * 100) / 100;
+    const totalVal = gross + vatVal;
+
+    const existingPlacement = editingPlacementId ? placements.find(p => p.id === editingPlacementId) : null;
+    const currentAmountPaid = existingPlacement ? (existingPlacement.amountPaid || 0) : (clientPaymentStatusInput === 'paid' ? totalVal : 0);
+    const currentBalance = Math.max(0, totalVal - currentAmountPaid);
+
+    let initialPaymentStatus = 'not-invoiced';
+    if (clientPaymentStatusInput === 'paid' || currentBalance === 0) {
+      initialPaymentStatus = 'paid';
+    } else if (existingPlacement && existingPlacement.paymentStatus) {
+      initialPaymentStatus = existingPlacement.paymentStatus;
+    } else if (invoiceInput.trim()) {
+      initialPaymentStatus = 'sent-to-client';
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (initialPaymentStatus !== 'paid' && 
+        initialPaymentStatus !== 'written-off' && 
+        initialPaymentStatus !== 'dns-rebate' && 
+        initialPaymentStatus !== 'legal' && 
+        initialPaymentStatus !== 'disputed' && 
+        dueDate < todayStr) {
+      initialPaymentStatus = 'overdue';
+    }
+
     const placementData = {
       id: editingPlacementId || `place-${Date.now()}`,
       placementId: pIdInput.trim(),
@@ -240,7 +317,29 @@ export default function PlacementsDashboard({
       splits: cleanSplits,
       clientPaymentStatus: clientPaymentStatusInput,
       clientPaidDate: clientPaymentStatusInput === 'paid' ? (clientPaidDateInput || new Date().toISOString().split('T')[0]) : null,
-      importKey: editingPlacementId ? (placements.find(p => p.id === editingPlacementId)?.importKey || null) : "manual"
+      importKey: editingPlacementId ? (placements.find(p => p.id === editingPlacementId)?.importKey || null) : "manual",
+      
+      // Credit Control parameters
+      invoiceType: pType,
+      invoiceTriggerType: pTrigger,
+      invoiceTriggerCustomDate: pTrigger === 'custom-date' ? invoiceTriggerCustomDateInput : '',
+      invoiceRaisedDate: raisedDate,
+      paymentTermsDays: termDays,
+      invoiceDueDate: dueDate,
+      vatAmount: vatVal,
+      totalInvoiceAmount: totalVal,
+      paymentStatus: initialPaymentStatus,
+      amountPaid: currentAmountPaid,
+      balanceOutstanding: currentBalance,
+      paymentReceivedDate: clientPaymentStatusInput === 'paid' ? (clientPaidDateInput || todayStr) : (existingPlacement?.paymentReceivedDate || null),
+      invoiceFileUrl: existingPlacement?.invoiceFileUrl || '',
+      invoiceFileName: existingPlacement?.invoiceFileName || '',
+      chaseHistory: existingPlacement?.chaseHistory || [],
+      lastChasedDate: existingPlacement?.lastChasedDate || '',
+      nextChaseDate: existingPlacement?.nextChaseDate || '',
+      disputeReason: existingPlacement?.disputeReason || '',
+      disputeDate: existingPlacement?.disputeDate || '',
+      disputeOwner: existingPlacement?.disputeOwner || ''
     };
 
     try {
@@ -266,6 +365,11 @@ export default function PlacementsDashboard({
       setClientPaymentStatusInput('unpaid');
       setClientPaidDateInput('');
       setSplitsInput([{ staffId: '', percentage: 100 }]);
+      setInvoiceTypeInput('direct');
+      setInvoiceTriggerTypeInput('start-date');
+      setInvoiceTriggerCustomDateInput('');
+      setPaymentTermsInput('30');
+      setPaymentTermsCustomDaysInput('');
       setEditingPlacementId(null);
       setShowLogForm(false);
     } catch (err) {
@@ -1349,6 +1453,88 @@ export default function PlacementsDashboard({
                   />
                 </div>
               )}
+
+              {/* Credit Control Settings */}
+              <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h4 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent)', margin: '0 0 4px 0' }}>Credit Control & Billing Setup</h4>
+                
+                <div className="form-group-row" style={{ marginBottom: 0 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Invoice Type <span>*</span></label>
+                    <select
+                      className="select-filter"
+                      value={invoiceTypeInput}
+                      onChange={(e) => setInvoiceTypeInput(e.target.value)}
+                      style={{ width: '100%', padding: '10px' }}
+                      required
+                    >
+                      <option value="direct">Direct Invoice</option>
+                      <option value="simplicity">Simplicity Invoice</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Invoice to be Raised On <span>*</span></label>
+                    <select
+                      className="select-filter"
+                      value={invoiceTriggerTypeInput}
+                      onChange={(e) => setInvoiceTriggerTypeInput(e.target.value)}
+                      style={{ width: '100%', padding: '10px' }}
+                      required
+                    >
+                      <option value="start-date">Candidate Start Date</option>
+                      <option value="offer-accepted">Date Offer Accepted</option>
+                      <option value="custom-date">Custom Date...</option>
+                    </select>
+                  </div>
+
+                  {invoiceTriggerTypeInput === 'custom-date' && (
+                    <div className="form-group" style={{ marginBottom: 0, animation: 'fadeIn 0.2s' }}>
+                      <label className="form-label">Custom Invoice Date <span>*</span></label>
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={invoiceTriggerCustomDateInput}
+                        onChange={(e) => setInvoiceTriggerCustomDateInput(e.target.value)}
+                        required={invoiceTriggerTypeInput === 'custom-date'}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="form-group-row" style={{ marginBottom: 0 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Invoice Due In <span>*</span></label>
+                    <select
+                      className="select-filter"
+                      value={paymentTermsInput}
+                      onChange={(e) => setPaymentTermsInput(e.target.value)}
+                      style={{ width: '100%', padding: '10px' }}
+                      required
+                    >
+                      <option value="7">7 Days</option>
+                      <option value="10">10 Days</option>
+                      <option value="30">30 Days</option>
+                      <option value="31">31 Days</option>
+                      <option value="custom">Custom Days...</option>
+                    </select>
+                  </div>
+
+                  {paymentTermsInput === 'custom' && (
+                    <div className="form-group" style={{ marginBottom: 0, animation: 'fadeIn 0.2s' }}>
+                      <label className="form-label">Custom Terms (Days) <span>*</span></label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        placeholder="e.g. 45"
+                        value={paymentTermsCustomDaysInput}
+                        onChange={(e) => setPaymentTermsCustomDaysInput(e.target.value)}
+                        required={paymentTermsInput === 'custom'}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {/* Client Invoice Payment settings */}
               <div className="form-group-row" style={{ marginTop: '8px', borderTop: '1px dashed var(--border-color)', paddingTop: '16px' }}>

@@ -21,7 +21,9 @@ export default function RBACDashboard({
   letterTemplates = [],
   onSaveLetterTemplate,
   onDeleteLetterTemplate,
-  onUpdateCompany
+  onUpdateCompany,
+  exitSettings = {},
+  onSaveExitSettings
 }) {
   const [activeSubTab, setActiveSubTab] = useState('permissions'); // permissions, letterheads
   const [editingStaffId, setEditingStaffId] = useState(null);
@@ -38,6 +40,37 @@ export default function RBACDashboard({
   const [tempName, setTempName] = useState('');
   const [tempType, setTempType] = useState('offer-letter');
   const [tempBody, setTempBody] = useState('');
+
+  // Exit settings states
+  const [hrEmail, setHrEmail] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [itEmail, setItEmail] = useState('');
+  const [directorEmail, setDirectorEmail] = useState('');
+  const [exitEmailTemplate, setExitEmailTemplate] = useState('');
+
+  React.useEffect(() => {
+    setHrEmail(exitSettings.hrEmail || 'hr@humres.co.uk');
+    setAdminEmail(exitSettings.adminEmail || 'admin@humres.co.uk');
+    setItEmail(exitSettings.itEmail || 'it@humres.co.uk');
+    setDirectorEmail(exitSettings.directorEmail || 'director@humres.co.uk');
+    setExitEmailTemplate(exitSettings.exitEmailTemplate || `Dear Team,\n\nPlease be informed that {{staff_name}} will be leaving {{company_name}}. Their actual last working date will be {{last_working_date}}.\n\nNotice Details:\n- Notice Period: {{notice_period}}\n- Notice Pay Period: {{notice_pay_period}}\n- Salary Paid Until: {{salary_paid_until}}\n- Severance Payment: {{severance_pay}}\n\nPlease configure account deactivation clearances and asset recovery clear-offs.\n\nSincerely,\nHR Operations`);
+  }, [exitSettings]);
+
+  const handleSaveExits = async () => {
+    const settings = {
+      hrEmail,
+      adminEmail,
+      itEmail,
+      directorEmail,
+      exitEmailTemplate
+    };
+    try {
+      await onSaveExitSettings(settings);
+      onShowToast("Exit settings saved successfully!", "success");
+    } catch (e) {
+      onShowToast("Error saving exit settings: " + e.message, "danger");
+    }
+  };
 
   // Sync letterhead form when chosen company changes
   React.useEffect(() => {
@@ -202,6 +235,21 @@ Yours sincerely,
           }}
         >
           <FileText size={14} style={{ marginRight: '6px' }} /> Letterheads & Templates
+        </button>
+        <button 
+          onClick={() => setActiveSubTab('exits')}
+          style={{ 
+            padding: '10px 16px', 
+            border: 'none', 
+            background: 'none', 
+            fontSize: '14px', 
+            fontWeight: 600, 
+            cursor: 'pointer',
+            borderBottom: activeSubTab === 'exits' ? '3px solid var(--primary)' : '3px solid transparent',
+            color: activeSubTab === 'exits' ? 'var(--primary)' : 'var(--text-secondary)'
+          }}
+        >
+          <AlertTriangle size={14} style={{ marginRight: '6px' }} /> Exit Settings & Emails
         </button>
       </div>
 
@@ -426,7 +474,7 @@ Yours sincerely,
         </table>
       </div>
     </>
-  ) : (
+  ) : activeSubTab === 'letterheads' ? (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '24px', alignItems: 'start' }}>
       
       {/* 1. Letterhead configuration override */}
@@ -598,6 +646,53 @@ Yours sincerely,
         )}
       </div>
 
+    </div>
+  ) : (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', backgroundColor: 'var(--bg-card)', maxWidth: '700px' }}>
+      <div>
+        <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--accent)' }}><AlertTriangle size={16} style={{ marginRight: '6px' }} /> Offboarding Exit Notification Settings</h3>
+        <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Configure recipient email endpoints and the dynamic email broadcast template triggered when marking a consultant as exited.</p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <div className="form-group">
+          <label className="form-label">HR Notification Email</label>
+          <input type="email" className="form-input" value={hrEmail} onChange={(e) => setHrEmail(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Admin Notification Email</label>
+          <input type="email" className="form-input" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <div className="form-group">
+          <label className="form-label">IT / Systems Support Email</label>
+          <input type="email" className="form-input" value={itEmail} onChange={(e) => setItEmail(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Director / Management Email</label>
+          <input type="email" className="form-input" value={directorEmail} onChange={(e) => setDirectorEmail(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Exit Notification Email Body (Supports Tokens)</label>
+        <textarea 
+          className="form-input" 
+          rows="8" 
+          value={exitEmailTemplate} 
+          onChange={(e) => setExitEmailTemplate(e.target.value)}
+          style={{ fontFamily: 'monospace', fontSize: '12px' }}
+        />
+        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+          Supported tokens: {"{{staff_name}}, {{job_title}}, {{company_name}}, {{last_working_date}}, {{notice_period}}, {{notice_pay_period}}, {{salary_paid_until}}, {{severance_pay}}"}
+        </div>
+      </div>
+
+      <button className="btn-primary" onClick={handleSaveExits} style={{ alignSelf: 'flex-start' }}>
+        Save Exit Configuration
+      </button>
     </div>
   )}
 </div>

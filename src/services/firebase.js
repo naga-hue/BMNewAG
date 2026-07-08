@@ -1162,5 +1162,52 @@ export const firebaseService = {
       localStorage.setItem('bm-letter-templates', JSON.stringify(filtered));
       return id;
     }
+  },
+
+  subscribeExitSettings(onUpdate, fallbackData = {}) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'exitSettings', 'config');
+      return onSnapshot(docRef, (snapshot) => {
+        if (snapshot.exists()) {
+          onUpdate(snapshot.data());
+        } else {
+          onUpdate(fallbackData);
+        }
+      }, (error) => {
+        console.error("Firestore exit settings subscription error:", error);
+        const local = localStorage.getItem('bm-exit-settings');
+        onUpdate(local ? JSON.parse(local) : fallbackData);
+      });
+    } else {
+      const local = localStorage.getItem('bm-exit-settings');
+      const data = local ? JSON.parse(local) : fallbackData;
+      onUpdate(data);
+      return () => {};
+    }
+  },
+
+  async saveExitSettings(settings) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'exitSettings', 'config');
+      await setDoc(docRef, settings);
+      return settings;
+    } else {
+      localStorage.setItem('bm-exit-settings', JSON.stringify(settings));
+      return settings;
+    }
+  },
+
+  async logEmailNotification(notification) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'emailNotifications', notification.id || 'email-' + Date.now());
+      await setDoc(docRef, notification);
+      return notification;
+    } else {
+      const local = localStorage.getItem('bm-email-notifications');
+      const list = local ? JSON.parse(local) : [];
+      list.push(notification);
+      localStorage.setItem('bm-email-notifications', JSON.stringify(list));
+      return notification;
+    }
   }
 };

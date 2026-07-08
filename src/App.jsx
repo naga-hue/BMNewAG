@@ -45,6 +45,7 @@ import CompanyForm from './components/CompanyForm';
 import StaffDetail from './components/StaffDetail';
 import StaffForm from './components/StaffForm';
 import StaffExitModal from './components/StaffExitModal';
+import ExitEmailTriggerModal from './components/ExitEmailTriggerModal';
 import BulkStaffImportModal from './components/BulkStaffImportModal';
 import LeavesDashboard from './components/LeavesDashboard';
 import CommissionsDashboard from './components/CommissionsDashboard';
@@ -215,6 +216,65 @@ export default function App() {
   const [staffFormInitialStep, setStaffFormInitialStep] = useState(1);
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
   const [exitModalStaff, setExitModalStaff] = useState(null);
+  
+  // Exit notifications states
+  const [exitSettings, setExitSettings] = useState({});
+  const [isExitEmailTriggerOpen, setIsExitEmailTriggerOpen] = useState(false);
+  const [exitEmailTriggerStaff, setExitEmailTriggerStaff] = useState(null);
+
+  // Sync Exit Settings from database
+  useEffect(() => {
+    const unsubscribe = firebaseService.subscribeExitSettings((settings) => {
+      setExitSettings(settings);
+    }, {});
+    return () => unsubscribe();
+  }, []);
+
+  const handleSaveExitSettings = async (settings) => {
+    try {
+      await firebaseService.saveExitSettings(settings);
+      handleShowToast("Exit settings saved successfully!", "success");
+    } catch (err) {
+      handleShowToast("Error saving exit settings: " + err.message, "warning");
+    }
+  };
+
+  const handleConfirmStaffExit = async (updatedStaff) => {
+    try {
+      await firebaseService.saveStaff(updatedStaff);
+      if (selectedStaff && selectedStaff.id === updatedStaff.id) {
+        setSelectedStaff(updatedStaff);
+      }
+      handleShowToast(`Processed exit for "${updatedStaff.fullName}" successfully!`, 'success');
+      logActivity("Staff", "UPDATE", `Processed exit details for staff member "${updatedStaff.fullName}"`);
+      
+      // Open email dispatch notification preview
+      setExitEmailTriggerStaff(updatedStaff);
+      setIsExitEmailTriggerOpen(true);
+    } catch (err) {
+      console.error("Save staff exit details error:", err);
+      handleShowToast("Error saving exit details: " + err.message, 'warning');
+    }
+  };
+
+  const handleSendExitEmail = async (notification) => {
+    try {
+      await firebaseService.logEmailNotification(notification);
+      setIsExitEmailTriggerOpen(false);
+      
+      handleShowToast("Exit notification emails successfully queued for HR, Admin, IT & Director!", 'success');
+      
+      // Immediately open checklist for offboarding in detail view
+      const matched = staff.find(s => s.id === notification.staffId);
+      if (matched) {
+        setSelectedStaff(matched);
+        setIsStaffDetailOpen(true);
+      }
+    } catch (err) {
+      console.error("Send exit email error:", err);
+      handleShowToast("Error saving email log: " + err.message, 'warning');
+    }
+  };
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [selectedStaffIds, setSelectedStaffIds] = useState([]);
   const [bulkDeptSelect, setBulkDeptSelect] = useState('');
@@ -2694,6 +2754,8 @@ export default function App() {
               onSaveLetterTemplate={handleSaveLetterTemplate}
               onDeleteLetterTemplate={handleDeleteLetterTemplate}
               onUpdateCompany={handleSaveCompany}
+              exitSettings={exitSettings}
+              onSaveExitSettings={handleSaveExitSettings}
             />
           )}
 
@@ -2775,8 +2837,21 @@ export default function App() {
           setExitModalStaff(null);
         }}
         staffMember={exitModalStaff}
-        onSave={handleSaveStaff}
+        onSave={handleConfirmStaffExit}
         companies={companies}
+      />
+
+      {/* Exit Email Dispatch trigger modal */}
+      <ExitEmailTriggerModal 
+        isOpen={isExitEmailTriggerOpen}
+        onClose={() => {
+          setIsExitEmailTriggerOpen(false);
+          setExitEmailTriggerStaff(null);
+        }}
+        staffMember={exitEmailTriggerStaff}
+        exitSettings={exitSettings}
+        companies={companies}
+        onSend={handleSendExitEmail}
       />
 
       {/* Micro-interaction Toasts list */}

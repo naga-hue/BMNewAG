@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, AlertTriangle, Save, Wallet } from 'lucide-react';
+import { X, Calendar, AlertTriangle, Save } from 'lucide-react';
 
 export default function StaffExitModal({ 
   isOpen, 
@@ -83,45 +83,49 @@ export default function StaffExitModal({
 
   return (
     <div className="form-wizard-overlay" onClick={onClose}>
-      <div className="form-wizard-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '550px' }}>
+      <form 
+        onSubmit={handleSubmit} 
+        className="form-wizard-card" 
+        onClick={(e) => e.stopPropagation()} 
+        style={{ maxWidth: '550px', maxHeight: '85vh' }}
+      >
         
         {/* Modal Header */}
-        <div className="wizard-header" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '16px', marginBottom: '20px' }}>
+        <div className="wizard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div className="wizard-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)', padding: '8px', borderRadius: '8px' }}>
               <AlertTriangle size={20} />
             </div>
             <div>
-              <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>Process Employee Exit</h2>
-              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Configure final details for <strong>{staffMember.fullName}</strong></span>
+              <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: '#fff' }}>Process Employee Exit</h2>
+              <span style={{ fontSize: '12px', color: '#94a3b8' }}>Configure final details for <strong>{staffMember.fullName}</strong></span>
             </div>
           </div>
-          <button className="btn-close" onClick={onClose} aria-label="Close dialog">
+          <button type="button" className="btn-close" onClick={onClose} aria-label="Close dialog" style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
             <X size={18} />
           </button>
         </div>
 
-        {/* Info warning alert banner */}
-        <div style={{ 
-          backgroundColor: 'rgba(239, 68, 68, 0.05)', 
-          border: '1px solid rgba(239, 68, 68, 0.15)', 
-          borderRadius: '8px', 
-          padding: '12px 16px', 
-          marginBottom: '20px',
-          display: 'flex',
-          gap: '10px'
-        }}>
-          <AlertTriangle size={16} style={{ color: 'var(--danger)', flexShrink: 0, marginTop: '2px' }} />
-          <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-            Marking this staff member as <strong>Exited</strong> will stop regular payroll runs and activate the asset recovery/account suspensions checklist on their profile details view.
-          </span>
-        </div>
-
-        {/* Modal Form */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* Scrollable Wizard Content */}
+        <div className="wizard-content" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}>
+          
+          {/* Info warning alert banner */}
+          <div style={{ 
+            backgroundColor: 'rgba(239, 68, 68, 0.05)', 
+            border: '1px solid rgba(239, 68, 68, 0.15)', 
+            borderRadius: '8px', 
+            padding: '12px 16px', 
+            display: 'flex',
+            gap: '10px'
+          }}>
+            <AlertTriangle size={16} style={{ color: 'var(--danger)', flexShrink: 0, marginTop: '2px' }} />
+            <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+              Marking this staff member as <strong>Exited</strong> will stop regular payroll runs and activate the asset recovery/account suspensions checklist on their profile details view.
+            </span>
+          </div>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">Exit Notification Date <span>*</span></label>
               <input 
                 type="date" 
@@ -132,7 +136,7 @@ export default function StaffExitModal({
               />
             </div>
             
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">Actual Last Working Date <span>*</span></label>
               <input 
                 type="date" 
@@ -145,7 +149,7 @@ export default function StaffExitModal({
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">Notice Period Served</label>
               <input 
                 type="text" 
@@ -156,7 +160,7 @@ export default function StaffExitModal({
               />
             </div>
 
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">Notice Pay Period</label>
               <input 
                 type="text" 
@@ -169,7 +173,7 @@ export default function StaffExitModal({
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">Notice Payout Term</label>
               <select 
                 className="select-filter" 
@@ -184,7 +188,7 @@ export default function StaffExitModal({
             </div>
 
             {noticePayoutOption === 'custom-date' ? (
-              <div className="form-group">
+              <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">Custom Payout Date <span>*</span></label>
                 <input 
                   type="date" 
@@ -195,7 +199,7 @@ export default function StaffExitModal({
                 />
               </div>
             ) : (
-              <div className="form-group">
+              <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">Salary Paid Until Date</label>
                 <input 
                   type="date" 
@@ -207,32 +211,30 @@ export default function StaffExitModal({
             )}
           </div>
 
-          <div className="form-group">
+          <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">Additional Exit/Severance Payment ({currencySymbol})</label>
-            <div style={{ position: 'relative' }}>
-              <input 
-                type="number" 
-                className="form-input" 
-                placeholder="e.g. 2000"
-                value={additionalExitPayment} 
-                onChange={(e) => setAdditionalExitPayment(e.target.value)} 
-              />
-            </div>
+            <input 
+              type="number" 
+              className="form-input" 
+              placeholder="e.g. 2000"
+              value={additionalExitPayment} 
+              onChange={(e) => setAdditionalExitPayment(e.target.value)} 
+            />
           </div>
 
-          {/* Form Actions */}
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
-            <button type="button" className="btn-secondary" onClick={onClose}>
-              Cancel
-            </button>
-            <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger)', borderColor: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Save size={14} /> Confirm Exit & Deactivate
-            </button>
-          </div>
+        </div>
 
-        </form>
+        {/* Fixed Wizard Footer Actions */}
+        <div className="wizard-footer" style={{ padding: '16px 24px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger)', borderColor: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Save size={14} /> Confirm Exit & Deactivate
+          </button>
+        </div>
 
-      </div>
+      </form>
     </div>
   );
 }

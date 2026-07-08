@@ -45,6 +45,10 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
   const [noticePeriod, setNoticePeriod] = useState('');
   const [salaryPaidUntilDate, setSalaryPaidUntilDate] = useState('');
   const [additionalExitPayment, setAdditionalExitPayment] = useState('');
+  const [lastWorkingDate, setLastWorkingDate] = useState('');
+  const [noticePayPeriod, setNoticePayPeriod] = useState('');
+  const [noticePayoutOption, setNoticePayoutOption] = useState('regular-payroll');
+  const [noticePayoutCustomDate, setNoticePayoutCustomDate] = useState('');
   const [payrollPolicyId, setPayrollPolicyId] = useState('');
 
   // Step 3: Compensation details state
@@ -114,6 +118,10 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setNoticePeriod(staffMember.noticePeriod || '');
       setSalaryPaidUntilDate(normalizeDateForInput(staffMember.salaryPaidUntilDate || ''));
       setAdditionalExitPayment(staffMember.additionalExitPayment || '');
+      setLastWorkingDate(normalizeDateForInput(staffMember.lastWorkingDate || ''));
+      setNoticePayPeriod(staffMember.noticePayPeriod || '');
+      setNoticePayoutOption(staffMember.noticePayoutOption || 'regular-payroll');
+      setNoticePayoutCustomDate(normalizeDateForInput(staffMember.noticePayoutCustomDate || ''));
       setPayrollPolicyId(staffMember.payrollPolicyId || '');
       
       setSalary(staffMember.salary || '');
@@ -145,6 +153,10 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setNoticePeriod('');
       setSalaryPaidUntilDate('');
       setAdditionalExitPayment('');
+      setLastWorkingDate('');
+      setNoticePayPeriod('');
+      setNoticePayoutOption('regular-payroll');
+      setNoticePayoutCustomDate('');
       setPayrollPolicyId('');
       
       setSalary('');
@@ -325,6 +337,10 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       noticePeriod: status === 'exited' ? noticePeriod : '',
       salaryPaidUntilDate: status === 'exited' ? salaryPaidUntilDate : '',
       additionalExitPayment: status === 'exited' ? Number(additionalExitPayment) || 0 : 0,
+      lastWorkingDate: status === 'exited' ? lastWorkingDate : '',
+      noticePayPeriod: status === 'exited' ? noticePayPeriod : '',
+      noticePayoutOption: status === 'exited' ? noticePayoutOption : '',
+      noticePayoutCustomDate: (status === 'exited' && noticePayoutOption === 'custom-date') ? noticePayoutCustomDate : '',
       documents
     };
 
@@ -613,6 +629,50 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                           onChange={(e) => setAdditionalExitPayment(e.target.value)}
                         />
                       </div>
+                      <div className="form-group">
+                        <label className="form-label">Actual Last Working Date</label>
+                        <input 
+                          type="date" 
+                          className="form-input"
+                          value={lastWorkingDate}
+                          onChange={(e) => setLastWorkingDate(e.target.value)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Notice Pay Period</label>
+                        <input 
+                          type="text" 
+                          className="form-input"
+                          placeholder="e.g. 4 weeks, 1 month"
+                          value={noticePayPeriod}
+                          onChange={(e) => setNoticePayPeriod(e.target.value)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">When Notice Paid</label>
+                        <select 
+                          className="select-filter"
+                          value={noticePayoutOption}
+                          onChange={(e) => setNoticePayoutOption(e.target.value)}
+                          style={{ width: '100%', padding: '10px' }}
+                        >
+                          <option value="regular-payroll">Paid on Next Regular Payroll</option>
+                          <option value="end-of-notice">Paid at End of Notice Period</option>
+                          <option value="custom-date">Paid on Custom Date...</option>
+                        </select>
+                      </div>
+                      {noticePayoutOption === 'custom-date' && (
+                        <div className="form-group">
+                          <label className="form-label">Notice Payout Date <span>*</span></label>
+                          <input 
+                            type="date" 
+                            className="form-input"
+                            value={noticePayoutCustomDate}
+                            onChange={(e) => setNoticePayoutCustomDate(e.target.value)}
+                            required={status === 'exited' && noticePayoutOption === 'custom-date'}
+                          />
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

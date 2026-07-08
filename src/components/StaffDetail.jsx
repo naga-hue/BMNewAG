@@ -20,7 +20,8 @@ import {
   TrendingUp,
   Percent,
   Laptop,
-  Unlock
+  Unlock,
+  Printer
 } from 'lucide-react';
 import { firebaseService } from '../services/firebase';
 
@@ -52,6 +53,205 @@ export default function StaffDetail({
   placements = []
 }) {
   const [activeTab, setActiveTab] = useState('profile'); // profile, documents, leaves, commissions, assets
+
+  const DEFAULT_TEMPLATES = {
+    'offer-letter': `Date: ${new Date().toLocaleDateString('en-GB')}
+
+PRIVATE & CONFIDENTIAL
+To: {{staff_name}}
+Address: {{staff_address}}
+
+Dear {{staff_name}},
+
+Subject: Offer of Employment - {{job_title}}
+
+On behalf of {{company_name}}, we are pleased to offer you the position of {{job_title}} starting on {{start_date}}.
+
+Terms of Offer:
+- Gross Base Pay: {{salary}} per annum
+- Department: {{department}}
+- Notice Period: 1 Month
+
+We look forward to welcoming you to {{company_name}}.
+
+Yours sincerely,
+
+{{signature}}
+{{company_name}}`,
+
+    'service-agreement': `CONTRACT FOR SERVICES / AGREEMENT
+
+This Agreement is made on ${new Date().toLocaleDateString('en-GB')} between:
+1. {{company_name}} (the "Company")
+2. {{staff_name}} (the "Contractor")
+
+Services and Terms:
+- Position / Role: {{job_title}}
+- Department: {{department}}
+- Commencement Date: {{start_date}}
+- Compensation Rate: {{salary}} per annum (subject to services delivered)
+
+The Contractor agrees to provide recruitment services in accordance with company policy.
+
+Signed:
+
+______________________
+For the Company ({{signature}})
+
+______________________
+{{staff_name}} (Contractor)`,
+
+    'exit-letter': `Date: ${new Date().toLocaleDateString('en-GB')}
+
+To: {{staff_name}}
+
+Dear {{staff_name}},
+
+Subject: Confirmation of Termination / Exit Agreement
+
+We write to confirm that your last working date with {{company_name}} is agreed as {{last_working_date}}.
+
+Notice Pay Terms:
+- Notice Period: {{notice_period}}
+- Notice Pay Period: {{notice_pay_period}}
+- Notice Payment Date: {{notice_pay_terms}}
+- Additional Exit Compensation: {{additional_payment}}
+
+Please return all company equipment and software licenses. We thank you for your services.
+
+Yours sincerely,
+
+{{signature}}
+{{company_name}}`,
+
+    'general': `Date: ${new Date().toLocaleDateString('en-GB')}
+
+To: {{staff_name}}
+
+Dear {{staff_name}},
+
+[Write your official communication here...]
+
+Yours sincerely,
+
+{{signature}}
+{{company_name}}`
+  };
+
+  const [deactivationStates, setDeactivationStates] = useState(() => {
+    try {
+      const saved = localStorage.getItem('deactivation_states');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const [docTemplateType, setDocTemplateType] = useState('offer-letter');
+  const [docCompanyId, setDocCompanyId] = useState(staffMember ? staffMember.companyId : '');
+  const [docContent, setDocContent] = useState('');
+  
+  // Custom Letterhead states
+  const [lhLogoUrl, setLhLogoUrl] = useState('');
+  const [lhAddress, setLhAddress] = useState('');
+  const [lhSignatureText, setLhSignatureText] = useState('');
+
+  // Update docContent when template changes
+  React.useEffect(() => {
+    if (staffMember) {
+      setDocContent(DEFAULT_TEMPLATES[docTemplateType] || '');
+      setDocCompanyId(staffMember.companyId || (companies[0] ? companies[0].id : ''));
+    }
+  }, [docTemplateType, staffMember]);
+
+  const handleToggleDeactivationState = (key, val) => {
+    const next = { ...deactivationStates, [key]: val };
+    setDeactivationStates(next);
+    try {
+      localStorage.setItem('deactivation_states', JSON.stringify(next));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const getParsedLetter = () => {
+    let text = docContent || DEFAULT_TEMPLATES[docTemplateType] || '';
+    if (!staffMember) return text;
+    
+    const resolvedCompany = companies.find(c => c.id === docCompanyId) || employerCompany || { name: 'Humres Group' };
+    
+    text = text.replace(/{{staff_name}}/g, staffMember.fullName || '');
+    text = text.replace(/{{staff_address}}/g, staffMember.address || 'Address Not Set');
+    text = text.replace(/{{job_title}}/g, staffMember.jobTitle || '');
+    text = text.replace(/{{start_date}}/g, staffMember.startDate || '');
+    text = text.replace(/{{department}}/g, staffMember.department || '');
+    text = text.replace(/{{company_name}}/g, resolvedCompany.name || '');
+    text = text.replace(/{{salary}}/g, `${currencyObj.symbol}${Number(staffMember.salary || 0).toLocaleString()}`);
+    text = text.replace(/{{last_working_date}}/g, staffMember.lastWorkingDate || 'Not Specified');
+    text = text.replace(/{{notice_period}}/g, staffMember.noticePeriod || 'None');
+    text = text.replace(/{{notice_pay_period}}/g, staffMember.noticePayPeriod || 'None');
+    text = text.replace(/{{additional_payment}}/g, `${currencyObj.symbol}${Number(staffMember.additionalExitPayment || 0).toLocaleString()}`);
+    
+    const termsText = staffMember.noticePayoutOption === 'regular-payroll' ? 'Paid on Next Regular Payroll' :
+                      staffMember.noticePayoutOption === 'end-of-notice' ? 'Paid at End of Notice Period' :
+                      staffMember.noticePayoutOption === 'custom-date' ? `Paid on Custom Date (${staffMember.noticePayoutCustomDate})` :
+                      'Next Payroll';
+    text = text.replace(/{{notice_pay_terms}}/g, termsText);
+    text = text.replace(/{{signature}}/g, lhSignatureText || 'Authorized Signatory');
+    
+    return text;
+  };
+
+  const handlePrintLetter = () => {
+    const printContent = document.getElementById('print-letterhead-content');
+    if (!printContent) return;
+    const win = window.open('', '_blank');
+    win.document.write(`
+      <html>
+        <head>
+          <title>Print Document - ${staffMember.fullName}</title>
+          <style>
+            @page { size: A4; margin: 20mm; }
+            body { margin: 0; font-family: serif; color: #000; background: #fff; line-height: 1.6; }
+            a { color: #000; text-decoration: none; }
+          </style>
+        </head>
+        <body>
+          ${printContent.innerHTML}
+          <script>
+            window.onload = function() {
+              window.print();
+              window.close();
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    win.document.close();
+  };
+
+  const handleSaveGeneratedLetter = async () => {
+    const newDoc = {
+      id: `doc-${Date.now()}`,
+      name: `${docTemplateType.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}.pdf`,
+      type: 'letter',
+      fileSize: `${Math.round(getParsedLetter().length / 1024) || 1} KB`,
+      uploadDate: new Date().toISOString().split('T')[0],
+      content: getParsedLetter(),
+      companyId: docCompanyId
+    };
+    
+    const updatedStaff = {
+      ...staffMember,
+      documents: [...(staffMember.documents || []), newDoc]
+    };
+    try {
+      await onUpdateStaff(updatedStaff);
+      onShowToast("Document saved to employee records library!", "success");
+    } catch (e) {
+      onShowToast("Error saving document: " + e.message, "danger");
+    }
+  };
   const [uploadDocType, setUploadDocType] = useState('appointment');
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -872,10 +1072,17 @@ export default function StaffDetail({
                   {staffMember.status === 'exited' && (
                     <>
                       <div className="detail-item">
-                        <span className="detail-label">Date of Exit</span>
+                        <span className="detail-label">Date of Exit Notification</span>
                         <span className="detail-value" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--danger)', fontWeight: 600 }}>
                           <Calendar size={14} />
                           {staffMember.exitDate}
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="detail-label">Actual Last Working Date</span>
+                        <span className="detail-value" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--danger)', fontWeight: 600 }}>
+                          <Calendar size={14} />
+                          {staffMember.lastWorkingDate || 'Not Specified'}
                         </span>
                       </div>
                       <div className="detail-item">
@@ -884,7 +1091,109 @@ export default function StaffDetail({
                           {staffMember.noticePeriod || 'None'}
                         </span>
                       </div>
+                      <div className="detail-item">
+                        <span className="detail-label">Notice Pay Period</span>
+                        <span className="detail-value" style={{ fontWeight: 600 }}>
+                          {staffMember.noticePayPeriod || 'None'}
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="detail-label">Notice Payout Terms</span>
+                        <span className="detail-value" style={{ fontWeight: 600 }}>
+                          {staffMember.noticePayoutOption === 'regular-payroll' ? 'Paid on Next Regular Payroll' :
+                           staffMember.noticePayoutOption === 'end-of-notice' ? 'Paid at End of Notice Period' :
+                           staffMember.noticePayoutOption === 'custom-date' ? `Paid on Custom Date (${staffMember.noticePayoutCustomDate})` :
+                           'Paid on Next Regular Payroll'}
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="detail-label">Salary Paid Until Date</span>
+                        <span className="detail-value" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Calendar size={14} style={{ color: 'var(--text-muted)' }} />
+                          {staffMember.salaryPaidUntilDate || 'Not Specified'}
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="detail-label">Additional Exit Payment</span>
+                        <span className="detail-value" style={{ fontWeight: 600 }}>
+                          {currencyObj.symbol}{(staffMember.additionalExitPayment || 0).toLocaleString()}
+                        </span>
+                      </div>
                     </>
+                  )}
+                  {staffMember.status === 'exited' && (
+                    <div className="detail-section" style={{ borderLeft: '4px solid var(--danger)', backgroundColor: 'rgba(239, 68, 68, 0.02)', gridColumn: 'span 2', padding: '16px', marginTop: '16px' }}>
+                      <div className="section-title" style={{ color: 'var(--danger)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <ClipboardList size={16} /> Asset Recovery & Account Deactivation Checklist
+                        </span>
+                      </div>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
+                        {/* Software licenses recovery */}
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px' }}>
+                          Software Licenses & Assets
+                        </div>
+                        {myAssignments.length === 0 ? (
+                          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            ✅ No active license seats or assets assigned.
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {myAssignments.map(assign => {
+                              const matchedContract = contracts.find(c => c.id === assign.contractId);
+                              const assetName = matchedContract ? matchedContract.name : 'Unknown License';
+                              return (
+                                <div key={assign.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '4px' }}>
+                                  <span style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--warning)' }}>
+                                    ⚠️ <strong>Recover:</strong> {assetName}
+                                  </span>
+                                  <button 
+                                    className="btn-secondary" 
+                                    style={{ padding: '2px 6px', fontSize: '10px', color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                                    onClick={() => handleReleaseAsset(assign.id, assetName)}
+                                  >
+                                    Release & Deallocate
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Account Deactivations */}
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px', marginTop: '8px' }}>
+                          Account Deactivations & IT Clearance
+                        </div>
+                        
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={!!deactivationStates[`email-${staffMember.id}`]}
+                            onChange={(e) => handleToggleDeactivationState(`email-${staffMember.id}`, e.target.checked)}
+                          />
+                          <span>Revoke business email access (<strong>{staffMember.businessEmail}</strong>)</span>
+                        </label>
+                        
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={!!deactivationStates[`slack-${staffMember.id}`]}
+                            onChange={(e) => handleToggleDeactivationState(`slack-${staffMember.id}`, e.target.checked)}
+                          />
+                          <span>Disable Slack / messaging accounts & workspace access</span>
+                        </label>
+
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={!!deactivationStates[`payroll-${staffMember.id}`]}
+                            onChange={(e) => handleToggleDeactivationState(`payroll-${staffMember.id}`, e.target.checked)}
+                          />
+                          <span>Suspend payroll profile & set final payout processing</span>
+                        </label>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1047,6 +1356,178 @@ export default function StaffDetail({
                       {isUploading ? "Uploading file..." : "Drag and drop file here or Browse"}
                     </span>
                     <span className="upload-subtext">PDF, PNG, JPG or DOCX up to 10MB</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic Contract & Exit Letters Generator Section */}
+              <div className="detail-section" style={{ borderTop: '1px solid var(--border-color)', marginTop: '24px', paddingTop: '24px', paddingLeft: 0, paddingRight: 0 }}>
+                <div className="section-title" style={{ paddingLeft: '16px' }}>
+                  <Printer size={16} /> Official Contracts & HR Letter Generator
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '16px' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                    <div className="form-group" style={{ flex: '1 1 200px' }}>
+                      <label className="form-label">Template / Document Type</label>
+                      <select 
+                        className="select-filter" 
+                        value={docTemplateType} 
+                        onChange={(e) => setDocTemplateType(e.target.value)}
+                        style={{ width: '100%', padding: '10px' }}
+                      >
+                        <option value="offer-letter">Offer Letter of Employment</option>
+                        <option value="service-agreement">Contract for Services / Contractor Agreement</option>
+                        <option value="exit-letter">Exit / Termination Mutual Agreement</option>
+                        <option value="general">General Official Correspondence</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group" style={{ flex: '1 1 200px' }}>
+                      <label className="form-label">Company Letterhead branding</label>
+                      <select 
+                        className="select-filter" 
+                        value={docCompanyId} 
+                        onChange={(e) => setDocCompanyId(e.target.value)}
+                        style={{ width: '100%', padding: '10px' }}
+                      >
+                        {companies.map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Letterhead Configuration Overrides */}
+                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px', backgroundColor: 'var(--bg-secondary)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px', color: 'var(--accent)' }}>
+                      Letterhead / Signatory Customizer
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                      <div className="form-group" style={{ flex: '1 1 200px' }}>
+                        <label className="form-label" style={{ fontSize: '10px' }}>Letterhead Logo URL (Optional)</label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          placeholder="e.g. https://domain.com/logo.png" 
+                          value={lhLogoUrl} 
+                          onChange={(e) => setLhLogoUrl(e.target.value)}
+                          style={{ padding: '6px 10px', fontSize: '12px' }}
+                        />
+                      </div>
+                      <div className="form-group" style={{ flex: '1 1 200px' }}>
+                        <label className="form-label" style={{ fontSize: '10px' }}>Official Address Text</label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          placeholder="e.g. 1 London Wall, London EC2Y 5EB" 
+                          value={lhAddress} 
+                          onChange={(e) => setLhAddress(e.target.value)}
+                          style={{ padding: '6px 10px', fontSize: '12px' }}
+                        />
+                      </div>
+                      <div className="form-group" style={{ flex: '1 1 180px' }}>
+                        <label className="form-label" style={{ fontSize: '10px' }}>Authorized Signatory Name</label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          placeholder="e.g. Director / CEO Name" 
+                          value={lhSignatureText} 
+                          onChange={(e) => setLhSignatureText(e.target.value)}
+                          style={{ padding: '6px 10px', fontSize: '12px' }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px' }}>
+                    {/* Draft Editor */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <label className="form-label" style={{ fontWeight: 600 }}>Draft Letter Body (Edit text directly)</label>
+                      <textarea 
+                        className="form-input" 
+                        rows="18" 
+                        value={docContent} 
+                        onChange={(e) => setDocContent(e.target.value)}
+                        style={{ fontFamily: 'monospace', fontSize: '12px', lineHeight: 1.5, resize: 'vertical' }}
+                      />
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        <strong>Available Tokens (Auto-Parsed):</strong> {{staff_name}}, {{staff_address}}, {{job_title}}, {{start_date}}, {{department}}, {{company_name}}, {{salary}}, {{last_working_date}}, {{notice_period}}, {{notice_pay_period}}, {{notice_pay_terms}}, {{additional_payment}}, {{signature}}
+                      </div>
+                    </div>
+
+                    {/* Styled Letterhead Preview */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <label className="form-label" style={{ fontWeight: 600 }}>Live Letterhead Layout Preview</label>
+                      
+                      {(() => {
+                        const selectedCompany = companies.find(c => c.id === docCompanyId) || employerCompany || { name: 'Humres Group' };
+                        return (
+                          <div id="print-letterhead-content" style={{ 
+                            backgroundColor: '#fff', 
+                            color: '#000', 
+                            padding: '30px', 
+                            border: '1px solid var(--border-color)', 
+                            borderRadius: '6px',
+                            fontFamily: 'serif',
+                            minHeight: '450px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                            lineHeight: 1.5,
+                            overflowY: 'auto'
+                          }}>
+                            {/* Header */}
+                            <div style={{ borderBottom: '2px solid #3b82f6', paddingBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <div>
+                                {lhLogoUrl ? (
+                                  <img src={lhLogoUrl} alt="Logo" style={{ maxHeight: '35px', marginBottom: '6px' }} />
+                                ) : (
+                                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                    {selectedCompany ? selectedCompany.name : 'COMPANY LETTERHEAD'}
+                                  </div>
+                                )}
+                                <div style={{ fontSize: '9px', color: '#4b5563', marginTop: '2px', maxWidth: '280px', lineHeight: 1.3 }}>
+                                  {lhAddress || '1 London Wall, London EC2Y 5EB, United Kingdom'}
+                                </div>
+                              </div>
+                              <div style={{ textAlign: 'right', fontSize: '9px', color: '#4b5563', lineHeight: 1.3 }}>
+                                <strong>Official Communications</strong><br />
+                                Email: {selectedCompany?.pointOfContact?.email || 'hr@company.com'}<br />
+                                Tel: {selectedCompany?.pointOfContact?.phone || ''}
+                              </div>
+                            </div>
+
+                            {/* Body */}
+                            <div style={{ flex: 1, padding: '20px 0', fontSize: '12px', whiteSpace: 'pre-wrap', color: '#111827', textAlign: 'left' }}>
+                              {getParsedLetter()}
+                            </div>
+
+                            {/* Footer */}
+                            <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '8px', color: '#6b7280' }}>
+                              <div>
+                                <strong>Legal Entity:</strong> {selectedCompany?.legalName || selectedCompany?.name || ''}
+                              </div>
+                              <div>
+                                {selectedCompany?.registrationNumber && `Reg No: ${selectedCompany.registrationNumber}`}
+                                {selectedCompany?.vatNumber && ` | VAT: ${selectedCompany.vatNumber}`}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
+                    <button className="btn-primary" onClick={handlePrintLetter} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Printer size={14} /> Open Print / Save PDF View
+                    </button>
+                    <button className="btn-secondary" onClick={handleSaveGeneratedLetter}>
+                      Save generated letter to records library
+                    </button>
                   </div>
                 </div>
               </div>

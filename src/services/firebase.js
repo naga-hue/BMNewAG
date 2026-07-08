@@ -1,12 +1,13 @@
 import { initializeApp } from 'firebase/app';
 import { 
-  getFirestore, 
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   collection, 
   doc, 
   setDoc, 
   deleteDoc, 
-  onSnapshot,
-  enableIndexedDbPersistence
+  onSnapshot
 } from 'firebase/firestore';
 import { 
   getStorage, 
@@ -38,19 +39,16 @@ let storage = null;
 if (isConfigured) {
   try {
     app = initializeApp(firebaseConfig);
-    db = getFirestore(app);
     
-    // Enable offline persistence
-    enableIndexedDbPersistence(db).catch((err) => {
-      if (err.code === 'failed-precondition') {
-        console.warn("Firestore persistence failed-precondition: multiple tabs open.");
-      } else if (err.code === 'unimplemented') {
-        console.warn("Firestore persistence unimplemented in this browser.");
-      }
+    // Initialize Firestore with modern persistent caching and multi-tab management
+    db = initializeFirestore(app, {
+      cache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      })
     });
 
     storage = getStorage(app);
-    console.log("Firebase Backend initialized successfully!");
+    console.log("Firebase Backend initialized successfully with persistent cache!");
   } catch (error) {
     console.error("Failed to initialize Firebase app:", error);
   }

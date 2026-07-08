@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shield, CheckSquare, Square, Save, Users, Key, FileText, Settings, Edit3, Trash2, Plus } from 'lucide-react';
+import { Shield, CheckSquare, Square, Save, Users, Key, FileText, Settings, Edit3, Trash2, Plus, AlertTriangle } from 'lucide-react';
 
 const MODULES_LIST = [
   { key: 'directory', label: 'Company Directory' },

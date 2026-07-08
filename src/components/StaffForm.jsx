@@ -249,13 +249,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       if (!startDate) errs.startDate = "Official Start Date";
     }
     else if (currentStep === 3) {
-      const selectedPolicy = payrollPolicies.find(p => p.id === payrollPolicyId);
-      const isFreelance = selectedPolicy?.type === 'freelance';
-      if (isFreelance) {
-        if (!attendanceRate || Number(attendanceRate) <= 0) errs.attendanceRate = "Contractor Daily Rate";
-      } else {
-        if (!salary || Number(salary) <= 0) errs.salary = "Salary package";
-      }
+      if (!salary || Number(salary) <= 0) errs.salary = "Salary package";
       if (!currency) errs.currency = "Currency selection";
     }
     else if (currentStep === 4) {
@@ -751,24 +745,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                   </select>
                 </div>
 
-                {(() => {
-                  const selectedPolicy = payrollPolicies.find(p => p.id === payrollPolicyId);
-                  const isFreelance = selectedPolicy?.type === 'freelance';
-                  if (!isFreelance) return null;
-                  return (
-                    <div className="form-group" style={{ marginTop: '8px', animation: 'fadeIn 0.2s' }}>
-                      <label className="form-label">Contractor Daily Rate ({CURRENCIES.find(c => c.code === currency)?.symbol}) <span>*</span></label>
-                      <input 
-                        type="number"
-                        className="form-input"
-                        placeholder="e.g. 300"
-                        value={attendanceRate}
-                        onChange={(e) => setAttendanceRate(e.target.value)}
-                        required
-                      />
-                    </div>
-                  );
-                })()}
+
                 
                 <div style={{ 
                   marginTop: '16px', 

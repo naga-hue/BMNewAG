@@ -1453,7 +1453,7 @@ Yours sincerely,
                         style={{ fontFamily: 'monospace', fontSize: '12px', lineHeight: 1.5, resize: 'vertical' }}
                       />
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        <strong>Available Tokens (Auto-Parsed):</strong> {{staff_name}}, {{staff_address}}, {{job_title}}, {{start_date}}, {{department}}, {{company_name}}, {{salary}}, {{last_working_date}}, {{notice_period}}, {{notice_pay_period}}, {{notice_pay_terms}}, {{additional_payment}}, {{signature}}
+                        <strong>Available Tokens (Auto-Parsed):</strong> {"{{staff_name}}, {{staff_address}}, {{job_title}}, {{start_date}}, {{department}}, {{company_name}}, {{salary}}, {{last_working_date}}, {{notice_period}}, {{notice_pay_period}}, {{notice_pay_terms}}, {{additional_payment}}, {{signature}}"}
                       </div>
                     </div>
 

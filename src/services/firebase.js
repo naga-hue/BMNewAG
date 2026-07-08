@@ -44,7 +44,8 @@ if (isConfigured) {
     db = initializeFirestore(app, {
       cache: persistentLocalCache({
         tabManager: persistentMultipleTabManager()
-      })
+      }),
+      experimentalAutoDetectLongPolling: true
     });
 
     storage = getStorage(app);
@@ -65,24 +66,31 @@ export const firebaseService = {
   /* ==========================================
      COMPANY MANAGEMENT SERVICES
      ========================================== */
-  subscribeCompanies(onUpdate, fallbackData = []) {
+    subscribeCompanies(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-companies');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const companiesRef = collection(db, 'companies');
-      return onSnapshot(companiesRef, (snapshot) => {
-        const companiesList = [];
+      const refCol = collection(db, 'companies');
+      return onSnapshot(refCol, (snapshot) => {
+        const list = [];
         snapshot.forEach((doc) => {
-          companiesList.push(doc.data());
+          list.push(doc.data());
         });
-        onUpdate(companiesList);
+        localStorage.setItem('bm-companies', JSON.stringify(list));
+        onUpdate(list);
       }, (error) => {
-        console.error("Firestore subscription error:", error);
-        const local = localStorage.getItem('bm-companies');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore companies snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-companies');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -190,24 +198,31 @@ export const firebaseService = {
   /* ==========================================
      STAFF MANAGEMENT SERVICES
      ========================================== */
-  subscribeStaff(onUpdate, fallbackData = []) {
+    subscribeStaff(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-staff');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const staffRef = collection(db, 'staff');
-      return onSnapshot(staffRef, (snapshot) => {
-        const staffList = [];
+      const refCol = collection(db, 'staff');
+      return onSnapshot(refCol, (snapshot) => {
+        const list = [];
         snapshot.forEach((doc) => {
-          staffList.push(doc.data());
+          list.push(doc.data());
         });
-        onUpdate(staffList);
+        localStorage.setItem('bm-staff', JSON.stringify(list));
+        onUpdate(list);
       }, (error) => {
-        console.error("Firestore staff subscription error:", error);
-        const local = localStorage.getItem('bm-staff');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore staff snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-staff');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -315,24 +330,31 @@ export const firebaseService = {
   /* ==========================================
      LEAVE & HOLIDAY MODULE SERVICES
      ========================================== */
-  subscribeLeavePolicies(onUpdate, fallbackData = []) {
+    subscribeLeavePolicies(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-leave-policies');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const policiesRef = collection(db, 'leavePolicies');
-      return onSnapshot(policiesRef, (snapshot) => {
+      const refCol = collection(db, 'leavePolicies');
+      return onSnapshot(refCol, (snapshot) => {
         const list = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
+        localStorage.setItem('bm-leave-policies', JSON.stringify(list));
         onUpdate(list);
       }, (error) => {
-        console.error("Firestore leavePolicies subscription error:", error);
-        const local = localStorage.getItem('bm-leave-policies');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore leavePolicies snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-leave-policies');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -371,24 +393,31 @@ export const firebaseService = {
     }
   },
 
-  subscribeHolidays(onUpdate, fallbackData = []) {
+    subscribeHolidays(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-holidays');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const holidaysRef = collection(db, 'holidays');
-      return onSnapshot(holidaysRef, (snapshot) => {
+      const refCol = collection(db, 'holidays');
+      return onSnapshot(refCol, (snapshot) => {
         const list = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
+        localStorage.setItem('bm-holidays', JSON.stringify(list));
         onUpdate(list);
       }, (error) => {
-        console.error("Firestore holidays subscription error:", error);
-        const local = localStorage.getItem('bm-holidays');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore holidays snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-holidays');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -427,24 +456,31 @@ export const firebaseService = {
     }
   },
 
-  subscribeLeaveRequests(onUpdate, fallbackData = []) {
+    subscribeLeaveRequests(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-leave-requests');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const requestsRef = collection(db, 'leaveRequests');
-      return onSnapshot(requestsRef, (snapshot) => {
+      const refCol = collection(db, 'leaveRequests');
+      return onSnapshot(refCol, (snapshot) => {
         const list = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
+        localStorage.setItem('bm-leave-requests', JSON.stringify(list));
         onUpdate(list);
       }, (error) => {
-        console.error("Firestore leaveRequests subscription error:", error);
-        const local = localStorage.getItem('bm-leave-requests');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore leaveRequests snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-leave-requests');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -486,24 +522,31 @@ export const firebaseService = {
   /* ==========================================
      COMMISSION SCHEMES MODULE SERVICES
      ========================================== */
-  subscribeCommissionPolicies(onUpdate, fallbackData = []) {
+    subscribeCommissionPolicies(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-commission-policies');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const policiesRef = collection(db, 'commissionPolicies');
-      return onSnapshot(policiesRef, (snapshot) => {
+      const refCol = collection(db, 'commissionPolicies');
+      return onSnapshot(refCol, (snapshot) => {
         const list = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
+        localStorage.setItem('bm-commission-policies', JSON.stringify(list));
         onUpdate(list);
       }, (error) => {
-        console.error("Firestore commissionPolicies subscription error:", error);
-        const local = localStorage.getItem('bm-commission-policies');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore commissionPolicies snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-commission-policies');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -545,24 +588,31 @@ export const firebaseService = {
   /* ==========================================
      VENDOR & ASSETS MODULE SERVICES
      ========================================== */
-  subscribeVendors(onUpdate, fallbackData = []) {
+    subscribeVendors(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-vendors');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const vendorsRef = collection(db, 'vendors');
-      return onSnapshot(vendorsRef, (snapshot) => {
+      const refCol = collection(db, 'vendors');
+      return onSnapshot(refCol, (snapshot) => {
         const list = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
+        localStorage.setItem('bm-vendors', JSON.stringify(list));
         onUpdate(list);
       }, (error) => {
-        console.error("Firestore vendors subscription error:", error);
-        const local = localStorage.getItem('bm-vendors');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore vendors snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-vendors');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -601,24 +651,31 @@ export const firebaseService = {
     }
   },
 
-  subscribeContracts(onUpdate, fallbackData = []) {
+    subscribeContracts(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-contracts');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const contractsRef = collection(db, 'contracts');
-      return onSnapshot(contractsRef, (snapshot) => {
+      const refCol = collection(db, 'contracts');
+      return onSnapshot(refCol, (snapshot) => {
         const list = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
+        localStorage.setItem('bm-contracts', JSON.stringify(list));
         onUpdate(list);
       }, (error) => {
-        console.error("Firestore contracts subscription error:", error);
-        const local = localStorage.getItem('bm-contracts');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore contracts snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-contracts');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -657,24 +714,31 @@ export const firebaseService = {
     }
   },
 
-  subscribeAssetAssignments(onUpdate, fallbackData = []) {
+    subscribeAssetAssignments(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-asset-assignments');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const assignmentsRef = collection(db, 'assetAssignments');
-      return onSnapshot(assignmentsRef, (snapshot) => {
+      const refCol = collection(db, 'assetAssignments');
+      return onSnapshot(refCol, (snapshot) => {
         const list = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
+        localStorage.setItem('bm-asset-assignments', JSON.stringify(list));
         onUpdate(list);
       }, (error) => {
-        console.error("Firestore assetAssignments subscription error:", error);
-        const local = localStorage.getItem('bm-asset-assignments');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore assetAssignments snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-asset-assignments');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -767,24 +831,31 @@ export const firebaseService = {
   /* ==========================================
      PLACEMENTS & SALES MODULE SERVICES
      ========================================== */
-  subscribePlacements(onUpdate, fallbackData = []) {
+    subscribePlacements(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-placements');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const placementsRef = collection(db, 'placements');
-      return onSnapshot(placementsRef, (snapshot) => {
+      const refCol = collection(db, 'placements');
+      return onSnapshot(refCol, (snapshot) => {
         const list = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
+        localStorage.setItem('bm-placements', JSON.stringify(list));
         onUpdate(list);
       }, (error) => {
-        console.error("Firestore placements subscription error:", error);
-        const local = localStorage.getItem('bm-placements');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore placements snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-placements');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -863,24 +934,31 @@ export const firebaseService = {
     }
   },
 
-  subscribeExpenses(onUpdate, fallbackData = []) {
+    subscribeExpenses(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-expenses');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const expensesRef = collection(db, 'expenses');
-      return onSnapshot(expensesRef, (snapshot) => {
+      const refCol = collection(db, 'expenses');
+      return onSnapshot(refCol, (snapshot) => {
         const list = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
+        localStorage.setItem('bm-expenses', JSON.stringify(list));
         onUpdate(list);
       }, (error) => {
-        console.error("Firestore expenses subscription error:", error);
-        const local = localStorage.getItem('bm-expenses');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore expenses snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-expenses');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -918,24 +996,31 @@ export const firebaseService = {
     }
   },
 
-  subscribeNominalCodes(onUpdate, fallbackData = []) {
+    subscribeNominalCodes(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-nominal-codes');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const nominalCodesRef = collection(db, 'nominalCodes');
-      return onSnapshot(nominalCodesRef, (snapshot) => {
+      const refCol = collection(db, 'nominalCodes');
+      return onSnapshot(refCol, (snapshot) => {
         const list = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
+        localStorage.setItem('bm-nominal-codes', JSON.stringify(list));
         onUpdate(list);
       }, (error) => {
-        console.error("Firestore nominalCodes subscription error:", error);
-        const local = localStorage.getItem('bm-nominal-codes');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore nominalCodes snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-nominal-codes');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -973,28 +1058,31 @@ export const firebaseService = {
     }
   },
 
-  subscribeAuditLogs(onUpdate, fallbackData = []) {
+    subscribeAuditLogs(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-audit-logs');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const auditLogsRef = collection(db, 'auditLogs');
-      return onSnapshot(auditLogsRef, (snapshot) => {
+      const refCol = collection(db, 'auditLogs');
+      return onSnapshot(refCol, (snapshot) => {
         const list = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
-        // Sort by timestamp desc
-        list.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        localStorage.setItem('bm-audit-logs', JSON.stringify(list));
         onUpdate(list);
       }, (error) => {
-        console.error("Firestore auditLogs subscription error:", error);
-        const local = localStorage.getItem('bm-audit-logs');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore auditLogs snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-audit-logs');
-      const data = local ? JSON.parse(local) : fallbackData;
-      // Sort by timestamp desc
-      data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-      onUpdate(data);
       return () => {};
     }
   },
@@ -1013,24 +1101,31 @@ export const firebaseService = {
     }
   },
 
-  subscribePayrollRecords(onUpdate, fallbackData = []) {
+    subscribePayrollRecords(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-payroll-records');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const payrollRef = collection(db, 'payrollRecords');
-      return onSnapshot(payrollRef, (snapshot) => {
+      const refCol = collection(db, 'payrollRecords');
+      return onSnapshot(refCol, (snapshot) => {
         const list = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
+        localStorage.setItem('bm-payroll-records', JSON.stringify(list));
         onUpdate(list);
       }, (error) => {
-        console.error("Firestore payroll subscription error:", error);
-        const local = localStorage.getItem('bm-payroll-records');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore payrollRecords snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-payroll-records');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -1054,24 +1149,31 @@ export const firebaseService = {
     }
   },
 
-  subscribePayrollPolicies(onUpdate, fallbackData = []) {
+    subscribePayrollPolicies(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-payroll-policies');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const policiesRef = collection(db, 'payrollPolicies');
-      return onSnapshot(policiesRef, (snapshot) => {
+      const refCol = collection(db, 'payrollPolicies');
+      return onSnapshot(refCol, (snapshot) => {
         const list = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
+        localStorage.setItem('bm-payroll-policies', JSON.stringify(list));
         onUpdate(list);
       }, (error) => {
-        console.error("Firestore payroll policies subscription error:", error);
-        const local = localStorage.getItem('bm-payroll-policies');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore payrollPolicies snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-payroll-policies');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -1109,24 +1211,31 @@ export const firebaseService = {
     }
   },
 
-  subscribeLetterTemplates(onUpdate, fallbackData = []) {
+    subscribeLetterTemplates(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-letter-templates');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
-      const templatesRef = collection(db, 'letterTemplates');
-      return onSnapshot(templatesRef, (snapshot) => {
+      const refCol = collection(db, 'letterTemplates');
+      return onSnapshot(refCol, (snapshot) => {
         const list = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
+        localStorage.setItem('bm-letter-templates', JSON.stringify(list));
         onUpdate(list);
       }, (error) => {
-        console.error("Firestore letter templates subscription error:", error);
-        const local = localStorage.getItem('bm-letter-templates');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore letterTemplates snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-letter-templates');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },
@@ -1164,24 +1273,32 @@ export const firebaseService = {
     }
   },
 
-  subscribeExitSettings(onUpdate, fallbackData = {}) {
+    subscribeExitSettings(onUpdate, fallbackData = {}) {
+    const localCache = localStorage.getItem('bm-exit-settings');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
     if (isConfigured && db) {
       const docRef = doc(db, 'exitSettings', 'config');
       return onSnapshot(docRef, (snapshot) => {
         if (snapshot.exists()) {
-          onUpdate(snapshot.data());
+          const data = snapshot.data();
+          localStorage.setItem('bm-exit-settings', JSON.stringify(data));
+          onUpdate(data);
         } else {
           onUpdate(fallbackData);
         }
       }, (error) => {
-        console.error("Firestore exit settings subscription error:", error);
-        const local = localStorage.getItem('bm-exit-settings');
-        onUpdate(local ? JSON.parse(local) : fallbackData);
+        console.error("Firestore exitSettings snapshot error:", error);
       });
     } else {
-      const local = localStorage.getItem('bm-exit-settings');
-      const data = local ? JSON.parse(local) : fallbackData;
-      onUpdate(data);
       return () => {};
     }
   },

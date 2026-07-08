@@ -21,8 +21,8 @@ const CURRENCIES = [
   { code: 'ZAR', symbol: 'R', label: 'ZAR - South African Rand' }
 ];
 
-export default function StaffForm({ staffMember, companies, isOpen, onClose, onSave, onShowToast, staffList = [], leavePolicies = [], commissionPolicies = [], payrollPolicies = [] }) {
-  const [currentStep, setCurrentStep] = useState(1);
+export default function StaffForm({ staffMember, companies, isOpen, onClose, onSave, onShowToast, staffList = [], leavePolicies = [], commissionPolicies = [], payrollPolicies = [], initialStep = 1 }) {
+  const [currentStep, setCurrentStep] = useState(initialStep || 1);
   const [errors, setErrors] = useState({});
   
   // Step 1: Personal details state
@@ -99,6 +99,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
 
   // Reset or load editing staff member details
   useEffect(() => {
+    setCurrentStep(initialStep || 1);
     if (staffMember) {
       setFullName(staffMember.fullName || '');
       setDateOfBirth(normalizeDateForInput(staffMember.dateOfBirth || ''));

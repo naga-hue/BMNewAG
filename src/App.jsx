@@ -138,6 +138,7 @@ export default function App() {
     } else {
       if (window.confirm(`"${s.fullName}" is currently Active. Do you want to begin their exit formalities by configuring their exit date and notice parameters?`)) {
         setEditingStaff(s);
+        setStaffFormInitialStep(2);
         setIsStaffFormOpen(true);
       }
     }
@@ -154,6 +155,7 @@ export default function App() {
   const [isStaffDetailOpen, setIsStaffDetailOpen] = useState(false);
   const [isStaffFormOpen, setIsStaffFormOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null);
+  const [staffFormInitialStep, setStaffFormInitialStep] = useState(1);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [selectedStaffIds, setSelectedStaffIds] = useState([]);
   const [bulkDeptSelect, setBulkDeptSelect] = useState('');
@@ -608,6 +610,7 @@ export default function App() {
   const handleOpenStaffEdit = (e, staffMember) => {
     e.stopPropagation();
     setEditingStaff(staffMember);
+    setStaffFormInitialStep(1);
     setIsStaffFormOpen(true);
   };
 
@@ -617,6 +620,7 @@ export default function App() {
       return;
     }
     setEditingStaff(null);
+    setStaffFormInitialStep(1);
     setIsStaffFormOpen(true);
   };
 
@@ -2673,6 +2677,7 @@ export default function App() {
         leavePolicies={leavePolicies}
         commissionPolicies={commissionPolicies}
         payrollPolicies={payrollPolicies}
+        initialStep={staffFormInitialStep}
       />
 
       {/* Bulk Staff Import Wizard */}

@@ -24,6 +24,7 @@ import {
   Printer
 } from 'lucide-react';
 import { firebaseService } from '../services/firebase';
+import { toGBP } from '../utils/currency';
 
 const CURRENCIES = [
   { code: 'GBP', symbol: '£' },

@@ -26,7 +26,8 @@ import {
   Laptop,
   History,
   Key,
-  Upload
+  Upload,
+  LogOut
 } from 'lucide-react';
 
 import { initialCompanies } from './mockData';
@@ -99,6 +100,48 @@ export default function App() {
 
   // Navigation tab: 'dashboard' | 'directory' | 'staff'
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [letterTemplates, setLetterTemplates] = useState([]);
+
+  // Sync Letter Templates from database
+  useEffect(() => {
+    const unsubscribe = firebaseService.subscribeLetterTemplates((updatedList) => {
+      setLetterTemplates(updatedList);
+    }, []);
+    return () => unsubscribe();
+  }, []);
+
+  const handleSaveLetterTemplate = async (template) => {
+    try {
+      await firebaseService.saveLetterTemplate(template);
+      handleShowToast("Saved template " + template.name + " successfully!", 'success');
+    } catch (err) {
+      handleShowToast("Error saving template: " + err.message, 'warning');
+    }
+  };
+
+  const handleDeleteLetterTemplate = async (id) => {
+    if (window.confirm("Are you sure you want to delete this template?")) {
+      try {
+        await firebaseService.deleteLetterTemplate(id);
+        handleShowToast("Deleted template successfully.", 'info');
+      } catch (err) {
+        handleShowToast("Error deleting template: " + err.message, 'warning');
+      }
+    }
+  };
+
+  const handleExitFormalities = (e, s) => {
+    e.stopPropagation();
+    if (s.status === 'exited') {
+      setSelectedStaff(s);
+      setIsStaffDetailOpen(true);
+    } else {
+      if (window.confirm(`"${s.fullName}" is currently Active. Do you want to begin their exit formalities by configuring their exit date and notice parameters?`)) {
+        setEditingStaff(s);
+        setIsStaffFormOpen(true);
+      }
+    }
+  };
 
   // UI company interaction states
   const [selectedCompany, setSelectedCompany] = useState(null);
@@ -2275,6 +2318,14 @@ export default function App() {
                               <Edit3 size={12} />
                             </button>
                             <button 
+                              className="btn-icon" 
+                              title="Exit Formalities & IT Clearance" 
+                              onClick={(e) => handleExitFormalities(e, s)}
+                              style={{ color: s.status === 'exited' ? 'var(--danger)' : 'var(--text-secondary)' }}
+                            >
+                              <LogOut size={12} />
+                            </button>
+                            <button 
                               className="btn-icon delete" 
                               title="Delete Profile" 
                               onClick={(e) => handleDeleteStaff(e, s.id, s.fullName)}
@@ -2384,6 +2435,14 @@ export default function App() {
                                   onClick={(e) => handleOpenStaffEdit(e, s)}
                                 >
                                   <Edit3 size={12} />
+                                </button>
+                                <button 
+                                  className="btn-icon" 
+                                  title="Exit Formalities & IT Clearance" 
+                                  onClick={(e) => handleExitFormalities(e, s)}
+                                  style={{ color: s.status === 'exited' ? 'var(--danger)' : 'var(--text-secondary)' }}
+                                >
+                                  <LogOut size={12} />
                                 </button>
                                 <button 
                                   className="btn-icon delete" 
@@ -2550,6 +2609,10 @@ export default function App() {
               companies={companies}
               onUpdateStaff={handleSaveStaff}
               onShowToast={handleShowToast}
+              letterTemplates={letterTemplates}
+              onSaveLetterTemplate={handleSaveLetterTemplate}
+              onDeleteLetterTemplate={handleDeleteLetterTemplate}
+              onUpdateCompany={handleSaveCompany}
             />
           )}
 
@@ -2595,6 +2658,7 @@ export default function App() {
         onSaveAssetAssignment={handleSaveAssetAssignment}
         onDeleteAssetAssignment={handleDeleteAssetAssignment}
         placements={placements}
+        letterTemplates={letterTemplates}
       />
 
       {/* Onboard / Edit Staff Wizard */}

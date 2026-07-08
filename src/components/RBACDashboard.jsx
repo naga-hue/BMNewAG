@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shield, CheckSquare, Square, Save, Users, Key } from 'lucide-react';
+import { Shield, CheckSquare, Square, Save, Users, Key, FileText, Settings, Edit3, Trash2, Plus } from 'lucide-react';
 
 const MODULES_LIST = [
   { key: 'directory', label: 'Company Directory' },
@@ -17,9 +17,108 @@ export default function RBACDashboard({
   staff = [],
   companies = [],
   onUpdateStaff,
-  onShowToast
+  onShowToast,
+  letterTemplates = [],
+  onSaveLetterTemplate,
+  onDeleteLetterTemplate,
+  onUpdateCompany
 }) {
+  const [activeSubTab, setActiveSubTab] = useState('permissions'); // permissions, letterheads
   const [editingStaffId, setEditingStaffId] = useState(null);
+
+  // Letterhead editing states
+  const [selectedLhCompanyId, setSelectedLhCompanyId] = useState(companies[0] ? companies[0].id : '');
+  const [lhLogoUrl, setLhLogoUrl] = useState('');
+  const [lhAddressOverride, setLhAddressOverride] = useState('');
+  const [lhSignatureText, setLhSignatureText] = useState('');
+  const [lhAccentColor, setLhAccentColor] = useState('#3b82f6');
+
+  // Template editing states
+  const [editingTemplateId, setEditingTemplateId] = useState(null);
+  const [tempName, setTempName] = useState('');
+  const [tempType, setTempType] = useState('offer-letter');
+  const [tempBody, setTempBody] = useState('');
+
+  // Sync letterhead form when chosen company changes
+  React.useEffect(() => {
+    const comp = companies.find(c => c.id === selectedLhCompanyId);
+    if (comp) {
+      setLhLogoUrl(comp.logoUrl || '');
+      setLhAddressOverride(comp.addressOverride || '');
+      setLhSignatureText(comp.signatureText || 'Authorized Signatory');
+      setLhAccentColor(comp.accentColor || '#3b82f6');
+    }
+  }, [selectedLhCompanyId, companies]);
+
+  // Handle Save Letterhead
+  const handleSaveLetterhead = async () => {
+    const comp = companies.find(c => c.id === selectedLhCompanyId);
+    if (!comp) return;
+
+    const updated = {
+      ...comp,
+      logoUrl: lhLogoUrl,
+      addressOverride: lhAddressOverride,
+      signatureText: lhSignatureText,
+      accentColor: lhAccentColor
+    };
+
+    try {
+      await onUpdateCompany(updated);
+      onShowToast("Letterhead branding saved successfully!", "success");
+    } catch (e) {
+      onShowToast("Error saving letterhead: " + e.message, "danger");
+    }
+  };
+
+  // Handle Save Template
+  const handleSaveTemplate = async () => {
+    if (!tempName.trim()) {
+      onShowToast("Template Name is required.", "warning");
+      return;
+    }
+
+    const t = {
+      id: editingTemplateId || 'temp-' + Date.now(),
+      name: tempName.trim(),
+      type: tempType,
+      body: tempBody
+    };
+
+    try {
+      await onSaveLetterTemplate(t);
+      setEditingTemplateId(null);
+      setTempName('');
+      setTempBody('');
+    } catch (e) {
+      onShowToast("Failed to save template: " + e.message, "danger");
+    }
+  };
+
+  const handleEditTemplate = (t) => {
+    setEditingTemplateId(t.id);
+    setTempName(t.name);
+    setTempType(t.type);
+    setTempBody(t.body);
+  };
+
+  const handleCreateNewTemplate = () => {
+    setEditingTemplateId('new');
+    setTempName('New Letter Template');
+    setTempType('general');
+    setTempBody(`Date: {{current_date}}
+
+To: {{staff_name}}
+
+Dear {{staff_name}},
+
+[Write letter body...]
+
+Yours sincerely,
+
+{{signature}}
+{{company_name}}`);
+  };
   
   // Editing state variables
   const [editRole, setEditRole] = useState('recruiter');
@@ -72,10 +171,46 @@ export default function RBACDashboard({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      <div>
-        <h2 style={{ fontSize: '18px', fontWeight: 600 }}>User Roles & Access Control</h2>
-        <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Configure system access, dashboard modules, and data visibility permissions for your staff.</p>
+      {/* Sub-tab navigation */}
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', gap: '16px' }}>
+        <button 
+          onClick={() => setActiveSubTab('permissions')}
+          style={{ 
+            padding: '10px 16px', 
+            border: 'none', 
+            background: 'none', 
+            fontSize: '14px', 
+            fontWeight: 600, 
+            cursor: 'pointer',
+            borderBottom: activeSubTab === 'permissions' ? '3px solid var(--primary)' : '3px solid transparent',
+            color: activeSubTab === 'permissions' ? 'var(--primary)' : 'var(--text-secondary)'
+          }}
+        >
+          <Shield size={14} style={{ marginRight: '6px' }} /> User Permissions & Access
+        </button>
+        <button 
+          onClick={() => setActiveSubTab('letterheads')}
+          style={{ 
+            padding: '10px 16px', 
+            border: 'none', 
+            background: 'none', 
+            fontSize: '14px', 
+            fontWeight: 600, 
+            cursor: 'pointer',
+            borderBottom: activeSubTab === 'letterheads' ? '3px solid var(--primary)' : '3px solid transparent',
+            color: activeSubTab === 'letterheads' ? 'var(--primary)' : 'var(--text-secondary)'
+          }}
+        >
+          <FileText size={14} style={{ marginRight: '6px' }} /> Letterheads & Templates
+        </button>
       </div>
+
+      {activeSubTab === 'permissions' ? (
+        <>
+          <div>
+            <h2 style={{ fontSize: '18px', fontWeight: 600 }}>User Roles & Access Control</h2>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Configure system access, dashboard modules, and data visibility permissions for your staff.</p>
+          </div>
 
       <div className="table-container">
         <table className="entity-table dense">
@@ -290,6 +425,181 @@ export default function RBACDashboard({
           </tbody>
         </table>
       </div>
+    </>
+  ) : (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '24px', alignItems: 'start' }}>
+      
+      {/* 1. Letterhead configuration override */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', backgroundColor: 'var(--bg-card)' }}>
+        <div>
+          <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--accent)' }}><Settings size={16} style={{ marginRight: '6px' }} /> Company Letterhead Manager</h3>
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Configure headers, branding color, and signatures per legal entity.</p>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Select Company</label>
+          <select 
+            className="select-filter" 
+            value={selectedLhCompanyId}
+            onChange={(e) => setSelectedLhCompanyId(e.target.value)}
+            style={{ width: '100%', padding: '10px' }}
+          >
+            {companies.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Official Header Logo URL</label>
+          <input 
+            type="text" 
+            className="form-input" 
+            placeholder="e.g. https://domain.com/logo.png"
+            value={lhLogoUrl}
+            onChange={(e) => setLhLogoUrl(e.target.value)}
+          />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Official Registry Office Address</label>
+          <textarea 
+            className="form-input" 
+            rows="3" 
+            placeholder="Address showing at top-left corner"
+            value={lhAddressOverride}
+            onChange={(e) => setLhAddressOverride(e.target.value)}
+          />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Authorized Signatory Label</label>
+          <input 
+            type="text" 
+            className="form-input" 
+            placeholder="CEO / Managing Director Name"
+            value={lhSignatureText}
+            onChange={(e) => setLhSignatureText(e.target.value)}
+          />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Accent Color Hex</label>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <input 
+              type="color" 
+              value={lhAccentColor}
+              onChange={(e) => setLhAccentColor(e.target.value)}
+              style={{ width: '40px', height: '40px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+            />
+            <input 
+              type="text" 
+              className="form-input" 
+              value={lhAccentColor}
+              onChange={(e) => setLhAccentColor(e.target.value)}
+              style={{ width: '100px' }}
+            />
+          </div>
+        </div>
+
+        <button className="btn-primary" onClick={handleSaveLetterhead} style={{ marginTop: '8px' }}>
+          Save Letterhead Branding
+        </button>
+      </div>
+
+      {/* 2. Prefilled Document Templates manager */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', backgroundColor: 'var(--bg-card)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--accent)' }}><FileText size={16} style={{ marginRight: '6px' }} /> Document Templates Library</h3>
+            <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Manage prefilled letters, employment contracts, and exit agreements with dynamic tokens.</p>
+          </div>
+          {!editingTemplateId && (
+            <button className="btn-primary" onClick={handleCreateNewTemplate} style={{ fontSize: '11px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Plus size={12} /> Add Template
+            </button>
+          )}
+        </div>
+
+        {editingTemplateId ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-secondary)' }}>
+            <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--primary)' }}>
+              {editingTemplateId === 'new' ? 'Create New Template' : 'Edit Template'}
+            </h4>
+            
+            <div className="form-group">
+              <label className="form-label" style={{ fontSize: '11px' }}>Template Title / Name</label>
+              <input 
+                type="text" 
+                className="form-input"
+                value={tempName}
+                onChange={(e) => setTempName(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" style={{ fontSize: '11px' }}>Document Category / Form Type</label>
+              <select 
+                className="select-filter" 
+                value={tempType}
+                onChange={(e) => setTempType(e.target.value)}
+                style={{ width: '100%', padding: '8px' }}
+              >
+                <option value="offer-letter">Offer Letter</option>
+                <option value="service-agreement">Contract for Services</option>
+                <option value="exit-letter">Exit / Termination Mutual Agreement</option>
+                <option value="general">General Letter</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" style={{ fontSize: '11px' }}>Template Body Copy (Placeholders are auto-replaced)</label>
+              <textarea 
+                className="form-input" 
+                rows="12"
+                value={tempBody}
+                onChange={(e) => setTempBody(e.target.value)}
+                style={{ fontFamily: 'monospace', fontSize: '12px' }}
+              />
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Use tokens: {"{{staff_name}}, {{staff_address}}, {{job_title}}, {{start_date}}, {{department}}, {{company_name}}, {{salary}}, {{last_working_date}}, {{notice_period}}, {{notice_pay_period}}, {{notice_pay_terms}}, {{additional_payment}}, {{signature}}"}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+              <button className="btn-primary" onClick={handleSaveTemplate}>Save Template</button>
+              <button className="btn-secondary" onClick={() => setEditingTemplateId(null)}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {letterTemplates.map(t => (
+              <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', border: '1px solid var(--border-color)', borderRadius: '6px', backgroundColor: 'var(--bg-secondary)' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '13px' }}>{t.name}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'capitalize' }}>Category: {t.type.replace('-', ' ')}</div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button className="btn-icon" title="Edit Template" onClick={() => handleEditTemplate(t)}>
+                    <Edit3 size={12} />
+                  </button>
+                  <button className="btn-icon delete" title="Delete Template" onClick={() => onDeleteLetterTemplate(t.id)}>
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {letterTemplates.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)', fontSize: '12px' }}>
+                No templates saved yet. Click 'Add Template' to begin.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
     </div>
-  );
+  )}
+</div>
+);
 }

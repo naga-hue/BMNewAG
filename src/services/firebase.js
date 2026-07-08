@@ -1107,5 +1107,60 @@ export const firebaseService = {
       localStorage.setItem('bm-payroll-policies', JSON.stringify(filtered));
       return id;
     }
+  },
+
+  subscribeLetterTemplates(onUpdate, fallbackData = []) {
+    if (isConfigured && db) {
+      const templatesRef = collection(db, 'letterTemplates');
+      return onSnapshot(templatesRef, (snapshot) => {
+        const list = [];
+        snapshot.forEach((doc) => {
+          list.push(doc.data());
+        });
+        onUpdate(list);
+      }, (error) => {
+        console.error("Firestore letter templates subscription error:", error);
+        const local = localStorage.getItem('bm-letter-templates');
+        onUpdate(local ? JSON.parse(local) : fallbackData);
+      });
+    } else {
+      const local = localStorage.getItem('bm-letter-templates');
+      const data = local ? JSON.parse(local) : fallbackData;
+      onUpdate(data);
+      return () => {};
+    }
+  },
+
+  async saveLetterTemplate(template) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'letterTemplates', template.id);
+      await setDoc(docRef, template);
+      return template;
+    } else {
+      const local = localStorage.getItem('bm-letter-templates');
+      const list = local ? JSON.parse(local) : [];
+      const index = list.findIndex(p => p.id === template.id);
+      if (index > -1) {
+        list[index] = template;
+      } else {
+        list.push(template);
+      }
+      localStorage.setItem('bm-letter-templates', JSON.stringify(list));
+      return template;
+    }
+  },
+
+  async deleteLetterTemplate(id) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'letterTemplates', id);
+      await deleteDoc(docRef);
+      return id;
+    } else {
+      const local = localStorage.getItem('bm-letter-templates');
+      const list = local ? JSON.parse(local) : [];
+      const filtered = list.filter(p => p.id !== id);
+      localStorage.setItem('bm-letter-templates', JSON.stringify(filtered));
+      return id;
+    }
   }
 };

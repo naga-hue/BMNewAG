@@ -51,7 +51,8 @@ export default function StaffDetail({
   assetAssignments = [], 
   onSaveAssetAssignment,
   onDeleteAssetAssignment,
-  placements = []
+  placements = [],
+  letterTemplates = []
 }) {
   const [activeTab, setActiveTab] = useState('profile'); // profile, documents, leaves, commissions, assets
 
@@ -149,6 +150,7 @@ Yours sincerely,
   });
 
   const [docTemplateType, setDocTemplateType] = useState('offer-letter');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('offer-letter');
   const [docCompanyId, setDocCompanyId] = useState(staffMember ? staffMember.companyId : '');
   const [docContent, setDocContent] = useState('');
   
@@ -157,13 +159,31 @@ Yours sincerely,
   const [lhAddress, setLhAddress] = useState('');
   const [lhSignatureText, setLhSignatureText] = useState('');
 
-  // Update docContent when template changes
+  // Update docContent when template changes or company letterhead selection changes
   React.useEffect(() => {
     if (staffMember) {
-      setDocContent(DEFAULT_TEMPLATES[docTemplateType] || '');
-      setDocCompanyId(staffMember.companyId || (companies[0] ? companies[0].id : ''));
+      const matched = letterTemplates.find(t => t.id === selectedTemplateId);
+      if (matched) {
+        setDocTemplateType(matched.type || 'general');
+        setDocContent(matched.body || '');
+      } else if (DEFAULT_TEMPLATES[selectedTemplateId]) {
+        setDocTemplateType(selectedTemplateId);
+        setDocContent(DEFAULT_TEMPLATES[selectedTemplateId]);
+      }
     }
-  }, [docTemplateType, staffMember]);
+  }, [selectedTemplateId, staffMember, letterTemplates]);
+
+  // Autoload letterhead branding when selected company changes
+  React.useEffect(() => {
+    if (staffMember) {
+      const resolvedCompany = companies.find(c => c.id === docCompanyId);
+      if (resolvedCompany) {
+        setLhLogoUrl(resolvedCompany.logoUrl || '');
+        setLhAddress(resolvedCompany.addressOverride || resolvedCompany.address || '');
+        setLhSignatureText(resolvedCompany.signatureText || 'Authorized Signatory');
+      }
+    }
+  }, [docCompanyId, companies, staffMember]);
 
   const handleToggleDeactivationState = (key, val) => {
     const next = { ...deactivationStates, [key]: val };
@@ -1370,17 +1390,26 @@ Yours sincerely,
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '16px' }}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
                     <div className="form-group" style={{ flex: '1 1 200px' }}>
-                      <label className="form-label">Template / Document Type</label>
+                      <label className="form-label">Select Document Template</label>
                       <select 
                         className="select-filter" 
-                        value={docTemplateType} 
-                        onChange={(e) => setDocTemplateType(e.target.value)}
+                        value={selectedTemplateId} 
+                        onChange={(e) => setSelectedTemplateId(e.target.value)}
                         style={{ width: '100%', padding: '10px' }}
                       >
-                        <option value="offer-letter">Offer Letter of Employment</option>
-                        <option value="service-agreement">Contract for Services / Contractor Agreement</option>
-                        <option value="exit-letter">Exit / Termination Mutual Agreement</option>
-                        <option value="general">General Official Correspondence</option>
+                        {letterTemplates.length > 0 && (
+                          <optgroup label="Saved Templates (Database)">
+                            {letterTemplates.map(t => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        <optgroup label="Default Templates (Backup)">
+                          <option value="offer-letter">Offer Letter of Employment</option>
+                          <option value="service-agreement">Contract for Services</option>
+                          <option value="exit-letter">Exit / Termination Mutual Agreement</option>
+                          <option value="general">General Official Correspondence</option>
+                        </optgroup>
                       </select>
                     </div>
 

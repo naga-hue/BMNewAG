@@ -102,6 +102,52 @@ export default function App() {
   // Navigation tab: 'dashboard' | 'directory' | 'staff'
   const [activeTab, setActiveTab] = useState('dashboard');
   const [letterTemplates, setLetterTemplates] = useState([]);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatTimeForZone = (date, timeZone, label) => {
+    const timeStr = date.toLocaleTimeString('en-GB', {
+      timeZone,
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    const dateStr = date.toLocaleDateString('en-GB', {
+      timeZone,
+      day: '2-digit',
+      month: 'short'
+    });
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        padding: '4px 10px',
+        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        borderRadius: '6px',
+        minWidth: '95px',
+        lineHeight: 1.2
+      }}>
+        <span style={{ fontSize: '8px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          {label}
+        </span>
+        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', margin: '2px 0' }}>
+          {timeStr}
+        </span>
+        <span style={{ fontSize: '8px', color: 'var(--text-muted)' }}>
+          {dateStr}
+        </span>
+      </div>
+    );
+  };
 
   // Sync Letter Templates from database
   useEffect(() => {
@@ -1628,6 +1674,12 @@ export default function App() {
           </div>
           
           <div className="header-actions">
+            {/* Live GMT/SAST/IST Office Clocks Widget */}
+            <div style={{ display: 'flex', gap: '8px', marginRight: '16px', alignItems: 'center' }}>
+              {formatTimeForZone(currentTime, 'Europe/London', 'UK (London)')}
+              {formatTimeForZone(currentTime, 'Africa/Johannesburg', 'S. Africa')}
+              {formatTimeForZone(currentTime, 'Asia/Kolkata', 'India (IST)')}
+            </div>
             {/* Active User Switcher Dropdown (Admin Impersonation Feature) */}
             {currentUser.permissions?.role === 'admin' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '8px' }}>

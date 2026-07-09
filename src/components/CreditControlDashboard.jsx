@@ -103,15 +103,18 @@ export default function CreditControlDashboard({
     return CURRENCY_SYMBOLS[matched?.currency || 'GBP'] || '£';
   };
 
-  // Processed list of placements normalized for Credit Control
   const invoices = useMemo(() => {
     return placements.map(p => {
       const gross = Number(p.grossBillAmount) || 0;
-      const vat = Number(p.vatAmount) !== undefined ? Number(p.vatAmount) : Math.round(gross * 0.20 * 100) / 100;
-      const total = Number(p.totalInvoiceAmount) !== undefined ? Number(p.totalInvoiceAmount) : (gross + vat);
+      const vat = (p.vatAmount !== undefined && p.vatAmount !== null && p.vatAmount !== '') 
+        ? (Number(p.vatAmount) || 0) 
+        : (Math.round(gross * 0.20 * 100) / 100);
+      const total = (p.totalInvoiceAmount !== undefined && p.totalInvoiceAmount !== null && p.totalInvoiceAmount !== '') 
+        ? (Number(p.totalInvoiceAmount) || 0) 
+        : (gross + vat);
       
       const raisedDate = p.invoiceRaisedDate || p.startDate || p.scoredDate || todayStr;
-      const termsDays = p.paymentTermsDays !== undefined ? Number(p.paymentTermsDays) : 30;
+      const termsDays = (p.paymentTermsDays !== undefined && p.paymentTermsDays !== null && p.paymentTermsDays !== '') ? Number(p.paymentTermsDays) : 30;
       
       // Calculate due date
       let dueDate = p.invoiceDueDate;
@@ -754,19 +757,19 @@ export default function CreditControlDashboard({
       {/* -------------------------------------------------------------
           INVOICES GRID/LIST TABLE
           ------------------------------------------------------------- */}
-      <div className="table-container" style={{ margin: 0 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div className="table-container" style={{ margin: 0, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
           <thead>
             <tr>
-              <th style={{ cursor: 'pointer' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
-              <th style={{ cursor: 'pointer' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
-              <th style={{ cursor: 'pointer' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
-              <th style={{ cursor: 'pointer' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
-              <th style={{ cursor: 'pointer' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
-              <th style={{ cursor: 'pointer', textAlign: 'right' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
-              <th style={{ cursor: 'pointer', textAlign: 'center' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
-              <th style={{ textAlign: 'right' }}>Outstanding</th>
-              <th style={{ textAlign: 'center' }}>Doc</th>
+              <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
+              <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
+              <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
+              <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
+              <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
+              <th style={{ cursor: 'pointer', textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
+              <th style={{ cursor: 'pointer', textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
+              <th style={{ textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }}>Outstanding</th>
+              <th style={{ textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }}>Doc</th>
             </tr>
           </thead>
           <tbody>
@@ -781,11 +784,13 @@ export default function CreditControlDashboard({
                   style={{ cursor: 'pointer', transition: 'background-color 0.2s' }}
                   className="table-row-hover"
                 >
-                  <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{inv.placementId}</td>
-                  <td><strong>{inv.clientCompany}</strong></td>
-                  <td>{inv.candidateName}</td>
-                  <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{inv.recruiterNames}</td>
-                  <td>
+                  <td style={{ fontFamily: 'monospace', fontWeight: 600, padding: '14px 10px', whiteSpace: 'nowrap' }}>
+                    {inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id)}
+                  </td>
+                  <td style={{ padding: '14px 10px' }}><strong>{inv.clientCompany}</strong></td>
+                  <td style={{ padding: '14px 10px' }}>{inv.candidateName}</td>
+                  <td style={{ fontSize: '11px', color: 'var(--text-secondary)', padding: '14px 10px' }}>{inv.recruiterNames}</td>
+                  <td style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <span>{inv.invoiceDueDate}</span>
                       {inv.paymentStatus === 'overdue' && (
@@ -795,10 +800,10 @@ export default function CreditControlDashboard({
                       )}
                     </div>
                   </td>
-                  <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>
-                    {symbol}{inv.totalInvoiceAmount.toLocaleString()}
+                  <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', padding: '14px 10px', whiteSpace: 'nowrap' }}>
+                    {symbol}{(inv.totalInvoiceAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
-                  <td style={{ textAlign: 'center' }}>
+                  <td style={{ textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }}>
                     <span style={{ 
                       backgroundColor: `${statusObj.color}15`, 
                       color: statusObj.color, 
@@ -812,10 +817,10 @@ export default function CreditControlDashboard({
                       {statusObj.label}
                     </span>
                   </td>
-                  <td style={{ textAlign: 'right', fontWeight: 600, fontFamily: 'monospace', color: inv.balanceOutstanding > 0 ? 'var(--warning)' : 'var(--success)' }}>
-                    {symbol}{inv.balanceOutstanding.toLocaleString()}
+                  <td style={{ textAlign: 'right', fontWeight: 600, fontFamily: 'monospace', color: inv.balanceOutstanding > 0 ? 'var(--warning)' : 'var(--success)', padding: '14px 10px', whiteSpace: 'nowrap' }}>
+                    {symbol}{(inv.balanceOutstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
-                  <td style={{ textAlign: 'center' }}>
+                  <td style={{ textAlign: 'center', padding: '14px 10px' }}>
                     {inv.invoiceFileUrl ? (
                       <a 
                         href={inv.invoiceFileUrl} 

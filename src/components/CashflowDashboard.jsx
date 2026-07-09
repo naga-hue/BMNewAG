@@ -145,7 +145,8 @@ export default function CashflowDashboard({
 
   // 2. Outflows: Contract Payments + Staff Payroll
   const outflows = useMemo(() => {
-    const contractOutflows = contracts.map(c => {
+    const contractOutflows = [];
+    contracts.forEach(c => {
       const uCost = Number(c.unitCost) || 0;
       const qty = Number(c.quantityPurchased) || 0;
       const vatRate = Number(c.taxRate || 0);
@@ -154,17 +155,54 @@ export default function CashflowDashboard({
 
       const vendor = vendors.find(v => v.id === c.vendorId);
       const vendorName = vendor ? vendor.name : 'Vendor';
+      const frequency = c.costInterval || 'monthly';
 
-      return {
-        id: c.id,
-        agreementName: c.name,
-        vendorName,
-        dueDate: c.paymentDueDate || c.renewalDate || todayStr,
-        totalCost,
-        frequency: c.costInterval || 'monthly',
-        companyId: c.companyId,
-        currency: c.currency || 'GBP'
-      };
+      if (frequency === 'monthly') {
+        const baseDateStr = c.paymentDueDate || c.startDate || todayStr;
+        let billingDay = 25;
+        try {
+          const parts = baseDateStr.split('-');
+          if (parts.length === 3) {
+            billingDay = Number(parts[2]) || 25;
+          }
+        } catch (e) {}
+
+        const start = new Date();
+        // Generate up to 12 months of projections
+        for (let i = 0; i < 12; i++) {
+          const d = new Date(start.getFullYear(), start.getMonth() + i, billingDay);
+          const yStr = d.getFullYear();
+          const mStr = String(d.getMonth() + 1).padStart(2, '0');
+          const dStr = String(d.getDate()).padStart(2, '0');
+          const calculatedDueDate = `${yStr}-${mStr}-${dStr}`;
+
+          // Ensure it falls within contract date bounds
+          if (c.startDate && calculatedDueDate < c.startDate) continue;
+          if (c.endDate && calculatedDueDate > c.endDate) break;
+
+          contractOutflows.push({
+            id: `${c.id}-${calculatedDueDate}`,
+            agreementName: c.name,
+            vendorName,
+            dueDate: calculatedDueDate,
+            totalCost,
+            frequency,
+            companyId: c.companyId,
+            currency: c.currency || 'GBP'
+          });
+        }
+      } else {
+        contractOutflows.push({
+          id: c.id,
+          agreementName: c.name,
+          vendorName,
+          dueDate: c.paymentDueDate || c.renewalDate || todayStr,
+          totalCost,
+          frequency,
+          companyId: c.companyId,
+          currency: c.currency || 'GBP'
+        });
+      }
     });
 
     const payrollOutflows = [];

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -26,11 +26,12 @@ const CURRENCY_SYMBOLS = {
   INR: '₹'
 };
 
-const FREQUENCY_LABELS = {
-  monthly: 'Monthly',
-  quarterly: 'Quarterly',
-  annual: 'Annual',
-  'one-off': 'One-off'
+const STATIC_FX_RATES = {
+  GBP: 1.0,
+  USD: 0.79,
+  AED: 0.21,
+  INR: 0.0094,
+  ZAR: 0.043
 };
 
 export default function CashflowDashboard({
@@ -52,13 +53,44 @@ export default function CashflowDashboard({
   const [editingAccountId, setEditingAccountId] = useState(null);
   const [editBalanceValue, setEditBalanceValue] = useState('');
 
+  // Realtime exchange rates from public API
+  const [realtimeRates, setRealtimeRates] = useState(null);
+
+  useEffect(() => {
+    fetch('https://open.er-api.com/v6/latest/GBP')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.rates) {
+          const rates = {};
+          // Convert from "1 GBP = X Foreign" to "1 Foreign = Y GBP"
+          Object.entries(data.rates).forEach(([code, rate]) => {
+            rates[code] = 1 / rate;
+          });
+          setRealtimeRates(rates);
+        }
+      })
+      .catch(err => {
+        console.warn("Failed to fetch realtime exchange rates, falling back to static rates:", err);
+      });
+  }, []);
+
   const todayStr = useMemo(() => {
     return new Date().toISOString().split('T')[0];
   }, []);
 
-  const getCurrencySymbol = (companyId) => {
-    const matched = companies.find(c => c.id === companyId);
-    return CURRENCY_SYMBOLS[matched?.currency || 'GBP'] || '£';
+  // Currency Converter helper supporting fixed reconciled vs realtime forecast
+  const convertToGBP = (amount, currencyCode, isForecast = true) => {
+    if (amount === undefined || amount === null || amount === '') return 0;
+    const cleanCode = String(currencyCode || 'GBP').toUpperCase().trim();
+    if (cleanCode === 'GBP') return Number(amount) || 0;
+
+    if (isForecast && realtimeRates && realtimeRates[cleanCode]) {
+      return (Number(amount) || 0) * realtimeRates[cleanCode];
+    }
+    
+    // Fallback to static historical/contractual rates (e.g. for reconciled expenses)
+    const rate = STATIC_FX_RATES[cleanCode] || 1.0;
+    return (Number(amount) || 0) * rate;
   };
 
   const getCurrencyCode = (companyId) => {
@@ -135,22 +167,19 @@ export default function CashflowDashboard({
     }
   };
 
-  // Calculate Available Starting Cash
-  const startingCashTotals = useMemo(() => {
-    const totals = {};
+  // Calculate Starting Cash in GBP
+  const startingCashGBP = useMemo(() => {
+    let total = 0;
     companies.forEach(c => {
       if (selectedCompanyId !== 'all' && c.id !== selectedCompanyId) return;
 
       (c.bankAccounts || []).forEach(acc => {
         if (selectedBankAccountId !== 'all' && acc.id !== selectedBankAccountId) return;
-        totals[acc.currency] = (totals[acc.currency] || 0) + (Number(acc.balance) || 0);
+        total += convertToGBP(acc.balance, acc.currency, true); // Starting cash is current, use realtime
       });
     });
-
-    return Object.entries(totals)
-      .map(([curr, val]) => `${CURRENCY_SYMBOLS[curr] || curr}${Math.round(val).toLocaleString()}`)
-      .join(' | ') || '£0';
-  }, [companies, selectedCompanyId, selectedBankAccountId]);
+    return total;
+  }, [companies, selectedCompanyId, selectedBankAccountId, realtimeRates]);
 
   // 1. Inflows: Unpaid Placements
   const inflows = useMemo(() => {
@@ -200,6 +229,9 @@ export default function CashflowDashboard({
         finalStatus = 'overdue';
       }
 
+      const originalCurrency = getCurrencyCode(p.companyId || (companies.find(c => c.name === p.clientCompany)?.id || 'group'));
+      const outstandingGBP = convertToGBP(outstanding, originalCurrency, true); // Forecast inflows use realtime
+
       return {
         id: p.id,
         placementId: p.placementId,
@@ -208,8 +240,10 @@ export default function CashflowDashboard({
         dueDate: dueDate || raisedDate,
         totalInvoice: total,
         outstanding,
+        outstandingGBP,
         status: finalStatus,
         companyId: p.companyId || (companies.find(c => c.name === p.clientCompany)?.id || 'group'),
+        originalCurrency,
         invoiceType: p.invoiceType || 'direct'
       };
     }).filter(inv => {
@@ -220,7 +254,7 @@ export default function CashflowDashboard({
       }
       return isWithinTimeframe(inv.dueDate);
     }).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  }, [placements, companies, timeframe, selectedCompanyId, selectedBankAccountInfo, todayStr]);
+  }, [placements, companies, timeframe, selectedCompanyId, selectedBankAccountInfo, todayStr, realtimeRates]);
 
   // 2. Outflows: Contract Payments + Staff Payroll + Unreconciled Expenses
   const outflows = useMemo(() => {
@@ -235,6 +269,7 @@ export default function CashflowDashboard({
       const vendor = vendors.find(v => v.id === c.vendorId);
       const vendorName = vendor ? vendor.name : 'Vendor';
       const frequency = c.costInterval || 'monthly';
+      const currency = c.currency || 'GBP';
 
       if (frequency === 'monthly') {
         const baseDateStr = c.paymentDueDate || c.startDate || todayStr;
@@ -257,28 +292,34 @@ export default function CashflowDashboard({
           if (c.startDate && calculatedDueDate < c.startDate) continue;
           if (c.endDate && calculatedDueDate > c.endDate) break;
 
+          const totalCostGBP = convertToGBP(totalCost, currency, true); // Forecast contract uses realtime
+
           contractOutflows.push({
             id: `${c.id}-${calculatedDueDate}`,
             agreementName: c.name,
             vendorName,
             dueDate: calculatedDueDate,
             totalCost,
+            totalCostGBP,
             frequency,
             companyId: c.companyId,
-            currency: c.currency || 'GBP',
+            currency,
             type: 'contract'
           });
         }
       } else {
+        const totalCostGBP = convertToGBP(totalCost, currency, true);
+
         contractOutflows.push({
           id: c.id,
           agreementName: c.name,
           vendorName,
           dueDate: c.paymentDueDate || c.renewalDate || todayStr,
           totalCost,
+          totalCostGBP,
           frequency,
           companyId: c.companyId,
-          currency: c.currency || 'GBP',
+          currency,
           type: 'contract'
         });
       }
@@ -296,6 +337,7 @@ export default function CashflowDashboard({
 
       const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
       const payDay = policy ? (policy.paymentDayOfMonth || 25) : 25;
+      const currency = s.currency || 'GBP';
 
       const thisMonthPayDate = `${currYear}-${pad(currMonth)}-${pad(payDay)}`;
 
@@ -306,6 +348,7 @@ export default function CashflowDashboard({
         nextYear += 1;
       }
       const nextMonthPayDate = `${nextYear}-${pad(nextMonth)}-${pad(payDay)}`;
+      const totalCostGBP = convertToGBP(monthlyBasePay, currency, true); // Forecast payroll uses realtime
 
       payrollOutflows.push({
         id: `payroll-${s.id}-curr`,
@@ -313,9 +356,10 @@ export default function CashflowDashboard({
         vendorName: 'Staff Member',
         dueDate: thisMonthPayDate,
         totalCost: monthlyBasePay,
+        totalCostGBP,
         frequency: 'monthly',
         companyId: s.companyId || 'group',
-        currency: s.currency || 'GBP',
+        currency,
         type: 'payroll'
       });
 
@@ -325,9 +369,10 @@ export default function CashflowDashboard({
         vendorName: 'Staff Member',
         dueDate: nextMonthPayDate,
         totalCost: monthlyBasePay,
+        totalCostGBP,
         frequency: 'monthly',
         companyId: s.companyId || 'group',
-        currency: s.currency || 'GBP',
+        currency,
         type: 'payroll'
       });
     });
@@ -336,15 +381,20 @@ export default function CashflowDashboard({
       const isFutureOrPending = !exp.isReconciled || exp.date >= todayStr;
       return isFutureOrPending;
     }).map(exp => {
+      const currency = exp.currency || 'GBP';
+      const isForecast = !exp.isReconciled;
+      const totalCostGBP = convertToGBP(Number(exp.amount) || 0, currency, isForecast); // Reconciled uses fixed static rates, pending uses realtime
+
       return {
         id: `expense-${exp.id}`,
         agreementName: `Expense: ${exp.description || exp.category || 'Direct Expense'}`,
         vendorName: exp.vendor || 'Expense Ledger',
         dueDate: exp.date || todayStr,
         totalCost: Number(exp.amount) || 0,
+        totalCostGBP,
         frequency: 'one-off',
         companyId: exp.bankCompanyId || exp.companyId || 'group',
-        currency: exp.currency || 'GBP',
+        currency,
         bankAccountId: exp.bankAccountId,
         type: 'expense'
       };
@@ -364,53 +414,16 @@ export default function CashflowDashboard({
 
       return isWithinTimeframe(out.dueDate);
     }).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  }, [contracts, vendors, staff, payrollPolicies, expenses, timeframe, selectedCompanyId, selectedBankAccountId, selectedBankAccountInfo, todayStr]);
+  }, [contracts, vendors, staff, payrollPolicies, expenses, timeframe, selectedCompanyId, selectedBankAccountId, selectedBankAccountInfo, todayStr, realtimeRates]);
 
-  // 3. Forecast summaries & currency breakdowns
-  const cashflowSummary = useMemo(() => {
-    const inflowTotals = {};
-    const outflowTotals = {};
-    const netTotals = {};
-    const finalProjectedTotals = {};
+  // 3. Forecast summaries & currency breakdowns in GBP
+  const totalInflowGBP = useMemo(() => {
+    return inflows.reduce((sum, inv) => sum + inv.outstandingGBP, 0);
+  }, [inflows]);
 
-    companies.forEach(c => {
-      if (selectedCompanyId !== 'all' && c.id !== selectedCompanyId) return;
-      (c.bankAccounts || []).forEach(acc => {
-        if (selectedBankAccountId !== 'all' && acc.id !== selectedBankAccountId) return;
-        const curr = acc.currency;
-        finalProjectedTotals[curr] = (finalProjectedTotals[curr] || 0) + (Number(acc.balance) || 0);
-      });
-    });
-
-    inflows.forEach(inv => {
-      const curr = getCurrencyCode(inv.companyId);
-      inflowTotals[curr] = (inflowTotals[curr] || 0) + inv.outstanding;
-      netTotals[curr] = (netTotals[curr] || 0) + inv.outstanding;
-      finalProjectedTotals[curr] = (finalProjectedTotals[curr] || 0) + inv.outstanding;
-    });
-
-    outflows.forEach(out => {
-      const curr = out.currency;
-      outflowTotals[curr] = (outflowTotals[curr] || 0) + out.totalCost;
-      netTotals[curr] = (netTotals[curr] || 0) - out.totalCost;
-      finalProjectedTotals[curr] = (finalProjectedTotals[curr] || 0) - out.totalCost;
-    });
-
-    const formatBreakdown = (totalsObj) => {
-      return Object.entries(totalsObj)
-        .map(([curr, val]) => `${CURRENCY_SYMBOLS[curr] || curr}${Math.round(val).toLocaleString()}`)
-        .join(' | ') || '£0';
-    };
-
-    return {
-      inflowCount: inflows.length,
-      inflowText: formatBreakdown(inflowTotals),
-      outflowCount: outflows.length,
-      outflowText: formatBreakdown(outflowTotals),
-      netText: formatBreakdown(netTotals),
-      finalProjectedText: formatBreakdown(finalProjectedTotals)
-    };
-  }, [inflows, outflows, companies, selectedCompanyId, selectedBankAccountId]);
+  const totalOutflowGBP = useMemo(() => {
+    return outflows.reduce((sum, out) => sum + out.totalCostGBP, 0);
+  }, [outflows]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -610,7 +623,7 @@ export default function CashflowDashboard({
             </div>
           </div>
 
-          {/* Metric Tiles */}
+          {/* Metric Tiles (Normalized to GBP) */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.2fr', gap: '16px' }}>
             
             {/* Live Bank Starting Cash */}
@@ -619,11 +632,11 @@ export default function CashflowDashboard({
                 <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   🏦 Live Cash in Bank
                 </span>
-                <h2 style={{ fontSize: '18px', fontWeight: 800, margin: '4px 0 2px 0', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-                  {startingCashTotals}
+                <h2 style={{ fontSize: '20px', fontWeight: 800, margin: '4px 0 2px 0', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                  £{Math.round(startingCashGBP).toLocaleString()}
                 </h2>
                 <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
-                  Current available balances
+                  Total live balance in GBP
                 </span>
               </div>
               <div style={{ backgroundColor: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', padding: '8px', borderRadius: '8px' }}>
@@ -637,11 +650,11 @@ export default function CashflowDashboard({
                 <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--success)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   📈 Expected Inflows
                 </span>
-                <h2 style={{ fontSize: '18px', fontWeight: 800, margin: '4px 0 2px 0', color: 'var(--success)', fontFamily: 'monospace' }}>
-                  {cashflowSummary.inflowText}
+                <h2 style={{ fontSize: '20px', fontWeight: 800, margin: '4px 0 2px 0', color: 'var(--success)', fontFamily: 'monospace' }}>
+                  £{Math.round(totalInflowGBP).toLocaleString()}
                 </h2>
                 <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
-                  💸 <strong>{cashflowSummary.inflowCount} Sales</strong> expected
+                  💸 <strong>{inflows.length} Sales</strong> (Converted to GBP)
                 </span>
               </div>
               <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.08)', color: 'var(--success)', padding: '8px', borderRadius: '8px' }}>
@@ -655,11 +668,11 @@ export default function CashflowDashboard({
                 <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--danger)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   📉 Expected Outflows
                 </span>
-                <h2 style={{ fontSize: '18px', fontWeight: 800, margin: '4px 0 2px 0', color: 'var(--danger)', fontFamily: 'monospace' }}>
-                  {cashflowSummary.outflowText}
+                <h2 style={{ fontSize: '20px', fontWeight: 800, margin: '4px 0 2px 0', color: 'var(--danger)', fontFamily: 'monospace' }}>
+                  £{Math.round(totalOutflowGBP).toLocaleString()}
                 </h2>
                 <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
-                  💼 <strong>{cashflowSummary.outflowCount} Payments</strong> due
+                  💼 <strong>{outflows.length} Payments</strong> (Converted to GBP)
                 </span>
               </div>
               <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.08)', color: 'var(--danger)', padding: '8px', borderRadius: '8px' }}>
@@ -673,8 +686,8 @@ export default function CashflowDashboard({
                 <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   ⚖️ Forecasted Closing Cash
                 </span>
-                <h2 style={{ fontSize: '18px', fontWeight: 800, margin: '4px 0 2px 0', fontFamily: 'monospace', color: 'var(--text-primary)' }}>
-                  {cashflowSummary.finalProjectedText}
+                <h2 style={{ fontSize: '20px', fontWeight: 800, margin: '4px 0 2px 0', fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+                  £{Math.round(startingCashGBP + totalInflowGBP - totalOutflowGBP).toLocaleString()}
                 </h2>
                 <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
                   Projected bank balance after horizon
@@ -693,7 +706,7 @@ export default function CashflowDashboard({
             {/* 1. Inflows Table */}
             <div className="detail-section" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                🟢 Expected Sales Collections (Cash Inflows)
+                🟢 Expected Sales Collections (GBP Forecast)
               </h3>
               
               <div className="table-container" style={{ margin: 0, overflowX: 'auto', maxHeight: '500px', overflowY: 'auto' }}>
@@ -702,14 +715,14 @@ export default function CashflowDashboard({
                     <tr>
                       <th style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>Due Date</th>
                       <th style={{ padding: '10px 8px' }}>Client & Candidate</th>
-                      <th style={{ padding: '10px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>Amount Due</th>
+                      <th style={{ padding: '10px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>Amount (GBP)</th>
                       <th style={{ padding: '10px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>Type</th>
                     </tr>
                   </thead>
                   <tbody>
                     {inflows.map(inv => {
-                      const symbol = getCurrencySymbol(inv.companyId);
                       const isOverdue = inv.dueDate < todayStr;
+                      const origSymbol = CURRENCY_SYMBOLS[inv.originalCurrency] || inv.originalCurrency;
 
                       return (
                         <tr 
@@ -738,7 +751,12 @@ export default function CashflowDashboard({
                             </div>
                           </td>
                           <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                            {symbol}{inv.outstanding.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            <div>£{inv.outstandingGBP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            {inv.originalCurrency !== 'GBP' && (
+                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'normal' }}>
+                                ({origSymbol}{inv.outstanding.toLocaleString(undefined, { minimumFractionDigits: 2 })})
+                              </div>
+                            )}
                           </td>
                           <td style={{ padding: '12px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                             <span style={{ 
@@ -771,7 +789,7 @@ export default function CashflowDashboard({
             {/* 2. Outflows Table */}
             <div className="detail-section" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                🔴 Scheduled Outflows (Expenses & Payroll)
+                🔴 Scheduled Outflows (GBP Forecast)
               </h3>
 
               <div className="table-container" style={{ margin: 0, overflowX: 'auto', maxHeight: '500px', overflowY: 'auto' }}>
@@ -780,14 +798,14 @@ export default function CashflowDashboard({
                     <tr>
                       <th style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>Due Date</th>
                       <th style={{ padding: '10px 8px' }}>Beneficiary & Purpose</th>
-                      <th style={{ padding: '10px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>Amount Due</th>
+                      <th style={{ padding: '10px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>Amount (GBP)</th>
                       <th style={{ padding: '10px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>Source</th>
                     </tr>
                   </thead>
                   <tbody>
                     {outflows.map(out => {
-                      const symbol = CURRENCY_SYMBOLS[out.currency] || '£';
                       const isOverdue = out.dueDate < todayStr;
+                      const origSymbol = CURRENCY_SYMBOLS[out.currency] || out.currency;
 
                       return (
                         <tr 
@@ -816,7 +834,12 @@ export default function CashflowDashboard({
                             </div>
                           </td>
                           <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                            {symbol}{out.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            <div>£{out.totalCostGBP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            {out.currency !== 'GBP' && (
+                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'normal' }}>
+                                ({origSymbol}{out.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })})
+                              </div>
+                            )}
                           </td>
                           <td style={{ padding: '12px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                             <span style={{ 
@@ -844,17 +867,17 @@ export default function CashflowDashboard({
 
                     {outflows.length === 0 && (
                       <tr>
-                        <td colSpan="4" style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>
+                        <td colSpan="4" style={{ textLines: 'center', padding: '32px', color: 'var(--text-secondary)' }}>
                           No scheduled outflows found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
 
-      </div>
+          </div>
         </>
       )}
 

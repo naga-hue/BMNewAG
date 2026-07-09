@@ -310,6 +310,90 @@ export default function CreditControlDashboard({
     };
   }, [invoices, todayStr]);
 
+  // -------------------------------------------------------------
+  // LIST FILTERING & SORTING
+  // -------------------------------------------------------------
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter(inv => {
+      // 1. Tab check
+      if (inv.invoiceType !== activeSubTab) return false;
+
+      // 2. Search query check
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const candidateMatch = (inv.candidateName || '').toLowerCase().includes(query);
+        const clientMatch = (inv.clientCompany || '').toLowerCase().includes(query);
+        const invNumMatch = (inv.invoiceNumber || '').toLowerCase().includes(query);
+        const pidMatch = (inv.placementId || '').toLowerCase().includes(query);
+        const recruiterMatch = (inv.recruiterNames || '').toLowerCase().includes(query);
+        if (!candidateMatch && !clientMatch && !invNumMatch && !pidMatch && !recruiterMatch) return false;
+      }
+
+      // 3. Status filter
+      if (statusFilter !== 'all') {
+        if (statusFilter === 'unpaid' && (inv.paymentStatus === 'paid' || inv.balanceOutstanding <= 0)) return false;
+        if (statusFilter !== 'unpaid' && inv.paymentStatus !== statusFilter) return false;
+      }
+
+      // 4. Recruiter filter
+      if (recruiterFilter !== 'all' && inv.mainRecruiterId !== recruiterFilter) return false;
+
+      // 5. Date filter
+      if (dateFilter !== 'all') {
+        if (dateFilter === 'overdue') {
+          if (inv.paymentStatus !== 'overdue') return false;
+        } else if (dateFilter === 'next-7') {
+          const limit = new Date();
+          limit.setDate(limit.getDate() + 7);
+          const limitStr = limit.toISOString().split('T')[0];
+          if (inv.invoiceDueDate < todayStr || inv.invoiceDueDate > limitStr) return false;
+        } else if (dateFilter === 'next-30') {
+          const limit = new Date();
+          limit.setDate(limit.getDate() + 30);
+          const limitStr = limit.toISOString().split('T')[0];
+          if (inv.invoiceDueDate < todayStr || inv.invoiceDueDate > limitStr) return false;
+        } else if (dateFilter === 'this-month') {
+          const now = new Date();
+          const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+          if (!inv.invoiceDueDate.startsWith(prefix)) return false;
+        } else if (dateFilter === 'next-month') {
+          const now = new Date();
+          now.setMonth(now.getMonth() + 1);
+          const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+          if (!inv.invoiceDueDate.startsWith(prefix)) return false;
+        }
+      }
+
+      return true;
+    }).sort((a, b) => {
+      let valA = a[sortBy];
+      let valB = b[sortBy];
+
+      if (sortBy === 'amount') {
+        valA = a.totalInvoiceAmount;
+        valB = b.totalInvoiceAmount;
+      } else if (sortBy === 'recruiter') {
+        valA = a.recruiterNames;
+        valB = b.recruiterNames;
+      } else if (sortBy === 'client') {
+        valA = a.clientCompany;
+        valB = b.clientCompany;
+      }
+
+      if (valA === undefined || valA === null) valA = '';
+      if (valB === undefined || valB === null) valB = '';
+
+      if (typeof valA === 'string') {
+        valA = valA.toLowerCase();
+        valB = valB.toLowerCase();
+      }
+
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [invoices, activeSubTab, searchQuery, statusFilter, recruiterFilter, dateFilter, sortBy, sortOrder, todayStr]);
+
   // Partition filtered invoices into: Disputed/Legal, Live Outstanding, Closed
   const partitionedInvoices = useMemo(() => {
     const disputedLegal = filteredInvoices.filter(inv => 
@@ -449,89 +533,7 @@ export default function CreditControlDashboard({
     );
   };
 
-  // -------------------------------------------------------------
-  // LIST FILTERING & SORTING
-  // -------------------------------------------------------------
-  const filteredInvoices = useMemo(() => {
-    return invoices.filter(inv => {
-      // 1. Tab check
-      if (inv.invoiceType !== activeSubTab) return false;
 
-      // 2. Search query check
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const candidateMatch = (inv.candidateName || '').toLowerCase().includes(query);
-        const clientMatch = (inv.clientCompany || '').toLowerCase().includes(query);
-        const invNumMatch = (inv.invoiceNumber || '').toLowerCase().includes(query);
-        const pidMatch = (inv.placementId || '').toLowerCase().includes(query);
-        const recruiterMatch = (inv.recruiterNames || '').toLowerCase().includes(query);
-        if (!candidateMatch && !clientMatch && !invNumMatch && !pidMatch && !recruiterMatch) return false;
-      }
-
-      // 3. Status filter
-      if (statusFilter !== 'all') {
-        if (statusFilter === 'unpaid' && (inv.paymentStatus === 'paid' || inv.balanceOutstanding <= 0)) return false;
-        if (statusFilter !== 'unpaid' && inv.paymentStatus !== statusFilter) return false;
-      }
-
-      // 4. Recruiter filter
-      if (recruiterFilter !== 'all' && inv.mainRecruiterId !== recruiterFilter) return false;
-
-      // 5. Date filter
-      if (dateFilter !== 'all') {
-        if (dateFilter === 'overdue') {
-          if (inv.paymentStatus !== 'overdue') return false;
-        } else if (dateFilter === 'next-7') {
-          const limit = new Date();
-          limit.setDate(limit.getDate() + 7);
-          const limitStr = limit.toISOString().split('T')[0];
-          if (inv.invoiceDueDate < todayStr || inv.invoiceDueDate > limitStr) return false;
-        } else if (dateFilter === 'next-30') {
-          const limit = new Date();
-          limit.setDate(limit.getDate() + 30);
-          const limitStr = limit.toISOString().split('T')[0];
-          if (inv.invoiceDueDate < todayStr || inv.invoiceDueDate > limitStr) return false;
-        } else if (dateFilter === 'this-month') {
-          const now = new Date();
-          const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-          if (!inv.invoiceDueDate.startsWith(prefix)) return false;
-        } else if (dateFilter === 'next-month') {
-          const now = new Date();
-          now.setMonth(now.getMonth() + 1);
-          const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-          if (!inv.invoiceDueDate.startsWith(prefix)) return false;
-        }
-      }
-
-      return true;
-    }).sort((a, b) => {
-      let valA = a[sortBy];
-      let valB = b[sortBy];
-
-      if (sortBy === 'amount') {
-        valA = a.totalInvoiceAmount;
-        valB = b.totalInvoiceAmount;
-      } else if (sortBy === 'recruiter') {
-        valA = a.recruiterNames;
-        valB = b.recruiterNames;
-      } else if (sortBy === 'client') {
-        valA = a.clientCompany;
-        valB = b.clientCompany;
-      }
-
-      if (valA === undefined || valA === null) valA = '';
-      if (valB === undefined || valB === null) valB = '';
-
-      if (typeof valA === 'string') {
-        valA = valA.toLowerCase();
-        valB = valB.toLowerCase();
-      }
-
-      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [invoices, activeSubTab, searchQuery, statusFilter, recruiterFilter, dateFilter, sortBy, sortOrder, todayStr]);
 
   const handleSort = (field) => {
     if (sortBy === field) {

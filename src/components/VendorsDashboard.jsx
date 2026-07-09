@@ -21,7 +21,8 @@ import {
   Edit3,
   Mail,
   Phone,
-  Bell
+  Bell,
+  X
 } from 'lucide-react';
 import { firebaseService } from '../services/firebase';
 

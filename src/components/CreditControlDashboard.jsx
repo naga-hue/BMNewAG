@@ -310,6 +310,133 @@ export default function CreditControlDashboard({
     };
   }, [invoices, todayStr]);
 
+  // Partition filtered invoices into: Disputed/Legal, Live Outstanding, Closed
+  const partitionedInvoices = useMemo(() => {
+    const disputedLegal = filteredInvoices.filter(inv => 
+      ['legal', 'disputed'].includes(inv.paymentStatus)
+    );
+
+    const liveOutstanding = filteredInvoices.filter(inv => 
+      !['paid', 'legal', 'disputed', 'written-off', 'dns-rebate'].includes(inv.paymentStatus) && 
+      inv.balanceOutstanding > 0
+    );
+
+    const closed = filteredInvoices.filter(inv => 
+      inv.paymentStatus === 'paid' || 
+      inv.paymentStatus === 'written-off' || 
+      inv.paymentStatus === 'dns-rebate' || 
+      inv.balanceOutstanding <= 0
+    );
+
+    return {
+      disputedLegal,
+      liveOutstanding,
+      closed
+    };
+  }, [filteredInvoices]);
+
+  // Helper function to render a single invoice row
+  const renderInvoiceRow = (inv) => {
+    const symbol = getCurrencySymbol(inv);
+    const statusObj = PAYMENT_STATUSES.find(s => s.value === inv.paymentStatus) || { label: inv.paymentStatus, color: '#fff' };
+
+    return (
+      <tr 
+        key={inv.id} 
+        onClick={() => handleOpenDetail(inv)}
+        style={{ cursor: 'pointer', transition: 'background-color 0.2s' }}
+        className="table-row-hover"
+      >
+        <td style={{ fontFamily: 'monospace', fontWeight: 600, padding: '14px 10px', whiteSpace: 'nowrap' }}>
+          {inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id)}
+        </td>
+        <td style={{ padding: '14px 10px' }}><strong>{inv.clientCompany}</strong></td>
+        <td style={{ padding: '14px 10px' }}>{inv.candidateName}</td>
+        <td style={{ fontSize: '11px', color: 'var(--text-secondary)', padding: '14px 10px' }}>{inv.recruiterNames}</td>
+        <td style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span>{inv.invoiceDueDate}</span>
+            {inv.paymentStatus === 'overdue' && (
+              <span style={{ fontSize: '10px', color: 'var(--danger)', fontWeight: 'bold' }}>
+                ({inv.overdueDays}d overdue)
+              </span>
+            )}
+          </div>
+        </td>
+        {activeSubTab === 'simplicity' && (
+          <td style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>
+            {inv.balanceOutstanding > 0 ? (() => {
+              const days = inv.daysSinceStart;
+              if (days >= 120) {
+                return (
+                  <span style={{ color: 'var(--danger)', fontSize: '11px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    🟥 Recourse Clawback (Day {days})
+                  </span>
+                );
+              } else if (days >= 90) {
+                return (
+                  <span style={{ color: 'var(--warning)', fontSize: '11px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    🟧 Credit Loss (Day {days})
+                  </span>
+                );
+              } else if (days >= 31) {
+                return (
+                  <span style={{ color: '#38bdf8', fontSize: '11px', fontWeight: '600' }}>
+                    🟨 Follow-up Active (Day {days})
+                  </span>
+                );
+              } else {
+                return (
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                    Standard Grace (Day {days})
+                  </span>
+                );
+              }
+            })() : (
+              <span style={{ color: 'var(--success)', fontSize: '11px' }}>Paid / Settled</span>
+            )}
+          </td>
+        )}
+        <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', padding: '14px 10px', whiteSpace: 'nowrap' }}>
+          {symbol}{(inv.totalInvoiceAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </td>
+        <td style={{ textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }}>
+          <span style={{ 
+            backgroundColor: `${statusObj.color}15`, 
+            color: statusObj.color, 
+            border: `1px solid ${statusObj.color}30`, 
+            padding: '4px 8px', 
+            borderRadius: '12px', 
+            fontSize: '10.5px',
+            fontWeight: 600,
+            textTransform: 'uppercase'
+          }}>
+            {statusObj.label}
+          </span>
+        </td>
+        <td style={{ textAlign: 'right', fontWeight: 600, fontFamily: 'monospace', color: inv.balanceOutstanding > 0 ? 'var(--warning)' : 'var(--success)', padding: '14px 10px', whiteSpace: 'nowrap' }}>
+          {symbol}{(inv.balanceOutstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </td>
+        <td style={{ textAlign: 'center', padding: '14px 10px' }}>
+          {inv.invoiceFileUrl ? (
+            <a 
+              href={inv.invoiceFileUrl} 
+              target="_blank" 
+              rel="noreferrer" 
+              onClick={(e) => e.stopPropagation()}
+              title={inv.invoiceFileName || "Download invoice"}
+              style={{ color: 'var(--primary)' }}
+            >
+              <FileDown size={14} />
+            </a>
+          ) : (
+            <span style={{ opacity: 0.2 }}>-</span>
+          )}
+        </td>
+      </tr>
+    );
+  };
+
   // -------------------------------------------------------------
   // LIST FILTERING & SORTING
   // -------------------------------------------------------------
@@ -860,135 +987,154 @@ export default function CreditControlDashboard({
       </div>
 
       {/* -------------------------------------------------------------
-          INVOICES GRID/LIST TABLE
+          PARTITIONED INVOICE TABLES
           ------------------------------------------------------------- */}
-      <div className="table-container" style={{ margin: 0, overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-          <thead>
-            <tr>
-              <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
-              <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
-              <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
-              <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
-              <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
-              {activeSubTab === 'simplicity' && <th style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>Simplicity Risk Timeline</th>}
-              <th style={{ cursor: 'pointer', textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
-              <th style={{ cursor: 'pointer', textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
-              <th style={{ textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }}>Outstanding</th>
-              <th style={{ textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }}>Doc</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredInvoices.map(inv => {
-              const symbol = getCurrencySymbol(inv);
-              const statusObj = PAYMENT_STATUSES.find(s => s.value === inv.paymentStatus) || { label: inv.paymentStatus, color: '#fff' };
-
-              return (
-                <tr 
-                  key={inv.id} 
-                  onClick={() => handleOpenDetail(inv)}
-                  style={{ cursor: 'pointer', transition: 'background-color 0.2s' }}
-                  className="table-row-hover"
-                >
-                  <td style={{ fontFamily: 'monospace', fontWeight: 600, padding: '14px 10px', whiteSpace: 'nowrap' }}>
-                    {inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id)}
-                  </td>
-                  <td style={{ padding: '14px 10px' }}><strong>{inv.clientCompany}</strong></td>
-                  <td style={{ padding: '14px 10px' }}>{inv.candidateName}</td>
-                  <td style={{ fontSize: '11px', color: 'var(--text-secondary)', padding: '14px 10px' }}>{inv.recruiterNames}</td>
-                  <td style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span>{inv.invoiceDueDate}</span>
-                      {inv.paymentStatus === 'overdue' && (
-                        <span style={{ fontSize: '10px', color: 'var(--danger)', fontWeight: 'bold' }}>
-                          ({inv.overdueDays}d overdue)
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  {activeSubTab === 'simplicity' && (
-                    <td style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>
-                      {inv.balanceOutstanding > 0 ? (() => {
-                        const days = inv.daysSinceStart;
-                        if (days >= 120) {
-                          return (
-                            <span style={{ color: 'var(--danger)', fontSize: '11px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              🟥 Recourse Clawback (Day {days})
-                            </span>
-                          );
-                        } else if (days >= 90) {
-                          return (
-                            <span style={{ color: 'var(--warning)', fontSize: '11px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              🟧 Credit Loss (Day {days})
-                            </span>
-                          );
-                        } else if (days >= 31) {
-                          return (
-                            <span style={{ color: '#38bdf8', fontSize: '11px', fontWeight: '600' }}>
-                              🟨 Follow-up Active (Day {days})
-                            </span>
-                          );
-                        } else {
-                          return (
-                            <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
-                              Standard Grace (Day {days})
-                            </span>
-                          );
-                        }
-                      })() : (
-                        <span style={{ color: 'var(--success)', fontSize: '11px' }}>Paid / Settled</span>
-                      )}
-                    </td>
-                  )}
-                  <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', padding: '14px 10px', whiteSpace: 'nowrap' }}>
-                    {symbol}{(inv.totalInvoiceAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </td>
-                  <td style={{ textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }}>
-                    <span style={{ 
-                      backgroundColor: `${statusObj.color}15`, 
-                      color: statusObj.color, 
-                      border: `1px solid ${statusObj.color}30`, 
-                      padding: '4px 8px', 
-                      borderRadius: '12px', 
-                      fontSize: '10.5px',
-                      fontWeight: 600,
-                      textTransform: 'uppercase'
-                    }}>
-                      {statusObj.label}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: 'right', fontWeight: 600, fontFamily: 'monospace', color: inv.balanceOutstanding > 0 ? 'var(--warning)' : 'var(--success)', padding: '14px 10px', whiteSpace: 'nowrap' }}>
-                    {symbol}{(inv.balanceOutstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </td>
-                  <td style={{ textAlign: 'center', padding: '14px 10px' }}>
-                    {inv.invoiceFileUrl ? (
-                      <a 
-                        href={inv.invoiceFileUrl} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        onClick={(e) => e.stopPropagation()}
-                        title={inv.invoiceFileName || "Download invoice"}
-                        style={{ color: 'var(--primary)' }}
-                      >
-                        <FileDown size={14} />
-                      </a>
-                    ) : (
-                      <span style={{ opacity: 0.2 }}>-</span>
-                    )}
-                  </td>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+        
+        {/* 1. DISPUTED & LEGAL INVOICES (Top Table) */}
+        <div>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            padding: '12px 16px', 
+            backgroundColor: 'rgba(239, 68, 68, 0.04)', 
+            border: '1px solid rgba(239, 68, 68, 0.15)', 
+            borderBottom: 'none',
+            borderTopLeftRadius: '8px', 
+            borderTopRightRadius: '8px' 
+          }}>
+            <h3 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--danger)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              ⚠️ Disputed & Legal Proceedings Invoices ({partitionedInvoices.disputedLegal.length})
+            </h3>
+            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Action Required</span>
+          </div>
+          <div className="table-container" style={{ margin: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
+              <thead>
+                <tr>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
+                  {activeSubTab === 'simplicity' && <th style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>Simplicity Risk Timeline</th>}
+                  <th style={{ cursor: 'pointer', textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
+                  <th style={{ cursor: 'pointer', textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
+                  <th style={{ textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }}>Outstanding</th>
+                  <th style={{ textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }}>Doc</th>
                 </tr>
-              );
-            })}
-            
-            {filteredInvoices.length === 0 && (
-              <tr>
-                <td colSpan="9" style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>
-                  No matching invoice records found in database.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {partitionedInvoices.disputedLegal.map(inv => renderInvoiceRow(inv))}
+                {partitionedInvoices.disputedLegal.length === 0 && (
+                  <tr>
+                    <td colSpan={activeSubTab === 'simplicity' ? 10 : 9} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
+                      No disputed or legal action invoices found in database.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 2. LIVE OUTSTANDING INVOICES (Middle Table) */}
+        <div>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            padding: '12px 16px', 
+            backgroundColor: 'rgba(99, 102, 241, 0.04)', 
+            border: '1px solid rgba(99, 102, 241, 0.15)', 
+            borderBottom: 'none',
+            borderTopLeftRadius: '8px', 
+            borderTopRightRadius: '8px' 
+          }}>
+            <h3 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              ⏳ Live Outstanding & Overdue Invoices ({partitionedInvoices.liveOutstanding.length})
+            </h3>
+            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Active Ledger</span>
+          </div>
+          <div className="table-container" style={{ margin: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
+              <thead>
+                <tr>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
+                  {activeSubTab === 'simplicity' && <th style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>Simplicity Risk Timeline</th>}
+                  <th style={{ cursor: 'pointer', textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
+                  <th style={{ cursor: 'pointer', textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
+                  <th style={{ textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }}>Outstanding</th>
+                  <th style={{ textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }}>Doc</th>
+                </tr>
+              </thead>
+              <tbody>
+                {partitionedInvoices.liveOutstanding.map(inv => renderInvoiceRow(inv))}
+                {partitionedInvoices.liveOutstanding.length === 0 && (
+                  <tr>
+                    <td colSpan={activeSubTab === 'simplicity' ? 10 : 9} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
+                      No active live outstanding invoices found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 3. CLOSED & HISTORICAL INVOICES (Bottom Table) */}
+        <div>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            padding: '12px 16px', 
+            backgroundColor: 'rgba(16, 185, 129, 0.04)', 
+            border: '1px solid rgba(16, 185, 129, 0.15)', 
+            borderBottom: 'none',
+            borderTopLeftRadius: '8px', 
+            borderTopRightRadius: '8px' 
+          }}>
+            <h3 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--success)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              ✅ Closed & Historical Settled Invoices ({partitionedInvoices.closed.length})
+            </h3>
+            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Archived / Paid</span>
+          </div>
+          <div className="table-container" style={{ margin: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
+              <thead>
+                <tr>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
+                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
+                  {activeSubTab === 'simplicity' && <th style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>Simplicity Risk Timeline</th>}
+                  <th style={{ cursor: 'pointer', textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
+                  <th style={{ cursor: 'pointer', textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
+                  <th style={{ textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }}>Outstanding</th>
+                  <th style={{ textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }}>Doc</th>
+                </tr>
+              </thead>
+              <tbody>
+                {partitionedInvoices.closed.map(inv => renderInvoiceRow(inv))}
+                {partitionedInvoices.closed.length === 0 && (
+                  <tr>
+                    <td colSpan={activeSubTab === 'simplicity' ? 10 : 9} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
+                      No closed or historical invoices found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
 
       {/* -------------------------------------------------------------

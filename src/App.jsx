@@ -48,6 +48,7 @@ import StaffForm from './components/StaffForm';
 import StaffExitModal from './components/StaffExitModal';
 import ExitEmailTriggerModal from './components/ExitEmailTriggerModal';
 import CreditControlDashboard from './components/CreditControlDashboard';
+import CashflowDashboard from './components/CashflowDashboard';
 import BulkStaffImportModal from './components/BulkStaffImportModal';
 import LeavesDashboard from './components/LeavesDashboard';
 import CommissionsDashboard from './components/CommissionsDashboard';
@@ -77,7 +78,7 @@ export default function App() {
     permissions: {
       role: 'admin',
       dataScope: 'all',
-      allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors', 'logs', 'reports', 'rbac', 'credit_control']
+      allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors', 'logs', 'reports', 'rbac', 'credit_control', 'cashflow']
     }
   };
 
@@ -1633,6 +1634,18 @@ export default function App() {
                 </li>
               )}
 
+              {currentUser.permissions.allowedModules.includes('cashflow') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'cashflow' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('cashflow')}
+                  >
+                    <TrendingUp size={18} />
+                    <span>Cashflow Forecast</span>
+                  </div>
+                </li>
+              )}
+
               {currentUser.permissions.allowedModules.includes('expenses') && (
                 <li>
                   <div 
@@ -1769,7 +1782,8 @@ export default function App() {
                activeTab === 'reports' ? 'Profit & Loss / Group Reports' :
                activeTab === 'rbac' ? 'User Access & Roles Control' :
                activeTab === 'placements' ? 'Sales & Placements Dashboard' :
-               activeTab === 'credit_control' ? 'Credit Control & Invoices Ledger' : 'Vendors & Asset Management'}
+               activeTab === 'credit_control' ? 'Credit Control & Invoices Ledger' :
+               activeTab === 'cashflow' ? 'Cashflow Projections & Ledger' : 'Vendors & Asset Management'}
             </h1>
           </div>
           
@@ -2718,6 +2732,17 @@ export default function App() {
               currentUser={currentUser}
               onUpdatePlacement={handleSavePlacement}
               onShowToast={handleShowToast}
+            />
+          )}
+
+          {/* TAB 7.6: Cashflow Forecast */}
+          {activeTab === 'cashflow' && (
+            <CashflowDashboard 
+              placements={scopedPlacements}
+              contracts={contracts}
+              vendors={vendors}
+              companies={companies}
+              staff={scopedStaff}
             />
           )}
 

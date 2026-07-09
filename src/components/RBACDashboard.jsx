@@ -11,6 +11,7 @@ const MODULES_LIST = [
   { key: 'expenses', label: 'Expense Ledger' },
   { key: 'vendors', label: 'Vendors & Assets' },
   { key: 'credit_control', label: 'Credit Control Invoices' },
+  { key: 'cashflow', label: 'Cashflow Projections' },
   { key: 'logs', label: 'Audit Trail Logs' },
   { key: 'reports', label: 'Profit & Loss / Reports' }
 ];

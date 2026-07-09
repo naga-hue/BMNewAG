@@ -2743,6 +2743,7 @@ export default function App() {
               vendors={vendors}
               companies={companies}
               staff={scopedStaff}
+              payrollPolicies={payrollPolicies}
             />
           )}
 

@@ -33,7 +33,8 @@ export default function CashflowDashboard({
   contracts = [],
   vendors = [],
   companies = [],
-  staff = []
+  staff = [],
+  payrollPolicies = []
 }) {
   const [timeframe, setTimeframe] = useState('30'); // 7, 30, 90, overdue, all
   const [selectedCompanyId, setSelectedCompanyId] = useState('all');
@@ -142,9 +143,9 @@ export default function CashflowDashboard({
     }).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   }, [placements, companies, timeframe, selectedCompanyId, todayStr]);
 
-  // 2. Outflows: Contract Payments
+  // 2. Outflows: Contract Payments + Staff Payroll
   const outflows = useMemo(() => {
-    return contracts.map(c => {
+    const contractOutflows = contracts.map(c => {
       const uCost = Number(c.unitCost) || 0;
       const qty = Number(c.quantityPurchased) || 0;
       const vatRate = Number(c.taxRate || 0);
@@ -164,7 +165,55 @@ export default function CashflowDashboard({
         companyId: c.companyId,
         currency: c.currency || 'GBP'
       };
-    }).filter(out => {
+    });
+
+    const payrollOutflows = [];
+    const now = new Date();
+    const currYear = now.getFullYear();
+    const currMonth = now.getMonth() + 1; // 1-indexed
+    const pad = (n) => String(n).padStart(2, '0');
+
+    staff.filter(s => s.status !== 'exited' && s.salary).forEach(s => {
+      const monthlyBasePay = (Number(s.salary) || 0) / 12;
+      if (monthlyBasePay <= 0) return;
+
+      const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+      const payDay = policy ? (policy.paymentDayOfMonth || 25) : 25;
+
+      const thisMonthPayDate = `${currYear}-${pad(currMonth)}-${pad(payDay)}`;
+
+      let nextMonth = currMonth + 1;
+      let nextYear = currYear;
+      if (nextMonth > 12) {
+        nextMonth = 1;
+        nextYear += 1;
+      }
+      const nextMonthPayDate = `${nextYear}-${pad(nextMonth)}-${pad(payDay)}`;
+
+      payrollOutflows.push({
+        id: `payroll-${s.id}-curr`,
+        agreementName: `Payroll: ${s.fullName}`,
+        vendorName: 'Staff Member',
+        dueDate: thisMonthPayDate,
+        totalCost: monthlyBasePay,
+        frequency: 'monthly',
+        companyId: s.companyId || 'group',
+        currency: s.currency || 'GBP'
+      });
+
+      payrollOutflows.push({
+        id: `payroll-${s.id}-next`,
+        agreementName: `Payroll: ${s.fullName}`,
+        vendorName: 'Staff Member',
+        dueDate: nextMonthPayDate,
+        totalCost: monthlyBasePay,
+        frequency: 'monthly',
+        companyId: s.companyId || 'group',
+        currency: s.currency || 'GBP'
+      });
+    });
+
+    return [...contractOutflows, ...payrollOutflows].filter(out => {
       // Must have a future/overdue payment due date
       if (!out.dueDate) return false;
 
@@ -174,7 +223,7 @@ export default function CashflowDashboard({
       // Filter by timeframe
       return isWithinTimeframe(out.dueDate);
     }).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  }, [contracts, vendors, timeframe, selectedCompanyId, todayStr]);
+  }, [contracts, vendors, staff, payrollPolicies, timeframe, selectedCompanyId, todayStr]);
 
   // 3. Summaries & Currency breakdowns
   const cashflowSummary = useMemo(() => {

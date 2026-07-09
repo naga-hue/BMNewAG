@@ -49,6 +49,7 @@ export default function PayrollDashboard({
 
   // Payroll policy creator states
   const [policyName, setPolicyName] = useState('');
+  const [policyPaymentDay, setPolicyPaymentDay] = useState('25');
   const [policyType, setPolicyType] = useState('ft_uk'); // ft_uk, freelance, custom
   const [employerNiRate, setEmployerNiRate] = useState('13.8');
   const [employerNiThreshold, setEmployerNiThreshold] = useState('758');
@@ -400,6 +401,7 @@ export default function PayrollDashboard({
       studentLoanThreshold: policyType === 'ft_uk' ? (Number(studentLoanThreshold) || 0) : 0,
       dailyRateDefault: policyType === 'freelance' ? (Number(dailyRateDefault) || 0) : 0,
       expectedDaysPerMonth: policyType === 'freelance' ? (Number(expectedDaysPerMonth) || 0) : 21.67,
+      paymentDayOfMonth: Number(policyPaymentDay) || 25,
       payeSlabs: policyType === 'freelance' ? [] : payeSlabs,
       employeeNiSlabs: policyType === 'freelance' ? [] : employeeNiSlabs,
       employerNiSlabs: policyType === 'freelance' ? [] : employerNiSlabs
@@ -422,6 +424,7 @@ export default function PayrollDashboard({
         setStudentLoanThreshold('2274');
         setDailyRateDefault('0');
         setExpectedDaysPerMonth('21.67');
+        setPolicyPaymentDay('25');
         setPayeSlabs([
           { minAmount: 0, maxAmount: 1047.50, rate: 0 },
           { minAmount: 1047.50, maxAmount: 4189.17, rate: 20 },
@@ -458,6 +461,7 @@ export default function PayrollDashboard({
     setStudentLoanThreshold(String(policy.studentLoanThreshold ?? '2274'));
     setDailyRateDefault(String(policy.dailyRateDefault ?? '0'));
     setExpectedDaysPerMonth(String(policy.expectedDaysPerMonth ?? '21.67'));
+    setPolicyPaymentDay(String(policy.paymentDayOfMonth ?? '25'));
     setPayeSlabs(policy.payeSlabs || [
       { minAmount: 0, maxAmount: 1047.50, rate: 0 },
       { minAmount: 1047.50, maxAmount: 4189.17, rate: 20 },
@@ -1491,16 +1495,31 @@ ${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleSt
               {editingPolicyId ? 'Modify' : 'Create'} Payroll Policy Template
             </div>
             
-            <div className="form-group">
-              <label className="form-label">Template Name <span>*</span></label>
-              <input 
-                type="text" 
-                className="form-input" 
-                placeholder="e.g. UK Full Time Staff"
-                value={policyName}
-                onChange={(e) => setPolicyName(e.target.value)}
-                required
-              />
+            <div className="form-group-row" style={{ marginBottom: '12px' }}>
+              <div className="form-group" style={{ flex: 2, marginBottom: 0 }}>
+                <label className="form-label">Template Name <span>*</span></label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  placeholder="e.g. UK Full Time Staff"
+                  value={policyName}
+                  onChange={(e) => setPolicyName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                <label className="form-label">Monthly Pay Day (1-31) <span>*</span></label>
+                <input 
+                  type="number" 
+                  className="form-input" 
+                  min="1"
+                  max="31"
+                  placeholder="e.g. 25"
+                  value={policyPaymentDay}
+                  onChange={(e) => setPolicyPaymentDay(e.target.value)}
+                  required
+                />
+              </div>
             </div>
 
             <div className="form-group">
@@ -1746,6 +1765,9 @@ ${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleSt
                           ) : (
                             <span>Er NI: {p.employerNiRate}%, Er Pen: {p.employerPensionRate}%, Ee Tax: {p.employeeTaxNicRate}%</span>
                           )}
+                          <span style={{ marginLeft: '12px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                            📅 Pay Day: {p.paymentDayOfMonth || 25}th
+                          </span>
                         </td>
                         <td>
                           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>

@@ -598,103 +598,7 @@ export default function VendorsDashboard({
               </div>
             </div>
 
-            {/* Edit Vendor Form (if visible) */}
-            {showVendorForm && (
-              <form onSubmit={handleVendorSubmit} className="detail-section" style={{ border: '1px solid var(--primary)', animation: 'fadeIn 0.2s' }}>
-                <div className="section-title" style={{ fontSize: '13px', color: 'var(--primary)' }}>
-                  <Plus size={14} /> Update Vendor Company Details
-                </div>
-                <div className="form-group-row">
-                  <div className="form-group">
-                    <label className="form-label">Vendor Name <span>*</span></label>
-                    <input 
-                      type="text" 
-                      className="form-input" 
-                      value={vendorName}
-                      onChange={(e) => setVendorName(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Category <span>*</span></label>
-                    <select 
-                      className="select-filter"
-                      value={presetCategory}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setPresetCategory(val);
-                        if (val !== 'custom') {
-                          setVendorCategory(val);
-                        } else {
-                          setVendorCategory('');
-                        }
-                      }}
-                      style={{ width: '100%', padding: '10px' }}
-                    >
-                      <option value="Software License">Software Licenses (Office, CRM, etc.)</option>
-                      <option value="Office Rental">Office Rentals & Landlords</option>
-                      <option value="Telecom">Telecom & Phone Systems</option>
-                      <option value="AI Service">AI Services (OpenAI, Anthropic)</option>
-                      <option value="Other">Other Vendors</option>
-                      <option value="custom">Custom / New Category...</option>
-                    </select>
-                    {(presetCategory === 'custom' || !['Software License', 'Office Rental', 'Telecom', 'AI Service', 'Other'].includes(vendorCategory)) && (
-                      <div style={{ marginTop: '8px' }}>
-                        <input 
-                          type="text" 
-                          className="form-input" 
-                          placeholder="Type custom category..."
-                          value={vendorCategory}
-                          onChange={(e) => setVendorCategory(e.target.value)}
-                          required
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="form-group-row">
-                  <div className="form-group">
-                    <label className="form-label">Contact Email</label>
-                    <input 
-                      type="email" 
-                      className="form-input" 
-                      value={vendorEmail}
-                      onChange={(e) => setVendorEmail(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Contact Phone</label>
-                    <input 
-                      type="text" 
-                      className="form-input" 
-                      value={vendorPhone}
-                      onChange={(e) => setVendorPhone(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Notes & Description</label>
-                  <textarea 
-                    className="form-input" 
-                    rows="2"
-                    value={vendorDesc}
-                    onChange={(e) => setVendorDesc(e.target.value)}
-                    style={{ resize: 'vertical' }}
-                  />
-                </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <button type="submit" className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
-                    Update Vendor Company
-                  </button>
-                  <button type="button" className="btn-secondary" onClick={() => {
-                    setShowVendorForm(false);
-                    setEditingVendorId(null);
-                  }}>
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            )}
+
 
             {/* Contracts & Licenses list */}
             <div className="detail-section" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}>
@@ -724,180 +628,7 @@ export default function VendorsDashboard({
                 </button>
               </div>
 
-              {/* Add/Edit Contract inline Form */}
-              {showContractForm && (
-                <form onSubmit={handleContractSubmit} className="detail-section" style={{ border: '1px solid var(--primary)', backgroundColor: 'var(--bg-secondary)', animation: 'fadeIn 0.2s', padding: '16px', marginTop: '4px' }}>
-                  <div className="section-title" style={{ fontSize: '12px', color: 'var(--primary)' }}>
-                    <Plus size={12} /> {editingContractId ? 'Modify Contract Agreement' : 'Register Contract Agreement'}
-                  </div>
-                  <div className="form-group-row">
-                    <div className="form-group" style={{ flex: 2 }}>
-                      <label className="form-label">Agreement Name <span>*</span></label>
-                      <input 
-                        type="text" 
-                        className="form-input" 
-                        placeholder="e.g. Office 365 Seats Group Plan"
-                        value={contractName}
-                        onChange={(e) => setContractName(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div className="form-group" style={{ flex: 1 }}>
-                      <label className="form-label">Billed Entity (Cost Center) <span>*</span></label>
-                      <select 
-                        className="select-filter"
-                        value={unusedCompanyId}
-                        onChange={(e) => handleCompanyChange(e.target.value)}
-                        style={{ width: '100%', padding: '10px' }}
-                        required
-                      >
-                        {companies.map(comp => (
-                          <option key={comp.id} value={comp.id}>{comp.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="form-group-row">
-                    <div className="form-group">
-                      <label className="form-label">Seat Cost (excl. tax) <span>*</span></label>
-                      <input 
-                        type="number" 
-                        step="0.01"
-                        className="form-input" 
-                        placeholder="Cost per seat / unit"
-                        value={unitCost}
-                        onChange={(e) => setUnitCost(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Seat Quantity Purchased <span>*</span></label>
-                      <input 
-                        type="number" 
-                        className="form-input" 
-                        placeholder="1 for standard contract"
-                        value={quantityPurchased}
-                        onChange={(e) => setQuantityPurchased(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Cost Currency</label>
-                      <select 
-                        className="select-filter"
-                        value={contractCurrency}
-                        onChange={(e) => setContractCurrency(e.target.value)}
-                        style={{ width: '100%', padding: '10px' }}
-                      >
-                        <option value="GBP">GBP (£)</option>
-                        <option value="USD">USD ($)</option>
-                        <option value="AED">AED (Dh)</option>
-                        <option value="INR">INR (₹)</option>
-                        <option value="ZAR">ZAR (R)</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="form-group-row">
-                    <div className="form-group">
-                      <label className="form-label">VAT Rate (%)</label>
-                      <input 
-                        type="number" 
-                        step="0.1"
-                        className="form-input" 
-                        value={taxRate}
-                        onChange={(e) => setTaxRate(e.target.value)}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Cost Interval</label>
-                      <select 
-                        className="select-filter"
-                        value={costInterval}
-                        onChange={(e) => setCostInterval(e.target.value)}
-                        style={{ width: '100%', padding: '10px' }}
-                      >
-                        <option value="monthly">Monthly Recurring</option>
-                        <option value="quarterly">Quarterly Recurring</option>
-                        <option value="annual">Annually Recurring</option>
-                        <option value="one-off">One-Off / Direct Pay</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="form-group-row">
-                    <div className="form-group">
-                      <label className="form-label">Start Date</label>
-                      <input 
-                        type="date" 
-                        className="form-input" 
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">End Date</label>
-                      <input 
-                        type="date" 
-                        className="form-input" 
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Next Renewal</label>
-                      <input 
-                        type="date" 
-                        className="form-input" 
-                        value={renewalDate}
-                        onChange={(e) => setRenewalDate(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="form-group-row">
-                    <div className="form-group">
-                      <label className="form-label">Payment Due Date</label>
-                      <input 
-                        type="date" 
-                        className="form-input" 
-                        value={paymentDueDate}
-                        onChange={(e) => setPaymentDueDate(e.target.value)}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Reminder Date</label>
-                      <input 
-                        type="date" 
-                        className="form-input" 
-                        value={paymentReminderDate}
-                        onChange={(e) => setPaymentReminderDate(e.target.value)}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Default Unassigned Dept</label>
-                      <select 
-                        className="select-filter"
-                        value={unusedDept}
-                        onChange={(e) => setUnusedDept(e.target.value)}
-                        style={{ width: '100%', padding: '10px' }}
-                      >
-                        {availableDeptsForChosenCompany.map(d => (
-                          <option key={d} value={d}>{d}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
-                    <button type="submit" className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
-                      {editingContractId ? 'Save Modifications' : 'Register Contract'}
-                    </button>
-                    <button type="button" className="btn-secondary" onClick={() => {
-                      setShowContractForm(false);
-                      setEditingContractId(null);
-                    }}>
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              )}
+
 
               {/* List of Contracts */}
               {vendorContracts.length === 0 ? (
@@ -1092,113 +823,7 @@ export default function VendorsDashboard({
             </button>
           </div>
 
-          {/* Create / Edit Vendor Form */}
-          {showVendorForm && (
-            <form onSubmit={handleVendorSubmit} className="detail-section" style={{ border: '1px solid var(--primary)', animation: 'fadeIn 0.2s' }}>
-              <div className="section-title" style={{ fontSize: '13px', color: 'var(--primary)' }}>
-                <Plus size={14} /> {editingVendorId ? 'Update Vendor Company Details' : 'Add Vendor Partner Details'}
-              </div>
 
-              <div className="form-group-row">
-                <div className="form-group">
-                  <label className="form-label">Vendor Name <span>*</span></label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    placeholder="e.g. Microsoft Ireland"
-                    value={vendorName}
-                    onChange={(e) => setVendorName(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Category <span>*</span></label>
-                  <select 
-                    className="select-filter"
-                    value={presetCategory}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setPresetCategory(val);
-                      if (val !== 'custom') {
-                        setVendorCategory(val);
-                      } else {
-                        setVendorCategory('');
-                      }
-                    }}
-                    style={{ width: '100%', padding: '10px' }}
-                  >
-                    <option value="Software License">Software Licenses (Office, CRM, etc.)</option>
-                    <option value="Office Rental">Office Rentals & Landlords</option>
-                    <option value="Telecom">Telecom & Phone Systems</option>
-                    <option value="AI Service">AI Services (OpenAI, Anthropic)</option>
-                    <option value="Other">Other Vendors</option>
-                    <option value="custom">Custom / New Category...</option>
-                  </select>
-                  {(presetCategory === 'custom' || !['Software License', 'Office Rental', 'Telecom', 'AI Service', 'Other'].includes(vendorCategory)) && (
-                    <div style={{ marginTop: '8px' }}>
-                      <input 
-                        type="text" 
-                        className="form-input" 
-                        placeholder="Type custom category..."
-                        value={vendorCategory}
-                        onChange={(e) => setVendorCategory(e.target.value)}
-                        required
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="form-group-row">
-                <div className="form-group">
-                  <label className="form-label">Contact Email</label>
-                  <input 
-                    type="email" 
-                    className="form-input" 
-                    placeholder="e.g. billing@microsoft.com"
-                    value={vendorEmail}
-                    onChange={(e) => setVendorEmail(e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Contact Phone</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    placeholder="e.g. +353 1 1234567"
-                    value={vendorPhone}
-                    onChange={(e) => setVendorPhone(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Notes & Description</label>
-                <textarea 
-                  className="form-input" 
-                  rows="2"
-                  placeholder="What products or services they supply..."
-                  value={vendorDesc}
-                  onChange={(e) => setVendorDesc(e.target.value)}
-                  style={{ resize: 'vertical' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button type="submit" className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
-                  {editingVendorId ? 'Update Vendor Company' : 'Save Vendor Partner'}
-                </button>
-                <button type="button" className="btn-secondary" onClick={() => {
-                  setShowVendorForm(false);
-                  setEditingVendorId(null);
-                }}>
-                  Cancel
-                </button>
-              </div>
-            </form>
-          )}
 
           {/* Vendors Directory Section */}
           <div className="detail-section" style={{ padding: '16px' }}>
@@ -1348,240 +973,7 @@ export default function VendorsDashboard({
             </button>
           </div>
 
-          {/* Create / Edit Contract Form */}
-          {showContractForm && (
-            <form onSubmit={handleContractSubmit} className="detail-section" style={{ border: '1px solid var(--primary)', animation: 'fadeIn 0.2s' }}>
-              <div className="section-title" style={{ fontSize: '13px', color: 'var(--primary)' }}>
-                <Plus size={14} /> {editingContractId ? 'Modify Contract Agreement' : 'Register Contract Agreement'}
-              </div>
 
-              <div className="form-group-row">
-                <div className="form-group" style={{ flex: 2 }}>
-                  <label className="form-label">Agreement Name <span>*</span></label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    placeholder="e.g. Office 365 Seats Group Plan"
-                    value={contractName}
-                    onChange={(e) => setContractName(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">Vendor Partner <span>*</span></label>
-                  <select 
-                    className="select-filter"
-                    value={contractVendorId}
-                    onChange={(e) => setContractVendorId(e.target.value)}
-                    style={{ width: '100%', padding: '10px' }}
-                    required
-                  >
-                    <option value="">-- Select Vendor --</option>
-                    {vendors.map(v => (
-                      <option key={v.id} value={v.id}>{v.name} ({v.category})</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="form-group-row">
-                <div className="form-group">
-                  <label className="form-label">Billing Entity (Company) <span>*</span></label>
-                  <select 
-                    className="select-filter"
-                    value={contractCompanyId}
-                    onChange={(e) => setContractCompanyId(e.target.value)}
-                    style={{ width: '100%', padding: '10px' }}
-                    required
-                  >
-                    <option value="">-- Select Company --</option>
-                    {companies.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group-row" style={{ flex: 1, gap: '10px' }}>
-                  <div className="form-group" style={{ flex: 1 }}>
-                    <label className="form-label">Billing Frequency <span>*</span></label>
-                    <select 
-                      className="select-filter"
-                      value={costInterval}
-                      onChange={(e) => setCostInterval(e.target.value)}
-                      style={{ width: '100%', padding: '10px' }}
-                    >
-                      <option value="monthly">Monthly Recurring</option>
-                      <option value="annual">Annual Recurring</option>
-                    </select>
-                  </div>
-
-                  <div className="form-group" style={{ flex: 1 }}>
-                    <label className="form-label">Contract Currency <span>*</span></label>
-                    <select 
-                      className="select-filter"
-                      value={contractCurrency}
-                      onChange={(e) => setContractCurrency(e.target.value)}
-                      style={{ width: '100%', padding: '10px' }}
-                    >
-                      {CURRENCIES.map(curr => (
-                        <option key={curr.code} value={curr.code}>{curr.code} ({curr.symbol})</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="form-group-row">
-                <div className="form-group">
-                  <label className="form-label">Unit Cost (excl. Tax) <span>*</span></label>
-                  <input 
-                    type="number" 
-                    className="form-input" 
-                    placeholder="0.00"
-                    step="0.01"
-                    value={unitCost}
-                    onChange={(e) => setUnitCost(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Quantity / Seats Purchased <span>*</span></label>
-                  <input 
-                    type="number" 
-                    className="form-input" 
-                    value={quantityPurchased}
-                    onChange={(e) => setQuantityPurchased(e.target.value)}
-                    min="1"
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">VAT / Tax Rate (%) <span>*</span></label>
-                  <input 
-                    type="number" 
-                    className="form-input" 
-                    step="0.1"
-                    value={taxRate}
-                    onChange={(e) => setTaxRate(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="form-group-row">
-                <div className="form-group">
-                  <label className="form-label">Agreement Start Date <span>*</span></label>
-                  <input 
-                    type="date" 
-                    className="form-input" 
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Agreement End Date</label>
-                  <input 
-                    type="date" 
-                    className="form-input" 
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Contract Renewal Date</label>
-                  <input 
-                    type="date" 
-                    className="form-input" 
-                    value={renewalDate}
-                    onChange={(e) => setRenewalDate(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* Payment Alert Parameters */}
-              <div className="form-group-row" style={{ marginTop: '8px', borderTop: '1px dashed var(--border-color)', paddingTop: '16px' }}>
-                <div className="form-group">
-                  <label className="form-label">Next Payment Due Date</label>
-                  <input 
-                    type="date" 
-                    className="form-input" 
-                    value={paymentDueDate}
-                    onChange={(e) => setPaymentDueDate(e.target.value)}
-                  />
-                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                    Used to trigger overdue and imminent payment alarms.
-                  </span>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Payment Reminder Date</label>
-                  <input 
-                    type="date" 
-                    className="form-input" 
-                    value={paymentReminderDate}
-                    onChange={(e) => setPaymentReminderDate(e.target.value)}
-                  />
-                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                    Date when an admin reminder will trigger.
-                  </span>
-                </div>
-              </div>
-
-              <div className="form-group-row" style={{ marginTop: '8px', borderTop: '1px dashed var(--border-color)', paddingTop: '16px' }}>
-                <div className="form-group">
-                  <label className="form-label">Unused License Cost absorbed by (Company)</label>
-                  <select 
-                    className="select-filter"
-                    value={unusedCompanyId}
-                    onChange={(e) => handleCompanyChange(e.target.value)}
-                    style={{ width: '100%', padding: '10px' }}
-                  >
-                    <option value="">-- Select Company --</option>
-                    {companies.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Unused License Cost absorbed by (Department)</label>
-                  <select 
-                    className="select-filter"
-                    value={unusedDept}
-                    onChange={(e) => setUnusedDept(e.target.value)}
-                    style={{ width: '100%', padding: '10px' }}
-                    disabled={!unusedCompanyId}
-                  >
-                    {!unusedCompanyId ? (
-                      <option value="">-- Select Company First --</option>
-                    ) : (
-                      availableDeptsForChosenCompany.map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))
-                    )}
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button type="submit" className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
-                  {editingContractId ? 'Update Contract' : 'Save Contract Agreement'}
-                </button>
-                <button type="button" className="btn-secondary" onClick={() => {
-                  setShowContractForm(false);
-                  setEditingContractId(null);
-                }}>
-                  Cancel
-                </button>
-              </div>
-            </form>
-          )}
 
           {/* Contracts grid */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -2598,6 +1990,379 @@ export default function VendorsDashboard({
         );
       })()}
 
+      {/* Edit / Create Vendor Popup Modal */}
+      {showVendorForm && (
+        <div className="form-wizard-overlay" onClick={() => { setShowVendorForm(false); setEditingVendorId(null); }}>
+          <div className="form-wizard-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <div className="wizard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="wizard-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ backgroundColor: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', padding: '8px', borderRadius: '8px' }}>
+                  <Building2 size={20} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#fff' }}>
+                    {editingVendorId ? 'Update Vendor Company Details' : 'Add Vendor Partner Details'}
+                  </h2>
+                  <span style={{ fontSize: '11px', color: '#94a3b8' }}>Fill in company information below</span>
+                </div>
+              </div>
+              <button type="button" className="btn-close" onClick={() => { setShowVendorForm(false); setEditingVendorId(null); }} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleVendorSubmit} className="wizard-content" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="form-group-row" style={{ marginBottom: 0 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Vendor Name <span>*</span></label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    placeholder="e.g. Microsoft Ireland"
+                    value={vendorName}
+                    onChange={(e) => setVendorName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Category <span>*</span></label>
+                  <select 
+                    className="select-filter"
+                    value={presetCategory}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPresetCategory(val);
+                      if (val !== 'custom') {
+                        setVendorCategory(val);
+                      } else {
+                        setVendorCategory('');
+                      }
+                    }}
+                    style={{ width: '100%', padding: '10px' }}
+                  >
+                    <option value="Software License">Software Licenses (Office, CRM, etc.)</option>
+                    <option value="Office Rental">Office Rentals & Landlords</option>
+                    <option value="Telecom">Telecom & Phone Systems</option>
+                    <option value="AI Service">AI Services (OpenAI, Anthropic)</option>
+                    <option value="Other">Other Vendors</option>
+                    <option value="custom">Custom / New Category...</option>
+                  </select>
+                  {(presetCategory === 'custom' || !['Software License', 'Office Rental', 'Telecom', 'AI Service', 'Other'].includes(vendorCategory)) && (
+                    <div style={{ marginTop: '8px' }}>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        placeholder="Type custom category..."
+                        value={vendorCategory}
+                        onChange={(e) => setVendorCategory(e.target.value)}
+                        required
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="form-group-row" style={{ marginBottom: 0 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Contact Email</label>
+                  <input 
+                    type="email" 
+                    className="form-input" 
+                    placeholder="e.g. billing@microsoft.com"
+                    value={vendorEmail}
+                    onChange={(e) => setVendorEmail(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Contact Phone</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    placeholder="e.g. +353 1 1234567"
+                    value={vendorPhone}
+                    onChange={(e) => setVendorPhone(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Notes & Description</label>
+                <textarea 
+                  className="form-input" 
+                  rows="3"
+                  placeholder="What products or services they supply..."
+                  value={vendorDesc}
+                  onChange={(e) => setVendorDesc(e.target.value)}
+                  style={{ resize: 'vertical' }}
+                />
+              </div>
+
+              <div className="wizard-footer" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '10px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                <button type="button" className="btn-secondary" onClick={() => { setShowVendorForm(false); setEditingVendorId(null); }}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary">
+                  {editingVendorId ? 'Update Vendor Company' : 'Save Vendor Partner'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit / Create Contract Popup Modal */}
+      {showContractForm && (
+        <div className="form-wizard-overlay" onClick={() => { setShowContractForm(false); setEditingContractId(null); }}>
+          <div className="form-wizard-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '650px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="wizard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="wizard-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ backgroundColor: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', padding: '8px', borderRadius: '8px' }}>
+                  <Plus size={20} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#fff' }}>
+                    {editingContractId ? 'Modify Contract Agreement' : 'Register Contract Agreement'}
+                  </h2>
+                  <span style={{ fontSize: '11px', color: '#94a3b8' }}>Fill in agreement parameters</span>
+                </div>
+              </div>
+              <button type="button" className="btn-close" onClick={() => { setShowContractForm(false); setEditingContractId(null); }} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleContractSubmit} className="wizard-content" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}>
+              <div className="form-group-row" style={{ marginBottom: 0 }}>
+                <div className="form-group" style={{ flex: 2, marginBottom: 0 }}>
+                  <label className="form-label">Agreement Name <span>*</span></label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    placeholder="e.g. Office 365 Seats Group Plan"
+                    value={contractName}
+                    onChange={(e) => setContractName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                  <label className="form-label">Vendor Partner <span>*</span></label>
+                  <select 
+                    className="select-filter"
+                    value={contractVendorId}
+                    onChange={(e) => setContractVendorId(e.target.value)}
+                    style={{ width: '100%', padding: '10px' }}
+                    required
+                  >
+                    <option value="">-- Select Vendor --</option>
+                    {vendors.map(v => (
+                      <option key={v.id} value={v.id}>{v.name} ({v.category})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-group-row" style={{ marginBottom: 0 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Billing Entity (Company) <span>*</span></label>
+                  <select 
+                    className="select-filter"
+                    value={contractCompanyId}
+                    onChange={(e) => setContractCompanyId(e.target.value)}
+                    style={{ width: '100%', padding: '10px' }}
+                    required
+                  >
+                    <option value="">-- Select Company --</option>
+                    {companies.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group-row" style={{ flex: 1, gap: '10px', marginBottom: 0 }}>
+                  <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                    <label className="form-label">Billing Frequency <span>*</span></label>
+                    <select 
+                      className="select-filter"
+                      value={costInterval}
+                      onChange={(e) => setCostInterval(e.target.value)}
+                      style={{ width: '100%', padding: '10px' }}
+                    >
+                      <option value="monthly">Monthly Recurring</option>
+                      <option value="quarterly">Quarterly Recurring</option>
+                      <option value="annual">Annual Recurring</option>
+                      <option value="one-off">One-Off / Direct Pay</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                    <label className="form-label">Contract Currency <span>*</span></label>
+                    <select 
+                      className="select-filter"
+                      value={contractCurrency}
+                      onChange={(e) => setContractCurrency(e.target.value)}
+                      style={{ width: '100%', padding: '10px' }}
+                    >
+                      {CURRENCIES.map(curr => (
+                        <option key={curr.code} value={curr.code}>{curr.code} ({curr.symbol})</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-group-row" style={{ marginBottom: 0 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Unit Cost (excl. Tax) <span>*</span></label>
+                  <input 
+                    type="number" 
+                    className="form-input" 
+                    placeholder="0.00"
+                    step="0.01"
+                    value={unitCost}
+                    onChange={(e) => setUnitCost(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Quantity / Seats Purchased <span>*</span></label>
+                  <input 
+                    type="number" 
+                    className="form-input" 
+                    value={quantityPurchased}
+                    onChange={(e) => setQuantityPurchased(e.target.value)}
+                    min="1"
+                    required
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">VAT / Tax Rate (%) <span>*</span></label>
+                  <input 
+                    type="number" 
+                    className="form-input" 
+                    step="0.1"
+                    value={taxRate}
+                    onChange={(e) => setTaxRate(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="form-group-row" style={{ marginBottom: 0 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Agreement Start Date <span>*</span></label>
+                  <input 
+                    type="date" 
+                    className="form-input" 
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Agreement End Date</label>
+                  <input 
+                    type="date" 
+                    className="form-input" 
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Contract Renewal Date</label>
+                  <input 
+                    type="date" 
+                    className="form-input" 
+                    value={renewalDate}
+                    onChange={(e) => setRenewalDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Payment Alert Parameters */}
+              <div className="form-group-row" style={{ marginTop: '8px', borderTop: '1px dashed var(--border-color)', paddingTop: '16px', marginBottom: 0 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Next Payment Due Date</label>
+                  <input 
+                    type="date" 
+                    className="form-input" 
+                    value={paymentDueDate}
+                    onChange={(e) => setPaymentDueDate(e.target.value)}
+                  />
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                    Used to trigger overdue and imminent payment alarms.
+                  </span>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Payment Reminder Date</label>
+                  <input 
+                    type="date" 
+                    className="form-input" 
+                    value={paymentReminderDate}
+                    onChange={(e) => setPaymentReminderDate(e.target.value)}
+                  />
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                    Date when an admin reminder will trigger.
+                  </span>
+                </div>
+              </div>
+
+              <div className="form-group-row" style={{ marginTop: '8px', borderTop: '1px dashed var(--border-color)', paddingTop: '16px', marginBottom: 0 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Unused License Cost absorbed by (Company)</label>
+                  <select 
+                    className="select-filter"
+                    value={unusedCompanyId}
+                    onChange={(e) => handleCompanyChange(e.target.value)}
+                    style={{ width: '100%', padding: '10px' }}
+                  >
+                    <option value="">-- Select Company --</option>
+                    {companies.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Unused License Cost absorbed by (Department)</label>
+                  <select 
+                    className="select-filter"
+                    value={unusedDept}
+                    onChange={(e) => setUnusedDept(e.target.value)}
+                    style={{ width: '100%', padding: '10px' }}
+                    disabled={!unusedCompanyId}
+                  >
+                    {!unusedCompanyId ? (
+                      <option value="">-- Select Company First --</option>
+                    ) : (
+                      availableDeptsForChosenCompany.map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              <div className="wizard-footer" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '10px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                <button type="button" className="btn-secondary" onClick={() => { setShowContractForm(false); setEditingContractId(null); }}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary">
+                  {editingContractId ? 'Update Contract' : 'Save Contract Agreement'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      
     </div>
   );
 }

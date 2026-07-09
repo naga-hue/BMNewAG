@@ -23,7 +23,8 @@ import {
   XCircle,
   HelpCircle,
   Clock,
-  ThumbsUp
+  ThumbsUp,
+  X
 } from 'lucide-react';
 
 const SOURCES = [
@@ -80,6 +81,7 @@ export default function PlacementsDashboard({
   // Manual placement logger states
   const [showLogForm, setShowLogForm] = useState(false);
   const [editingPlacementId, setEditingPlacementId] = useState(null);
+  const [viewingPlacement, setViewingPlacement] = useState(null);
 
   const [pIdInput, setPIdInput] = useState('');
   const [invoiceInput, setInvoiceInput] = useState('');
@@ -1290,9 +1292,28 @@ export default function PlacementsDashboard({
             </div>
           </div>
 
-          {/* Log Placement Form */}
+          {/* Log Placement Form (Popup modal card) */}
           {showLogForm && (
-            <form onSubmit={handlePlacementSubmit} className="detail-section" style={{ border: '1px solid var(--primary)', animation: 'fadeIn 0.2s' }}>
+            <div className="form-wizard-overlay" onClick={() => { setShowLogForm(false); setEditingPlacementId(null); }}>
+              <div className="form-wizard-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '750px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+                <div className="wizard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="wizard-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ backgroundColor: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', padding: '8px', borderRadius: '8px' }}>
+                      <Plus size={20} />
+                    </div>
+                    <div>
+                      <h2 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#fff' }}>
+                        {editingPlacementId ? 'Modify Placement Records' : 'Log Placed Candidate Sales'}
+                      </h2>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>Fill in placement details below</span>
+                    </div>
+                  </div>
+                  <button type="button" className="btn-close" onClick={() => { setShowLogForm(false); setEditingPlacementId(null); }} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+                    <X size={18} />
+                  </button>
+                </div>
+                
+                <form onSubmit={handlePlacementSubmit} className="wizard-content" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}>
               <div className="section-title" style={{ fontSize: '13px', color: 'var(--primary)' }}>
                 <Plus size={14} /> {editingPlacementId ? 'Modify Placement Records' : 'Log Placed Candidate Sales'}
               </div>
@@ -1620,18 +1641,20 @@ export default function PlacementsDashboard({
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
-                <button type="submit" className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
-                  {editingPlacementId ? 'Update Placement' : 'Save Placement Log'}
-                </button>
-                <button type="button" className="btn-secondary" onClick={() => {
-                  setShowLogForm(false);
-                  setEditingPlacementId(null);
-                }}>
-                  Cancel
-                </button>
+                  <div className="wizard-footer" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '10px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                    <button type="button" className="btn-secondary" onClick={() => {
+                      setShowLogForm(false);
+                      setEditingPlacementId(null);
+                    }}>
+                      Cancel
+                    </button>
+                    <button type="submit" className="btn-primary">
+                      {editingPlacementId ? 'Update Placement' : 'Save Placement Log'}
+                    </button>
+                  </div>
+                </form>
               </div>
-            </form>
+            </div>
           )}
 
           {/* Filters controls */}
@@ -1752,7 +1775,12 @@ export default function PlacementsDashboard({
                   const config = statusColors[p.status] || { label: p.status, color: 'var(--text-secondary)' };
 
                   return (
-                    <tr key={p.id}>
+                    <tr 
+                      key={p.id}
+                      onClick={() => setViewingPlacement(p)}
+                      style={{ cursor: 'pointer', transition: 'background-color 0.2s' }}
+                      className="placement-row-hover"
+                    >
                       <td style={{ fontWeight: 700, fontFamily: 'monospace' }}>
                         <div>{p.placementId}</div>
                         {p.invoiceNumber && <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'normal' }}>Invoice: {p.invoiceNumber}</div>}
@@ -1847,7 +1875,7 @@ export default function PlacementsDashboard({
                           );
                         })}
                       </td>
-                      <td>
+                      <td onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                           {p.status === 'active' && (
                             <>
@@ -2700,6 +2728,151 @@ export default function PlacementsDashboard({
             </div>
           )}
 
+        </div>
+      )}
+
+      {/* View Placement Detail Card Modal */}
+      {viewingPlacement && (
+        <div className="form-wizard-overlay" onClick={() => setViewingPlacement(null)}>
+          <div className="form-wizard-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <div className="wizard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="wizard-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ backgroundColor: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', padding: '8px', borderRadius: '8px' }}>
+                  <Eye size={20} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#fff' }}>
+                    Placement Record Details
+                  </h2>
+                  <span style={{ fontSize: '11px', color: '#94a3b8' }}>CRM Registry Profile: {viewingPlacement.placementId}</span>
+                </div>
+              </div>
+              <button type="button" className="btn-close" onClick={() => setViewingPlacement(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="wizard-content" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Profile Overview */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', backgroundColor: 'var(--bg-secondary)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Candidate Name</span>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginTop: '2px' }}>{viewingPlacement.candidateName}</div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Client Company</span>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginTop: '2px' }}>{viewingPlacement.clientCompany}</div>
+                </div>
+              </div>
+
+              {/* Placement Dates */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Start Date</span>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginTop: '2px' }}>{viewingPlacement.startDate}</div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Scored Date</span>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginTop: '2px' }}>{viewingPlacement.scoredDate}</div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>DNS Date</span>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginTop: '2px', color: 'var(--danger)' }}>{viewingPlacement.dnsDate || '—'}</div>
+                </div>
+              </div>
+
+              {/* Financial Breakdown */}
+              <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '14px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--primary)', display: 'block', marginBottom: '8px' }}>
+                  Financial Metrics
+                </span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '8px' }}>
+                  <div>
+                    <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>Gross Placement Fee</span>
+                    <div style={{ fontSize: '13px', fontWeight: 700, marginTop: '2px', fontFamily: 'monospace' }}>
+                      £{Number(viewingPlacement.grossBillAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>DNS / Rebate Loss</span>
+                    <div style={{ fontSize: '13px', fontWeight: 700, marginTop: '2px', color: 'var(--danger)', fontFamily: 'monospace' }}>
+                      -£{Number(viewingPlacement.dnsRebateAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>Net Placement Value</span>
+                    <div style={{ fontSize: '13px', fontWeight: 700, marginTop: '2px', color: 'var(--success)', fontFamily: 'monospace' }}>
+                      £{Number(viewingPlacement.netScoreValue || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Billing Parameters */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', borderTop: '1px dashed var(--border-color)', paddingTop: '14px' }}>
+                <div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Invoice Number</span>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginTop: '2px' }}>{viewingPlacement.invoiceNumber || '—'}</div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Invoice Type</span>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginTop: '2px', textTransform: 'capitalize' }}>
+                    {viewingPlacement.invoiceType || 'direct'} Invoice
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Client Payment Status</span>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginTop: '2px', textTransform: 'capitalize', color: viewingPlacement.clientPaymentStatus === 'paid' ? 'var(--success)' : 'var(--danger)' }}>
+                    {viewingPlacement.clientPaymentStatus || 'unpaid'}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Payment Terms</span>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginTop: '2px' }}>
+                    {viewingPlacement.paymentTermsDays || 30} Days
+                  </div>
+                </div>
+              </div>
+
+              {/* Recruiter Splits */}
+              <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '14px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--primary)', display: 'block', marginBottom: '6px' }}>
+                  Recruiter Commission Splits
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {viewingPlacement.splits?.map((split, index) => {
+                    const matchedStaff = staff.find(s => s.id === split.staffId);
+                    return (
+                      <div key={index} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 12px', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', fontSize: '12px' }}>
+                        <span>{matchedStaff ? matchedStaff.fullName : 'Unknown Recruiter'}</span>
+                        <strong style={{ color: 'var(--primary)' }}>{split.percentage}% Split</strong>
+                      </div>
+                    );
+                  })}
+                  {(!viewingPlacement.splits || viewingPlacement.splits.length === 0) && (
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>No splits configured. (100% house placement)</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="wizard-footer" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '10px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setViewingPlacement(null)}>
+                  Close
+                </button>
+                <button 
+                  type="button" 
+                  className="btn-primary" 
+                  onClick={() => {
+                    handleEditPlacement(viewingPlacement);
+                    setViewingPlacement(null);
+                  }}
+                >
+                  Edit Record
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

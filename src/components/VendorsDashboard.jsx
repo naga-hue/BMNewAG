@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { toGBP } from '../utils/currency';
+import { toGBP, FX_RATES } from '../utils/currency';
 import { 
   Building2, 
   Plus, 
@@ -1503,11 +1503,26 @@ export default function VendorsDashboard({
         const leaseContracts = contracts.filter(c => c.quantityPurchased === 1);
 
         const getContractCostForMonth = (c, year, monthIndex) => {
-          const cStart = new Date(c.startDate + '-02');
-          const cEnd = new Date(c.endDate + '-02');
+          const parseContractDate = (dateStr, fallbackYear, fallbackMonth) => {
+            if (!dateStr) return new Date(fallbackYear, fallbackMonth, 1);
+            const cleanStr = String(dateStr).trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) {
+              return new Date(cleanStr);
+            }
+            if (/^\d{4}-\d{2}$/.test(cleanStr)) {
+              return new Date(cleanStr + '-02');
+            }
+            const d = new Date(cleanStr);
+            if (!isNaN(d.getTime())) return d;
+            return new Date(fallbackYear, fallbackMonth, 1);
+          };
+
+          const cStart = parseContractDate(c.startDate, 2026, 0);
+          const cEnd = parseContractDate(c.endDate, 2026, 11);
           const currentMonthDate = new Date(year, monthIndex, 1);
+          const endOfMonthDate = new Date(year, monthIndex + 1, 0);
           
-          if (cStart <= new Date(year, monthIndex + 1, 0) && cEnd >= currentMonthDate) {
+          if (cStart <= endOfMonthDate && cEnd >= currentMonthDate) {
             let monthlyTotal = 0;
             const unitCostGBP = toGBP(c.unitCost, c.currency);
             
@@ -1520,8 +1535,10 @@ export default function VendorsDashboard({
               monthlyTotal = unitCostTarget * c.quantityPurchased;
             } else if (c.costInterval === 'annual') {
               monthlyTotal = (unitCostTarget * c.quantityPurchased) / 12;
-            } else if (c.costInterval === 'one_time' && cEnd.getMonth() === monthIndex && cEnd.getFullYear() === year) {
-              monthlyTotal = unitCostTarget * c.quantityPurchased;
+            } else if (c.costInterval === 'one_time' || c.costInterval === 'one-off') {
+              if (cEnd.getMonth() === monthIndex && cEnd.getFullYear() === year) {
+                monthlyTotal = unitCostTarget * c.quantityPurchased;
+              }
             }
 
             const taxFactor = 1 + (Number(c.taxRate || 0) / 100);

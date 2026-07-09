@@ -29,7 +29,8 @@ import {
   Upload,
   LogOut,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  FileText
 } from 'lucide-react';
 
 import { initialCompanies } from './mockData';

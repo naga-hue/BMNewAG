@@ -163,6 +163,43 @@ export default function CreditControlDashboard({
       const mainRecruiter = staff.find(s => s.id === mainRecruiterId);
       const deptName = mainRecruiter ? mainRecruiter.department : 'Recruitment';
 
+      // 1. Calculate days since start date
+      let daysSinceStart = 0;
+      if (p.startDate) {
+        try {
+          const startD = new Date(p.startDate);
+          const todayD = new Date(todayStr);
+          const diffTime = todayD - startD;
+          daysSinceStart = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        } catch(e) {}
+      }
+
+      // 2. Calculate Simplicity Friday Payout Date
+      let simplicityPayoutDate = '—';
+      if (p.startDate) {
+        try {
+          const d = new Date(p.startDate);
+          if (!isNaN(d.getTime())) {
+            const day = d.getDay();
+            let daysToAdd = 0;
+            if (day === 1 || day === 2 || day === 3) {
+              daysToAdd = 5 - day;
+            } else {
+              if (day === 0) {
+                daysToAdd = 5;
+              } else {
+                daysToAdd = 5 + (7 - day);
+              }
+            }
+            const payoutDate = new Date(d.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+            const y = payoutDate.getFullYear();
+            const m = String(payoutDate.getMonth() + 1).padStart(2, '0');
+            const dayVal = String(payoutDate.getDate()).padStart(2, '0');
+            simplicityPayoutDate = `${y}-${m}-${dayVal}`;
+          }
+        } catch (e) {}
+      }
+
       return {
         ...p,
         invoiceType: p.invoiceType || 'direct',
@@ -177,7 +214,9 @@ export default function CreditControlDashboard({
         overdueDays,
         recruiterNames,
         mainRecruiterId,
-        departmentName: deptName
+        departmentName: deptName,
+        daysSinceStart,
+        simplicityPayoutDate
       };
     });
   }, [placements, companies, staff, todayStr]);
@@ -257,7 +296,17 @@ export default function CreditControlDashboard({
       nextMonthList,
       nextMonthTotal: nextMonthList.reduce((sum, inv) => sum + inv.balanceOutstanding, 0),
       nextMonthDirect: nextMonthList.filter(inv => inv.invoiceType === 'direct').reduce((sum, inv) => sum + inv.balanceOutstanding, 0),
-      nextMonthSimplicity: nextMonthList.filter(inv => inv.invoiceType === 'simplicity').reduce((sum, inv) => sum + inv.balanceOutstanding, 0)
+      nextMonthSimplicity: nextMonthList.filter(inv => inv.invoiceType === 'simplicity').reduce((sum, inv) => sum + inv.balanceOutstanding, 0),
+      
+      // Simplicity factored recourse calculations
+      simplicityClawbackList: invoices.filter(inv => inv.invoiceType === 'simplicity' && inv.balanceOutstanding > 0 && inv.daysSinceStart >= 120),
+      simplicityClawbackTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' && inv.balanceOutstanding > 0 && inv.daysSinceStart >= 120).reduce((sum, inv) => sum + inv.balanceOutstanding, 0),
+      
+      simplicityExpiryList: invoices.filter(inv => inv.invoiceType === 'simplicity' && inv.balanceOutstanding > 0 && inv.daysSinceStart >= 90 && inv.daysSinceStart < 120),
+      simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' && inv.balanceOutstanding > 0 && inv.daysSinceStart >= 90 && inv.daysSinceStart < 120).reduce((sum, inv) => sum + inv.balanceOutstanding, 0),
+      
+      simplicityFollowupList: invoices.filter(inv => inv.invoiceType === 'simplicity' && inv.balanceOutstanding > 0 && inv.daysSinceStart >= 31 && inv.daysSinceStart < 90),
+      simplicityFollowupTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' && inv.balanceOutstanding > 0 && inv.daysSinceStart >= 31 && inv.daysSinceStart < 90).reduce((sum, inv) => sum + inv.balanceOutstanding, 0)
     };
   }, [invoices, todayStr]);
 
@@ -696,6 +745,62 @@ export default function CreditControlDashboard({
           </div>
         </div>
 
+        {/* Simplicity Recourse Alert Banner */}
+        {activeSubTab === 'simplicity' && (
+          <div style={{ 
+            backgroundColor: 'rgba(239, 68, 68, 0.03)', 
+            border: '1px solid rgba(239, 68, 68, 0.15)', 
+            borderRadius: '12px', 
+            padding: '16px 20px', 
+            marginBottom: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--danger)' }}>
+              <AlertTriangle size={18} />
+              <strong style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Simplicity Factoring & Recourse Risk Summary</strong>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+              <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, display: 'block' }}>
+                  🟥 Recourse Clawbacks (Day 120+)
+                </span>
+                <h3 style={{ margin: '4px 0 2px 0', fontSize: '16px', fontWeight: 800, color: 'var(--danger)', fontFamily: 'monospace' }}>
+                  £{dashboardStats.simplicityClawbackTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </h3>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                  Deducted off next payment. ({dashboardStats.simplicityClawbackList.length} cases)
+                </span>
+              </div>
+
+              <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, display: 'block' }}>
+                  🟧 Credit Limit Expiry (Day 90-119)
+                </span>
+                <h3 style={{ margin: '4px 0 2px 0', fontSize: '16px', fontWeight: 800, color: 'var(--warning)', fontFamily: 'monospace' }}>
+                  £{dashboardStats.simplicityExpiryTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </h3>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                  Client loses limit on Simplicity. ({dashboardStats.simplicityExpiryList.length} cases)
+                </span>
+              </div>
+
+              <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, display: 'block' }}>
+                  🟨 Standard Chase Active (Day 31-89)
+                </span>
+                <h3 style={{ margin: '4px 0 2px 0', fontSize: '16px', fontWeight: 800, color: '#38bdf8', fontFamily: 'monospace' }}>
+                  £{dashboardStats.simplicityFollowupTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </h3>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                  Followed up from Day 31. ({dashboardStats.simplicityFollowupList.length} cases)
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Filters Panel */}
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '12px', alignItems: 'center' }}>
           
@@ -766,6 +871,7 @@ export default function CreditControlDashboard({
               <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
               <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
               <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
+              {activeSubTab === 'simplicity' && <th style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>Simplicity Risk Timeline</th>}
               <th style={{ cursor: 'pointer', textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
               <th style={{ cursor: 'pointer', textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
               <th style={{ textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }}>Outstanding</th>
@@ -800,6 +906,40 @@ export default function CreditControlDashboard({
                       )}
                     </div>
                   </td>
+                  {activeSubTab === 'simplicity' && (
+                    <td style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>
+                      {inv.balanceOutstanding > 0 ? (() => {
+                        const days = inv.daysSinceStart;
+                        if (days >= 120) {
+                          return (
+                            <span style={{ color: 'var(--danger)', fontSize: '11px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              🟥 Recourse Clawback (Day {days})
+                            </span>
+                          );
+                        } else if (days >= 90) {
+                          return (
+                            <span style={{ color: 'var(--warning)', fontSize: '11px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              🟧 Credit Loss (Day {days})
+                            </span>
+                          );
+                        } else if (days >= 31) {
+                          return (
+                            <span style={{ color: '#38bdf8', fontSize: '11px', fontWeight: '600' }}>
+                              🟨 Follow-up Active (Day {days})
+                            </span>
+                          );
+                        } else {
+                          return (
+                            <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                              Standard Grace (Day {days})
+                            </span>
+                          );
+                        }
+                      })() : (
+                        <span style={{ color: 'var(--success)', fontSize: '11px' }}>Paid / Settled</span>
+                      )}
+                    </td>
+                  )}
                   <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', padding: '14px 10px', whiteSpace: 'nowrap' }}>
                     {symbol}{(inv.totalInvoiceAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
@@ -896,6 +1036,73 @@ export default function CreditControlDashboard({
                   <div>📂 <strong>Billing Route:</strong> {selectedInvoice.invoiceType === 'direct' ? 'Direct Invoice' : 'Simplicity Invoice'}</div>
                   <div>🔑 <strong>Placement ID:</strong> {selectedInvoice.placementId}</div>
                 </div>
+
+                {/* Simplicity Factoring & Recourse Risk Meter */}
+                {selectedInvoice.invoiceType === 'simplicity' && (
+                  <div style={{ 
+                    backgroundColor: 'rgba(239, 68, 68, 0.02)', 
+                    border: '1px solid var(--border-color)', 
+                    borderRadius: '8px', 
+                    padding: '16px', 
+                    fontSize: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', fontSize: '10.5px' }}>
+                        🛡️ Simplicity Factoring Audit & Deadlines
+                      </span>
+                      {selectedInvoice.balanceOutstanding > 0 && (
+                        <span style={{ 
+                          fontSize: '11px', 
+                          fontWeight: 700, 
+                          color: selectedInvoice.daysSinceStart >= 120 ? 'var(--danger)' : selectedInvoice.daysSinceStart >= 90 ? 'var(--warning)' : 'var(--success)'
+                        }}>
+                          Day {selectedInvoice.daysSinceStart} of 120 limit
+                        </span>
+                      )}
+                    </div>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', backgroundColor: 'var(--bg-secondary)', padding: '10px', borderRadius: '6px' }}>
+                      <div>💰 <strong>Humres Friday Payout:</strong> {selectedInvoice.simplicityPayoutDate}</div>
+                      <div>📅 <strong>Client Due Date:</strong> {selectedInvoice.invoiceDueDate} (30 Days)</div>
+                    </div>
+
+                    {selectedInvoice.balanceOutstanding > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                        {/* Risk Timeline visual track */}
+                        <div style={{ display: 'flex', height: '8px', backgroundColor: 'var(--bg-card)', borderRadius: '4px', overflow: 'hidden' }}>
+                          <div style={{ width: '25%', backgroundColor: '#10b981' }} title="Day 1-30: Paid Grace" />
+                          <div style={{ width: '50%', backgroundColor: '#0ea5e9' }} title="Day 31-90: Active Follow-up" />
+                          <div style={{ width: '25%', backgroundColor: 'var(--warning)' }} title="Day 91-120: Expiry Alert" />
+                          <div style={{ width: '100%', backgroundColor: 'var(--danger)' }} title="Day 120+: Recourse active" />
+                        </div>
+                        
+                        {/* Status Message */}
+                        <div>
+                          {selectedInvoice.daysSinceStart >= 120 ? (
+                            <div style={{ color: 'var(--danger)', fontWeight: 'bold' }}>
+                              ⚠️ RECOURSE CLAWBACK ACTIVE: Simplicity will deduct this invoice amount off Humres' next payment. Legal action initiated by Simplicity.
+                            </div>
+                          ) : selectedInvoice.daysSinceStart >= 90 ? (
+                            <div style={{ color: 'var(--warning)', fontWeight: 'bold' }}>
+                              ⚠️ CREDIT LIMIT EXPIRED: Client credit limit has been lost on Simplicity! Prompt collection action required.
+                            </div>
+                          ) : selectedInvoice.daysSinceStart >= 31 ? (
+                            <div style={{ color: '#38bdf8' }}>
+                              &bull; Simplicity follow-ups active. Client is {selectedInvoice.overdueDays} days past due date.
+                            </div>
+                          ) : (
+                            <div style={{ color: 'var(--success)' }}>
+                              &bull; Within standard grace period. Expected payout from Simplicity is scheduled for Friday.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* 2. Editable Invoice coordinates */}
                 <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>

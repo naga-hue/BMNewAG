@@ -196,7 +196,30 @@ export default function CashflowDashboard({
       const termsDays = (p.paymentTermsDays !== undefined && p.paymentTermsDays !== null && p.paymentTermsDays !== '') ? Number(p.paymentTermsDays) : 30;
       
       let dueDate = p.invoiceDueDate;
-      if (!dueDate && raisedDate) {
+      if (p.invoiceType === 'simplicity' && p.startDate) {
+        // Simplicity Friday payout date calculation
+        try {
+          const d = new Date(p.startDate);
+          if (!isNaN(d.getTime())) {
+            const day = d.getDay();
+            let daysToAdd = 0;
+            if (day === 1 || day === 2 || day === 3) {
+              daysToAdd = 5 - day;
+            } else {
+              if (day === 0) {
+                daysToAdd = 5;
+              } else {
+                daysToAdd = 5 + (7 - day);
+              }
+            }
+            const payoutDate = new Date(d.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+            const y = payoutDate.getFullYear();
+            const m = String(payoutDate.getMonth() + 1).padStart(2, '0');
+            const dayVal = String(payoutDate.getDate()).padStart(2, '0');
+            dueDate = `${y}-${m}-${dayVal}`;
+          }
+        } catch (e) {}
+      } else if (!dueDate && raisedDate) {
         try {
           const parts = raisedDate.split('-');
           const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
@@ -400,7 +423,45 @@ export default function CashflowDashboard({
       };
     });
 
-    return [...contractOutflows, ...payrollOutflows, ...expenseOutflows].filter(out => {
+    // Projected Simplicity Clawback Outflows (Day 120 from candidate start date)
+    const simplicityClawbacks = [];
+    placements.filter(p => p.invoiceType === 'simplicity' && p.clientPaymentStatus !== 'paid' && p.status !== 'dns' && p.status !== 'rebate').forEach(p => {
+      if (p.startDate) {
+        try {
+          const startD = new Date(p.startDate);
+          const clawbackDate = new Date(startD.getTime() + 120 * 24 * 60 * 60 * 1000);
+          const y = clawbackDate.getFullYear();
+          const m = String(clawbackDate.getMonth() + 1).padStart(2, '0');
+          const d = String(clawbackDate.getDate()).padStart(2, '0');
+          const clawbackDateStr = `${y}-\n${m}-\n${d}`.replace(/\n/g, ''); // cleans newline chars
+          
+          if (clawbackDateStr >= todayStr) {
+            const gross = Number(p.grossBillAmount) || 0;
+            const vat = (p.vatAmount !== undefined && p.vatAmount !== null && p.vatAmount !== '') 
+              ? (Number(p.vatAmount) || 0) 
+              : (Math.round(gross * 0.20 * 100) / 100);
+            const totalCost = gross + vat;
+            const currency = getCurrencyCode(p.companyId || (companies.find(c => c.name === p.clientCompany)?.id || 'group'));
+            const totalCostGBP = convertToGBP(totalCost, currency, true);
+
+            simplicityClawbacks.push({
+              id: `clawback-${p.id}`,
+              agreementName: `Simplicity Clawback (Unpaid Client): ${p.clientCompany}`,
+              vendorName: 'Simplicity Factoring',
+              dueDate: clawbackDateStr,
+              totalCost,
+              totalCostGBP,
+              frequency: 'one-off',
+              companyId: p.companyId || 'group',
+              currency,
+              type: 'expense'
+            });
+          }
+        } catch (e) {}
+      }
+    });
+
+    return [...contractOutflows, ...payrollOutflows, ...expenseOutflows, ...simplicityClawbacks].filter(out => {
       if (!out.dueDate) return false;
       if (selectedCompanyId !== 'all' && out.companyId !== selectedCompanyId) return false;
 
@@ -414,7 +475,7 @@ export default function CashflowDashboard({
 
       return isWithinTimeframe(out.dueDate);
     }).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  }, [contracts, vendors, staff, payrollPolicies, expenses, timeframe, selectedCompanyId, selectedBankAccountId, selectedBankAccountInfo, todayStr, realtimeRates]);
+  }, [contracts, vendors, staff, payrollPolicies, expenses, placements, timeframe, selectedCompanyId, selectedBankAccountId, selectedBankAccountInfo, todayStr, realtimeRates]);
 
   // 3. Forecast summaries & currency breakdowns in GBP
   const totalInflowGBP = useMemo(() => {

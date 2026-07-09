@@ -102,6 +102,10 @@ export default function PlacementsDashboard({
 
   // Credit Control Invoice States
   const [invoiceTypeInput, setInvoiceTypeInput] = useState('direct');
+  const [simplicityClientNoInput, setSimplicityClientNoInput] = useState('');
+  const [simplicityCreditLimitInput, setSimplicityCreditLimitInput] = useState('');
+  const [noaRequiredInput, setNoaRequiredInput] = useState(false);
+  const [consultantInvoiceReceivedInput, setConsultantInvoiceReceivedInput] = useState(false);
   const [invoiceTriggerTypeInput, setInvoiceTriggerTypeInput] = useState('start-date');
   const [invoiceTriggerCustomDateInput, setInvoiceTriggerCustomDateInput] = useState('');
   const [paymentTermsInput, setPaymentTermsInput] = useState('30');
@@ -190,6 +194,10 @@ export default function PlacementsDashboard({
     setClientPaymentStatusInput(placement.clientPaymentStatus || 'unpaid');
     setClientPaidDateInput(placement.clientPaidDate || '');
     setInvoiceTypeInput(placement.invoiceType || 'direct');
+    setSimplicityClientNoInput(placement.simplicityClientNo || '');
+    setSimplicityCreditLimitInput(placement.simplicityCreditLimit || '');
+    setNoaRequiredInput(!!placement.noaRequired);
+    setConsultantInvoiceReceivedInput(!!placement.consultantInvoiceReceived);
     setInvoiceTriggerTypeInput(placement.invoiceTriggerType || 'start-date');
     setInvoiceTriggerCustomDateInput(placement.invoiceTriggerCustomDate || '');
     const terms = String(placement.paymentTermsDays || '30');
@@ -274,8 +282,14 @@ export default function PlacementsDashboard({
 
     const dueDate = calculateDueDate(raisedDate, termDays);
 
-    const vatVal = Math.round(gross * 0.20 * 100) / 100;
-    const totalVal = gross + vatVal;
+    let vatVal = Math.round(gross * 0.20 * 100) / 100;
+    let totalVal = gross + vatVal;
+
+    if (pType === 'simplicity') {
+      const factoredGross = Math.round(gross * 0.9704 * 100) / 100;
+      vatVal = Math.round(factoredGross * 0.20 * 100) / 100;
+      totalVal = factoredGross + vatVal;
+    }
 
     const existingPlacement = editingPlacementId ? placements.find(p => p.id === editingPlacementId) : null;
     const currentAmountPaid = existingPlacement ? (existingPlacement.amountPaid || 0) : (clientPaymentStatusInput === 'paid' ? totalVal : 0);
@@ -323,6 +337,10 @@ export default function PlacementsDashboard({
       
       // Credit Control parameters
       invoiceType: pType,
+      simplicityClientNo: pType === 'simplicity' ? simplicityClientNoInput.trim() : null,
+      simplicityCreditLimit: pType === 'simplicity' ? simplicityCreditLimitInput.trim() : null,
+      noaRequired: pType === 'simplicity' ? noaRequiredInput : false,
+      consultantInvoiceReceived: pType === 'simplicity' ? consultantInvoiceReceivedInput : false,
       invoiceTriggerType: pTrigger,
       invoiceTriggerCustomDate: pTrigger === 'custom-date' ? invoiceTriggerCustomDateInput : '',
       invoiceRaisedDate: raisedDate,
@@ -368,6 +386,10 @@ export default function PlacementsDashboard({
       setClientPaidDateInput('');
       setSplitsInput([{ staffId: '', percentage: 100 }]);
       setInvoiceTypeInput('direct');
+      setSimplicityClientNoInput('');
+      setSimplicityCreditLimitInput('');
+      setNoaRequiredInput(false);
+      setConsultantInvoiceReceivedInput(false);
       setInvoiceTriggerTypeInput('start-date');
       setInvoiceTriggerCustomDateInput('');
       setPaymentTermsInput('30');
@@ -1493,6 +1515,101 @@ export default function PlacementsDashboard({
                       <option value="simplicity">Simplicity Invoice</option>
                     </select>
                   </div>
+
+                  {/* Simplicity Fields Injection */}
+                  {invoiceTypeInput === 'simplicity' && (
+                    <div style={{ 
+                      gridColumn: '1 / -1',
+                      backgroundColor: 'rgba(99, 102, 241, 0.03)', 
+                      border: '1px solid var(--border-color)', 
+                      borderRadius: '8px', 
+                      padding: '16px', 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: '12px',
+                      animation: 'fadeIn 0.2s',
+                      marginTop: '8px'
+                    }}>
+                      <h5 style={{ fontSize: '11px', fontWeight: 700, color: 'var(--primary)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        🛡️ Simplicity Factoring Details
+                      </h5>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label className="form-label">Simplicity Client Number</label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={simplicityClientNoInput}
+                            onChange={(e) => setSimplicityClientNoInput(e.target.value)}
+                            placeholder="e.g. 4037676"
+                          />
+                        </div>
+                        
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label className="form-label">Available Credit Limit</label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={simplicityCreditLimitInput}
+                            onChange={(e) => setSimplicityCreditLimitInput(e.target.value)}
+                            placeholder="e.g. £30,000.00 or Cr. Req sent"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '20px', alignItems: 'center', marginTop: '4px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px' }}>
+                          <input
+                            type="checkbox"
+                            checked={noaRequiredInput}
+                            onChange={(e) => setNoaRequiredInput(e.target.checked)}
+                            style={{ accentColor: 'var(--primary)' }}
+                          />
+                          NOA Required?
+                        </label>
+                        
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px' }}>
+                          <input
+                            type="checkbox"
+                            checked={consultantInvoiceReceivedInput}
+                            onChange={(e) => setConsultantInvoiceReceivedInput(e.target.checked)}
+                            style={{ accentColor: 'var(--primary)' }}
+                          />
+                          Consultant Invoice Received?
+                        </label>
+                      </div>
+
+                      {/* Factoring Math Breakdown Preview */}
+                      {grossInput && !isNaN(Number(grossInput)) && (
+                        <div style={{ 
+                          marginTop: '8px', 
+                          padding: '12px', 
+                          backgroundColor: 'var(--bg-secondary)', 
+                          borderRadius: '6px', 
+                          fontSize: '11px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px',
+                          border: '1px solid var(--border-color)'
+                        }}>
+                          <strong style={{ color: 'var(--text-secondary)' }}>Estimated Factoring Breakdown (2.96% Fee):</strong>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '4px', fontFamily: 'monospace' }}>
+                            <div>Net Fee Value:</div>
+                            <div style={{ textAlign: 'right' }}>£{Number(grossInput).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div>Total to Humres (97.04%):</div>
+                            <div style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 'bold' }}>£{(Number(grossInput) * 0.9704).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div>VAT on factored total (20%):</div>
+                            <div style={{ textAlign: 'right' }}>£{(Number(grossInput) * 0.9704 * 0.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '4px', fontWeight: 'bold' }}>Expected Friday Payout:</div>
+                            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '4px', textAlign: 'right', fontWeight: 'bold', color: 'var(--primary)' }}>
+                              £{(Number(grossInput) * 0.9704 * 1.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">Invoice to be Raised On <span>*</span></label>
@@ -2833,6 +2950,63 @@ export default function PlacementsDashboard({
                   </div>
                 </div>
               </div>
+
+              {/* Simplicity Specific Parameters Details */}
+              {viewingPlacement.invoiceType === 'simplicity' && (
+                <div style={{ 
+                  backgroundColor: 'rgba(99, 102, 241, 0.03)', 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: '8px', 
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  borderTop: '1px dashed var(--border-color)',
+                  paddingTop: '14px',
+                  marginTop: '6px'
+                }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--primary)', display: 'block' }}>
+                    🛡️ Simplicity Factoring Audit
+                  </span>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
+                    <div>Client Number: <strong>{viewingPlacement.simplicityClientNo || '—'}</strong></div>
+                    <div>Credit Limit: <strong>{viewingPlacement.simplicityCreditLimit || '—'}</strong></div>
+                    <div>NOA Required: <strong>{viewingPlacement.noaRequired ? 'Yes' : 'No'}</strong></div>
+                    <div>Invoice Received: <strong>{viewingPlacement.consultantInvoiceReceived ? 'Yes' : 'No'}</strong></div>
+                  </div>
+
+                  {/* Factoring details breakdown */}
+                  <div style={{ 
+                    marginTop: '4px', 
+                    padding: '8px 12px', 
+                    backgroundColor: 'var(--bg-secondary)', 
+                    borderRadius: '6px', 
+                    fontSize: '11px',
+                    fontFamily: 'monospace',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '2px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Net Fee Total:</span>
+                      <span>£{Number(viewingPlacement.grossBillAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--success)' }}>
+                      <span>Total to Humres (97.04%):</span>
+                      <span>£{(Number(viewingPlacement.grossBillAmount || 0) * 0.9704).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>VAT (20% of factored):</span>
+                      <span>£{(Number(viewingPlacement.grossBillAmount || 0) * 0.9704 * 0.20).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '4px', fontWeight: 'bold', color: 'var(--primary)' }}>
+                      <span>Expected Payout:</span>
+                      <span>£{(Number(viewingPlacement.grossBillAmount || 0) * 0.9704 * 1.20).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Recruiter Splits */}
               <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '14px' }}>

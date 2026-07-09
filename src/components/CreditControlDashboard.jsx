@@ -350,7 +350,19 @@ export default function CreditControlDashboard({
         <td style={{ fontFamily: 'monospace', fontWeight: 600, padding: '14px 10px', whiteSpace: 'nowrap' }}>
           {inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id)}
         </td>
-        <td style={{ padding: '14px 10px' }}><strong>{inv.clientCompany}</strong></td>
+        <td style={{ padding: '14px 10px' }}>
+          <strong>{inv.clientCompany}</strong>
+          {inv.invoiceType === 'simplicity' && (
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px', lineHeight: 1.2 }}>
+              <span>Client No: <strong style={{ color: 'var(--text-secondary)' }}>{inv.simplicityClientNo || '—'}</strong></span>
+              <span>Limit: <strong style={{ color: 'var(--primary)' }}>{inv.simplicityCreditLimit || '—'}</strong></span>
+              <div style={{ display: 'flex', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
+                {inv.noaRequired && <span style={{ color: '#38bdf8', fontSize: '9px', fontWeight: 'bold', backgroundColor: 'rgba(56, 189, 248, 0.08)', padding: '1px 4px', borderRadius: '3px' }}>NOA</span>}
+                {inv.consultantInvoiceReceived && <span style={{ color: 'var(--success)', fontSize: '9px', fontWeight: 'bold', backgroundColor: 'rgba(16, 185, 129, 0.08)', padding: '1px 4px', borderRadius: '3px' }}>Consultant Inv</span>}
+              </div>
+            </div>
+          )}
+        </td>
         <td style={{ padding: '14px 10px' }}>{inv.candidateName}</td>
         <td style={{ fontSize: '11px', color: 'var(--text-secondary)', padding: '14px 10px' }}>{inv.recruiterNames}</td>
         <td style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>

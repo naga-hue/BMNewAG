@@ -2744,6 +2744,8 @@ export default function App() {
               companies={companies}
               staff={scopedStaff}
               payrollPolicies={payrollPolicies}
+              expenses={scopedExpenses}
+              onUpdateCompany={handleSaveCompany}
             />
           )}
 

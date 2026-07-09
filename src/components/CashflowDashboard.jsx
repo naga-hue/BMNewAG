@@ -185,18 +185,25 @@ export default function CashflowDashboard({
   const inflows = useMemo(() => {
     return placements.map(p => {
       const gross = Number(p.grossBillAmount) || 0;
-      const vat = (p.vatAmount !== undefined && p.vatAmount !== null && p.vatAmount !== '') 
+      let vat = (p.vatAmount !== undefined && p.vatAmount !== null && p.vatAmount !== '') 
         ? (Number(p.vatAmount) || 0) 
         : (Math.round(gross * 0.20 * 100) / 100);
-      const total = (p.totalInvoiceAmount !== undefined && p.totalInvoiceAmount !== null && p.totalInvoiceAmount !== '') 
+      let total = (p.totalInvoiceAmount !== undefined && p.totalInvoiceAmount !== null && p.totalInvoiceAmount !== '') 
         ? (Number(p.totalInvoiceAmount) || 0) 
         : (gross + vat);
+
+      if (p.invoiceType === 'simplicity' && (!p.vatAmount || !p.totalInvoiceAmount)) {
+        // Fallback to 2.7% Simplicity factoring fee
+        const factoredGross = Math.round(gross * 0.973 * 100) / 100;
+        vat = Math.round(factoredGross * 0.20 * 100) / 100;
+        total = factoredGross + vat;
+      }
       
       const raisedDate = p.invoiceRaisedDate || p.startDate || p.scoredDate || todayStr;
       const termsDays = (p.paymentTermsDays !== undefined && p.paymentTermsDays !== null && p.paymentTermsDays !== '') ? Number(p.paymentTermsDays) : 30;
       
-      let dueDate = p.invoiceDueDate;
-      if (p.invoiceType === 'simplicity' && p.startDate) {
+      let dueDate = p.overridePayoutDate || p.invoiceDueDate;
+      if (!p.overridePayoutDate && p.invoiceType === 'simplicity' && p.startDate) {
         // Simplicity Friday payout date calculation
         try {
           const d = new Date(p.startDate);
@@ -437,10 +444,18 @@ export default function CashflowDashboard({
           
           if (clawbackDateStr >= todayStr) {
             const gross = Number(p.grossBillAmount) || 0;
-            const vat = (p.vatAmount !== undefined && p.vatAmount !== null && p.vatAmount !== '') 
+            let vat = (p.vatAmount !== undefined && p.vatAmount !== null && p.vatAmount !== '') 
               ? (Number(p.vatAmount) || 0) 
               : (Math.round(gross * 0.20 * 100) / 100);
-            const totalCost = gross + vat;
+            let totalCost = gross + vat;
+
+            if (p.invoiceType === 'simplicity' && (!p.vatAmount || !p.totalInvoiceAmount)) {
+              const factoredGross = Math.round(gross * 0.973 * 100) / 100;
+              vat = Math.round(factoredGross * 0.20 * 100) / 100;
+              totalCost = factoredGross + vat;
+            } else if (p.invoiceType === 'simplicity' && p.totalInvoiceAmount) {
+              totalCost = Number(p.totalInvoiceAmount);
+            }
             const currency = getCurrencyCode(p.companyId || (companies.find(c => c.name === p.clientCompany)?.id || 'group'));
             const totalCostGBP = convertToGBP(totalCost, currency, true);
 

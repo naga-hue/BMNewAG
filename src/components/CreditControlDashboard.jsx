@@ -106,12 +106,19 @@ export default function CreditControlDashboard({
   const invoices = useMemo(() => {
     return placements.map(p => {
       const gross = Number(p.grossBillAmount) || 0;
-      const vat = (p.vatAmount !== undefined && p.vatAmount !== null && p.vatAmount !== '') 
+      let vat = (p.vatAmount !== undefined && p.vatAmount !== null && p.vatAmount !== '') 
         ? (Number(p.vatAmount) || 0) 
         : (Math.round(gross * 0.20 * 100) / 100);
-      const total = (p.totalInvoiceAmount !== undefined && p.totalInvoiceAmount !== null && p.totalInvoiceAmount !== '') 
+      let total = (p.totalInvoiceAmount !== undefined && p.totalInvoiceAmount !== null && p.totalInvoiceAmount !== '') 
         ? (Number(p.totalInvoiceAmount) || 0) 
         : (gross + vat);
+
+      if (p.invoiceType === 'simplicity' && (!p.vatAmount || !p.totalInvoiceAmount)) {
+        // Fallback to 2.7% Simplicity factoring fee
+        const factoredGross = Math.round(gross * 0.973 * 100) / 100;
+        vat = Math.round(factoredGross * 0.20 * 100) / 100;
+        total = factoredGross + vat;
+      }
       
       const raisedDate = p.invoiceRaisedDate || p.startDate || p.scoredDate || todayStr;
       const termsDays = (p.paymentTermsDays !== undefined && p.paymentTermsDays !== null && p.paymentTermsDays !== '') ? Number(p.paymentTermsDays) : 30;
@@ -216,7 +223,8 @@ export default function CreditControlDashboard({
         mainRecruiterId,
         departmentName: deptName,
         daysSinceStart,
-        simplicityPayoutDate
+        simplicityPayoutDate,
+        overridePayoutDate: p.overridePayoutDate || null
       };
     });
   }, [placements, companies, staff, todayStr]);
@@ -531,6 +539,80 @@ export default function CreditControlDashboard({
         </td>
       </tr>
     );
+  };
+
+  // 1. Calculate next 6 Fridays dynamically for drop zones
+  const upcomingFridays = useMemo(() => {
+    const fridays = [];
+    try {
+      const today = new Date(todayStr);
+      let day = today.getDay();
+      let daysToFriday = 5 - day;
+      if (daysToFriday < 0) {
+        daysToFriday += 7;
+      }
+      const nextFriday = new Date(today.getTime() + daysToFriday * 24 * 60 * 60 * 1000);
+      
+      for (let i = 0; i < 6; i++) {
+        const fri = new Date(nextFriday.getTime() + i * 7 * 24 * 60 * 60 * 1000);
+        const y = fri.getFullYear();
+        const m = String(fri.getMonth() + 1).padStart(2, '0');
+        const d = String(fri.getDate()).padStart(2, '0');
+        fridays.push(`${y}-${m}-${d}`);
+      }
+    } catch(e) {}
+    return fridays;
+  }, [todayStr]);
+
+  // 2. Group simplicity invoices by Friday payout date
+  const simplicityWeeks = useMemo(() => {
+    const groups = {};
+    
+    invoices.filter(inv => inv.invoiceType === 'simplicity').forEach(inv => {
+      const payoutFriday = inv.overridePayoutDate || inv.simplicityPayoutDate || '—';
+      if (!groups[payoutFriday]) {
+        groups[payoutFriday] = [];
+      }
+      groups[payoutFriday].push(inv);
+    });
+
+    return Object.keys(groups).sort().map(dateStr => {
+      const list = groups[dateStr];
+      const netTotalSum = list.reduce((sum, inv) => sum + (Number(inv.grossBillAmount) || 0), 0);
+      const totalToHumresSum = list.reduce((sum, inv) => sum + ((Number(inv.grossBillAmount) || 0) * 0.973), 0);
+      const vatSum = totalToHumresSum * 0.20;
+      const totalInclVatSum = totalToHumresSum * 1.20;
+
+      return {
+        weekDate: dateStr,
+        invoices: list,
+        netTotalSum,
+        totalToHumresSum,
+        vatSum,
+        totalInclVatSum
+      };
+    });
+  }, [invoices]);
+
+  // 3. Move invoice to target payout week Friday
+  const handleMoveInvoiceToWeek = async (invoiceId, targetWeekDate) => {
+    const inv = invoices.find(i => i.id === invoiceId);
+    if (!inv) return;
+    
+    const originalPlacement = placements.find(p => p.id === invoiceId);
+    if (!originalPlacement) return;
+
+    const updatedPlacement = {
+      ...originalPlacement,
+      overridePayoutDate: targetWeekDate
+    };
+
+    try {
+      await onUpdatePlacement(updatedPlacement);
+      onShowToast(`Moved ${inv.candidateName} to week ending ${targetWeekDate}`, "success");
+    } catch (e) {
+      onShowToast(`Failed to move invoice: ${e.message}`, "warning");
+    }
   };
 
 
@@ -1001,155 +1083,380 @@ export default function CreditControlDashboard({
       </div>
 
       {/* -------------------------------------------------------------
-          PARTITIONED INVOICE TABLES
+          SPREADSHEET VIEW WITH CONDITIONAL TAB LOGIC
           ------------------------------------------------------------- */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-        
-        {/* 1. DISPUTED & LEGAL INVOICES (Top Table) */}
-        <div>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center', 
-            padding: '12px 16px', 
-            backgroundColor: 'rgba(239, 68, 68, 0.04)', 
-            border: '1px solid rgba(239, 68, 68, 0.15)', 
-            borderBottom: 'none',
-            borderTopLeftRadius: '8px', 
-            borderTopRightRadius: '8px' 
-          }}>
-            <h3 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--danger)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              ⚠️ Disputed & Legal Proceedings Invoices ({partitionedInvoices.disputedLegal.length})
-            </h3>
-            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Action Required</span>
-          </div>
-          <div className="table-container" style={{ margin: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-              <thead>
-                <tr>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
-                  {activeSubTab === 'simplicity' && <th style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>Simplicity Risk Timeline</th>}
-                  <th style={{ cursor: 'pointer', textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
-                  <th style={{ cursor: 'pointer', textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
-                  <th style={{ textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }}>Outstanding</th>
-                  <th style={{ textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }}>Doc</th>
-                </tr>
-              </thead>
-              <tbody>
-                {partitionedInvoices.disputedLegal.map(inv => renderInvoiceRow(inv))}
-                {partitionedInvoices.disputedLegal.length === 0 && (
-                  <tr>
-                    <td colSpan={activeSubTab === 'simplicity' ? 10 : 9} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
-                      No disputed or legal action invoices found in database.
-                    </td>
+      {activeSubTab === 'direct' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+          
+          {/* 1. DISPUTED & LEGAL INVOICES (Top Table) */}
+          <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              padding: '10px 14px', 
+              backgroundColor: 'rgba(239, 68, 68, 0.04)', 
+              borderBottom: '1px solid var(--border-color)'
+            }}>
+              <h3 style={{ fontSize: '11px', fontWeight: 700, color: 'var(--danger)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                ⚠️ Disputed & Legal Proceedings Invoices ({partitionedInvoices.disputedLegal.length})
+              </h3>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>Action Required</span>
+            </div>
+            <div className="table-container" style={{ margin: 0, border: 'none', borderRadius: 0, overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Outstanding</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }}>Doc</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {partitionedInvoices.disputedLegal.map(inv => {
+                    const symbol = getCurrencySymbol(inv);
+                    const statusObj = PAYMENT_STATUSES.find(s => s.value === inv.paymentStatus) || { label: inv.paymentStatus, color: '#fff' };
+                    return (
+                      <tr key={inv.id} onClick={() => handleOpenDetail(inv)} style={{ cursor: 'pointer' }} className="table-row-hover">
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>{inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id)}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}><strong>{inv.clientCompany}</strong></td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}>{inv.candidateName}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>{inv.recruiterNames}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span>{inv.invoiceDueDate}</span>
+                            {inv.paymentStatus === 'overdue' && <span style={{ fontSize: '9px', color: 'var(--danger)', fontWeight: 'bold' }}>({inv.overdueDays}d overdue)</span>}
+                          </div>
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{(inv.totalInvoiceAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>
+                          <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>{statusObj.label}</span>
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: inv.balanceOutstanding > 0 ? 'var(--warning)' : 'var(--success)' }}>{symbol}{(inv.balanceOutstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>{inv.invoiceFileUrl ? <a href={inv.invoiceFileUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--primary)' }}><FileDown size={12} /></a> : '-'}</td>
+                      </tr>
+                    );
+                  })}
+                  {partitionedInvoices.disputedLegal.length === 0 && (
+                    <tr>
+                      <td colSpan="9" style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>No disputed or legal action invoices found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
 
-        {/* 2. LIVE OUTSTANDING INVOICES (Middle Table) */}
-        <div>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center', 
-            padding: '12px 16px', 
-            backgroundColor: 'rgba(99, 102, 241, 0.04)', 
-            border: '1px solid rgba(99, 102, 241, 0.15)', 
-            borderBottom: 'none',
-            borderTopLeftRadius: '8px', 
-            borderTopRightRadius: '8px' 
-          }}>
-            <h3 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              ⏳ Live Outstanding & Overdue Invoices ({partitionedInvoices.liveOutstanding.length})
-            </h3>
-            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Active Ledger</span>
-          </div>
-          <div className="table-container" style={{ margin: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-              <thead>
-                <tr>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
-                  {activeSubTab === 'simplicity' && <th style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>Simplicity Risk Timeline</th>}
-                  <th style={{ cursor: 'pointer', textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
-                  <th style={{ cursor: 'pointer', textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
-                  <th style={{ textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }}>Outstanding</th>
-                  <th style={{ textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }}>Doc</th>
-                </tr>
-              </thead>
-              <tbody>
-                {partitionedInvoices.liveOutstanding.map(inv => renderInvoiceRow(inv))}
-                {partitionedInvoices.liveOutstanding.length === 0 && (
-                  <tr>
-                    <td colSpan={activeSubTab === 'simplicity' ? 10 : 9} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
-                      No active live outstanding invoices found.
-                    </td>
+          {/* 2. LIVE OUTSTANDING INVOICES (Middle Table) */}
+          <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              padding: '10px 14px', 
+              backgroundColor: 'rgba(99, 102, 241, 0.04)', 
+              borderBottom: '1px solid var(--border-color)'
+            }}>
+              <h3 style={{ fontSize: '11px', fontWeight: 700, color: 'var(--primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                ⏳ Live Outstanding & Overdue Invoices ({partitionedInvoices.liveOutstanding.length})
+              </h3>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>Active Ledger</span>
+            </div>
+            <div className="table-container" style={{ margin: 0, border: 'none', borderRadius: 0, overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Outstanding</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }}>Doc</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {partitionedInvoices.liveOutstanding.map(inv => {
+                    const symbol = getCurrencySymbol(inv);
+                    const statusObj = PAYMENT_STATUSES.find(s => s.value === inv.paymentStatus) || { label: inv.paymentStatus, color: '#fff' };
+                    return (
+                      <tr key={inv.id} onClick={() => handleOpenDetail(inv)} style={{ cursor: 'pointer' }} className="table-row-hover">
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>{inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id)}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}><strong>{inv.clientCompany}</strong></td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}>{inv.candidateName}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>{inv.recruiterNames}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span>{inv.invoiceDueDate}</span>
+                            {inv.paymentStatus === 'overdue' && <span style={{ fontSize: '9px', color: 'var(--danger)', fontWeight: 'bold' }}>({inv.overdueDays}d overdue)</span>}
+                          </div>
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{(inv.totalInvoiceAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>
+                          <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>{statusObj.label}</span>
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: inv.balanceOutstanding > 0 ? 'var(--warning)' : 'var(--success)' }}>{symbol}{(inv.balanceOutstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>{inv.invoiceFileUrl ? <a href={inv.invoiceFileUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--primary)' }}><FileDown size={12} /></a> : '-'}</td>
+                      </tr>
+                    );
+                  })}
+                  {partitionedInvoices.liveOutstanding.length === 0 && (
+                    <tr>
+                      <td colSpan="9" style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>No live outstanding invoices found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
 
-        {/* 3. CLOSED & HISTORICAL INVOICES (Bottom Table) */}
-        <div>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center', 
-            padding: '12px 16px', 
-            backgroundColor: 'rgba(16, 185, 129, 0.04)', 
-            border: '1px solid rgba(16, 185, 129, 0.15)', 
-            borderBottom: 'none',
-            borderTopLeftRadius: '8px', 
-            borderTopRightRadius: '8px' 
-          }}>
-            <h3 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--success)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              ✅ Closed & Historical Settled Invoices ({partitionedInvoices.closed.length})
-            </h3>
-            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Archived / Paid</span>
-          </div>
-          <div className="table-container" style={{ margin: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-              <thead>
-                <tr>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
-                  <th style={{ cursor: 'pointer', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
-                  {activeSubTab === 'simplicity' && <th style={{ padding: '14px 10px', whiteSpace: 'nowrap' }}>Simplicity Risk Timeline</th>}
-                  <th style={{ cursor: 'pointer', textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
-                  <th style={{ cursor: 'pointer', textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
-                  <th style={{ textAlign: 'right', padding: '14px 10px', whiteSpace: 'nowrap' }}>Outstanding</th>
-                  <th style={{ textAlign: 'center', padding: '14px 10px', whiteSpace: 'nowrap' }}>Doc</th>
-                </tr>
-              </thead>
-              <tbody>
-                {partitionedInvoices.closed.map(inv => renderInvoiceRow(inv))}
-                {partitionedInvoices.closed.length === 0 && (
-                  <tr>
-                    <td colSpan={activeSubTab === 'simplicity' ? 10 : 9} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
-                      No closed or historical invoices found.
-                    </td>
+          {/* 3. CLOSED & HISTORICAL INVOICES (Bottom Table) */}
+          <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              padding: '10px 14px', 
+              backgroundColor: 'rgba(16, 185, 129, 0.04)', 
+              borderBottom: '1px solid var(--border-color)'
+            }}>
+              <h3 style={{ fontSize: '11px', fontWeight: 700, color: 'var(--success)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                ✅ Closed & Historical Settled Invoices ({partitionedInvoices.closed.length})
+              </h3>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>Archived / Paid</span>
+            </div>
+            <div className="table-container" style={{ margin: 0, border: 'none', borderRadius: 0, overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Outstanding</th>
+                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }}>Doc</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {partitionedInvoices.closed.map(inv => {
+                    const symbol = getCurrencySymbol(inv);
+                    const statusObj = PAYMENT_STATUSES.find(s => s.value === inv.paymentStatus) || { label: inv.paymentStatus, color: '#fff' };
+                    return (
+                      <tr key={inv.id} onClick={() => handleOpenDetail(inv)} style={{ cursor: 'pointer' }} className="table-row-hover">
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>{inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id)}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}><strong>{inv.clientCompany}</strong></td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}>{inv.candidateName}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>{inv.recruiterNames}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span>{inv.invoiceDueDate}</span>
+                            {inv.paymentStatus === 'overdue' && <span style={{ fontSize: '9px', color: 'var(--danger)', fontWeight: 'bold' }}>({inv.overdueDays}d overdue)</span>}
+                          </div>
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{(inv.totalInvoiceAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>
+                          <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>{statusObj.label}</span>
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: inv.balanceOutstanding > 0 ? 'var(--warning)' : 'var(--success)' }}>{symbol}{(inv.balanceOutstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>{inv.invoiceFileUrl ? <a href={inv.invoiceFileUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--primary)' }}><FileDown size={12} /></a> : '-'}</td>
+                      </tr>
+                    );
+                  })}
+                  {partitionedInvoices.closed.length === 0 && (
+                    <tr>
+                      <td colSpan="9" style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>No closed or historical invoices found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
 
-      </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          {/* Simplicity Upcoming Payout Friday Drop Zones */}
+          <div>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '8px', letterSpacing: '0.5px' }}>
+              📬 Reschedule Expected Payout Week (Drag Invoice Row & Drop Here):
+            </span>
+            <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '8px' }}>
+              {upcomingFridays.map(fri => (
+                <div 
+                  key={fri}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    const invoiceId = e.dataTransfer.getData("text/plain");
+                    handleMoveInvoiceToWeek(invoiceId, fri);
+                  }}
+                  style={{ 
+                    flex: '0 0 130px', 
+                    padding: '8px 10px', 
+                    backgroundColor: 'rgba(99, 102, 241, 0.03)', 
+                    border: '1px dashed var(--primary)', 
+                    borderRadius: '6px', 
+                    fontSize: '11px',
+                    textAlign: 'center',
+                    cursor: 'default',
+                    color: 'var(--primary)',
+                    fontWeight: 600,
+                    transition: 'all 0.2s'
+                  }}
+                  onDragEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.1)';
+                  }}
+                  onDragLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.03)';
+                  }}
+                >
+                  📅 Drop to {fri}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Weekly Grouped Tables */}
+          {simplicityWeeks.map(week => {
+            return (
+              <div 
+                key={week.weekDate}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  const invoiceId = e.dataTransfer.getData("text/plain");
+                  handleMoveInvoiceToWeek(invoiceId, week.weekDate);
+                }}
+                style={{ 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: '8px', 
+                  overflow: 'hidden',
+                  backgroundColor: 'var(--bg-card)'
+                }}
+              >
+                {/* Week Header */}
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  padding: '10px 14px', 
+                  backgroundColor: 'rgba(99, 102, 241, 0.04)', 
+                  borderBottom: '1px solid var(--border-color)'
+                }}>
+                  <h4 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--primary)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    📅 Week Ending Friday: {week.weekDate} ({week.invoices.length} Starters)
+                  </h4>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Drag invoice here to reschedule</span>
+                </div>
+
+                <div className="table-container" style={{ margin: 0, border: 'none', borderRadius: 0, overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                        <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Placement ID</th>
+                        <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Client Company</th>
+                        <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Candidate Name</th>
+                        <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Recruiter</th>
+                        <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Start Date</th>
+                        <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Simplicity Risk Timeline</th>
+                        <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Net Total</th>
+                        <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Total to Humres (97.3%)</th>
+                        <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>VAT (20%)</th>
+                        <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Total including VAT</th>
+                        <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }}>Status</th>
+                        <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }}>Doc</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {week.invoices.map((inv, idx) => {
+                        const symbol = getCurrencySymbol(inv);
+                        const statusObj = PAYMENT_STATUSES.find(s => s.value === inv.paymentStatus) || { label: inv.paymentStatus, color: '#fff' };
+                        
+                        return (
+                          <tr 
+                            key={inv.id} 
+                            onClick={() => handleOpenDetail(inv)}
+                            draggable={true}
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData("text/plain", inv.id);
+                            }}
+                            style={{ cursor: 'grab', transition: 'background-color 0.2s' }}
+                            className="table-row-hover"
+                          >
+                            <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>{inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id)}</td>
+                            <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}>
+                              <strong>{inv.clientCompany}</strong>
+                              <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', flexDirection: 'column' }}>
+                                <span>Client No: {inv.simplicityClientNo || '—'} &bull; Limit: {inv.simplicityCreditLimit || '—'}</span>
+                                <div style={{ display: 'flex', gap: '4px', marginTop: '2px' }}>
+                                  {inv.noaRequired && <span style={{ color: '#38bdf8', fontSize: '8px', fontWeight: 'bold', backgroundColor: 'rgba(56, 189, 248, 0.08)', padding: '1px 3px', borderRadius: '2px' }}>NOA</span>}
+                                  {inv.consultantInvoiceReceived && <span style={{ color: 'var(--success)', fontSize: '8px', fontWeight: 'bold', backgroundColor: 'rgba(16, 185, 129, 0.08)', padding: '1px 3px', borderRadius: '2px' }}>Consultant Inv</span>}
+                                </div>
+                              </div>
+                            </td>
+                            <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}>{inv.candidateName}</td>
+                            <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>{inv.recruiterNames}</td>
+                            <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', whiteSpace: 'nowrap' }}>{inv.startDate}</td>
+                            <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                              {inv.balanceOutstanding > 0 ? (() => {
+                                const days = inv.daysSinceStart;
+                                if (days >= 120) {
+                                  return <span style={{ color: 'var(--danger)', fontSize: '10.5px', fontWeight: 'bold' }}>🟥 Recourse (D{days})</span>;
+                                } else if (days >= 90) {
+                                  return <span style={{ color: 'var(--warning)', fontSize: '10.5px', fontWeight: 'bold' }}>🟧 Credit Loss (D{days})</span>;
+                                } else if (days >= 31) {
+                                  return <span style={{ color: '#38bdf8', fontSize: '10.5px', fontWeight: '600' }}>🟨 Follow-up (D{days})</span>;
+                                } else {
+                                  return <span style={{ color: 'var(--text-secondary)', fontSize: '10.5px' }}>Grace (D{days})</span>;
+                                }
+                              })() : (
+                                <span style={{ color: 'var(--success)', fontSize: '10.5px' }}>Paid / Settled</span>
+                              )}
+                            </td>
+                            <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{(Number(inv.grossBillAmount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.973).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.973 * 0.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.973 * 1.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>
+                              <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>{statusObj.label}</span>
+                            </td>
+                            <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>{inv.invoiceFileUrl ? <a href={inv.invoiceFileUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--primary)' }}><FileDown size={12} /></a> : '-'}</td>
+                          </tr>
+                        );
+                      })}
+                      
+                      {/* Weekly Aggregated Sum Row */}
+                      <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 'bold' }}>
+                        <td colSpan="6" style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right' }}>📊 WEEK ending {week.weekDate} TOTALS:</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>£{week.netTotalSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)' }}>£{week.totalToHumresSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>£{week.vatSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--primary)' }}>£{week.totalInclVatSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td colSpan="2" style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }} />
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+          {simplicityWeeks.length === 0 && (
+            <div style={{ padding: '40px', border: '1px dashed var(--border-color)', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              No simplicity invoice records found matching the active search or filters.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* -------------------------------------------------------------
           INVOICE DETAIL & EDITOR MODAL

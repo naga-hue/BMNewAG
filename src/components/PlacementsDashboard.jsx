@@ -286,7 +286,7 @@ export default function PlacementsDashboard({
     let totalVal = gross + vatVal;
 
     if (pType === 'simplicity') {
-      const factoredGross = Math.round(gross * 0.9704 * 100) / 100;
+      const factoredGross = Math.round(gross * 0.973 * 100) / 100;
       vatVal = Math.round(factoredGross * 0.20 * 100) / 100;
       totalVal = factoredGross + vatVal;
     }
@@ -1593,17 +1593,17 @@ export default function PlacementsDashboard({
                           gap: '4px',
                           border: '1px solid var(--border-color)'
                         }}>
-                          <strong style={{ color: 'var(--text-secondary)' }}>Estimated Factoring Breakdown (2.96% Fee):</strong>
+                          <strong style={{ color: 'var(--text-secondary)' }}>Estimated Factoring Breakdown (2.7% Fee):</strong>
                           <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '4px', fontFamily: 'monospace' }}>
                             <div>Net Fee Value:</div>
                             <div style={{ textAlign: 'right' }}>£{Number(grossInput).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div>Total to Humres (97.04%):</div>
-                            <div style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 'bold' }}>£{(Number(grossInput) * 0.9704).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 'bold' }}>£{(Number(grossInput) * 0.973).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div>VAT on factored total (20%):</div>
-                            <div style={{ textAlign: 'right' }}>£{(Number(grossInput) * 0.9704 * 0.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div style={{ textAlign: 'right' }}>£{(Number(grossInput) * 0.973 * 0.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                             <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '4px', fontWeight: 'bold' }}>Expected Friday Payout:</div>
                             <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '4px', textAlign: 'right', fontWeight: 'bold', color: 'var(--primary)' }}>
-                              £{(Number(grossInput) * 0.9704 * 1.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              £{(Number(grossInput) * 0.973 * 1.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </div>
                           </div>
                         </div>
@@ -2994,15 +2994,15 @@ export default function PlacementsDashboard({
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--success)' }}>
                       <span>Total to Humres (97.04%):</span>
-                      <span>£{(Number(viewingPlacement.grossBillAmount || 0) * 0.9704).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                      <span>£{(Number(viewingPlacement.grossBillAmount || 0) * 0.973).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>VAT (20% of factored):</span>
-                      <span>£{(Number(viewingPlacement.grossBillAmount || 0) * 0.9704 * 0.20).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                      <span>£{(Number(viewingPlacement.grossBillAmount || 0) * 0.973 * 0.20).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '4px', fontWeight: 'bold', color: 'var(--primary)' }}>
                       <span>Expected Payout:</span>
-                      <span>£{(Number(viewingPlacement.grossBillAmount || 0) * 0.9704 * 1.20).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                      <span>£{(Number(viewingPlacement.grossBillAmount || 0) * 0.973 * 1.20).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                     </div>
                   </div>
                 </div>

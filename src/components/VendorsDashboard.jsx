@@ -54,6 +54,17 @@ export default function VendorsDashboard({
   const [selectedVendorProfileId, setSelectedVendorProfileId] = useState(null);
   const [presetCategory, setPresetCategory] = useState('Software License');
 
+  const allAvailableDepts = useMemo(() => {
+    const set = new Set();
+    companies.forEach(c => {
+      (c.departments || []).forEach(d => {
+        if (d.name) set.add(d.name);
+      });
+    });
+    ['Operations', 'Sales', 'Admin', 'Recruitment', 'Accounts'].forEach(d => set.add(d));
+    return Array.from(set).sort();
+  }, [companies]);
+
   // Editing trackers
   const [editingVendorId, setEditingVendorId] = useState(null);
   const [editingContractId, setEditingContractId] = useState(null);

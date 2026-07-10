@@ -126,36 +126,6 @@ export default function CreditControlDashboard({
     });
   };
 
-  const selectedSums = useMemo(() => {
-    if (selectedInvoiceIds.size === 0) return null;
-    let net = 0;
-    let factored = 0;
-    let vat = 0;
-    let total = 0;
-    let outstanding = 0;
-    let count = 0;
-
-    invoices.forEach(inv => {
-      if (selectedInvoiceIds.has(inv.id)) {
-        count++;
-        net += (Number(inv.grossBillAmount) || 0);
-        if (inv.invoiceType === 'simplicity') {
-          const fGross = (Number(inv.grossBillAmount) || 0) * 0.9704;
-          factored += fGross;
-          vat += fGross * 0.20;
-          total += fGross * 1.20;
-        } else {
-          factored += (Number(inv.grossBillAmount) || 0);
-          vat += (Number(inv.vatAmount) || 0);
-          total += (Number(inv.totalInvoiceAmount) || 0);
-        }
-        outstanding += (Number(inv.balanceOutstanding) || 0);
-      }
-    });
-
-    return { count, net, factored, vat, total, outstanding };
-  }, [selectedInvoiceIds, invoices]);
-
   const handleTabChange = (tab) => {
     setActiveSubTab(tab);
     setSelectedInvoiceIds(new Set());
@@ -335,6 +305,39 @@ export default function CreditControlDashboard({
       };
     });
   }, [placements, companies, staff, todayStr]);
+
+  const selectedSums = useMemo(() => {
+    if (selectedInvoiceIds.size === 0) return null;
+    let net = 0;
+    let factored = 0;
+    let vat = 0;
+    let total = 0;
+    let outstanding = 0;
+    let count = 0;
+
+    invoices.forEach(inv => {
+      if (selectedInvoiceIds.has(inv.id)) {
+        count++;
+        net += (Number(inv.grossBillAmount) || 0);
+        if (inv.invoiceType === 'simplicity') {
+          const fGross = (Number(inv.grossBillAmount) || 0) * 0.9704;
+          factored += fGross;
+          vat += fGross * 0.20;
+          total += fGross * 1.20;
+        } else {
+          factored += (Number(inv.grossBillAmount) || 0);
+          vat += (Number(inv.vatAmount) || 0);
+          total += (Number(inv.totalInvoiceAmount) || 0);
+        }
+        outstanding += (Number(inv.balanceOutstanding) || 0);
+      }
+    });
+
+    return { count, net, factored, vat, total, outstanding };
+  }, [selectedInvoiceIds, invoices]);
+
+
+
 
   // -------------------------------------------------------------
   // DASHBOARD CALCULATIONS

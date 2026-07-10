@@ -249,9 +249,11 @@ export default function CreditControlDashboard({
         return staffMember ? staffMember.fullName : 'Recruiter';
       }).join(', ');
 
-      const mainRecruiterId = p.splits && p.splits.length > 0 ? p.splits[0].staffId : '';
+      const mainRecruiterId = p.splits && p.splits.length > 0 ? p.splits[0].staffId : (p.recruiterId || '');
       const mainRecruiter = staff.find(s => s.id === mainRecruiterId);
       const deptName = mainRecruiter ? mainRecruiter.department : 'Recruitment';
+      const recruiterCompanyId = mainRecruiter ? mainRecruiter.companyId : '';
+      const finalCompanyId = p.companyId || recruiterCompanyId;
 
       // 1. Calculate days since start date
       let daysSinceStart = 0;
@@ -292,6 +294,8 @@ export default function CreditControlDashboard({
 
       return {
         ...p,
+        companyId: finalCompanyId,
+        recruiterCompanyId,
         invoiceType: p.invoiceType || 'direct',
         invoiceRaisedDate: raisedDate,
         paymentTermsDays: termsDays,

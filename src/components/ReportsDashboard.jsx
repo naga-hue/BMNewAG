@@ -376,10 +376,10 @@ export default function ReportsDashboard({
       const attendanceDays = Math.max(0, totalBusinessDays - leaveDays);
 
       let dailyRate = 0;
-      if (s.attendanceRate && Number(s.attendanceRate) > 0) {
-        dailyRate = Number(s.attendanceRate);
-      } else if (s.salary && Number(s.salary) > 0) {
+      if (s.salary && Number(s.salary) > 0) {
         dailyRate = (Number(s.salary) / 12) / totalBusinessDays;
+      } else if (s.attendanceRate && Number(s.attendanceRate) > 0) {
+        dailyRate = Number(s.attendanceRate);
       } else {
         dailyRate = Number(policy.dailyRateDefault || 0);
       }
@@ -671,10 +671,10 @@ export default function ReportsDashboard({
             const attendanceDays = Math.max(0, totalBusinessDays - leaveDays);
 
             let dailyRate = 0;
-            if (s.attendanceRate && Number(s.attendanceRate) > 0) {
-              dailyRate = Number(s.attendanceRate);
-            } else if (s.salary && Number(s.salary) > 0) {
+            if (s.salary && Number(s.salary) > 0) {
               dailyRate = (Number(s.salary) / 12) / totalBusinessDays;
+            } else if (s.attendanceRate && Number(s.attendanceRate) > 0) {
+              dailyRate = Number(s.attendanceRate);
             } else {
               dailyRate = Number(policy.dailyRateDefault || 0);
             }

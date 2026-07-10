@@ -141,6 +141,7 @@ export default function VendorsDashboard({
   const [unusedDept, setUnusedDept] = useState('Operations');
   const [paymentDueDate, setPaymentDueDate] = useState('');
   const [paymentReminderDate, setPaymentReminderDate] = useState('');
+  const [splitPackageCost, setSplitPackageCost] = useState(false);
   const [showContractForm, setShowContractForm] = useState(false);
   const [multiAssignContract, setMultiAssignContract] = useState(null);
   const [selectedStaffIds, setSelectedStaffIds] = useState([]);
@@ -390,6 +391,7 @@ export default function VendorsDashboard({
     setUnusedDept(contract.unusedCostTag?.department || 'Operations');
     setPaymentDueDate(contract.paymentDueDate || '');
     setPaymentReminderDate(contract.paymentReminderDate || '');
+    setSplitPackageCost(!!contract.splitPackageCost);
     setEditingContractId(contract.id);
     setShowContractForm(true);
     setShowVendorForm(false);
@@ -440,6 +442,7 @@ export default function VendorsDashboard({
       unusedCostTag: { companyId: unusedCompanyId, department: unusedDept },
       paymentDueDate: paymentDueDate || null,
       paymentReminderDate: paymentReminderDate || null,
+      splitPackageCost,
       documents: attachedDocs
     };
 
@@ -462,6 +465,7 @@ export default function VendorsDashboard({
       setRenewalDate('');
       setPaymentDueDate('');
       setPaymentReminderDate('');
+      setSplitPackageCost(false);
       setEditingContractId(null);
       setShowContractForm(false);
     } catch (err) {
@@ -592,6 +596,152 @@ export default function VendorsDashboard({
     });
 
     return counts;
+  };
+
+  const getSplitProRataShares = (splits, year, monthIndex) => {
+    const periodStart = new Date(year, monthIndex, 1);
+    const periodEnd = new Date(year, monthIndex + 1, 0);
+
+    const activeStaff = staff.filter(s => {
+      if (s.status === 'exited' && s.exitDate) {
+        const exit = new Date(s.exitDate);
+        if (exit < periodStart) return false;
+      }
+      if (s.joinDate) {
+        const join = new Date(s.joinDate);
+        if (join > periodEnd) return false;
+      }
+      return s.status !== 'exited' || (s.exitDate && new Date(s.exitDate) >= periodStart);
+    });
+
+    const counts = splits.map(s => {
+      if (s.type === 'company') {
+        return activeStaff.filter(member => member.companyId === s.targetId).length;
+      } else if (s.type === 'department') {
+        return activeStaff.filter(member => member.department === s.targetId).length;
+      } else if (s.type === 'user') {
+        return activeStaff.some(member => member.id === s.targetId) ? 1 : 0;
+      }
+      return 0;
+    });
+
+    const totalCount = counts.reduce((a, b) => a + b, 0);
+
+    return splits.map((s, idx) => {
+      const count = counts[idx];
+      const percentage = totalCount > 0 ? (count / totalCount) * 100 : 0;
+      return {
+        ...s,
+        percentage: Math.round(percentage)
+      };
+    });
+  };
+
+  const getContractCompanyShare = (c, companyId, year, monthIndex) => {
+    const splits = c.splits || [];
+    if (c.useHeadcountSplit) {
+      if (splits.length === 0) {
+        const headcounts = getActiveHeadcountsForMonth(year, monthIndex);
+        const total = Object.values(headcounts).reduce((a, b) => a + b, 0);
+        const count = headcounts[companyId] || 0;
+        return total > 0 ? (count / total) : 0;
+      } else {
+        const activeStaff = staff.filter(s => {
+          const periodStart = new Date(year, monthIndex, 1);
+          const periodEnd = new Date(year, monthIndex + 1, 0);
+          if (s.status === 'exited' && s.exitDate) {
+            const exit = new Date(s.exitDate);
+            if (exit < periodStart) return false;
+          }
+          if (s.joinDate) {
+            const join = new Date(s.joinDate);
+            if (join > periodEnd) return false;
+          }
+          return s.status !== 'exited' || (s.exitDate && new Date(s.exitDate) >= periodStart);
+        });
+
+        const counts = splits.map(s => {
+          if (s.type === 'company') {
+            return activeStaff.filter(member => member.companyId === s.targetId).length;
+          } else if (s.type === 'department') {
+            return activeStaff.filter(member => member.department === s.targetId).length;
+          } else if (s.type === 'user') {
+            return activeStaff.some(member => member.id === s.targetId) ? 1 : 0;
+          }
+          return 0;
+        });
+
+        const totalCount = counts.reduce((a, b) => a + b, 0);
+        if (totalCount <= 0) return 0;
+
+        let companyShare = 0;
+        splits.forEach((s, idx) => {
+          const count = counts[idx];
+          const targetShare = count / totalCount;
+          
+          if (s.type === 'company' && s.targetId === companyId) {
+            companyShare += targetShare;
+          } else if (s.type === 'department') {
+            const deptStaff = activeStaff.filter(member => member.department === s.targetId);
+            const targetCompStaffCount = deptStaff.filter(member => member.companyId === companyId).length;
+            if (deptStaff.length > 0) {
+              companyShare += targetShare * (targetCompStaffCount / deptStaff.length);
+            }
+          } else if (s.type === 'user' && s.targetId) {
+            const member = activeStaff.find(member => member.id === s.targetId);
+            if (member && member.companyId === companyId) {
+              companyShare += targetShare;
+            }
+          }
+        });
+
+        return companyShare;
+      }
+    } else {
+      if (splits.length === 0) {
+        return c.companyId === companyId ? 1.0 : 0;
+      }
+
+      let companyShare = 0;
+      const totalManualPercentage = splits.reduce((acc, curr) => acc + Number(curr.percentage || 0), 0);
+      
+      splits.forEach(s => {
+        const manualPct = Number(s.percentage || 0) / 100;
+        if (s.type === 'company' && s.targetId === companyId) {
+          companyShare += manualPct;
+        } else if (s.type === 'department') {
+          const activeStaff = staff.filter(member => {
+            const periodStart = new Date(year, monthIndex, 1);
+            const periodEnd = new Date(year, monthIndex + 1, 0);
+            if (member.status === 'exited' && member.exitDate) {
+              const exit = new Date(member.exitDate);
+              if (exit < periodStart) return false;
+            }
+            if (member.joinDate) {
+              const join = new Date(member.joinDate);
+              if (join > periodEnd) return false;
+            }
+            return member.status !== 'exited' || (member.exitDate && new Date(member.exitDate) >= periodStart);
+          });
+          const deptStaff = activeStaff.filter(member => member.department === s.targetId);
+          const targetCompStaffCount = deptStaff.filter(member => member.companyId === companyId).length;
+          if (deptStaff.length > 0) {
+            companyShare += manualPct * (targetCompStaffCount / deptStaff.length);
+          }
+        } else if (s.type === 'user' && s.targetId) {
+          const member = staff.find(member => member.id === s.targetId);
+          if (member && member.companyId === companyId) {
+            companyShare += manualPct;
+          }
+        }
+      });
+
+      if (c.companyId === companyId) {
+        const fallbackShare = Math.max(0, 100 - totalManualPercentage) / 100;
+        companyShare += fallbackShare;
+      }
+      return companyShare;
+    }
   };
 
   const forecastPoints = getForecastData();
@@ -1270,12 +1420,13 @@ export default function VendorsDashboard({
                         </td>
                       </tr>
                       
-                      {expandedContractId === contract.id && (() => {
+                  {expandedContractId === contract.id && (() => {
                         const isSoftware = matchedVendor && matchedVendor.category === 'Software License';
                         if (!isSoftware) return null;
                         const assigned = assetAssignments.filter(a => a.contractId === contract.id);
                         const assignedCount = assigned.length;
-                        const unusedCount = Math.max(0, contract.quantityPurchased - assignedCount);
+                        const isPackage = !!contract.splitPackageCost;
+                        const unusedCount = isPackage ? 999999 : Math.max(0, contract.quantityPurchased - assignedCount);
                         const activeStaffList = staff.filter(s => s.status !== 'exited');
                         const sortedStaff = [...activeStaffList].sort((a, b) => a.fullName.localeCompare(b.fullName));
 
@@ -1285,10 +1436,13 @@ export default function VendorsDashboard({
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--primary)', margin: 0 }}>
-                                    Manage Seat Allocations for "${contract.name}"
+                                    Manage Seat Allocations for "{contract.name}"
                                   </h4>
                                   <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                                    Remaining: <strong>${unusedCount} unallocated seats</strong>
+                                    {isPackage 
+                                      ? `Allocations: ${assignedCount} assigned users (Unlimited package pool)`
+                                      : `Remaining: ${unusedCount} unallocated seats`
+                                    }
                                   </span>
                                 </div>
 
@@ -1327,7 +1481,7 @@ export default function VendorsDashboard({
                                   </div>
                                 )}
 
-                                {unusedCount > 0 ? (
+                                {isPackage || unusedCount > 0 ? (
                                   <form 
                                     onSubmit={async (e) => {
                                       await handleAllocateSeatInline(e, contract.id, contract.name);
@@ -1347,14 +1501,14 @@ export default function VendorsDashboard({
                                       placeholder="Optional Email/Alias" 
                                       style={{ width: '160px', padding: '4px 8px', fontSize: '11px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
                                     />
-
+ 
                                     <input 
                                       type="text" 
                                       name="notesInput" 
                                       placeholder="Optional Notes..." 
                                       style={{ width: '160px', padding: '4px 8px', fontSize: '11px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
                                     />
-
+ 
                                     <button type="submit" className="btn-primary" style={{ padding: '4px 14px', fontSize: '11px' }}>
                                       Assign Seat
                                     </button>
@@ -1375,198 +1529,203 @@ export default function VendorsDashboard({
                       const activeStaffList = staff.filter(s => s.status !== 'exited');
                       const sortedStaff = [...activeStaffList].sort((a, b) => a.fullName.localeCompare(b.fullName));
 
+                      const renderCheckboxItem = (id, type, name) => {
+                        const isChecked = splits.some(s => s.type === type && s.targetId === id);
+                        const splitItem = splits.find(s => s.type === type && s.targetId === id);
+
+                        // Resolve dynamic pro-rata share if Automatic is selected
+                        let proRataLabel = '';
+                        if (contract.useHeadcountSplit && splits.length > 0) {
+                          const shares = getSplitProRataShares(splits, new Date().getFullYear(), new Date().getMonth());
+                          const matchedShare = shares.find(s => s.type === type && s.targetId === id);
+                          proRataLabel = matchedShare ? `${matchedShare.percentage}%` : '0%';
+                        }
+
+                        return (
+                          <div 
+                            key={id} 
+                            style={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'space-between', 
+                              gap: '8px', 
+                              fontSize: '11px', 
+                              padding: '6px 8px', 
+                              borderRadius: '4px', 
+                              backgroundColor: isChecked ? 'rgba(167, 139, 250, 0.05)' : 'transparent', 
+                              border: isChecked ? '1px solid rgba(167, 139, 250, 0.2)' : '1px solid transparent',
+                              transition: 'all 0.15s'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={async (e) => {
+                                  let updatedSplits;
+                                  if (e.target.checked) {
+                                    updatedSplits = [...splits, { type, targetId: id, percentage: 0 }];
+                                  } else {
+                                    updatedSplits = splits.filter(s => !(s.type === type && s.targetId === id));
+                                  }
+                                  await handleUpdateContractSplits(contract.id, updatedSplits);
+                                }}
+                                style={{ cursor: 'pointer' }}
+                              />
+                              <span style={{ color: isChecked ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: isChecked ? 600 : 400 }}>{name}</span>
+                            </div>
+                            {isChecked && (
+                              <div>
+                                {contract.useHeadcountSplit ? (
+                                  <span style={{ color: '#38bdf8', fontWeight: 700, fontSize: '11px' }}>{proRataLabel}</span>
+                                ) : (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <input
+                                      type="number"
+                                      value={splitItem.percentage || 0}
+                                      onChange={async (e) => {
+                                        const pct = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                                        const updatedSplits = splits.map(s => {
+                                          if (s.type === type && s.targetId === id) {
+                                            return { ...s, percentage: pct };
+                                          }
+                                          return s;
+                                        });
+                                        const total = updatedSplits.reduce((sum, item) => sum + item.percentage, 0);
+                                        if (total > 100) {
+                                          onShowToast(`Cannot set to ${pct}%. Total manual split would exceed 100% (currently ${total}%).`, 'warning');
+                                          return;
+                                        }
+                                        await handleUpdateContractSplits(contract.id, updatedSplits);
+                                      }}
+                                      style={{ 
+                                        width: '45px', 
+                                        padding: '2px 4px', 
+                                        fontSize: '10.5px', 
+                                        textAlign: 'center', 
+                                        background: 'var(--bg-card)', 
+                                        border: '1px solid var(--border-color)', 
+                                        color: 'var(--text-primary)', 
+                                        borderRadius: '4px' 
+                                      }}
+                                    />
+                                    <span style={{ color: 'var(--text-secondary)', fontSize: '10.5px' }}>%</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      };
+
                       return (
                         <tr style={{ backgroundColor: 'rgba(167, 139, 250, 0.02)' }}>
                           <td colSpan="14" style={{ padding: '16px', border: '1px solid var(--border-color)' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                              
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <h4 style={{ fontSize: '13px', fontWeight: 700, color: '#a78bfa', margin: 0 }}>
-                                  Cost Splits & Distributions for "${contract.name}"
+                                  Cost Splits & Distributions for "{contract.name}"
                                 </h4>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <input 
-                                      type="checkbox" 
-                                      checked={!!contract.useHeadcountSplit}
-                                      onChange={async (e) => {
-                                        const updatedContract = {
-                                          ...contract,
-                                          useHeadcountSplit: e.target.checked
-                                        };
-                                        try {
-                                          await onSaveContract(updatedContract);
-                                          onShowToast("Dynamic Headcount split configuration updated.", "success");
-                                        } catch (err) {
-                                          onShowToast("Error updating headcount split: " + err.message, "warning");
-                                        }
-                                      }}
-                                    />
-                                    👥 Split dynamically by active headcount (Pro-Rata)
-                                  </label>
+                                <div style={{ display: 'flex', gap: '8px', backgroundColor: 'rgba(30, 41, 59, 0.5)', padding: '4px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const updatedContract = { ...contract, useHeadcountSplit: true };
+                                      try {
+                                        await onSaveContract(updatedContract);
+                                        onShowToast("Dynamic headcount split active.", "success");
+                                      } catch (err) {
+                                        onShowToast("Error updating split mode: " + err.message, "warning");
+                                      }
+                                    }}
+                                    style={{
+                                      padding: '4px 10px',
+                                      fontSize: '11px',
+                                      borderRadius: '4px',
+                                      cursor: 'pointer',
+                                      border: 'none',
+                                      backgroundColor: contract.useHeadcountSplit ? 'var(--primary)' : 'transparent',
+                                      color: contract.useHeadcountSplit ? '#fff' : 'var(--text-secondary)',
+                                      fontWeight: 600
+                                    }}
+                                  >
+                                    👥 Automatic (Staff Headcount)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const updatedContract = { ...contract, useHeadcountSplit: false };
+                                      try {
+                                        await onSaveContract(updatedContract);
+                                        onShowToast("Manual percentage splits active.", "success");
+                                      } catch (err) {
+                                        onShowToast("Error updating split mode: " + err.message, "warning");
+                                      }
+                                    }}
+                                    style={{
+                                      padding: '4px 10px',
+                                      fontSize: '11px',
+                                      borderRadius: '4px',
+                                      cursor: 'pointer',
+                                      border: 'none',
+                                      backgroundColor: !contract.useHeadcountSplit ? 'var(--primary)' : 'transparent',
+                                      color: !contract.useHeadcountSplit ? '#fff' : 'var(--text-secondary)',
+                                      fontWeight: 600
+                                    }}
+                                  >
+                                    ⚙️ Manual Override (%)
+                                  </button>
                                 </div>
                               </div>
 
-                              {contract.useHeadcountSplit && (() => {
-                                const currentCounts = getActiveHeadcountsForMonth(new Date().getFullYear(), new Date().getMonth());
-                                const totalCurrent = Object.values(currentCounts).reduce((a, b) => a + b, 0);
-                                return (
-                                  <div style={{ padding: '10px 14px', backgroundColor: 'rgba(56, 189, 248, 0.04)', border: '1px solid rgba(56, 189, 248, 0.15)', borderRadius: '6px', fontSize: '11.5px' }}>
-                                    <span style={{ fontWeight: 700, color: '#38bdf8', display: 'block', marginBottom: '6px' }}>Current Active Headcount Pro-Rata Preview:</span>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                                      {companies.map(c => {
-                                        const count = currentCounts[c.id] || 0;
-                                        const percentage = totalCurrent > 0 ? Math.round((count / totalCurrent) * 100) : 0;
-                                        return (
-                                          <div key={c.id}>
-                                            🏢 {c.name}: <strong>{count} staff</strong> ({percentage}%)
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '6px' }}>
-                                      * Calculations update dynamically each month based on join and exit dates in your staff records. Manual percentage splits below are ignored while headcount split is active.
+                              {contract.useHeadcountSplit && (
+                                <div style={{ padding: '10px 14px', backgroundColor: 'rgba(56, 189, 248, 0.04)', border: '1px solid rgba(56, 189, 248, 0.15)', borderRadius: '6px', fontSize: '11px', color: '#38bdf8' }}>
+                                  {splits.length === 0 ? (
+                                    <span>
+                                      ℹ️ <strong>Global Mode</strong>: Cost is dynamically split pro-rata across <strong>all companies</strong> in the workspace based on active headcount.
                                     </span>
+                                  ) : (
+                                    <span>
+                                      ℹ️ <strong>Targeted Mode</strong>: Cost is dynamically split pro-rata based on headcount <strong>only among the selected targets</strong> checked below.
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Three-column checkbox grid */}
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                  <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🏢 Companies</span>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '200px', overflowY: 'auto', paddingRight: '4px' }}>
+                                    {companies.map(c => renderCheckboxItem(c.id, 'company', c.name))}
                                   </div>
-                                );
-                              })()}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                  <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>💼 Departments</span>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '200px', overflowY: 'auto', paddingRight: '4px' }}>
+                                    {allAvailableDepts.map(d => renderCheckboxItem(d, 'department', d))}
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                  <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>👤 Staff Users</span>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '200px', overflowY: 'auto', paddingRight: '4px' }}>
+                                    {sortedStaff.map(s => renderCheckboxItem(s.id, 'user', s.fullName))}
+                                  </div>
+                                </div>
+                              </div>
 
                               {!contract.useHeadcountSplit && (
-                                <>
-                                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                                    Total Splits Configured: <strong>{totalSplitPercentage}%</strong> {totalSplitPercentage < 100 ? `(Remaining ${100 - totalSplitPercentage}% billed to primary Paying Entity)` : ''}
-                                  </span>
-
-                                  {/* Active splits tags */}
-                                  {splits.length > 0 ? (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
-                                      {splits.map((s, sIdx) => {
-                                        let targetName = 'Unknown Target';
-                                        if (s.type === 'company') {
-                                          const comp = companies.find(c => c.id === s.targetId);
-                                          targetName = comp ? `🏢 ${comp.name}` : `🏢 Company: ${s.targetId}`;
-                                        } else if (s.type === 'department') {
-                                          targetName = `💼 Dept: ${s.targetId}`;
-                                        } else if (s.type === 'user') {
-                                          const st = staff.find(member => member.id === s.targetId);
-                                          targetName = st ? `👤 User: ${st.fullName}` : `👤 User: ${s.targetId}`;
-                                        }
-
-                                        return (
-                                          <div key={sIdx} style={{ 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            gap: '8px', 
-                                            backgroundColor: 'var(--bg-secondary)', 
-                                            border: '1px solid var(--border-color)', 
-                                            padding: '4px 10px', 
-                                            borderRadius: '6px',
-                                            fontSize: '11.5px' 
-                                          }}>
-                                            <strong style={{ color: 'var(--text-primary)' }}>{targetName}</strong>
-                                            <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{s.percentage}%</span>
-                                            <button 
-                                              onClick={() => {
-                                                const updatedSplits = splits.filter((_, idx) => idx !== sIdx);
-                                                handleUpdateContractSplits(contract.id, updatedSplits);
-                                              }}
-                                              style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '12px', padding: 0, marginLeft: '4px' }}
-                                              title="Remove Split"
-                                            >
-                                              ✕
-                                            </button>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : (
-                                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '8px' }}>
-                                      No cost splits configured. 100% of this rent/contract cost is currently billed to the primary Paying Entity.
-                                    </div>
+                                <div style={{ fontSize: '11px', color: totalSplitPercentage === 100 ? 'var(--success)' : 'var(--text-secondary)', fontWeight: 600, borderTop: '1px solid var(--border-color)', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span>Total Manual Splits: {totalSplitPercentage}%</span>
+                                  {totalSplitPercentage < 100 && (
+                                    <span style={{ fontStyle: 'italic', fontWeight: 400 }}>
+                                      * Remaining {100 - totalSplitPercentage}% will be billed to the primary Paying Entity ({companies.find(comp => comp.id === contract.companyId)?.name || 'Unassigned'}).
+                                    </span>
                                   )}
-                                </>
-                              )}
-
-                              {/* Split addition form */}
-                              {!contract.useHeadcountSplit && (totalSplitPercentage < 100 ? (
-                                <form 
-                                  onSubmit={(e) => {
-                                    e.preventDefault();
-                                    const type = e.target.elements.splitType.value;
-                                    const targetId = e.target.elements.splitTarget.value;
-                                    const percentage = Number(e.target.elements.splitPercentage.value);
-
-                                    if (!type || !targetId || !percentage) return;
-
-                                    if (totalSplitPercentage + percentage > 100) {
-                                      onShowToast(`Cannot allocate ${percentage}%. Maximum available remainder is ${100 - totalSplitPercentage}%.`, 'warning');
-                                      return;
-                                    }
-
-                                    const newSplit = { type, targetId, percentage };
-                                    const updatedSplits = [...splits, newSplit];
-                                    handleUpdateContractSplits(contract.id, updatedSplits);
-                                    e.target.reset();
-                                  }}
-                                  style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '10px' }}
-                                >
-                                  <span style={{ fontSize: '11px', fontWeight: 600 }}>Split To:</span>
-                                  <select 
-                                    name="splitType" 
-                                    className="select-filter" 
-                                    style={{ padding: '4px 8px', fontSize: '11px' }}
-                                    onChange={(e) => {
-                                      setExpandedSplitsContractId(contract.id);
-                                    }}
-                                    required
-                                  >
-                                    <option value="company">🏢 Company</option>
-                                    <option value="department">💼 Department</option>
-                                    <option value="user">👤 Staff User</option>
-                                  </select>
-
-                                  <select name="splitTarget" className="select-filter" style={{ padding: '4px 8px', fontSize: '11px', minWidth: '200px' }} required>
-                                    <option value="">-- Choose Target Option --</option>
-                                    <optgroup label="🏢 Companies">
-                                      {companies.map(c => (
-                                        <option key={c.id} value={c.id}>{c.name}</option>
-                                      ))}
-                                    </optgroup>
-                                    <optgroup label="💼 Departments">
-                                      {allAvailableDepts.map(d => (
-                                        <option key={d} value={d}>{d}</option>
-                                      ))}
-                                    </optgroup>
-                                    <optgroup label="👤 Staff Users">
-                                      {sortedStaff.map(s => (
-                                        <option key={s.id} value={s.id}>{s.fullName}</option>
-                                      ))}
-                                    </optgroup>
-                                  </select>
-                                  
-                                  <input 
-                                    type="number" 
-                                    name="splitPercentage" 
-                                    placeholder="Share %" 
-                                    min="1" 
-                                    max={100 - totalSplitPercentage}
-                                    style={{ width: '80px', padding: '4px 8px', fontSize: '11px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
-                                    required
-                                  />
-
-                                  <button type="submit" className="btn-primary" style={{ padding: '4px 14px', fontSize: '11px', background: '#a78bfa', borderColor: '#a78bfa', color: '#1e1b4b' }}>
-                                    + Add Split Allocation
-                                  </button>
-                                </form>
-                              ) : (
-                                <div style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 600, borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '10px' }}>
-                                  🔗 Cost is 100% split. Delete an existing split to allocate differently.
-                                </div>
-                              ))}
-                              {contract.useHeadcountSplit && (
-                                <div style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 600, borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '10px' }}>
-                                  👥 Headcount splitting is active. Manual splits form is disabled.
                                 </div>
                               )}
+
                             </div>
                           </td>
                         </tr>
@@ -2029,24 +2188,8 @@ export default function VendorsDashboard({
 
             // Apply Company Filter Allocation rules
             if (forecastCompanyFilter !== 'all') {
-              if (c.useHeadcountSplit) {
-                const headcounts = getActiveHeadcountsForMonth(year, monthIndex);
-                const total = Object.values(headcounts).reduce((a, b) => a + b, 0);
-                const countForComp = headcounts[forecastCompanyFilter] || 0;
-                const share = total > 0 ? (countForComp / total) : 0;
-                return fullCost * share;
-              } else {
-                const splits = c.splits || [];
-                const companySplit = splits.find(s => s.type === 'company' && s.targetId === forecastCompanyFilter);
-                const manualShare = companySplit ? Number(companySplit.percentage || 0) / 100 : 0;
-                
-                let fallbackShare = 0;
-                if (c.companyId === forecastCompanyFilter) {
-                  const totalManualSplits = splits.reduce((acc, curr) => acc + Number(curr.percentage || 0), 0);
-                  fallbackShare = Math.max(0, 100 - totalManualSplits) / 100;
-                }
-                return fullCost * (manualShare + fallbackShare);
-              }
+              const share = getContractCompanyShare(c, forecastCompanyFilter, year, monthIndex);
+              return fullCost * share;
             }
 
             return fullCost;
@@ -2092,45 +2235,49 @@ export default function VendorsDashboard({
                   }
                 }
                 
-                const costPerSeat = monthlyTotalTarget * taxFactor;
                 const allAssigned = assetAssignments.filter(a => a.contractId === c.id);
                 const totalSeats = c.quantityPurchased || 1;
-                const unusedCountRaw = Math.max(0, totalSeats - allAssigned.length);
 
-                // Calculate portion of assigned seats for filtered company
-                let filteredAssignedCount = allAssigned.length;
-                if (forecastCompanyFilter !== 'all') {
-                  filteredAssignedCount = allAssigned.filter(a => {
-                    const member = staff.find(s => s.id === a.staffId);
-                    return member && member.companyId === forecastCompanyFilter;
-                  }).length;
-                }
-                monthlyAssignedTotal[idx] += filteredAssignedCount * costPerSeat;
-
-                // Calculate portion of unused seats overhead for filtered company
-                let filteredUnusedCost = unusedCountRaw * costPerSeat;
-                if (forecastCompanyFilter !== 'all') {
-                  if (c.useHeadcountSplit) {
-                    const headcounts = getActiveHeadcountsForMonth(m.year, m.monthIndex);
-                    const total = Object.values(headcounts).reduce((a, b) => a + b, 0);
-                    const countForComp = headcounts[forecastCompanyFilter] || 0;
-                    const share = total > 0 ? (countForComp / total) : 0;
-                    filteredUnusedCost = (unusedCountRaw * costPerSeat) * share;
-                  } else {
-                    const splits = c.splits || [];
-                    const companySplit = splits.find(s => s.type === 'company' && s.targetId === forecastCompanyFilter);
-                    const manualShare = companySplit ? Number(companySplit.percentage || 0) / 100 : 0;
-                    
-                    let fallbackShare = 0;
-                    const unusedCompanyId = c.unusedCostTag?.companyId || c.companyId;
-                    if (unusedCompanyId === forecastCompanyFilter) {
-                      const totalManualSplits = splits.reduce((acc, curr) => acc + Number(curr.percentage || 0), 0);
-                      fallbackShare = Math.max(0, 100 - totalManualSplits) / 100;
+                if (c.splitPackageCost) {
+                  const totalContractCost = monthlyTotalTarget * totalSeats * taxFactor;
+                  if (allAssigned.length === 0) {
+                    let filteredUnusedCost = totalContractCost;
+                    if (forecastCompanyFilter !== 'all') {
+                      const share = getContractCompanyShare(c, forecastCompanyFilter, m.year, m.monthIndex);
+                      filteredUnusedCost = totalContractCost * share;
                     }
-                    filteredUnusedCost = (unusedCountRaw * costPerSeat) * (manualShare + fallbackShare);
+                    monthlyUnusedTotal[idx] += filteredUnusedCost;
+                  } else {
+                    let filteredAssignedCost = totalContractCost;
+                    if (forecastCompanyFilter !== 'all') {
+                      const assignedInFilter = allAssigned.filter(a => {
+                        const member = staff.find(s => s.id === a.staffId);
+                        return member && member.companyId === forecastCompanyFilter;
+                      }).length;
+                      filteredAssignedCost = totalContractCost * (assignedInFilter / allAssigned.length);
+                    }
+                    monthlyAssignedTotal[idx] += filteredAssignedCost;
                   }
+                } else {
+                  const costPerSeat = monthlyTotalTarget * taxFactor;
+                  const unusedCountRaw = Math.max(0, totalSeats - allAssigned.length);
+
+                  let filteredAssignedCount = allAssigned.length;
+                  if (forecastCompanyFilter !== 'all') {
+                    filteredAssignedCount = allAssigned.filter(a => {
+                      const member = staff.find(s => s.id === a.staffId);
+                      return member && member.companyId === forecastCompanyFilter;
+                    }).length;
+                  }
+                  monthlyAssignedTotal[idx] += filteredAssignedCount * costPerSeat;
+
+                  let filteredUnusedCost = unusedCountRaw * costPerSeat;
+                  if (forecastCompanyFilter !== 'all') {
+                    const share = getContractCompanyShare(c, forecastCompanyFilter, m.year, m.monthIndex);
+                    filteredUnusedCost = (unusedCountRaw * costPerSeat) * share;
+                  }
+                  monthlyUnusedTotal[idx] += filteredUnusedCost;
                 }
-                monthlyUnusedTotal[idx] += filteredUnusedCost;
               }
             }
           });
@@ -2951,6 +3098,30 @@ export default function VendorsDashboard({
                   />
                 </div>
               </div>
+
+
+              {(() => {
+                const selectedVendor = vendors.find(v => v.id === contractVendorId);
+                if (selectedVendor && selectedVendor.category === 'Software License') {
+                  return (
+                    <div style={{ padding: '8px 12px', backgroundColor: 'rgba(99, 102, 241, 0.03)', border: '1px solid rgba(99, 102, 241, 0.15)', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: 600, margin: 0 }}>
+                        <input 
+                          type="checkbox" 
+                          checked={splitPackageCost} 
+                          onChange={(e) => setSplitPackageCost(e.target.checked)} 
+                          style={{ cursor: 'pointer' }}
+                        />
+                        💼 Split total package cost equally among all assigned staff users
+                      </label>
+                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', marginLeft: '20px' }}>
+                        Check this if you pay a flat package rate (e.g. CVLibrary package) rather than per-seat licensing. This enables allocating any number of users, and divides the fixed total cost equally among them.
+                      </span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
 
               <div className="form-group-row" style={{ marginBottom: 0 }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>

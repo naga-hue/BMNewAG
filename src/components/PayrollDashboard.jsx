@@ -771,10 +771,10 @@ export default function PayrollDashboard({
         const attendanceDays = Math.max(0, totalBusinessDays - leaveDays);
 
         let dailyRate = 0;
-        if (staffMember.attendanceRate && Number(staffMember.attendanceRate) > 0) {
-          dailyRate = Number(staffMember.attendanceRate);
-        } else if (staffMember.salary && Number(staffMember.salary) > 0) {
+        if (staffMember.salary && Number(staffMember.salary) > 0) {
           dailyRate = (Number(staffMember.salary) / 12) / totalBusinessDays;
+        } else if (staffMember.attendanceRate && Number(staffMember.attendanceRate) > 0) {
+          dailyRate = Number(staffMember.attendanceRate);
         } else {
           dailyRate = Number(policy.dailyRateDefault || 0);
         }

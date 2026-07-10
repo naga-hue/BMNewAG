@@ -108,6 +108,14 @@ export default function VendorsDashboard({
   const [editingContractId, setEditingContractId] = useState(null);
   const [expandedContractId, setExpandedContractId] = useState(null);
   const [expandedSplitsContractId, setExpandedSplitsContractId] = useState(null);
+  const [expandedVendorIds, setExpandedVendorIds] = useState({});
+
+  const toggleVendorExpand = (vendorId) => {
+    setExpandedVendorIds(prev => ({
+      ...prev,
+      [vendorId]: !prev[vendorId]
+    }));
+  };
 
   // Form states - Vendor
   const [vendorName, setVendorName] = useState('');
@@ -189,6 +197,7 @@ export default function VendorsDashboard({
 
   // Forecast currency selector
   const [forecastCurrency, setForecastCurrency] = useState('GBP');
+  const [forecastCompanyFilter, setForecastCompanyFilter] = useState('all');
 
   // Handle inline seat allocation
   const handleAllocateSeatInline = async (e, contractId, contractName) => {
@@ -550,6 +559,39 @@ export default function VendorsDashboard({
     });
 
     return forecastData;
+  };
+
+  // Resolve active staff headcount per company for a given month
+  const getActiveHeadcountsForMonth = (year, monthIndex) => {
+    const periodStart = new Date(year, monthIndex, 1);
+    const periodEnd = new Date(year, monthIndex + 1, 0);
+
+    const activeStaff = staff.filter(s => {
+      // Exclude staff that exited before this month
+      if (s.status === 'exited' && s.exitDate) {
+        const exit = new Date(s.exitDate);
+        if (exit < periodStart) return false;
+      }
+      // Exclude staff that joined after this month
+      if (s.joinDate) {
+        const join = new Date(s.joinDate);
+        if (join > periodEnd) return false;
+      }
+      return s.status !== 'exited' || (s.exitDate && new Date(s.exitDate) >= periodStart);
+    });
+
+    const counts = {};
+    companies.forEach(c => {
+      counts[c.id] = 0;
+    });
+
+    activeStaff.forEach(s => {
+      if (s.companyId) {
+        counts[s.companyId] = (counts[s.companyId] || 0) + 1;
+      }
+    });
+
+    return counts;
   };
 
   const forecastPoints = getForecastData();
@@ -1341,61 +1383,111 @@ export default function VendorsDashboard({
                                 <h4 style={{ fontSize: '13px', fontWeight: 700, color: '#a78bfa', margin: 0 }}>
                                   Cost Splits & Distributions for "${contract.name}"
                                 </h4>
-                                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                                  Total Splits Configured: <strong>${totalSplitPercentage}%</strong> ${totalSplitPercentage < 100 ? `(Remaining ${100 - totalSplitPercentage}% billed to primary Paying Entity)` : ''}
-                                </span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <input 
+                                      type="checkbox" 
+                                      checked={!!contract.useHeadcountSplit}
+                                      onChange={async (e) => {
+                                        const updatedContract = {
+                                          ...contract,
+                                          useHeadcountSplit: e.target.checked
+                                        };
+                                        try {
+                                          await onSaveContract(updatedContract);
+                                          onShowToast("Dynamic Headcount split configuration updated.", "success");
+                                        } catch (err) {
+                                          onShowToast("Error updating headcount split: " + err.message, "warning");
+                                        }
+                                      }}
+                                    />
+                                    👥 Split dynamically by active headcount (Pro-Rata)
+                                  </label>
+                                </div>
                               </div>
 
-                              {/* Active splits tags */}
-                              {splits.length > 0 ? (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                  {splits.map((s, sIdx) => {
-                                    let targetName = 'Unknown Target';
-                                    if (s.type === 'company') {
-                                      const comp = companies.find(c => c.id === s.targetId);
-                                      targetName = comp ? `🏢 ${comp.name}` : `🏢 Company: ${s.targetId}`;
-                                    } else if (s.type === 'department') {
-                                      targetName = `💼 Dept: ${s.targetId}`;
-                                    } else if (s.type === 'user') {
-                                      const st = staff.find(member => member.id === s.targetId);
-                                      targetName = st ? `👤 User: ${st.fullName}` : `👤 User: ${s.targetId}`;
-                                    }
+                              {contract.useHeadcountSplit && (() => {
+                                const currentCounts = getActiveHeadcountsForMonth(new Date().getFullYear(), new Date().getMonth());
+                                const totalCurrent = Object.values(currentCounts).reduce((a, b) => a + b, 0);
+                                return (
+                                  <div style={{ padding: '10px 14px', backgroundColor: 'rgba(56, 189, 248, 0.04)', border: '1px solid rgba(56, 189, 248, 0.15)', borderRadius: '6px', fontSize: '11.5px' }}>
+                                    <span style={{ fontWeight: 700, color: '#38bdf8', display: 'block', marginBottom: '6px' }}>Current Active Headcount Pro-Rata Preview:</span>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                                      {companies.map(c => {
+                                        const count = currentCounts[c.id] || 0;
+                                        const percentage = totalCurrent > 0 ? Math.round((count / totalCurrent) * 100) : 0;
+                                        return (
+                                          <div key={c.id}>
+                                            🏢 {c.name}: <strong>{count} staff</strong> ({percentage}%)
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '6px' }}>
+                                      * Calculations update dynamically each month based on join and exit dates in your staff records. Manual percentage splits below are ignored while headcount split is active.
+                                    </span>
+                                  </div>
+                                );
+                              })()}
 
-                                    return (
-                                      <div key={sIdx} style={{ 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        gap: '8px', 
-                                        backgroundColor: 'var(--bg-secondary)', 
-                                        border: '1px solid var(--border-color)', 
-                                        padding: '4px 10px', 
-                                        borderRadius: '6px',
-                                        fontSize: '11.5px' 
-                                      }}>
-                                        <strong style={{ color: 'var(--text-primary)' }}>{targetName}</strong>
-                                        <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{s.percentage}%</span>
-                                        <button 
-                                          onClick={() => {
-                                            const updatedSplits = splits.filter((_, idx) => idx !== sIdx);
-                                            handleUpdateContractSplits(contract.id, updatedSplits);
-                                          }}
-                                          style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '12px', padding: 0, marginLeft: '4px' }}
-                                          title="Remove Split"
-                                        >
-                                          ✕
-                                        </button>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                                  No cost splits configured. 100% of this rent/contract cost is currently billed to the primary Paying Entity.
-                                </div>
+                              {!contract.useHeadcountSplit && (
+                                <>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                    Total Splits Configured: <strong>{totalSplitPercentage}%</strong> {totalSplitPercentage < 100 ? `(Remaining ${100 - totalSplitPercentage}% billed to primary Paying Entity)` : ''}
+                                  </span>
+
+                                  {/* Active splits tags */}
+                                  {splits.length > 0 ? (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
+                                      {splits.map((s, sIdx) => {
+                                        let targetName = 'Unknown Target';
+                                        if (s.type === 'company') {
+                                          const comp = companies.find(c => c.id === s.targetId);
+                                          targetName = comp ? `🏢 ${comp.name}` : `🏢 Company: ${s.targetId}`;
+                                        } else if (s.type === 'department') {
+                                          targetName = `💼 Dept: ${s.targetId}`;
+                                        } else if (s.type === 'user') {
+                                          const st = staff.find(member => member.id === s.targetId);
+                                          targetName = st ? `👤 User: ${st.fullName}` : `👤 User: ${s.targetId}`;
+                                        }
+
+                                        return (
+                                          <div key={sIdx} style={{ 
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            gap: '8px', 
+                                            backgroundColor: 'var(--bg-secondary)', 
+                                            border: '1px solid var(--border-color)', 
+                                            padding: '4px 10px', 
+                                            borderRadius: '6px',
+                                            fontSize: '11.5px' 
+                                          }}>
+                                            <strong style={{ color: 'var(--text-primary)' }}>{targetName}</strong>
+                                            <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{s.percentage}%</span>
+                                            <button 
+                                              onClick={() => {
+                                                const updatedSplits = splits.filter((_, idx) => idx !== sIdx);
+                                                handleUpdateContractSplits(contract.id, updatedSplits);
+                                              }}
+                                              style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '12px', padding: 0, marginLeft: '4px' }}
+                                              title="Remove Split"
+                                            >
+                                              ✕
+                                            </button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '8px' }}>
+                                      No cost splits configured. 100% of this rent/contract cost is currently billed to the primary Paying Entity.
+                                    </div>
+                                  )}
+                                </>
                               )}
 
                               {/* Split addition form */}
-                              {totalSplitPercentage < 100 ? (
+                              {!contract.useHeadcountSplit && (totalSplitPercentage < 100 ? (
                                 <form 
                                   onSubmit={(e) => {
                                     e.preventDefault();
@@ -1468,6 +1560,11 @@ export default function VendorsDashboard({
                               ) : (
                                 <div style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 600, borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '10px' }}>
                                   🔗 Cost is 100% split. Delete an existing split to allocate differently.
+                                </div>
+                              ))}
+                              {contract.useHeadcountSplit && (
+                                <div style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 600, borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '10px' }}>
+                                  👥 Headcount splitting is active. Manual splits form is disabled.
                                 </div>
                               )}
                             </div>
@@ -1917,13 +2014,42 @@ export default function VendorsDashboard({
             } else if (c.costInterval === 'annual') {
               monthlyTotal = (unitCostTarget * c.quantityPurchased) / 12;
             } else if (c.costInterval === 'one_time' || c.costInterval === 'one-off') {
-              if (cEnd.getMonth() === monthIndex && cEnd.getFullYear() === year) {
+              const parseDate = (dStr) => {
+                if (!dStr) return new Date(year, monthIndex, 1);
+                return new Date(String(dStr).trim());
+              };
+              const dateRef = parseDate(c.endDate || c.startDate);
+              if (!isNaN(dateRef.getTime()) && dateRef.getMonth() === monthIndex && dateRef.getFullYear() === year) {
                 monthlyTotal = unitCostTarget * c.quantityPurchased;
               }
             }
 
             const taxFactor = 1 + (Number(c.taxRate || 0) / 100);
-            return monthlyTotal * taxFactor;
+            const fullCost = monthlyTotal * taxFactor;
+
+            // Apply Company Filter Allocation rules
+            if (forecastCompanyFilter !== 'all') {
+              if (c.useHeadcountSplit) {
+                const headcounts = getActiveHeadcountsForMonth(year, monthIndex);
+                const total = Object.values(headcounts).reduce((a, b) => a + b, 0);
+                const countForComp = headcounts[forecastCompanyFilter] || 0;
+                const share = total > 0 ? (countForComp / total) : 0;
+                return fullCost * share;
+              } else {
+                const splits = c.splits || [];
+                const companySplit = splits.find(s => s.type === 'company' && s.targetId === forecastCompanyFilter);
+                const manualShare = companySplit ? Number(companySplit.percentage || 0) / 100 : 0;
+                
+                let fallbackShare = 0;
+                if (c.companyId === forecastCompanyFilter) {
+                  const totalManualSplits = splits.reduce((acc, curr) => acc + Number(curr.percentage || 0), 0);
+                  fallbackShare = Math.max(0, 100 - totalManualSplits) / 100;
+                }
+                return fullCost * (manualShare + fallbackShare);
+              }
+            }
+
+            return fullCost;
           }
           return 0;
         };
@@ -1942,10 +2068,7 @@ export default function VendorsDashboard({
               if (!isSoftware) {
                 monthlyFixedTotal[idx] += cost;
               } else {
-                const assignedCount = assetAssignments.filter(a => a.contractId === c.id).length;
-                const totalSeats = c.quantityPurchased || 1;
-                const unusedCount = Math.max(0, totalSeats - assignedCount);
-                
+                // If it is software, calculate seat-by-seat routing based on company
                 const unitCostGBP = toGBP(c.unitCost, c.currency);
                 let unitCostTarget = unitCostGBP;
                 if (forecastCurrency !== 'GBP') {
@@ -1970,9 +2093,44 @@ export default function VendorsDashboard({
                 }
                 
                 const costPerSeat = monthlyTotalTarget * taxFactor;
+                const allAssigned = assetAssignments.filter(a => a.contractId === c.id);
+                const totalSeats = c.quantityPurchased || 1;
+                const unusedCountRaw = Math.max(0, totalSeats - allAssigned.length);
 
-                monthlyAssignedTotal[idx] += Math.min(totalSeats, assignedCount) * costPerSeat;
-                monthlyUnusedTotal[idx] += unusedCount * costPerSeat;
+                // Calculate portion of assigned seats for filtered company
+                let filteredAssignedCount = allAssigned.length;
+                if (forecastCompanyFilter !== 'all') {
+                  filteredAssignedCount = allAssigned.filter(a => {
+                    const member = staff.find(s => s.id === a.staffId);
+                    return member && member.companyId === forecastCompanyFilter;
+                  }).length;
+                }
+                monthlyAssignedTotal[idx] += filteredAssignedCount * costPerSeat;
+
+                // Calculate portion of unused seats overhead for filtered company
+                let filteredUnusedCost = unusedCountRaw * costPerSeat;
+                if (forecastCompanyFilter !== 'all') {
+                  if (c.useHeadcountSplit) {
+                    const headcounts = getActiveHeadcountsForMonth(m.year, m.monthIndex);
+                    const total = Object.values(headcounts).reduce((a, b) => a + b, 0);
+                    const countForComp = headcounts[forecastCompanyFilter] || 0;
+                    const share = total > 0 ? (countForComp / total) : 0;
+                    filteredUnusedCost = (unusedCountRaw * costPerSeat) * share;
+                  } else {
+                    const splits = c.splits || [];
+                    const companySplit = splits.find(s => s.type === 'company' && s.targetId === forecastCompanyFilter);
+                    const manualShare = companySplit ? Number(companySplit.percentage || 0) / 100 : 0;
+                    
+                    let fallbackShare = 0;
+                    const unusedCompanyId = c.unusedCostTag?.companyId || c.companyId;
+                    if (unusedCompanyId === forecastCompanyFilter) {
+                      const totalManualSplits = splits.reduce((acc, curr) => acc + Number(curr.percentage || 0), 0);
+                      fallbackShare = Math.max(0, 100 - totalManualSplits) / 100;
+                    }
+                    filteredUnusedCost = (unusedCountRaw * costPerSeat) * (manualShare + fallbackShare);
+                  }
+                }
+                monthlyUnusedTotal[idx] += filteredUnusedCost;
               }
             }
           });
@@ -1989,19 +2147,35 @@ export default function VendorsDashboard({
                 </p>
               </div>
               
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600 }}>Forecast Currency:</span>
-                <select 
-                  className="select-filter"
-                  value={forecastCurrency}
-                  onChange={(e) => setForecastCurrency(e.target.value)}
-                >
-                  <option value="GBP">GBP (£)</option>
-                  <option value="USD">USD ($)</option>
-                  <option value="AED">AED (AED)</option>
-                  <option value="INR">INR (₹)</option>
-                  <option value="ZAR">ZAR (R)</option>
-                </select>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 600 }}>Filter by Billed Company:</span>
+                  <select 
+                    className="select-filter"
+                    value={forecastCompanyFilter}
+                    onChange={(e) => setForecastCompanyFilter(e.target.value)}
+                  >
+                    <option value="all">🏢 All Group Companies</option>
+                    {companies.map(c => (
+                      <option key={c.id} value={c.id}>🏢 {c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 600 }}>Forecast Currency:</span>
+                  <select 
+                    className="select-filter"
+                    value={forecastCurrency}
+                    onChange={(e) => setForecastCurrency(e.target.value)}
+                  >
+                    <option value="GBP">GBP (£)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="AED">AED (AED)</option>
+                    <option value="INR">INR (₹)</option>
+                    <option value="ZAR">ZAR (R)</option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -2024,27 +2198,80 @@ export default function VendorsDashboard({
                       SOFTWARE LICENSES (SEAT POOLS)
                     </td>
                   </tr>
-                  {softwareContracts.map(c => {
-                    let rowSum = 0;
-                    return (
-                      <tr key={c.id}>
-                        <td style={{ fontWeight: 600, paddingLeft: '16px' }}>{c.name}</td>
-                        <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Software License</td>
-                        {forecastMonths.map((m, idx) => {
-                          const val = getContractCostForMonth(c, m.year, m.monthIndex);
-                          rowSum += val;
-                          return (
-                            <td key={idx} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
-                              {val > 0 ? Math.round(val).toLocaleString() : '-'}
+                  {(() => {
+                    const grouped = {};
+                    softwareContracts.forEach(c => {
+                      const vId = c.vendorId || 'unknown';
+                      if (!grouped[vId]) grouped[vId] = [];
+                      grouped[vId].push(c);
+                    });
+
+                    const vendorIds = Object.keys(grouped);
+
+                    return vendorIds.map(vId => {
+                      const vendor = vendors.find(v => v.id === vId);
+                      const vendorName = vendor ? vendor.name : 'Unknown Vendor';
+                      const isExpanded = !!expandedVendorIds[vId];
+                      const vendorContracts = grouped[vId];
+
+                      const monthlySums = Array(12).fill(0);
+                      forecastMonths.forEach((m, idx) => {
+                        vendorContracts.forEach(c => {
+                          monthlySums[idx] += getContractCostForMonth(c, m.year, m.monthIndex);
+                        });
+                      });
+                      const groupTotal = monthlySums.reduce((a, b) => a + b, 0);
+
+                      return (
+                        <React.Fragment key={vId}>
+                          <tr 
+                            onClick={() => toggleVendorExpand(vId)}
+                            style={{ cursor: 'pointer', backgroundColor: 'rgba(99, 102, 241, 0.05)', fontWeight: 600 }}
+                          >
+                            <td style={{ paddingLeft: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginRight: '8px', display: 'inline-block', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'none' }}>
+                                ▶
+                              </span>
+                              {vendorName}
                             </td>
-                          );
-                        })}
-                        <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', color: 'var(--primary)' }}>
-                          {Math.round(rowSum).toLocaleString()}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                            <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Software Vendor</td>
+                            {monthlySums.map((val, idx) => (
+                              <td key={idx} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                                {val > 0 ? Math.round(val).toLocaleString() : '-'}
+                              </td>
+                            ))}
+                            <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', color: 'var(--primary)' }}>
+                              {Math.round(groupTotal).toLocaleString()}
+                            </td>
+                          </tr>
+
+                          {isExpanded && vendorContracts.map(c => {
+                            let rowSum = 0;
+                            return (
+                              <tr key={c.id} style={{ backgroundColor: 'rgba(255, 255, 255, 0.005)' }}>
+                                <td style={{ paddingLeft: '32px', color: 'var(--text-secondary)' }}>
+                                  ↳ {c.name}
+                                </td>
+                                <td style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>License Type</td>
+                                {forecastMonths.map((m, idx) => {
+                                  const val = getContractCostForMonth(c, m.year, m.monthIndex);
+                                  rowSum += val;
+                                  return (
+                                    <td key={idx} style={{ textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
+                                      {val > 0 ? Math.round(val).toLocaleString() : '-'}
+                                    </td>
+                                  );
+                                })}
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                                  {Math.round(rowSum).toLocaleString()}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </React.Fragment>
+                      );
+                    });
+                  })()}
                   {softwareContracts.length === 0 && (
                     <tr>
                       <td colSpan="15" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>
@@ -2059,27 +2286,80 @@ export default function VendorsDashboard({
                       LANDLORD LEASES & FIXED VENDORS
                     </td>
                   </tr>
-                  {leaseContracts.map(c => {
-                    let rowSum = 0;
-                    return (
-                      <tr key={c.id}>
-                        <td style={{ fontWeight: 600, paddingLeft: '16px' }}>{c.name}</td>
-                        <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Operating Lease / Rent</td>
-                        {forecastMonths.map((m, idx) => {
-                          const val = getContractCostForMonth(c, m.year, m.monthIndex);
-                          rowSum += val;
-                          return (
-                            <td key={idx} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
-                              {val > 0 ? Math.round(val).toLocaleString() : '-'}
+                  {(() => {
+                    const grouped = {};
+                    leaseContracts.forEach(c => {
+                      const vId = c.vendorId || 'unknown';
+                      if (!grouped[vId]) grouped[vId] = [];
+                      grouped[vId].push(c);
+                    });
+
+                    const vendorIds = Object.keys(grouped);
+
+                    return vendorIds.map(vId => {
+                      const vendor = vendors.find(v => v.id === vId);
+                      const vendorName = vendor ? vendor.name : 'Unknown Vendor';
+                      const isExpanded = !!expandedVendorIds[vId];
+                      const vendorContracts = grouped[vId];
+
+                      const monthlySums = Array(12).fill(0);
+                      forecastMonths.forEach((m, idx) => {
+                        vendorContracts.forEach(c => {
+                          monthlySums[idx] += getContractCostForMonth(c, m.year, m.monthIndex);
+                        });
+                      });
+                      const groupTotal = monthlySums.reduce((a, b) => a + b, 0);
+
+                      return (
+                        <React.Fragment key={vId}>
+                          <tr 
+                            onClick={() => toggleVendorExpand(vId)}
+                            style={{ cursor: 'pointer', backgroundColor: 'rgba(16, 185, 129, 0.05)', fontWeight: 600 }}
+                          >
+                            <td style={{ paddingLeft: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginRight: '8px', display: 'inline-block', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'none' }}>
+                                ▶
+                              </span>
+                              {vendorName}
                             </td>
-                          );
-                        })}
-                        <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', color: 'var(--success)' }}>
-                          {Math.round(rowSum).toLocaleString()}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                            <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Operating / Lease Vendor</td>
+                            {monthlySums.map((val, idx) => (
+                              <td key={idx} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                                {val > 0 ? Math.round(val).toLocaleString() : '-'}
+                              </td>
+                            ))}
+                            <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', color: 'var(--success)' }}>
+                              {Math.round(groupTotal).toLocaleString()}
+                            </td>
+                          </tr>
+
+                          {isExpanded && vendorContracts.map(c => {
+                            let rowSum = 0;
+                            return (
+                              <tr key={c.id} style={{ backgroundColor: 'rgba(255, 255, 255, 0.005)' }}>
+                                <td style={{ paddingLeft: '32px', color: 'var(--text-secondary)' }}>
+                                  ↳ {c.name}
+                                </td>
+                                <td style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Lease / Expense Type</td>
+                                {forecastMonths.map((m, idx) => {
+                                  const val = getContractCostForMonth(c, m.year, m.monthIndex);
+                                  rowSum += val;
+                                  return (
+                                    <td key={idx} style={{ textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
+                                      {val > 0 ? Math.round(val).toLocaleString() : '-'}
+                                    </td>
+                                  );
+                                })}
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                                  {Math.round(rowSum).toLocaleString()}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </React.Fragment>
+                      );
+                    });
+                  })()}
                   {leaseContracts.length === 0 && (
                     <tr>
                       <td colSpan="15" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>

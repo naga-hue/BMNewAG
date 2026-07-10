@@ -860,7 +860,7 @@ export default function VendorsDashboard({
               SUB-TAB 1: VENDOR REGISTER DIRECTORY
               ============================================================== */}
           {activeSubTab === 'vendors' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
@@ -882,52 +882,39 @@ export default function VendorsDashboard({
             </button>
           </div>
 
-
-
-          {/* Vendors Directory Section */}
-          <div className="detail-section" style={{ padding: '16px' }}>
-            <div className="section-title" style={{ fontSize: '14px', marginBottom: '12px' }}>
-              <Building2 size={16} /> Vendor Partners Directory ({vendors.length})
-            </div>
-
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
-              {vendors.map(v => {
-                const catStyles = getCategoryStyles(v.category);
-                const vendorContracts = contracts.filter(c => c.vendorId === v.id);
-                return (
-                  <div 
-                    key={v.id} 
-                    onClick={() => setSelectedVendorProfileId(v.id)}
-                    style={{ 
-                      flex: '1 1 320px', 
-                      backgroundColor: 'var(--bg-card)', 
-                      border: '1px solid var(--border-color)', 
-                      borderTop: `4px solid ${catStyles.accent}`,
-                      padding: '20px', 
-                      borderRadius: '12px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '12px',
-                      cursor: 'pointer',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                      position: 'relative',
-                      overflow: 'hidden'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = catStyles.accent;
-                      e.currentTarget.style.transform = 'translateY(-4px)';
-                      e.currentTarget.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.25), 0 10px 10px -5px rgba(0, 0, 0, 0.20)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--border-color)';
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)' }}>{v.name}</span>
+          {/* Vendors Spreadsheet Grid Table */}
+          <div className="table-container" style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-card)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+              <thead>
+                <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '2px solid var(--border-color)' }}>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Vendor Name</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Category</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Contact Email</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Phone Number</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '120px' }}>Active Contracts</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Description / Notes</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '100px' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vendors.map((v, idx) => {
+                  const catStyles = getCategoryStyles(v.category);
+                  const vendorContracts = contracts.filter(c => c.vendorId === v.id);
+                  return (
+                    <tr 
+                      key={v.id} 
+                      onClick={() => setSelectedVendorProfileId(v.id)}
+                      className="table-row-hover"
+                      style={{ 
+                        cursor: 'pointer',
+                        backgroundColor: idx % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent',
+                        borderBottom: '1px solid var(--border-color)'
+                      }}
+                    >
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {v.name}
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px' }}>
                         <span style={{ 
                           fontSize: '9.5px', 
                           color: catStyles.badgeColor, 
@@ -935,77 +922,59 @@ export default function VendorsDashboard({
                           textTransform: 'uppercase',
                           backgroundColor: catStyles.bg,
                           border: `1px solid ${catStyles.border}`,
-                          padding: '2px 8px',
-                          borderRadius: '12px',
-                          width: 'fit-content',
-                          letterSpacing: '0.5px'
+                          padding: '1px 6px',
+                          borderRadius: '8px',
+                          display: 'inline-block'
                         }}>
                           {catStyles.indicator} {v.category}
                         </span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '6px' }} onClick={(e) => e.stopPropagation()}>
-                        <button className="btn-icon" onClick={() => handleEditVendor(v)} title="Edit Vendor" style={{ padding: '6px', borderRadius: '6px' }}>
-                          <Edit3 size={12} />
-                        </button>
-                        <button className="btn-icon delete" onClick={() => {
-                          if (window.confirm(`Are you sure you want to delete vendor "${v.name}"?`)) {
-                            onDeleteVendor(v.id);
-                            onShowToast(`Deleted vendor "${v.name}"`, "info");
-                          }
-                        }} title="Delete Vendor" style={{ padding: '6px', borderRadius: '6px' }}>
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {v.description && (
-                      <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', margin: '4px 0', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', height: '34px', textOverflow: 'ellipsis' }}>
-                        {v.description}
-                      </p>
-                    )}
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11.5px', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: '10px', marginTop: 'auto' }}>
-                      {v.contactEmail && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Mail size={12} style={{ color: 'var(--primary)' }} />{v.contactEmail}</span>
-                      )}
-                      {v.phone && (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Phone size={12} style={{ color: 'var(--accent)' }} />{v.phone}</span>
-                      )}
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '6px', alignItems: 'center', justifyContent: 'space-between' }} onClick={(e) => e.stopPropagation()}>
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
-                        🗂️ {vendorContracts.length} Contracts
-                      </span>
-                      <button 
-                        className="btn-secondary"
-                        onClick={() => setSelectedVendorProfileId(v.id)}
-                        style={{ 
-                          padding: '6px 12px', 
-                          fontSize: '11px', 
-                          fontWeight: 700,
-                          borderRadius: '6px',
-                          border: '1px solid var(--border-color)',
-                          backgroundColor: 'var(--bg-secondary)',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Profile Details ➔
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', color: 'var(--text-secondary)' }}>
+                        {v.contactEmail ? <a href={`mailto:${v.contactEmail}`} onClick={(e) => e.stopPropagation()} style={{ color: 'var(--primary)' }}>{v.contactEmail}</a> : '—'}
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                        {v.phone || '—'}
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center', fontWeight: 700, color: 'var(--accent)', fontFamily: 'monospace' }}>
+                        {vendorContracts.length}
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', color: 'var(--text-muted)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {v.description || '—'}
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                          <button className="btn-icon" onClick={() => handleEditVendor(v)} title="Edit Vendor" style={{ padding: '4px', borderRadius: '4px' }}>
+                            <Edit3 size={11} />
+                          </button>
+                          <button className="btn-icon delete" onClick={() => {
+                            if (window.confirm(`Are you sure you want to delete vendor "${v.name}"?`)) {
+                              onDeleteVendor(v.id);
+                              onShowToast(`Deleted vendor "${v.name}"`, "info");
+                            }
+                          }} title="Delete Vendor" style={{ padding: '4px', borderRadius: '4px' }}>
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {vendors.length === 0 && (
+                  <tr>
+                    <td colSpan="7" style={{ border: '1px solid var(--border-color)', padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      No registered vendor partners found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
+
         </div>
       )}
 
-      {/* ==============================================================
-          SUB-TAB 2: CONTRACTS & LEASES
-          ============================================================== */}
-      {activeSubTab === 'contracts' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {activeSubTab === 'contracts' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
@@ -1030,269 +999,152 @@ export default function VendorsDashboard({
             </button>
           </div>
 
-
-
-          {/* Contracts grid */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {contracts.map(contract => {
-              const matchedVendor = vendors.find(v => v.id === contract.vendorId);
-              const matchedCompany = companies.find(c => c.id === contract.companyId);
-              const symbol = symbolMap[contract.currency] || '£';
-              
-              const unitCostGBP = toGBP(contract.unitCost, contract.currency);
-              const rawCost = unitCostGBP * contract.quantityPurchased;
-              const taxRateVal = contract.taxRate || 0;
-              const taxAmount = (rawCost * taxRateVal) / 100;
-              const totalWithTax = rawCost + taxAmount;
-
-              const monthlyCostEquivalent = contract.costInterval === 'monthly'
-                ? totalWithTax
-                : contract.costInterval === 'annual'
-                ? totalWithTax / 12
-                : totalWithTax; // For one-off, represent full total
-
-              const alert = getPaymentAlert(contract.paymentDueDate);
-
-              const catStyles = getCategoryStyles(matchedVendor?.category);
-              return (
-                <div 
-                  key={contract.id} 
-                  className="doc-card" 
-                  style={{ 
-                    padding: '24px', 
-                    flexDirection: 'column', 
-                    alignItems: 'stretch', 
-                    gap: '16px', 
-                    backgroundColor: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)',
-                    borderLeft: `4px solid ${catStyles.accent}`,
-                    borderRadius: '12px',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = catStyles.accent;
-                    e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.2)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--border-color)';
-                    e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
-                  }}
-                >
+          {/* Contracts Spreadsheet Grid Table */}
+          <div className="table-container" style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-card)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+              <thead>
+                <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '2px solid var(--border-color)' }}>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Contract Name</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Vendor Partner</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Paying Entity</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'right', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '140px' }}>Unit Cost</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '80px' }}>Qty (Seats)</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'right', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '140px' }}>Equiv. Monthly Cost</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '90px' }}>Interval</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '100px' }}>Start Date</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '100px' }}>End Date</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '110px' }}>Next Payment Due</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '60px' }}>Docs</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '140px' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {contracts.map((contract, idx) => {
+                  const matchedVendor = vendors.find(v => v.id === contract.vendorId);
+                  const matchedCompany = companies.find(c => c.id === contract.companyId);
+                  const symbol = symbolMap[contract.currency] || '£';
                   
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', gap: '12px' }}>
-                      <div style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center',
-                        width: '40px', 
-                        height: '40px', 
-                        borderRadius: 'var(--radius-sm)',
-                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                        color: 'var(--primary)'
-                      }}>
-                        <Receipt size={20} />
-                      </div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>{contract.name}</h3>
-                          
-                          {/* Payment Alarm Badges */}
-                          {alert && (
-                            <span style={{ 
-                              fontSize: '10px', 
-                              fontWeight: 700, 
-                              color: alert.color, 
-                              backgroundColor: `${alert.color}15`, 
-                              padding: '2px 8px', 
-                              borderRadius: '4px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              border: `1px solid ${alert.color}30`
-                            }}>
-                              <Bell size={10} />
-                              {alert.text}
-                            </span>
-                          )}
-                        </div>
-                        
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px', fontSize: '12px' }}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)' }}>
-                            <Building2 size={13} style={{ color: 'var(--primary)' }} />
-                            Paying Entity: <strong>{matchedCompany ? `${matchedCompany.name} (${matchedCompany.country})` : 'Unknown Entity'}</strong>
-                          </span>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)' }}>
-                            <UserCheck size={13} style={{ color: 'var(--accent)' }} />
-                            Contract Vendor: <strong>{matchedVendor ? `${matchedVendor.name} (${matchedVendor.category})` : 'Unknown Vendor'}</strong>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                  const unitCostGBP = toGBP(contract.unitCost, contract.currency);
+                  const rawCost = unitCostGBP * contract.quantityPurchased;
+                  const taxRateVal = contract.taxRate || 0;
+                  const taxAmount = (rawCost * taxRateVal) / 100;
+                  const totalWithTax = rawCost + taxAmount;
 
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', textAlign: 'right' }}>
-                      <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--success)' }}>
-                        {(() => {
-                          const totalRawForeign = contract.unitCost * contract.quantityPurchased * (1 + (contract.taxRate || 0)/100);
-                          if (contract.costInterval === 'monthly') {
-                            if (contract.currency === 'GBP') {
-                              return `£${monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo`;
-                            } else {
-                              return `£${monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo (${symbol}${totalRawForeign.toLocaleString(undefined, { maximumFractionDigits: 0 })}/mo)`;
-                            }
-                          } else if (contract.costInterval === 'annual') {
-                            if (contract.currency === 'GBP') {
-                              return `£${monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo (Annual: £${totalWithTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr)`;
-                            } else {
-                              return `£${monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo (Annual: ${symbol}${totalRawForeign.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr)`;
-                            }
-                          } else {
-                            if (contract.currency === 'GBP') {
-                              return `£${totalWithTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (One-off)`;
-                            } else {
-                              return `£${totalWithTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (One-off: ${symbol}${totalRawForeign.toLocaleString(undefined, { maximumFractionDigits: 0 })})`;
-                            }
-                          }
-                        })()}
-                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'normal' }}> (incl. tax)</span>
-                      </span>
-                      
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        <div>Subtotal: £{rawCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {contract.currency !== 'GBP' && `(${symbol}${(contract.unitCost * contract.quantityPurchased).toLocaleString(undefined, { maximumFractionDigits: 2 })})`}</div>
-                        {taxRateVal > 0 && (
-                          <div style={{ color: 'var(--warning)' }}>
-                            Tax ({taxRateVal}%): +£{taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {contract.currency !== 'GBP' && `(+${symbol}${((contract.unitCost * contract.quantityPurchased * taxRateVal) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })})`}
+                  const monthlyCostEquivalent = contract.costInterval === 'monthly'
+                    ? totalWithTax
+                    : contract.costInterval === 'annual'
+                    ? totalWithTax / 12
+                    : totalWithTax;
+
+                  const alert = getPaymentAlert(contract.paymentDueDate);
+                  const catStyles = getCategoryStyles(matchedVendor?.category);
+
+                  return (
+                    <tr 
+                      key={contract.id} 
+                      onClick={() => handleEditContract(contract)}
+                      className="table-row-hover"
+                      style={{ 
+                        cursor: 'pointer',
+                        backgroundColor: idx % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent',
+                        borderBottom: '1px solid var(--border-color)'
+                      }}
+                    >
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {contract.name}
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', color: 'var(--text-secondary)' }}>
+                        {matchedVendor ? matchedVendor.name : '—'}
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', color: 'var(--text-secondary)' }}>
+                        {matchedCompany ? matchedCompany.name : 'Group'}
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
+                        {symbol}{contract.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center', fontFamily: 'monospace', fontWeight: 600 }}>
+                        {contract.quantityPurchased}
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)', fontWeight: 700 }}>
+                        £{monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }}>
+                        <span style={{ 
+                          fontSize: '10px', 
+                          textTransform: 'uppercase', 
+                          fontWeight: 700, 
+                          color: contract.costInterval === 'monthly' ? '#38bdf8' : (contract.costInterval === 'annual' ? '#fbbf24' : '#a78bfa'),
+                          backgroundColor: contract.costInterval === 'monthly' ? 'rgba(56, 189, 248, 0.08)' : (contract.costInterval === 'annual' ? 'rgba(251, 191, 36, 0.08)' : 'rgba(167, 139, 250, 0.08)'),
+                          padding: '2px 6px',
+                          borderRadius: '4px'
+                        }}>
+                          {contract.costInterval}
+                        </span>
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                        {contract.startDate || '—'}
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                        {contract.endDate || '—'}
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center', fontFamily: 'monospace' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ color: alert ? alert.color : 'inherit', fontWeight: alert ? 700 : 'normal' }}>{contract.paymentDueDate || '—'}</span>
+                          {alert && <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: alert.color }} title={alert.text} />}
+                        </div>
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                        {(contract.documents || []).length > 0 ? (
+                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                            {(contract.documents || []).slice(0, 2).map(doc => (
+                              <a key={doc.id} href="#" onClick={(e) => { e.preventDefault(); handlePreviewInvoice(doc); }} style={{ color: 'var(--primary)' }} title={`Preview: ${doc.name}`}>
+                                <FileText size={12} />
+                              </a>
+                            ))}
+                          </div>
+                        ) : '—'}
+                      </td>
+                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                        {uploadContractId === contract.id ? (
+                          <div style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'center' }}>
+                            <input 
+                              type="file" 
+                              onChange={(e) => handleFileUpload(e, contract.id)} 
+                              style={{ fontSize: '10px', width: '110px' }} 
+                            />
+                            <button type="button" className="btn-secondary" onClick={() => setUploadContractId(null)} style={{ padding: '2px 4px', fontSize: '9px' }}>✕</button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                            <button className="btn-icon" onClick={() => setUploadContractId(contract.id)} title="Attach Invoice Document" style={{ padding: '4px', borderRadius: '4px' }}>
+                              <Plus size={11} />
+                            </button>
+                            <button className="btn-icon" onClick={() => handleEditContract(contract)} title="Edit Contract" style={{ padding: '4px', borderRadius: '4px' }}>
+                              <Edit3 size={11} />
+                            </button>
+                            <button className="btn-icon delete" onClick={() => {
+                              if (window.confirm(`Are you sure you want to delete contract "${contract.name}"?`)) {
+                                onDeleteContract(contract.id);
+                                onShowToast(`Deleted contract "${contract.name}"`, "info");
+                              }
+                            }} title="Delete Contract" style={{ padding: '4px', borderRadius: '4px' }}>
+                              <Trash2 size={11} />
+                            </button>
                           </div>
                         )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Contract Details grid */}
-                  <div className="detail-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '6px' }}>
-                    <div>
-                      <span className="detail-label" style={{ fontSize: '10px' }}>Start Date</span>
-                      <span className="detail-value" style={{ fontSize: '12px' }}>{contract.startDate}</span>
-                    </div>
-                    <div>
-                      <span className="detail-label" style={{ fontSize: '10px' }}>Expiration Date</span>
-                      <span className="detail-value" style={{ fontSize: '12px' }}>{contract.endDate}</span>
-                    </div>
-                    <div>
-                      <span className="detail-label" style={{ fontSize: '10px' }}>Renewal Date</span>
-                      <span className="detail-value" style={{ fontSize: '12px', color: 'var(--warning)', fontWeight: 600 }}>{contract.renewalDate}</span>
-                    </div>
-                    <div>
-                      <span className="detail-label" style={{ fontSize: '10px' }}>Quantity (Seats)</span>
-                      <span className="detail-value" style={{ fontSize: '12px' }}>{contract.quantityPurchased}</span>
-                    </div>
-                  </div>
-
-                  {/* Payment Schedules and Reminder display */}
-                  {(contract.paymentDueDate || contract.paymentReminderDate) && (
-                    <div style={{ 
-                      display: 'flex', 
-                      gap: '24px', 
-                      fontSize: '12px', 
-                      backgroundColor: 'rgba(255,255,255,0.01)', 
-                      padding: '8px 12px', 
-                      borderRadius: '4px', 
-                      border: '1px solid rgba(255,255,255,0.03)' 
-                    }}>
-                      {contract.paymentDueDate && (
-                        <div>
-                          Payment Due: <strong style={{ color: 'var(--text-primary)' }}>{contract.paymentDueDate}</strong>
-                        </div>
-                      )}
-                      {contract.paymentReminderDate && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <Bell size={12} style={{ color: 'var(--accent)' }} />
-                          Reminder Set: <strong style={{ color: 'var(--text-secondary)' }}>{contract.paymentReminderDate}</strong>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Invoices and Documents attachments list */}
-                  <div>
-                    <span className="form-label" style={{ fontSize: '12px', display: 'block', marginBottom: '6px' }}>Attached Invoices & Documents ({(contract.documents || []).length})</span>
-                    
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-                      {(contract.documents || []).map(doc => (
-                        <div key={doc.id} style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: '8px', 
-                          background: 'rgba(255,255,255,0.03)', 
-                          border: '1px solid var(--border-color)', 
-                          padding: '4px 10px', 
-                          borderRadius: '4px',
-                          fontSize: '11px'
-                        }}>
-                          <FileText size={12} style={{ color: 'var(--text-muted)' }} />
-                          <span title={doc.name} style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name}</span>
-                          <button type="button" onClick={() => handlePreviewInvoice(doc)} style={{ border: 'none', background: 'none', color: 'var(--primary)', cursor: 'pointer', padding: 0 }} title="Preview">
-                            <Eye size={12} />
-                          </button>
-                          <button type="button" onClick={() => handleDeleteInvoice(contract.id, doc.id, doc)} style={{ border: 'none', background: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0 }} title="Delete">
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      ))}
-                      {(contract.documents || []).length === 0 && (
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No invoices attached yet.</span>
-                      )}
-                    </div>
-
-                    {/* Quick invoice uploader */}
-                    {uploadContractId === contract.id ? (
-                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center', backgroundColor: 'rgba(99,102,241,0.02)', padding: '10px', borderRadius: '6px', border: '1px dashed var(--primary)' }}>
-                        <span style={{ fontSize: '12px', fontWeight: 600 }}>Attach Invoice PDF:</span>
-                        <input 
-                          type="file" 
-                          onChange={(e) => handleFileUpload(e, contract.id)} 
-                          style={{ fontSize: '12px' }} 
-                        />
-                        <button type="button" className="btn-secondary" onClick={() => setUploadContractId(null)} style={{ padding: '2px 8px', fontSize: '11px' }}>Cancel</button>
-                      </div>
-                    ) : (
-                      <button 
-                        className="btn-secondary" 
-                        onClick={() => setUploadContractId(contract.id)}
-                        style={{ padding: '4px 10px', fontSize: '11px' }}
-                      >
-                        + Attach Invoice File
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-                    <button 
-                      className="btn-icon" 
-                      onClick={() => handleEditContract(contract)}
-                      title="Edit Contract Parameters"
-                    >
-                      <Edit3 size={14} />
-                    </button>
-                    <button 
-                      className="btn-icon delete" 
-                      onClick={() => {
-                        if (window.confirm(`Are you sure you want to delete contract "${contract.name}"?`)) {
-                          onDeleteContract(contract.id);
-                          onShowToast(`Deleted contract "${contract.name}"`, "info");
-                        }
-                      }}
-                      title="Delete Contract"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-
-                </div>
-              );
-            })}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {contracts.length === 0 && (
+                  <tr>
+                    <td colSpan="12" style={{ border: '1px solid var(--border-color)', padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      No registered contracts or operating leases found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
 
         </div>

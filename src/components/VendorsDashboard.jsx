@@ -711,8 +711,11 @@ export default function VendorsDashboard({
                           </div>
                         </div>
 
-                        {/* If seat pool */}
-                        {c.quantityPurchased > 1 && (
+                        {/* If software license */}
+                        {(() => {
+                          const matchedVendor = vendors.find(vend => vend.id === c.vendorId);
+                          return matchedVendor && matchedVendor.category === 'Software License';
+                        })() && (
                           <div>
                             {/* Progress bar */}
                             <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--bg-secondary)', borderRadius: '3px', overflow: 'hidden' }}>
@@ -1224,7 +1227,10 @@ export default function VendorsDashboard({
           </div>
 
                     {(() => {
-            const seatPoolContracts = contracts.filter(c => c.quantityPurchased > 1);
+            const seatPoolContracts = contracts.filter(c => {
+              const v = vendors.find(vend => vend.id === c.vendorId);
+              return v && v.category === 'Software License' && c.quantityPurchased >= 1;
+            });
             const currentAllocContract = activeAllocId 
               ? (seatPoolContracts.find(c => c.id === activeAllocId) || seatPoolContracts[0])
               : seatPoolContracts[0];
@@ -1591,8 +1597,14 @@ export default function VendorsDashboard({
           { label: 'Dec', year: 2026, monthIndex: 11 }
         ];
 
-        const softwareContracts = contracts.filter(c => c.quantityPurchased > 1);
-        const leaseContracts = contracts.filter(c => c.quantityPurchased === 1);
+        const softwareContracts = contracts.filter(c => {
+          const v = vendors.find(vend => vend.id === c.vendorId);
+          return v && v.category === 'Software License';
+        });
+        const leaseContracts = contracts.filter(c => {
+          const v = vendors.find(vend => vend.id === c.vendorId);
+          return !v || v.category !== 'Software License';
+        });
 
         const getContractCostForMonth = (c, year, monthIndex) => {
           const parseContractDate = (dateStr, fallbackYear, fallbackMonth) => {
@@ -1647,11 +1659,15 @@ export default function VendorsDashboard({
           contracts.forEach(c => {
             const cost = getContractCostForMonth(c, m.year, m.monthIndex);
             if (cost > 0) {
-              if (c.quantityPurchased === 1) {
+              const v = vendors.find(vend => vend.id === c.vendorId);
+              const isSoftware = v && v.category === 'Software License';
+              
+              if (!isSoftware) {
                 monthlyFixedTotal[idx] += cost;
               } else {
                 const assignedCount = assetAssignments.filter(a => a.contractId === c.id).length;
-                const unusedCount = Math.max(0, c.quantityPurchased - assignedCount);
+                const totalSeats = c.quantityPurchased || 1;
+                const unusedCount = Math.max(0, totalSeats - assignedCount);
                 
                 const unitCostGBP = toGBP(c.unitCost, c.currency);
                 let unitCostTarget = unitCostGBP;
@@ -1659,9 +1675,26 @@ export default function VendorsDashboard({
                   unitCostTarget = unitCostGBP / (FX_RATES[forecastCurrency] || 1.0);
                 }
                 const taxFactor = 1 + (Number(c.taxRate || 0) / 100);
-                const costPerSeat = unitCostTarget * taxFactor;
+                
+                let monthlyTotalTarget = 0;
+                if (c.costInterval === 'monthly') {
+                  monthlyTotalTarget = unitCostTarget;
+                } else if (c.costInterval === 'annual') {
+                  monthlyTotalTarget = unitCostTarget / 12;
+                } else if (c.costInterval === 'one_time' || c.costInterval === 'one-off') {
+                  const parseDate = (dStr) => {
+                    if (!dStr) return new Date(m.year, m.monthIndex, 1);
+                    return new Date(String(dStr).trim());
+                  };
+                  const dateRef = parseDate(c.endDate || c.startDate);
+                  if (!isNaN(dateRef.getTime()) && dateRef.getMonth() === m.monthIndex && dateRef.getFullYear() === m.year) {
+                    monthlyTotalTarget = unitCostTarget;
+                  }
+                }
+                
+                const costPerSeat = monthlyTotalTarget * taxFactor;
 
-                monthlyAssignedTotal[idx] += assignedCount * costPerSeat;
+                monthlyAssignedTotal[idx] += Math.min(totalSeats, assignedCount) * costPerSeat;
                 monthlyUnusedTotal[idx] += unusedCount * costPerSeat;
               }
             }
@@ -1719,7 +1752,7 @@ export default function VendorsDashboard({
                     return (
                       <tr key={c.id}>
                         <td style={{ fontWeight: 600, paddingLeft: '16px' }}>{c.name}</td>
-                        <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Software Seat Pool</td>
+                        <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Software License</td>
                         {forecastMonths.map((m, idx) => {
                           const val = getContractCostForMonth(c, m.year, m.monthIndex);
                           rowSum += val;
@@ -1754,7 +1787,7 @@ export default function VendorsDashboard({
                     return (
                       <tr key={c.id}>
                         <td style={{ fontWeight: 600, paddingLeft: '16px' }}>{c.name}</td>
-                        <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Fixed Cost / Lease</td>
+                        <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Operating Lease / Rent</td>
                         {forecastMonths.map((m, idx) => {
                           const val = getContractCostForMonth(c, m.year, m.monthIndex);
                           rowSum += val;

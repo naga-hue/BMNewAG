@@ -656,8 +656,10 @@ export default function VendorsDashboard({
                     const unusedCount = Math.max(0, c.quantityPurchased - assignedCount);
                     const symbol = symbolMap[c.currency] || '£';
                     const taxFactor = 1 + ((c.taxRate || 0) / 100);
-                    const costPerSeatWithTax = c.unitCost * taxFactor;
+                    const seatCostPerMonth = (c.costInterval === 'annual' ? (c.unitCost / 12) : (c.costInterval === 'one_time' || c.costInterval === 'one-off' ? 0 : c.unitCost));
+                    const costPerSeatWithTax = seatCostPerMonth * taxFactor;
                     const unusedCostWithTax = unusedCount * costPerSeatWithTax;
+                    const intervalSuffix = c.costInterval === 'monthly' ? '/mo' : (c.costInterval === 'annual' ? '/yr' : ' (one-off)');
                     const matchedCompany = companies.find(comp => comp.id === c.companyId);
 
                     return (
@@ -666,7 +668,7 @@ export default function VendorsDashboard({
                           <div>
                             <h4 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>{c.name}</h4>
                             <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                              Billed to: <strong>{matchedCompany ? matchedCompany.name : 'Group'}</strong> &bull; Cost: <strong>{symbol}{c.unitCost}/mo</strong> {c.taxRate > 0 && `(+${c.taxRate}% VAT)`} &bull; Qty: <strong>{c.quantityPurchased}</strong>
+                              Billed to: <strong>{matchedCompany ? matchedCompany.name : 'Group'}</strong> &bull; Cost: <strong>{symbol}{c.unitCost}{intervalSuffix}</strong> {c.taxRate > 0 && `(+${c.taxRate}% VAT)`} &bull; Qty: <strong>{c.quantityPurchased}</strong>
                             </span>
                           </div>
                           
@@ -1008,7 +1010,7 @@ export default function VendorsDashboard({
                 ? totalWithTax
                 : contract.costInterval === 'annual'
                 ? totalWithTax / 12
-                : 0;
+                : totalWithTax; // For one-off, represent full total
 
               const alert = getPaymentAlert(contract.paymentDueDate);
 
@@ -1068,12 +1070,29 @@ export default function VendorsDashboard({
 
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', textAlign: 'right' }}>
                       <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--success)' }}>
-                        {contract.currency === 'GBP' ? (
-                          `£${monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                        ) : (
-                          `£${monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${symbol}${((contract.costInterval === 'monthly' ? (contract.unitCost * contract.quantityPurchased * (1 + (contract.taxRate || 0)/100)) : (contract.unitCost * contract.quantityPurchased * (1 + (contract.taxRate || 0)/100)) / 12)).toLocaleString(undefined, { maximumFractionDigits: 0 })}/mo)`
-                        )}
-                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'normal' }}> / mo (incl. tax)</span>
+                        {(() => {
+                          const totalRawForeign = contract.unitCost * contract.quantityPurchased * (1 + (contract.taxRate || 0)/100);
+                          if (contract.costInterval === 'monthly') {
+                            if (contract.currency === 'GBP') {
+                              return `£${monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo`;
+                            } else {
+                              return `£${monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo (${symbol}${totalRawForeign.toLocaleString(undefined, { maximumFractionDigits: 0 })}/mo)`;
+                            }
+                          } else if (contract.costInterval === 'annual') {
+                            if (contract.currency === 'GBP') {
+                              return `£${monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo (Annual: £${totalWithTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr)`;
+                            } else {
+                              return `£${monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo (Annual: ${symbol}${totalRawForeign.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr)`;
+                            }
+                          } else {
+                            if (contract.currency === 'GBP') {
+                              return `£${totalWithTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (One-off)`;
+                            } else {
+                              return `£${totalWithTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (One-off: ${symbol}${totalRawForeign.toLocaleString(undefined, { maximumFractionDigits: 0 })})`;
+                            }
+                          }
+                        })()}
+                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'normal' }}> (incl. tax)</span>
                       </span>
                       
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
@@ -1303,7 +1322,8 @@ export default function VendorsDashboard({
                     const symbol = symbolMap[c.currency] || '£';
                     
                     const taxFactor = 1 + ((c.taxRate || 0) / 100);
-                    const costPerSeatWithTax = c.unitCost * taxFactor;
+                    const seatCostPerMonth = (c.costInterval === 'annual' ? (c.unitCost / 12) : (c.costInterval === 'one_time' || c.costInterval === 'one-off' ? 0 : c.unitCost));
+                    const costPerSeatWithTax = seatCostPerMonth * taxFactor;
                     const unusedCostWithTax = unusedCount * costPerSeatWithTax;
                     
                     const matchedCompany = companies.find(comp => comp.id === c.companyId);

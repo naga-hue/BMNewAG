@@ -386,6 +386,21 @@ export default function CreditControlDashboard({
       } else if (sortBy === 'client') {
         valA = a.clientCompany;
         valB = b.clientCompany;
+      } else if (sortBy === 'dueDate') {
+        valA = a.invoiceDueDate;
+        valB = b.invoiceDueDate;
+      } else if (sortBy === 'status') {
+        valA = a.paymentStatus;
+        valB = b.paymentStatus;
+      } else if (sortBy === 'placementId') {
+        valA = a.placementId || a.id;
+        valB = b.placementId || b.id;
+      } else if (sortBy === 'candidateName') {
+        valA = a.candidateName;
+        valB = b.candidateName;
+      } else if (sortBy === 'outstanding') {
+        valA = a.balanceOutstanding;
+        valB = b.balanceOutstanding;
       }
 
       if (valA === undefined || valA === null) valA = '';

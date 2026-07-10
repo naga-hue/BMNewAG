@@ -106,6 +106,7 @@ export default function VendorsDashboard({
   // Editing trackers
   const [editingVendorId, setEditingVendorId] = useState(null);
   const [editingContractId, setEditingContractId] = useState(null);
+  const [expandedContractId, setExpandedContractId] = useState(null);
 
   // Form states - Vendor
   const [vendorName, setVendorName] = useState('');
@@ -1009,6 +1010,7 @@ export default function VendorsDashboard({
                   <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Paying Entity</th>
                   <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'right', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '140px' }}>Unit Cost</th>
                   <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '80px' }}>Qty (Seats)</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '110px' }}>Allocations</th>
                   <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'right', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '140px' }}>Equiv. Monthly Cost</th>
                   <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '90px' }}>Interval</th>
                   <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '100px' }}>Start Date</th>
@@ -1040,105 +1042,241 @@ export default function VendorsDashboard({
                   const catStyles = getCategoryStyles(matchedVendor?.category);
 
                   return (
-                    <tr 
-                      key={contract.id} 
-                      onClick={() => handleEditContract(contract)}
-                      className="table-row-hover"
-                      style={{ 
-                        cursor: 'pointer',
-                        backgroundColor: idx % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent',
-                        borderBottom: '1px solid var(--border-color)'
-                      }}
-                    >
-                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {contract.name}
-                      </td>
-                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', color: 'var(--text-secondary)' }}>
-                        {matchedVendor ? matchedVendor.name : '—'}
-                      </td>
-                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', color: 'var(--text-secondary)' }}>
-                        {matchedCompany ? matchedCompany.name : 'Group'}
-                      </td>
-                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
-                        {symbol}{contract.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center', fontFamily: 'monospace', fontWeight: 600 }}>
-                        {contract.quantityPurchased}
-                      </td>
-                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)', fontWeight: 700 }}>
-                        £{monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }}>
-                        <span style={{ 
-                          fontSize: '10px', 
-                          textTransform: 'uppercase', 
-                          fontWeight: 700, 
-                          color: contract.costInterval === 'monthly' ? '#38bdf8' : (contract.costInterval === 'annual' ? '#fbbf24' : '#a78bfa'),
-                          backgroundColor: contract.costInterval === 'monthly' ? 'rgba(56, 189, 248, 0.08)' : (contract.costInterval === 'annual' ? 'rgba(251, 191, 36, 0.08)' : 'rgba(167, 139, 250, 0.08)'),
-                          padding: '2px 6px',
-                          borderRadius: '4px'
-                        }}>
-                          {contract.costInterval}
-                        </span>
-                      </td>
-                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
-                        {contract.startDate || '—'}
-                      </td>
-                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
-                        {contract.endDate || '—'}
-                      </td>
-                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center', fontFamily: 'monospace' }}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <span style={{ color: alert ? alert.color : 'inherit', fontWeight: alert ? 700 : 'normal' }}>{contract.paymentDueDate || '—'}</span>
-                          {alert && <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: alert.color }} title={alert.text} />}
-                        </div>
-                      </td>
-                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                        {(contract.documents || []).length > 0 ? (
-                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                            {(contract.documents || []).slice(0, 2).map(doc => (
-                              <a key={doc.id} href="#" onClick={(e) => { e.preventDefault(); handlePreviewInvoice(doc); }} style={{ color: 'var(--primary)' }} title={`Preview: ${doc.name}`}>
-                                <FileText size={12} />
-                              </a>
-                            ))}
+                    <React.Fragment key={contract.id}>
+                      <tr 
+                        onClick={() => handleEditContract(contract)}
+                        className="table-row-hover"
+                        style={{ 
+                          cursor: 'pointer',
+                          backgroundColor: idx % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent',
+                          borderBottom: '1px solid var(--border-color)'
+                        }}
+                      >
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {contract.name}
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', color: 'var(--text-secondary)' }}>
+                          {matchedVendor ? matchedVendor.name : '—'}
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', color: 'var(--text-secondary)' }}>
+                          {matchedCompany ? matchedCompany.name : 'Group'}
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
+                          {symbol}{contract.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center', fontFamily: 'monospace', fontWeight: 600 }}>
+                          {contract.quantityPurchased}
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                          {(() => {
+                            const isSoftware = matchedVendor && matchedVendor.category === 'Software License';
+                            if (!isSoftware) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+                            const assigned = assetAssignments.filter(a => a.contractId === contract.id);
+                            const assignedCount = assigned.length;
+                            const unusedCount = Math.max(0, contract.quantityPurchased - assignedCount);
+                            return (
+                              <span 
+                                onClick={() => setExpandedContractId(expandedContractId === contract.id ? null : contract.id)}
+                                style={{ 
+                                  cursor: 'pointer',
+                                  padding: '3px 8px',
+                                  borderRadius: '12px',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  backgroundColor: expandedContractId === contract.id 
+                                    ? 'var(--primary)' 
+                                    : (unusedCount > 0 ? 'rgba(59, 130, 246, 0.08)' : 'rgba(16, 185, 129, 0.08)'),
+                                  color: expandedContractId === contract.id 
+                                    ? '#fff' 
+                                    : (unusedCount > 0 ? '#38bdf8' : '#34d399'),
+                                  border: '1px solid var(--border-color)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  boxShadow: expandedContractId === contract.id ? '0 2px 8px rgba(99, 102, 241, 0.3)' : 'none',
+                                  transition: 'all 0.2s'
+                                }}
+                              >
+                                👥 {assignedCount} / {contract.quantityPurchased}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)', fontWeight: 700 }}>
+                          £{monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }}>
+                          <span style={{ 
+                            fontSize: '10px', 
+                            textTransform: 'uppercase', 
+                            fontWeight: 700, 
+                            color: contract.costInterval === 'monthly' ? '#38bdf8' : (contract.costInterval === 'annual' ? '#fbbf24' : '#a78bfa'),
+                            backgroundColor: contract.costInterval === 'monthly' ? 'rgba(56, 189, 248, 0.08)' : (contract.costInterval === 'annual' ? 'rgba(251, 191, 36, 0.08)' : 'rgba(167, 139, 250, 0.08)'),
+                            padding: '2px 6px',
+                            borderRadius: '4px'
+                          }}>
+                            {contract.costInterval}
+                          </span>
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                          {contract.startDate || '—'}
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                          {contract.endDate || '—'}
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center', fontFamily: 'monospace' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ color: alert ? alert.color : 'inherit', fontWeight: alert ? 700 : 'normal' }}>{contract.paymentDueDate || '—'}</span>
+                            {alert && <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: alert.color }} title={alert.text} />}
                           </div>
-                        ) : '—'}
-                      </td>
-                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                        {uploadContractId === contract.id ? (
-                          <div style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'center' }}>
-                            <input 
-                              type="file" 
-                              onChange={(e) => handleFileUpload(e, contract.id)} 
-                              style={{ fontSize: '10px', width: '110px' }} 
-                            />
-                            <button type="button" className="btn-secondary" onClick={() => setUploadContractId(null)} style={{ padding: '2px 4px', fontSize: '9px' }}>✕</button>
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                            <button className="btn-icon" onClick={() => setUploadContractId(contract.id)} title="Attach Invoice Document" style={{ padding: '4px', borderRadius: '4px' }}>
-                              <Plus size={11} />
-                            </button>
-                            <button className="btn-icon" onClick={() => handleEditContract(contract)} title="Edit Contract" style={{ padding: '4px', borderRadius: '4px' }}>
-                              <Edit3 size={11} />
-                            </button>
-                            <button className="btn-icon delete" onClick={() => {
-                              if (window.confirm(`Are you sure you want to delete contract "${contract.name}"?`)) {
-                                onDeleteContract(contract.id);
-                                onShowToast(`Deleted contract "${contract.name}"`, "info");
-                              }
-                            }} title="Delete Contract" style={{ padding: '4px', borderRadius: '4px' }}>
-                              <Trash2 size={11} />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                          {(contract.documents || []).length > 0 ? (
+                            <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                              {(contract.documents || []).slice(0, 2).map(doc => (
+                                <a key={doc.id} href="#" onClick={(e) => { e.preventDefault(); handlePreviewInvoice(doc); }} style={{ color: 'var(--primary)' }} title={`Preview: ${doc.name}`}>
+                                  <FileText size={12} />
+                                </a>
+                              ))}
+                            </div>
+                          ) : '—'}
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                          {uploadContractId === contract.id ? (
+                            <div style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'center' }}>
+                              <input 
+                                type="file" 
+                                onChange={(e) => handleFileUpload(e, contract.id)} 
+                                style={{ fontSize: '10px', width: '110px' }} 
+                              />
+                              <button type="button" className="btn-secondary" onClick={() => setUploadContractId(null)} style={{ padding: '2px 4px', fontSize: '9px' }}>✕</button>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                              <button className="btn-icon" onClick={() => setUploadContractId(contract.id)} title="Attach Invoice Document" style={{ padding: '4px', borderRadius: '4px' }}>
+                                <Plus size={11} />
+                              </button>
+                              <button className="btn-icon" onClick={() => handleEditContract(contract)} title="Edit Contract" style={{ padding: '4px', borderRadius: '4px' }}>
+                                <Edit3 size={11} />
+                              </button>
+                              <button className="btn-icon delete" onClick={() => {
+                                if (window.confirm(`Are you sure you want to delete contract "${contract.name}"?`)) {
+                                  onDeleteContract(contract.id);
+                                  onShowToast(`Deleted contract "${contract.name}"`, "info");
+                                }
+                              }} title="Delete Contract" style={{ padding: '4px', borderRadius: '4px' }}>
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                      
+                      {expandedContractId === contract.id && (() => {
+                        const isSoftware = matchedVendor && matchedVendor.category === 'Software License';
+                        if (!isSoftware) return null;
+                        const assigned = assetAssignments.filter(a => a.contractId === contract.id);
+                        const assignedCount = assigned.length;
+                        const unusedCount = Math.max(0, contract.quantityPurchased - assignedCount);
+                        const activeStaffList = staff.filter(s => s.status !== 'exited');
+                        const sortedStaff = [...activeStaffList].sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+                        return (
+                          <tr style={{ backgroundColor: 'rgba(30, 41, 59, 0.25)' }}>
+                            <td colSpan="13" style={{ padding: '16px', border: '1px solid var(--border-color)' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--primary)', margin: 0 }}>
+                                    Manage Seat Allocations for "${contract.name}"
+                                  </h4>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                    Remaining: <strong>${unusedCount} unallocated seats</strong>
+                                  </span>
+                                </div>
+
+                                {assigned.length > 0 ? (
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                    {assigned.map(a => {
+                                      const member = staff.find(s => s.id === a.staffId);
+                                      if (!member) return null;
+                                      return (
+                                        <div key={a.id} style={{ 
+                                          display: 'flex', 
+                                          alignItems: 'center', 
+                                          gap: '8px', 
+                                          backgroundColor: 'var(--bg-secondary)', 
+                                          border: '1px solid var(--border-color)', 
+                                          padding: '4px 10px', 
+                                          borderRadius: '6px',
+                                          fontSize: '11.5px' 
+                                        }}>
+                                          <strong style={{ color: 'var(--text-primary)' }}>${member.fullName}</strong>
+                                          {a.email && <span style={{ color: 'var(--text-muted)', fontSize: '10.5px' }}>(${a.email})</span>}
+                                          <button 
+                                            onClick={() => handleReleaseSeat(a.id, contract.name, member.fullName)}
+                                            style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '12px', padding: 0, marginLeft: '4px' }}
+                                            title="Release Seat"
+                                          >
+                                            ✕
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                    No staff users allocated to this license pool yet. Choose a member below to assign.
+                                  </div>
+                                )}
+
+                                {unusedCount > 0 ? (
+                                  <form 
+                                    onSubmit={async (e) => {
+                                      await handleAllocateSeatInline(e, contract.id, contract.name);
+                                    }}
+                                    style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '10px' }}
+                                  >
+                                    <select name="staffSelect" className="select-filter" style={{ padding: '4px 8px', fontSize: '11px', minWidth: '160px' }} required>
+                                      <option value="">-- Choose Staff Member --</option>
+                                      {sortedStaff.map(s => (
+                                        <option key={s.id} value={s.id}>${s.fullName}</option>
+                                      ))}
+                                    </select>
+                                    
+                                    <input 
+                                      type="text" 
+                                      name="emailInput" 
+                                      placeholder="Optional Email/Alias" 
+                                      style={{ width: '160px', padding: '4px 8px', fontSize: '11px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
+                                    />
+
+                                    <input 
+                                      type="text" 
+                                      name="notesInput" 
+                                      placeholder="Optional Notes..." 
+                                      style={{ width: '160px', padding: '4px 8px', fontSize: '11px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
+                                    />
+
+                                    <button type="submit" className="btn-primary" style={{ padding: '4px 14px', fontSize: '11px' }}>
+                                      Assign Seat
+                                    </button>
+                                  </form>
+                                ) : (
+                                  <div style={{ fontSize: '11px', color: 'var(--warning)', fontWeight: 600, borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '10px' }}>
+                                    ⚠️ All license seats are fully allocated. Release an existing user to assign a new one.
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })()}
+                    </React.Fragment>
                   );
                 })}
                 {contracts.length === 0 && (
                   <tr>
-                    <td colSpan="12" style={{ border: '1px solid var(--border-color)', padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                    <td colSpan="13" style={{ border: '1px solid var(--border-color)', padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
                       No registered contracts or operating leases found.
                     </td>
                   </tr>

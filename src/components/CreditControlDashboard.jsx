@@ -60,6 +60,11 @@ export default function CreditControlDashboard({
     { id: 'clientCompany', label: 'Client Company', visible: true },
     { id: 'candidateName', label: 'Candidate Name', visible: true },
     { id: 'recruiter', label: 'Recruiter', visible: true },
+    { id: 'startDate', label: 'Start Date', visible: false },
+    { id: 'scoredDate', label: 'Scored Date', visible: false },
+    { id: 'invoiceNumber', label: 'Invoice Number', visible: false },
+    { id: 'invoiceRaisedDate', label: 'Invoice Raised Date', visible: false },
+    { id: 'paymentTermsDays', label: 'Payment Terms (Days)', visible: false },
     { id: 'dueDate', label: 'Due Date', visible: true },
     { id: 'riskTimeline', label: 'Simplicity Risk', visible: true },
     { id: 'netTotal', label: 'Net Total', visible: true },
@@ -511,6 +516,21 @@ export default function CreditControlDashboard({
       } else if (sortBy === 'outstanding') {
         valA = a.balanceOutstanding;
         valB = b.balanceOutstanding;
+      } else if (sortBy === 'startDate') {
+        valA = a.startDate;
+        valB = b.startDate;
+      } else if (sortBy === 'scoredDate') {
+        valA = a.scoredDate;
+        valB = b.scoredDate;
+      } else if (sortBy === 'invoiceNumber') {
+        valA = a.invoiceNumber;
+        valB = b.invoiceNumber;
+      } else if (sortBy === 'invoiceRaisedDate') {
+        valA = a.invoiceRaisedDate;
+        valB = b.invoiceRaisedDate;
+      } else if (sortBy === 'paymentTermsDays') {
+        valA = Number(a.paymentTermsDays) || 0;
+        valB = Number(b.paymentTermsDays) || 0;
       }
 
       if (valA === undefined || valA === null) valA = '';
@@ -749,7 +769,7 @@ export default function CreditControlDashboard({
 
   // Helper to render table header cell dynamically
   const renderTableHeaderCell = (col) => {
-    const isSortable = ['placementId', 'clientCompany', 'candidateName', 'recruiter', 'dueDate', 'amount', 'status', 'outstanding'].includes(col.id);
+    const isSortable = ['placementId', 'clientCompany', 'candidateName', 'recruiter', 'dueDate', 'amount', 'status', 'outstanding', 'startDate', 'scoredDate', 'invoiceNumber', 'invoiceRaisedDate', 'paymentTermsDays'].includes(col.id);
     const sortFieldMap = {
       clientCompany: 'client',
       recruiter: 'recruiter',
@@ -795,6 +815,21 @@ export default function CreditControlDashboard({
     switch (col.id) {
       case 'placementId':
         cellContent = inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id);
+        break;
+      case 'startDate':
+        cellContent = inv.startDate || '—';
+        break;
+      case 'scoredDate':
+        cellContent = inv.scoredDate || '—';
+        break;
+      case 'invoiceNumber':
+        cellContent = inv.invoiceNumber || '—';
+        break;
+      case 'invoiceRaisedDate':
+        cellContent = inv.invoiceRaisedDate || '—';
+        break;
+      case 'paymentTermsDays':
+        cellContent = inv.paymentTermsDays ? `${inv.paymentTermsDays} Days` : '—';
         break;
       case 'clientCompany':
         cellContent = (
@@ -1394,21 +1429,21 @@ export default function CreditControlDashboard({
                 position: 'absolute',
                 top: 'calc(100% + 8px)',
                 right: 0,
-                width: '260px',
+                width: '320px',
                 maxHeight: '380px',
                 overflowY: 'auto',
                 backgroundColor: 'var(--bg-card)',
-                border: '1px solid var(--border-color)',
+                border: '2px solid var(--primary)',
                 borderRadius: '8px',
-                boxShadow: '0 10px 20px rgba(0,0,0,0.3)',
+                boxShadow: '0 12px 24px rgba(0,0,0,0.3)',
                 zIndex: 1000,
                 padding: '12px',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '4px'
               }}>
-                <strong style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '6px', display: 'block' }}>
-                  Choose & Order Columns
+                <strong style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '8px', display: 'block', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px' }}>
+                  ⚙️ Choose & Order Columns
                 </strong>
                 {columnsConfig.map((col, index) => {
                   return (
@@ -1423,21 +1458,32 @@ export default function CreditControlDashboard({
                         gap: '8px'
                       }}
                     >
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '11.5px', color: '#fff', margin: 0, userSelect: 'none' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '11.5px', color: 'var(--text-primary)', margin: 0, userSelect: 'none', fontWeight: 500 }}>
                         <input 
                           type="checkbox" 
                           checked={col.visible} 
                           onChange={() => handleToggleColVisible(col.id)} 
-                          style={{ accentColor: 'var(--primary)' }}
+                          style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
                         />
                         {col.label}
                       </label>
-                      <div style={{ display: 'flex', gap: '2px' }}>
+                      <div style={{ display: 'flex', gap: '4px' }}>
                         <button 
                           type="button" 
                           onClick={() => handleMoveCol(index, -1)} 
                           disabled={index === 0}
-                          style={{ padding: '1px 5px', fontSize: '9px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '3px', cursor: 'pointer', color: '#fff' }}
+                          title="Move Left/Up"
+                          style={{ 
+                            padding: '3px 7px', 
+                            fontSize: '9px', 
+                            background: 'var(--bg-secondary)', 
+                            border: '1px solid var(--border-color)', 
+                            borderRadius: '4px', 
+                            cursor: 'pointer', 
+                            color: 'var(--text-primary)', 
+                            fontWeight: 'bold',
+                            opacity: index === 0 ? 0.3 : 1
+                          }}
                         >
                           ▲
                         </button>
@@ -1445,7 +1491,18 @@ export default function CreditControlDashboard({
                           type="button" 
                           onClick={() => handleMoveCol(index, 1)} 
                           disabled={index === columnsConfig.length - 1}
-                          style={{ padding: '1px 5px', fontSize: '9px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '3px', cursor: 'pointer', color: '#fff' }}
+                          title="Move Right/Down"
+                          style={{ 
+                            padding: '3px 7px', 
+                            fontSize: '9px', 
+                            background: 'var(--bg-secondary)', 
+                            border: '1px solid var(--border-color)', 
+                            borderRadius: '4px', 
+                            cursor: 'pointer', 
+                            color: 'var(--text-primary)', 
+                            fontWeight: 'bold',
+                            opacity: index === columnsConfig.length - 1 ? 0.3 : 1
+                          }}
                         >
                           ▼
                         </button>

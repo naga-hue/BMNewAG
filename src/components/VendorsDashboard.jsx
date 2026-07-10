@@ -107,6 +107,7 @@ export default function VendorsDashboard({
   const [editingVendorId, setEditingVendorId] = useState(null);
   const [editingContractId, setEditingContractId] = useState(null);
   const [expandedContractId, setExpandedContractId] = useState(null);
+  const [expandedSplitsContractId, setExpandedSplitsContractId] = useState(null);
 
   // Form states - Vendor
   const [vendorName, setVendorName] = useState('');
@@ -383,6 +384,24 @@ export default function VendorsDashboard({
     setEditingContractId(contract.id);
     setShowContractForm(true);
     setShowVendorForm(false);
+  };
+
+  // Update contract splits
+  const handleUpdateContractSplits = async (contractId, newSplits) => {
+    const contract = contracts.find(c => c.id === contractId);
+    if (!contract) return;
+    
+    const updatedContract = {
+      ...contract,
+      splits: newSplits
+    };
+    
+    try {
+      await onSaveContract(updatedContract);
+      onShowToast("Updated contract cost splits successfully.", "success");
+    } catch (err) {
+      onShowToast(`Error updating splits: ${err.message}`, "warning");
+    }
   };
 
   // Submit Contract
@@ -1008,6 +1027,7 @@ export default function VendorsDashboard({
                   <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Contract Name</th>
                   <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Vendor Partner</th>
                   <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Paying Entity</th>
+                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '130px' }}>Cost Splits</th>
                   <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'right', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '140px' }}>Unit Cost</th>
                   <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '80px' }}>Qty (Seats)</th>
                   <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '110px' }}>Allocations</th>
@@ -1060,6 +1080,42 @@ export default function VendorsDashboard({
                         </td>
                         <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', color: 'var(--text-secondary)' }}>
                           {matchedCompany ? matchedCompany.name : 'Group'}
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                          {(() => {
+                            const splits = contract.splits || [];
+                            const splitsCount = splits.length;
+                            const totalSplitPercentage = splits.reduce((acc, curr) => acc + Number(curr.percentage || 0), 0);
+                            
+                            return (
+                              <span 
+                                onClick={() => {
+                                  setExpandedSplitsContractId(expandedSplitsContractId === contract.id ? null : contract.id);
+                                  setExpandedContractId(null); // Close seat allocations drawer if open
+                                }}
+                                style={{ 
+                                  cursor: 'pointer',
+                                  padding: '3px 8px',
+                                  borderRadius: '12px',
+                                  fontSize: '11.5px',
+                                  fontWeight: 700,
+                                  backgroundColor: expandedSplitsContractId === contract.id 
+                                    ? 'var(--accent)' 
+                                    : (splitsCount > 0 ? 'rgba(167, 139, 250, 0.08)' : 'rgba(255, 255, 255, 0.03)'),
+                                  color: expandedSplitsContractId === contract.id 
+                                    ? '#fff' 
+                                    : (splitsCount > 0 ? '#a78bfa' : 'var(--text-muted)'),
+                                  border: '1px solid var(--border-color)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  transition: 'all 0.2s'
+                                }}
+                              >
+                                🔗 {splitsCount > 0 ? `${splitsCount} Splits (${totalSplitPercentage}%)` : 'Assign Splits'}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
                           {symbol}{contract.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1183,7 +1239,7 @@ export default function VendorsDashboard({
 
                         return (
                           <tr style={{ backgroundColor: 'rgba(30, 41, 59, 0.25)' }}>
-                            <td colSpan="13" style={{ padding: '16px', border: '1px solid var(--border-color)' }}>
+                            <td colSpan="14" style={{ padding: '16px', border: '1px solid var(--border-color)' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--primary)', margin: 0 }}>
@@ -1271,12 +1327,160 @@ export default function VendorsDashboard({
                           </tr>
                         );
                       })()}
+                    {expandedSplitsContractId === contract.id && (() => {
+                      const splits = contract.splits || [];
+                      const totalSplitPercentage = splits.reduce((acc, curr) => acc + Number(curr.percentage || 0), 0);
+                      const activeStaffList = staff.filter(s => s.status !== 'exited');
+                      const sortedStaff = [...activeStaffList].sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+                      return (
+                        <tr style={{ backgroundColor: 'rgba(167, 139, 250, 0.02)' }}>
+                          <td colSpan="14" style={{ padding: '16px', border: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <h4 style={{ fontSize: '13px', fontWeight: 700, color: '#a78bfa', margin: 0 }}>
+                                  Cost Splits & Distributions for "${contract.name}"
+                                </h4>
+                                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                  Total Splits Configured: <strong>${totalSplitPercentage}%</strong> ${totalSplitPercentage < 100 ? `(Remaining ${100 - totalSplitPercentage}% billed to primary Paying Entity)` : ''}
+                                </span>
+                              </div>
+
+                              {/* Active splits tags */}
+                              {splits.length > 0 ? (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                  {splits.map((s, sIdx) => {
+                                    let targetName = 'Unknown Target';
+                                    if (s.type === 'company') {
+                                      const comp = companies.find(c => c.id === s.targetId);
+                                      targetName = comp ? `🏢 ${comp.name}` : `🏢 Company: ${s.targetId}`;
+                                    } else if (s.type === 'department') {
+                                      targetName = `💼 Dept: ${s.targetId}`;
+                                    } else if (s.type === 'user') {
+                                      const st = staff.find(member => member.id === s.targetId);
+                                      targetName = st ? `👤 User: ${st.fullName}` : `👤 User: ${s.targetId}`;
+                                    }
+
+                                    return (
+                                      <div key={sIdx} style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '8px', 
+                                        backgroundColor: 'var(--bg-secondary)', 
+                                        border: '1px solid var(--border-color)', 
+                                        padding: '4px 10px', 
+                                        borderRadius: '6px',
+                                        fontSize: '11.5px' 
+                                      }}>
+                                        <strong style={{ color: 'var(--text-primary)' }}>{targetName}</strong>
+                                        <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{s.percentage}%</span>
+                                        <button 
+                                          onClick={() => {
+                                            const updatedSplits = splits.filter((_, idx) => idx !== sIdx);
+                                            handleUpdateContractSplits(contract.id, updatedSplits);
+                                          }}
+                                          style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '12px', padding: 0, marginLeft: '4px' }}
+                                          title="Remove Split"
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                  No cost splits configured. 100% of this rent/contract cost is currently billed to the primary Paying Entity.
+                                </div>
+                              )}
+
+                              {/* Split addition form */}
+                              {totalSplitPercentage < 100 ? (
+                                <form 
+                                  onSubmit={(e) => {
+                                    e.preventDefault();
+                                    const type = e.target.elements.splitType.value;
+                                    const targetId = e.target.elements.splitTarget.value;
+                                    const percentage = Number(e.target.elements.splitPercentage.value);
+
+                                    if (!type || !targetId || !percentage) return;
+
+                                    if (totalSplitPercentage + percentage > 100) {
+                                      onShowToast(`Cannot allocate ${percentage}%. Maximum available remainder is ${100 - totalSplitPercentage}%.`, 'warning');
+                                      return;
+                                    }
+
+                                    const newSplit = { type, targetId, percentage };
+                                    const updatedSplits = [...splits, newSplit];
+                                    handleUpdateContractSplits(contract.id, updatedSplits);
+                                    e.target.reset();
+                                  }}
+                                  style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '10px' }}
+                                >
+                                  <span style={{ fontSize: '11px', fontWeight: 600 }}>Split To:</span>
+                                  <select 
+                                    name="splitType" 
+                                    className="select-filter" 
+                                    style={{ padding: '4px 8px', fontSize: '11px' }}
+                                    onChange={(e) => {
+                                      setExpandedSplitsContractId(contract.id);
+                                    }}
+                                    required
+                                  >
+                                    <option value="company">🏢 Company</option>
+                                    <option value="department">💼 Department</option>
+                                    <option value="user">👤 Staff User</option>
+                                  </select>
+
+                                  <select name="splitTarget" className="select-filter" style={{ padding: '4px 8px', fontSize: '11px', minWidth: '200px' }} required>
+                                    <option value="">-- Choose Target Option --</option>
+                                    <optgroup label="🏢 Companies">
+                                      {companies.map(c => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                      ))}
+                                    </optgroup>
+                                    <optgroup label="💼 Departments">
+                                      {allAvailableDepts.map(d => (
+                                        <option key={d} value={d}>{d}</option>
+                                      ))}
+                                    </optgroup>
+                                    <optgroup label="👤 Staff Users">
+                                      {sortedStaff.map(s => (
+                                        <option key={s.id} value={s.id}>{s.fullName}</option>
+                                      ))}
+                                    </optgroup>
+                                  </select>
+                                  
+                                  <input 
+                                    type="number" 
+                                    name="splitPercentage" 
+                                    placeholder="Share %" 
+                                    min="1" 
+                                    max={100 - totalSplitPercentage}
+                                    style={{ width: '80px', padding: '4px 8px', fontSize: '11px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
+                                    required
+                                  />
+
+                                  <button type="submit" className="btn-primary" style={{ padding: '4px 14px', fontSize: '11px', background: '#a78bfa', borderColor: '#a78bfa', color: '#1e1b4b' }}>
+                                    + Add Split Allocation
+                                  </button>
+                                </form>
+                              ) : (
+                                <div style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 600, borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '10px' }}>
+                                  🔗 Cost is 100% split. Delete an existing split to allocate differently.
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })()}
                     </React.Fragment>
                   );
                 })}
                 {contracts.length === 0 && (
                   <tr>
-                    <td colSpan="13" style={{ border: '1px solid var(--border-color)', padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                    <td colSpan="14" style={{ border: '1px solid var(--border-color)', padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
                       No registered contracts or operating leases found.
                     </td>
                   </tr>

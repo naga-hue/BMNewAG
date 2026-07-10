@@ -114,8 +114,8 @@ export default function CreditControlDashboard({
         : (gross + vat);
 
       if (p.invoiceType === 'simplicity' && (!p.vatAmount || !p.totalInvoiceAmount)) {
-        // Fallback to 2.7% Simplicity factoring fee
-        const factoredGross = Math.round(gross * 0.973 * 100) / 100;
+        // Fallback to 2.96% Simplicity factoring fee
+        const factoredGross = Math.round(gross * 0.9704 * 100) / 100;
         vat = Math.round(factoredGross * 0.20 * 100) / 100;
         total = factoredGross + vat;
       }
@@ -607,7 +607,7 @@ export default function CreditControlDashboard({
     return Object.keys(groups).sort().map(dateStr => {
       const list = groups[dateStr];
       const netTotalSum = list.reduce((sum, inv) => sum + (Number(inv.grossBillAmount) || 0), 0);
-      const totalToHumresSum = list.reduce((sum, inv) => sum + ((Number(inv.grossBillAmount) || 0) * 0.973), 0);
+      const totalToHumresSum = list.reduce((sum, inv) => sum + ((Number(inv.grossBillAmount) || 0) * 0.9704), 0);
       const vatSum = totalToHumresSum * 0.20;
       const totalInclVatSum = totalToHumresSum * 1.20;
 
@@ -1359,7 +1359,7 @@ export default function CreditControlDashboard({
           {(() => {
             const renderSimplicityTable = (title, list, headerBg, titleColor, statusInfo) => {
               const netSum = list.reduce((sum, inv) => sum + (Number(inv.grossBillAmount) || 0), 0);
-              const factoredSum = list.reduce((sum, inv) => sum + ((Number(inv.grossBillAmount) || 0) * 0.973), 0);
+              const factoredSum = list.reduce((sum, inv) => sum + ((Number(inv.grossBillAmount) || 0) * 0.9704), 0);
               const vatSum = factoredSum * 0.20;
               const totalSum = factoredSum * 1.20;
 
@@ -1442,9 +1442,9 @@ export default function CreditControlDashboard({
                                 )}
                               </td>
                               <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{(Number(inv.grossBillAmount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.973).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.973 * 0.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.973 * 1.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.9704).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.9704 * 0.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.9704 * 1.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                               <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>
                                 <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>{statusObj.label}</span>
                               </td>
@@ -1588,9 +1588,9 @@ export default function CreditControlDashboard({
                                         )}
                                       </td>
                                       <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{(Number(inv.grossBillAmount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.973).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.973 * 0.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.973 * 1.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.9704).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.9704 * 0.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.9704 * 1.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                       <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>
                                         <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>{statusObj.label}</span>
                                       </td>

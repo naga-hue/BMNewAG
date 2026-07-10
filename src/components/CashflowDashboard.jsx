@@ -193,8 +193,8 @@ export default function CashflowDashboard({
         : (gross + vat);
 
       if (p.invoiceType === 'simplicity' && (!p.vatAmount || !p.totalInvoiceAmount)) {
-        // Fallback to 2.7% Simplicity factoring fee
-        const factoredGross = Math.round(gross * 0.973 * 100) / 100;
+        // Fallback to 2.96% Simplicity factoring fee
+        const factoredGross = Math.round(gross * 0.9704 * 100) / 100;
         vat = Math.round(factoredGross * 0.20 * 100) / 100;
         total = factoredGross + vat;
       }
@@ -450,7 +450,7 @@ export default function CashflowDashboard({
             let totalCost = gross + vat;
 
             if (p.invoiceType === 'simplicity' && (!p.vatAmount || !p.totalInvoiceAmount)) {
-              const factoredGross = Math.round(gross * 0.973 * 100) / 100;
+              const factoredGross = Math.round(gross * 0.9704 * 100) / 100;
               vat = Math.round(factoredGross * 0.20 * 100) / 100;
               totalCost = factoredGross + vat;
             } else if (p.invoiceType === 'simplicity' && p.totalInvoiceAmount) {

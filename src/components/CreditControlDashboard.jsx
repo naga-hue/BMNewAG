@@ -58,6 +58,7 @@ export default function CreditControlDashboard({
   const [columnsConfig, setColumnsConfig] = useState([
     { id: 'placementId', label: 'Placement ID', visible: true },
     { id: 'clientCompany', label: 'Client Company', visible: true },
+    { id: 'internalCompany', label: 'Humres Entity', visible: true },
     { id: 'candidateName', label: 'Candidate Name', visible: true },
     { id: 'recruiter', label: 'Recruiter', visible: true },
     { id: 'startDate', label: 'Start Date', visible: false },
@@ -495,6 +496,11 @@ export default function CreditControlDashboard({
       if (sortBy === 'amount') {
         valA = a.totalInvoiceAmount;
         valB = b.totalInvoiceAmount;
+      } else if (sortBy === 'internalCompany') {
+        const matchedA = companies.find(c => c.id === a.companyId);
+        const matchedB = companies.find(c => c.id === b.companyId);
+        valA = matchedA ? matchedA.name : '';
+        valB = matchedB ? matchedB.name : '';
       } else if (sortBy === 'recruiter') {
         valA = a.recruiterNames;
         valB = b.recruiterNames;
@@ -769,7 +775,7 @@ export default function CreditControlDashboard({
 
   // Helper to render table header cell dynamically
   const renderTableHeaderCell = (col) => {
-    const isSortable = ['placementId', 'clientCompany', 'candidateName', 'recruiter', 'dueDate', 'amount', 'status', 'outstanding', 'startDate', 'scoredDate', 'invoiceNumber', 'invoiceRaisedDate', 'paymentTermsDays'].includes(col.id);
+    const isSortable = ['placementId', 'clientCompany', 'internalCompany', 'candidateName', 'recruiter', 'dueDate', 'amount', 'status', 'outstanding', 'startDate', 'scoredDate', 'invoiceNumber', 'invoiceRaisedDate', 'paymentTermsDays'].includes(col.id);
     const sortFieldMap = {
       clientCompany: 'client',
       recruiter: 'recruiter',
@@ -815,6 +821,10 @@ export default function CreditControlDashboard({
     switch (col.id) {
       case 'placementId':
         cellContent = inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id);
+        break;
+      case 'internalCompany':
+        const matchedCo = companies.find(c => c.id === inv.companyId);
+        cellContent = matchedCo ? matchedCo.name : '—';
         break;
       case 'startDate':
         cellContent = inv.startDate || '—';
@@ -929,6 +939,76 @@ export default function CreditControlDashboard({
         {cellContent}
       </td>
     );
+  };
+
+  // 4. Export visible ledger columns dynamically to Excel/CSV matching active user settings
+  const handleExportCSV = () => {
+    const headers = activeColumns.map(col => col.label);
+    const rows = filteredInvoices.map(inv => {
+      return activeColumns.map(col => {
+        const symbol = getCurrencySymbol(inv);
+        switch (col.id) {
+          case 'placementId':
+            return inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id);
+          case 'clientCompany':
+            return inv.clientCompany;
+          case 'internalCompany':
+            const matchedCo = companies.find(c => c.id === inv.companyId);
+            return matchedCo ? matchedCo.name : '—';
+          case 'candidateName':
+            return inv.candidateName;
+          case 'recruiter':
+            return inv.recruiterNames;
+          case 'startDate':
+            return inv.startDate || '';
+          case 'scoredDate':
+            return inv.scoredDate || '';
+          case 'invoiceNumber':
+            return inv.invoiceNumber || '';
+          case 'invoiceRaisedDate':
+            return inv.invoiceRaisedDate || '';
+          case 'paymentTermsDays':
+            return inv.paymentTermsDays || '';
+          case 'dueDate':
+            return inv.invoiceDueDate || '';
+          case 'riskTimeline':
+            return inv.balanceOutstanding > 0 ? `Day ${inv.daysSinceStart}` : 'Paid';
+          case 'netTotal':
+            return Number(inv.grossBillAmount) || 0;
+          case 'factoredGross':
+            return (Number(inv.grossBillAmount) || 0) * 0.9704;
+          case 'vat':
+            return (Number(inv.grossBillAmount) || 0) * 0.9704 * 0.20;
+          case 'totalInclVat':
+            return (Number(inv.grossBillAmount) || 0) * 0.9704 * 1.20;
+          case 'amount':
+            return inv.totalInvoiceAmount || 0;
+          case 'status':
+            return inv.paymentStatus;
+          case 'outstanding':
+            return inv.balanceOutstanding || 0;
+          default:
+            return '';
+        }
+      });
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + [headers.join(","), ...rows.map(e => e.map(val => {
+        if (typeof val === 'string') {
+          return `"${val.replace(/"/g, '""')}"`;
+        }
+        return val;
+      }).join(","))].join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Humres_Ledger_Export_${activeSubTab}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    onShowToast("Ledger exported to CSV successfully.", "success");
   };
 
   // 3. Move invoice to target payout week Friday
@@ -1414,6 +1494,15 @@ export default function CreditControlDashboard({
             <option value="this-month">Expected This Month</option>
             <option value="next-month">Expected Next Month</option>
           </select>
+
+          <button 
+            type="button" 
+            className="btn-secondary" 
+            onClick={handleExportCSV}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '10px 14px' }}
+          >
+            📥 Export CSV
+          </button>
 
           <div style={{ position: 'relative', flex: '0 0 auto' }}>
             <button 

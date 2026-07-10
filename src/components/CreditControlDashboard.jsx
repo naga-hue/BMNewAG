@@ -53,6 +53,113 @@ export default function CreditControlDashboard({
   onShowToast
 }) {
   const [activeSubTab, setActiveSubTab] = useState('direct'); // direct or simplicity
+  const [showColConfig, setShowColConfig] = useState(false);
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState(new Set());
+  const [columnsConfig, setColumnsConfig] = useState([
+    { id: 'placementId', label: 'Placement ID', visible: true },
+    { id: 'clientCompany', label: 'Client Company', visible: true },
+    { id: 'candidateName', label: 'Candidate Name', visible: true },
+    { id: 'recruiter', label: 'Recruiter', visible: true },
+    { id: 'dueDate', label: 'Due Date', visible: true },
+    { id: 'riskTimeline', label: 'Simplicity Risk', visible: true },
+    { id: 'netTotal', label: 'Net Total', visible: true },
+    { id: 'factoredGross', label: 'Factored Gross (97.04%)', visible: true },
+    { id: 'vat', label: 'VAT (20%)', visible: true },
+    { id: 'totalInclVat', label: 'Total Incl. VAT', visible: true },
+    { id: 'amount', label: 'Total Invoice', visible: true },
+    { id: 'status', label: 'Status', visible: true },
+    { id: 'outstanding', label: 'Outstanding', visible: true },
+    { id: 'doc', label: 'Doc', visible: true }
+  ]);
+
+  const activeColumns = useMemo(() => {
+    return columnsConfig.filter(col => {
+      if (!col.visible) return false;
+      if (activeSubTab === 'direct') {
+        return !['riskTimeline', 'netTotal', 'factoredGross', 'vat', 'totalInclVat'].includes(col.id);
+      } else {
+        return !['amount'].includes(col.id);
+      }
+    });
+  }, [columnsConfig, activeSubTab]);
+
+  const handleToggleColVisible = (id) => {
+    setColumnsConfig(prev => prev.map(c => c.id === id ? { ...c, visible: !c.visible } : c));
+  };
+
+  const handleMoveCol = (index, direction) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= columnsConfig.length) return;
+    setColumnsConfig(prev => {
+      const next = [...prev];
+      const temp = next[index];
+      next[index] = next[targetIndex];
+      next[targetIndex] = temp;
+      return next;
+    });
+  };
+
+  const handleToggleSelectRow = (id, e) => {
+    e.stopPropagation();
+    setSelectedInvoiceIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelectAll = (list) => {
+    const listIds = list.map(inv => inv.id);
+    const allSelected = listIds.every(id => selectedInvoiceIds.has(id));
+    setSelectedInvoiceIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) {
+        listIds.forEach(id => next.delete(id));
+      } else {
+        listIds.forEach(id => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const selectedSums = useMemo(() => {
+    if (selectedInvoiceIds.size === 0) return null;
+    let net = 0;
+    let factored = 0;
+    let vat = 0;
+    let total = 0;
+    let outstanding = 0;
+    let count = 0;
+
+    invoices.forEach(inv => {
+      if (selectedInvoiceIds.has(inv.id)) {
+        count++;
+        net += (Number(inv.grossBillAmount) || 0);
+        if (inv.invoiceType === 'simplicity') {
+          const fGross = (Number(inv.grossBillAmount) || 0) * 0.9704;
+          factored += fGross;
+          vat += fGross * 0.20;
+          total += fGross * 1.20;
+        } else {
+          factored += (Number(inv.grossBillAmount) || 0);
+          vat += (Number(inv.vatAmount) || 0);
+          total += (Number(inv.totalInvoiceAmount) || 0);
+        }
+        outstanding += (Number(inv.balanceOutstanding) || 0);
+      }
+    });
+
+    return { count, net, factored, vat, total, outstanding };
+  }, [selectedInvoiceIds, invoices]);
+
+  const handleTabChange = (tab) => {
+    setActiveSubTab(tab);
+    setSelectedInvoiceIds(new Set());
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [recruiterFilter, setRecruiterFilter] = useState('all');
@@ -637,6 +744,155 @@ export default function CreditControlDashboard({
     });
   }, [filteredInvoices]);
 
+  // Helper to render table header cell dynamically
+  const renderTableHeaderCell = (col) => {
+    const isSortable = ['placementId', 'clientCompany', 'candidateName', 'recruiter', 'dueDate', 'amount', 'status', 'outstanding'].includes(col.id);
+    const sortFieldMap = {
+      clientCompany: 'client',
+      recruiter: 'recruiter',
+      amount: 'amount',
+      outstanding: 'outstanding'
+    };
+    const sortField = sortFieldMap[col.id] || col.id;
+    const isMonetary = ['netTotal', 'factoredGross', 'vat', 'totalInclVat', 'amount', 'outstanding'].includes(col.id);
+
+    return (
+      <th 
+        key={col.id}
+        style={{ 
+          border: '1px solid var(--border-color)', 
+          padding: '8px 10px', 
+          backgroundColor: 'var(--bg-secondary)', 
+          color: 'var(--text-primary)', 
+          fontWeight: 700, 
+          fontSize: '11px', 
+          textTransform: 'uppercase', 
+          textAlign: isMonetary ? 'right' : 'left', 
+          whiteSpace: 'nowrap',
+          cursor: isSortable ? 'pointer' : 'default',
+          userSelect: 'none'
+        }}
+        onClick={isSortable ? () => handleSort(sortField) : undefined}
+      >
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          {col.label} {isSortable && renderSortIndicator(sortField)}
+        </div>
+      </th>
+    );
+  };
+
+  // Helper to render table body cell dynamically
+  const renderTableBodyCell = (inv, col) => {
+    const symbol = getCurrencySymbol(inv);
+    const statusObj = PAYMENT_STATUSES.find(s => s.value === inv.paymentStatus) || { label: inv.paymentStatus, color: '#fff' };
+    const isMonetary = ['netTotal', 'factoredGross', 'vat', 'totalInclVat', 'amount', 'outstanding'].includes(col.id);
+
+    let cellContent = null;
+    
+    switch (col.id) {
+      case 'placementId':
+        cellContent = inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id);
+        break;
+      case 'clientCompany':
+        cellContent = (
+          <div>
+            <strong>{inv.clientCompany}</strong>
+            {inv.invoiceType === 'simplicity' && (
+              <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '2px', lineHeight: 1.2 }}>
+                <span>Client No: <strong style={{ color: 'var(--text-secondary)' }}>{inv.simplicityClientNo || '—'}</strong></span>
+                <span>Limit: <strong style={{ color: 'var(--primary)' }}>{inv.simplicityCreditLimit || '—'}</strong></span>
+                <div style={{ display: 'flex', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
+                  {inv.noaRequired && <span style={{ color: '#38bdf8', fontSize: '8px', fontWeight: 'bold', backgroundColor: 'rgba(56, 189, 248, 0.08)', padding: '1px 3px', borderRadius: '2px' }}>NOA</span>}
+                  {inv.consultantInvoiceReceived && <span style={{ color: 'var(--success)', fontSize: '8px', fontWeight: 'bold', backgroundColor: 'rgba(16, 185, 129, 0.08)', padding: '1px 3px', borderRadius: '2px' }}>Consultant Inv</span>}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+        break;
+      case 'candidateName':
+        cellContent = inv.candidateName;
+        break;
+      case 'recruiter':
+        cellContent = <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{inv.recruiterNames}</span>;
+        break;
+      case 'dueDate':
+        cellContent = (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span>{inv.invoiceDueDate}</span>
+            {inv.paymentStatus === 'overdue' && <span style={{ fontSize: '9px', color: 'var(--danger)', fontWeight: 'bold' }}>({inv.overdueDays}d overdue)</span>}
+          </div>
+        );
+        break;
+      case 'riskTimeline':
+        cellContent = inv.balanceOutstanding > 0 ? (() => {
+          const days = inv.daysSinceStart;
+          if (days >= 120) {
+            return <span style={{ color: 'var(--danger)', fontSize: '10.5px', fontWeight: 'bold' }}>🟥 Recourse (D{days})</span>;
+          } else if (days >= 90) {
+            return <span style={{ color: 'var(--warning)', fontSize: '10.5px', fontWeight: 'bold' }}>🟧 Credit Loss (D{days})</span>;
+          } else if (days >= 31) {
+            return <span style={{ color: '#38bdf8', fontSize: '10.5px', fontWeight: '600' }}>🟨 Follow-up (D{days})</span>;
+          } else {
+            return <span style={{ color: 'var(--text-secondary)', fontSize: '10.5px' }}>Grace (D{days})</span>;
+          }
+        })() : (
+          <span style={{ color: 'var(--success)', fontSize: '10.5px' }}>Paid / Settled</span>
+        );
+        break;
+      case 'netTotal':
+        cellContent = symbol + (Number(inv.grossBillAmount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        break;
+      case 'factoredGross':
+        cellContent = symbol + ((Number(inv.grossBillAmount) || 0) * 0.9704).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        break;
+      case 'vat':
+        cellContent = symbol + ((Number(inv.grossBillAmount) || 0) * 0.9704 * 0.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        break;
+      case 'totalInclVat':
+        cellContent = symbol + ((Number(inv.grossBillAmount) || 0) * 0.9704 * 1.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        break;
+      case 'amount':
+        cellContent = symbol + (inv.totalInvoiceAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        break;
+      case 'status':
+        cellContent = (
+          <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>
+            {statusObj.label}
+          </span>
+        );
+        break;
+      case 'outstanding':
+        cellContent = symbol + (inv.balanceOutstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        break;
+      case 'doc':
+        cellContent = inv.invoiceFileUrl ? (
+          <a href={inv.invoiceFileUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--primary)' }}>
+            <FileDown size={12} />
+          </a>
+        ) : '-';
+        break;
+      default:
+        cellContent = null;
+    }
+
+    return (
+      <td 
+        key={col.id}
+        style={{ 
+          border: '1px solid var(--border-color)', 
+          padding: '6px 10px', 
+          fontSize: '12px',
+          color: 'var(--text-primary)',
+          textAlign: isMonetary ? 'right' : 'left',
+          fontFamily: isMonetary || col.id === 'placementId' || col.id === 'dueDate' ? 'monospace' : 'inherit'
+        }}
+      >
+        {cellContent}
+      </td>
+    );
+  };
+
   // 3. Move invoice to target payout week Friday
   const handleMoveInvoiceToWeek = async (invoiceId, targetWeekDate) => {
     const inv = invoices.find(i => i.id === invoiceId);
@@ -979,7 +1235,7 @@ export default function CreditControlDashboard({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button 
-              onClick={() => setActiveSubTab('direct')}
+              onClick={() => handleTabChange('direct')}
               style={{ 
                 padding: '12px 20px', 
                 border: 'none', 
@@ -994,7 +1250,7 @@ export default function CreditControlDashboard({
               📁 Direct Invoices
             </button>
             <button 
-              onClick={() => setActiveSubTab('simplicity')}
+              onClick={() => handleTabChange('simplicity')}
               style={{ 
                 padding: '12px 20px', 
                 border: 'none', 
@@ -1068,9 +1324,9 @@ export default function CreditControlDashboard({
         )}
 
         {/* Filters Panel */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '12px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', width: '100%', marginBottom: '8px' }}>
           
-          <div className="search-box-container" style={{ width: '100%' }}>
+          <div className="search-box-container" style={{ flex: '2 1 250px' }}>
             <Search size={14} className="search-icon" />
             <input 
               type="text" 
@@ -1086,7 +1342,7 @@ export default function CreditControlDashboard({
             className="select-filter"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            style={{ width: '100%', padding: '10px' }}
+            style={{ flex: '1 1 150px', padding: '10px' }}
           >
             <option value="all">All Payment Statuses</option>
             <option value="unpaid">Outstanding Invoices</option>
@@ -1099,7 +1355,7 @@ export default function CreditControlDashboard({
             className="select-filter"
             value={recruiterFilter}
             onChange={(e) => setRecruiterFilter(e.target.value)}
-            style={{ width: '100%', padding: '10px' }}
+            style={{ flex: '1 1 150px', padding: '10px' }}
           >
             <option value="all">All Recruiters</option>
             {staff.map(s => (
@@ -1111,7 +1367,7 @@ export default function CreditControlDashboard({
             className="select-filter"
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
-            style={{ width: '100%', padding: '10px' }}
+            style={{ flex: '1 1 150px', padding: '10px' }}
           >
             <option value="all">All Date Ranges</option>
             <option value="overdue">Overdue Invoices</option>
@@ -1121,210 +1377,188 @@ export default function CreditControlDashboard({
             <option value="next-month">Expected Next Month</option>
           </select>
 
+          <div style={{ position: 'relative', flex: '0 0 auto' }}>
+            <button 
+              type="button" 
+              className="btn-secondary" 
+              onClick={() => setShowColConfig(!showColConfig)}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '10px 14px' }}
+            >
+              ⚙️ Column Config
+            </button>
+            {showColConfig && (
+              <div style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                right: 0,
+                width: '260px',
+                maxHeight: '380px',
+                overflowY: 'auto',
+                backgroundColor: 'var(--bg-card)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                boxShadow: '0 10px 20px rgba(0,0,0,0.3)',
+                zIndex: 1000,
+                padding: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px'
+              }}>
+                <strong style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '6px', display: 'block' }}>
+                  Choose & Order Columns
+                </strong>
+                {columnsConfig.map((col, index) => {
+                  return (
+                    <div 
+                      key={col.id} 
+                      style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'space-between', 
+                        padding: '4px 6px', 
+                        borderBottom: '1px solid var(--border-color)',
+                        gap: '8px'
+                      }}
+                    >
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '11.5px', color: '#fff', margin: 0, userSelect: 'none' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={col.visible} 
+                          onChange={() => handleToggleColVisible(col.id)} 
+                          style={{ accentColor: 'var(--primary)' }}
+                        />
+                        {col.label}
+                      </label>
+                      <div style={{ display: 'flex', gap: '2px' }}>
+                        <button 
+                          type="button" 
+                          onClick={() => handleMoveCol(index, -1)} 
+                          disabled={index === 0}
+                          style={{ padding: '1px 5px', fontSize: '9px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '3px', cursor: 'pointer', color: '#fff' }}
+                        >
+                          ▲
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={() => handleMoveCol(index, 1)} 
+                          disabled={index === columnsConfig.length - 1}
+                          style={{ padding: '1px 5px', fontSize: '9px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '3px', cursor: 'pointer', color: '#fff' }}
+                        >
+                          ▼
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
-
+        
+        {/* Deleted obsolete grid container start tag because we converted to flex */}
+        
       </div>
 
-      {/* -------------------------------------------------------------
+            {/* -------------------------------------------------------------
           SPREADSHEET VIEW WITH CONDITIONAL TAB LOGIC
           ------------------------------------------------------------- */}
       {activeSubTab === 'direct' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
           
-          {/* 1. DISPUTED & LEGAL INVOICES (Top Table) */}
-          <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center', 
-              padding: '10px 14px', 
-              backgroundColor: 'rgba(239, 68, 68, 0.04)', 
-              borderBottom: '1px solid var(--border-color)'
-            }}>
-              <h3 style={{ fontSize: '11px', fontWeight: 700, color: 'var(--danger)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                ⚠️ Disputed & Legal Proceedings Invoices ({partitionedInvoices.disputedLegal.length})
-              </h3>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>Action Required</span>
-            </div>
-            <div className="table-container" style={{ margin: 0, border: 'none', borderRadius: 0, overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-                <thead>
-                  <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Outstanding</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }}>Doc</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {partitionedInvoices.disputedLegal.map(inv => {
-                    const symbol = getCurrencySymbol(inv);
-                    const statusObj = PAYMENT_STATUSES.find(s => s.value === inv.paymentStatus) || { label: inv.paymentStatus, color: '#fff' };
-                    return (
-                      <tr key={inv.id} onClick={() => handleOpenDetail(inv)} style={{ cursor: 'pointer' }} className="table-row-hover">
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>{inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id)}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}><strong>{inv.clientCompany}</strong></td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}>{inv.candidateName}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>{inv.recruiterNames}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span>{inv.invoiceDueDate}</span>
-                            {inv.paymentStatus === 'overdue' && <span style={{ fontSize: '9px', color: 'var(--danger)', fontWeight: 'bold' }}>({inv.overdueDays}d overdue)</span>}
-                          </div>
-                        </td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{(inv.totalInvoiceAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>
-                          <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>{statusObj.label}</span>
-                        </td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: inv.balanceOutstanding > 0 ? 'var(--warning)' : 'var(--success)' }}>{symbol}{(inv.balanceOutstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>{inv.invoiceFileUrl ? <a href={inv.invoiceFileUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--primary)' }}><FileDown size={12} /></a> : '-'}</td>
-                      </tr>
-                    );
-                  })}
-                  {partitionedInvoices.disputedLegal.length === 0 && (
-                    <tr>
-                      <td colSpan="9" style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>No disputed or legal action invoices found.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* Helper function to render direct table templates dynamically */}
+          {(() => {
+            const renderDirectTable = (title, list, headerBg, titleColor, statusInfo) => {
+              return (
+                <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'var(--bg-card)' }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    padding: '10px 14px', 
+                    backgroundColor: headerBg, 
+                    borderBottom: '1px solid var(--border-color)'
+                  }}>
+                    <h3 style={{ fontSize: '11px', fontWeight: 700, color: titleColor, margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      {title} ({list.length} Records)
+                    </h3>
+                    <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>{statusInfo}</span>
+                  </div>
+                  <div className="table-container" style={{ margin: 0, border: 'none', borderRadius: 0, overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                          <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', width: '40px', textAlign: 'center', backgroundColor: 'var(--bg-secondary)' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={list.length > 0 && list.every(inv => selectedInvoiceIds.has(inv.id))}
+                              onChange={() => handleToggleSelectAll(list)}
+                              style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                            />
+                          </th>
+                          {activeColumns.map(col => renderTableHeaderCell(col))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {list.map(inv => {
+                          return (
+                            <tr key={inv.id} onClick={() => handleOpenDetail(inv)} style={{ cursor: 'pointer' }} className="table-row-hover">
+                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', width: '40px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={selectedInvoiceIds.has(inv.id)}
+                                  onChange={(e) => handleToggleSelectRow(inv.id, e)}
+                                  style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                                />
+                              </td>
+                              {activeColumns.map(col => renderTableBodyCell(inv, col))}
+                            </tr>
+                          );
+                        })}
+                        {list.length === 0 && (
+                          <tr>
+                            <td colSpan={activeColumns.length + 1} style={{ border: '1px solid var(--border-color)', padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                              No matching invoice records found.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            };
 
-          {/* 2. LIVE OUTSTANDING INVOICES (Middle Table) */}
-          <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center', 
-              padding: '10px 14px', 
-              backgroundColor: 'rgba(99, 102, 241, 0.04)', 
-              borderBottom: '1px solid var(--border-color)'
-            }}>
-              <h3 style={{ fontSize: '11px', fontWeight: 700, color: 'var(--primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                ⏳ Live Outstanding & Overdue Invoices ({partitionedInvoices.liveOutstanding.length})
-              </h3>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>Active Ledger</span>
-            </div>
-            <div className="table-container" style={{ margin: 0, border: 'none', borderRadius: 0, overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-                <thead>
-                  <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Outstanding</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }}>Doc</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {partitionedInvoices.liveOutstanding.map(inv => {
-                    const symbol = getCurrencySymbol(inv);
-                    const statusObj = PAYMENT_STATUSES.find(s => s.value === inv.paymentStatus) || { label: inv.paymentStatus, color: '#fff' };
-                    return (
-                      <tr key={inv.id} onClick={() => handleOpenDetail(inv)} style={{ cursor: 'pointer' }} className="table-row-hover">
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>{inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id)}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}><strong>{inv.clientCompany}</strong></td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}>{inv.candidateName}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>{inv.recruiterNames}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span>{inv.invoiceDueDate}</span>
-                            {inv.paymentStatus === 'overdue' && <span style={{ fontSize: '9px', color: 'var(--danger)', fontWeight: 'bold' }}>({inv.overdueDays}d overdue)</span>}
-                          </div>
-                        </td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{(inv.totalInvoiceAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>
-                          <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>{statusObj.label}</span>
-                        </td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: inv.balanceOutstanding > 0 ? 'var(--warning)' : 'var(--success)' }}>{symbol}{(inv.balanceOutstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>{inv.invoiceFileUrl ? <a href={inv.invoiceFileUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--primary)' }}><FileDown size={12} /></a> : '-'}</td>
-                      </tr>
-                    );
-                  })}
-                  {partitionedInvoices.liveOutstanding.length === 0 && (
-                    <tr>
-                      <td colSpan="9" style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>No live outstanding invoices found.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+            return (
+              <>
+                {/* 1. DISPUTED & LEGAL DIRECT INVOICES */}
+                {renderDirectTable(
+                  "⚠️ Disputed & Legal Proceedings Invoices",
+                  partitionedInvoices.disputedLegal,
+                  "rgba(239, 68, 68, 0.04)",
+                  "var(--danger)",
+                  "Action Required"
+                )}
 
-          {/* 3. CLOSED & HISTORICAL INVOICES (Bottom Table) */}
-          <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center', 
-              padding: '10px 14px', 
-              backgroundColor: 'rgba(16, 185, 129, 0.04)', 
-              borderBottom: '1px solid var(--border-color)'
-            }}>
-              <h3 style={{ fontSize: '11px', fontWeight: 700, color: 'var(--success)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                ✅ Closed & Historical Settled Invoices ({partitionedInvoices.closed.length})
-              </h3>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>Archived / Paid</span>
-            </div>
-            <div className="table-container" style={{ margin: 0, border: 'none', borderRadius: 0, overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-                <thead>
-                  <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('placementId')}>Placement ID {renderSortIndicator('placementId')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('client')}>Client Company {renderSortIndicator('client')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('candidateName')}>Candidate Name {renderSortIndicator('candidateName')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('recruiter')}>Recruiter {renderSortIndicator('recruiter')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }} onClick={() => handleSort('dueDate')}>Due Date {renderSortIndicator('dueDate')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }} onClick={() => handleSort('amount')}>Total Invoice {renderSortIndicator('amount')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }} onClick={() => handleSort('status')}>Status {renderSortIndicator('status')}</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Outstanding</th>
-                    <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }}>Doc</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {partitionedInvoices.closed.map(inv => {
-                    const symbol = getCurrencySymbol(inv);
-                    const statusObj = PAYMENT_STATUSES.find(s => s.value === inv.paymentStatus) || { label: inv.paymentStatus, color: '#fff' };
-                    return (
-                      <tr key={inv.id} onClick={() => handleOpenDetail(inv)} style={{ cursor: 'pointer' }} className="table-row-hover">
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>{inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id)}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}><strong>{inv.clientCompany}</strong></td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}>{inv.candidateName}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>{inv.recruiterNames}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span>{inv.invoiceDueDate}</span>
-                            {inv.paymentStatus === 'overdue' && <span style={{ fontSize: '9px', color: 'var(--danger)', fontWeight: 'bold' }}>({inv.overdueDays}d overdue)</span>}
-                          </div>
-                        </td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{(inv.totalInvoiceAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>
-                          <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>{statusObj.label}</span>
-                        </td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: inv.balanceOutstanding > 0 ? 'var(--warning)' : 'var(--success)' }}>{symbol}{(inv.balanceOutstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>{inv.invoiceFileUrl ? <a href={inv.invoiceFileUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--primary)' }}><FileDown size={12} /></a> : '-'}</td>
-                      </tr>
-                    );
-                  })}
-                  {partitionedInvoices.closed.length === 0 && (
-                    <tr>
-                      <td colSpan="9" style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>No closed or historical invoices found.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                {/* 2. LIVE OUTSTANDING DIRECT INVOICES */}
+                {renderDirectTable(
+                  "⏳ Live Outstanding & Overdue Invoices",
+                  partitionedInvoices.liveOutstanding,
+                  "rgba(99, 102, 241, 0.04)",
+                  "var(--primary)",
+                  "Active Ledger"
+                )}
+
+                {/* 3. CLOSED DIRECT INVOICES */}
+                {renderDirectTable(
+                  "✅ Closed & Historical Settled Invoices",
+                  partitionedInvoices.closed,
+                  "rgba(16, 185, 129, 0.04)",
+                  "var(--success)",
+                  "Archived / Paid"
+                )}
+              </>
+            );
+          })()}
 
         </div>
       ) : (
@@ -1370,16 +1604,23 @@ export default function CreditControlDashboard({
             </div>
           </div>
 
-          {/* Helper function to render simplicity table template */}
+          {/* Helper function to render simplicity table template dynamically */}
           {(() => {
-            const renderSimplicityTable = (title, list, headerBg, titleColor, statusInfo) => {
+            const renderSimplicityTable = (title, list, headerBg, titleColor, statusInfo, isWeekGroup = false, weekDateStr = '') => {
               const netSum = list.reduce((sum, inv) => sum + (Number(inv.grossBillAmount) || 0), 0);
               const factoredSum = list.reduce((sum, inv) => sum + ((Number(inv.grossBillAmount) || 0) * 0.9704), 0);
               const vatSum = factoredSum * 0.20;
               const totalSum = factoredSum * 1.20;
 
               return (
-                <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'var(--bg-card)' }}>
+                <div 
+                  style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'var(--bg-card)' }}
+                  onDragOver={isWeekGroup ? (e) => e.preventDefault() : undefined}
+                  onDrop={isWeekGroup ? (e) => {
+                    const invoiceId = e.dataTransfer.getData("text/plain");
+                    handleMoveInvoiceToWeek(invoiceId, weekDateStr);
+                  } : undefined}
+                >
                   <div style={{ 
                     display: 'flex', 
                     justifyContent: 'space-between', 
@@ -1397,24 +1638,19 @@ export default function CreditControlDashboard({
                     <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
                       <thead>
                         <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                          <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Placement ID</th>
-                          <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Client Company</th>
-                          <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Candidate Name</th>
-                          <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Recruiter</th>
-                          <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Start Date</th>
-                          <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Simplicity Risk Timeline</th>
-                          <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Net Total</th>
-                          <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Total to Humres (97.3%)</th>
-                          <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>VAT (20%)</th>
-                          <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Total including VAT</th>
-                          <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }}>Status</th>
-                          <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }}>Doc</th>
+                          <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', width: '40px', textAlign: 'center', backgroundColor: 'var(--bg-secondary)' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={list.length > 0 && list.every(inv => selectedInvoiceIds.has(inv.id))}
+                              onChange={() => handleToggleSelectAll(list)}
+                              style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                            />
+                          </th>
+                          {activeColumns.map(col => renderTableHeaderCell(col))}
                         </tr>
                       </thead>
                       <tbody>
                         {list.map(inv => {
-                          const symbol = getCurrencySymbol(inv);
-                          const statusObj = PAYMENT_STATUSES.find(s => s.value === inv.paymentStatus) || { label: inv.paymentStatus, color: '#fff' };
                           return (
                             <tr 
                               key={inv.id} 
@@ -1426,55 +1662,57 @@ export default function CreditControlDashboard({
                               style={{ cursor: 'grab' }} 
                               className="table-row-hover"
                             >
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>{inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id)}</td>
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}>
-                                <strong>{inv.clientCompany}</strong>
-                                <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', flexDirection: 'column' }}>
-                                  <span>Client No: {inv.simplicityClientNo || '—'} &bull; Limit: {inv.simplicityCreditLimit || '—'}</span>
-                                  <div style={{ display: 'flex', gap: '4px', marginTop: '2px' }}>
-                                    {inv.noaRequired && <span style={{ color: '#38bdf8', fontSize: '8px', fontWeight: 'bold', backgroundColor: 'rgba(56, 189, 248, 0.08)', padding: '1px 3px', borderRadius: '2px' }}>NOA</span>}
-                                    {inv.consultantInvoiceReceived && <span style={{ color: 'var(--success)', fontSize: '8px', fontWeight: 'bold', backgroundColor: 'rgba(16, 185, 129, 0.08)', padding: '1px 3px', borderRadius: '2px' }}>Consultant Inv</span>}
-                                  </div>
-                                </div>
+                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', width: '40px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={selectedInvoiceIds.has(inv.id)}
+                                  onChange={(e) => handleToggleSelectRow(inv.id, e)}
+                                  style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                                />
                               </td>
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}>{inv.candidateName}</td>
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>{inv.recruiterNames}</td>
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', whiteSpace: 'nowrap' }}>{inv.startDate}</td>
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                                {inv.balanceOutstanding > 0 ? (() => {
-                                  const days = inv.daysSinceStart;
-                                  if (days >= 120) {
-                                    return <span style={{ color: 'var(--danger)', fontSize: '10.5px', fontWeight: 'bold' }}>🟥 Recourse (D{days})</span>;
-                                  } else if (days >= 90) {
-                                    return <span style={{ color: 'var(--warning)', fontSize: '10.5px', fontWeight: 'bold' }}>🟧 Credit Loss (D{days})</span>;
-                                  } else if (days >= 31) {
-                                    return <span style={{ color: '#38bdf8', fontSize: '10.5px', fontWeight: '600' }}>🟨 Follow-up (D{days})</span>;
-                                  } else {
-                                    return <span style={{ color: 'var(--text-secondary)', fontSize: '10.5px' }}>Grace (D{days})</span>;
-                                  }
-                                })() : (
-                                  <span style={{ color: 'var(--success)', fontSize: '10.5px' }}>Paid / Settled</span>
-                                )}
-                              </td>
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{(Number(inv.grossBillAmount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.9704).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.9704 * 0.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.9704 * 1.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>
-                                <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>{statusObj.label}</span>
-                              </td>
-                              <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>{inv.invoiceFileUrl ? <a href={inv.invoiceFileUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--primary)' }}><FileDown size={12} /></a> : '-'}</td>
+                              {activeColumns.map(col => renderTableBodyCell(inv, col))}
                             </tr>
                           );
                         })}
-                        <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 'bold' }}>
-                          <td colSpan="6" style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right' }}>📊 TOTALS:</td>
-                          <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>£{netSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)' }}>£{factoredSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>£{vatSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--primary)' }}>£{totalSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td colSpan="2" style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }} />
-                        </tr>
+                        {/* Weekly Aggregated Sum Row */}
+                        {list.length > 0 && (
+                          <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 'bold' }}>
+                            <td style={{ border: '1px solid var(--border-color)' }} />
+                            {activeColumns.map((col, idx) => {
+                              const isMonetary = ['netTotal', 'factoredGross', 'vat', 'totalInclVat', 'outstanding'].includes(col.id);
+                              let sumVal = null;
+                              if (col.id === 'netTotal') sumVal = netSum;
+                              else if (col.id === 'factoredGross') sumVal = factoredSum;
+                              else if (col.id === 'vat') sumVal = vatSum;
+                              else if (col.id === 'totalInclVat') sumVal = totalSum;
+                              else if (col.id === 'outstanding') sumVal = list.reduce((sum, inv) => sum + (Number(inv.balanceOutstanding) || 0), 0);
+
+                              return (
+                                <td 
+                                  key={col.id} 
+                                  style={{ 
+                                    border: '1px solid var(--border-color)', 
+                                    padding: '6px 10px', 
+                                    fontSize: '11px',
+                                    textAlign: isMonetary ? 'right' : 'left',
+                                    fontFamily: isMonetary ? 'monospace' : 'inherit',
+                                    color: col.id === 'factoredGross' ? 'var(--success)' : (col.id === 'totalInclVat' ? 'var(--primary)' : 'inherit')
+                                  }}
+                                >
+                                  {idx === 0 ? "📊 TOTALS: " : ""}
+                                  {sumVal !== null ? "£" + sumVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ""}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        )}
+                        {list.length === 0 && (
+                          <tr>
+                            <td colSpan={activeColumns.length + 1} style={{ border: '1px solid var(--border-color)', padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                              No matching invoice records found.
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1509,123 +1747,14 @@ export default function CreditControlDashboard({
                   </span>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                     {simplicityActiveWeeks.map(week => {
-                      return (
-                        <div 
-                          key={week.weekDate}
-                          onDragOver={(e) => e.preventDefault()}
-                          onDrop={(e) => {
-                            const invoiceId = e.dataTransfer.getData("text/plain");
-                            handleMoveInvoiceToWeek(invoiceId, week.weekDate);
-                          }}
-                          style={{ 
-                            border: '1px solid var(--border-color)', 
-                            borderRadius: '8px', 
-                            overflow: 'hidden',
-                            backgroundColor: 'var(--bg-card)'
-                          }}
-                        >
-                          <div style={{ 
-                            display: 'flex', 
-                            justifyContent: 'space-between', 
-                            alignItems: 'center', 
-                            padding: '10px 14px', 
-                            backgroundColor: 'rgba(99, 102, 241, 0.04)', 
-                            borderBottom: '1px solid var(--border-color)'
-                          }}>
-                            <h4 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--primary)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                              📅 Week Ending Friday: {week.weekDate} ({week.invoices.length} Starters)
-                            </h4>
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Drag invoice here to reschedule</span>
-                          </div>
-
-                          <div className="table-container" style={{ margin: 0, border: 'none', borderRadius: 0, overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-                              <thead>
-                                <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Placement ID</th>
-                                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Client Company</th>
-                                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Candidate Name</th>
-                                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Recruiter</th>
-                                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Start Date</th>
-                                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' }}>Simplicity Risk Timeline</th>
-                                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Net Total</th>
-                                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Total to Humres (97.3%)</th>
-                                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>VAT (20%)</th>
-                                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'right' }}>Total including VAT</th>
-                                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }}>Status</th>
-                                  <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap', textAlign: 'center' }}>Doc</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {week.invoices.map(inv => {
-                                  const symbol = getCurrencySymbol(inv);
-                                  const statusObj = PAYMENT_STATUSES.find(s => s.value === inv.paymentStatus) || { label: inv.paymentStatus, color: '#fff' };
-                                  
-                                  return (
-                                    <tr 
-                                      key={inv.id} 
-                                      onClick={() => handleOpenDetail(inv)}
-                                      draggable={true}
-                                      onDragStart={(e) => {
-                                        e.dataTransfer.setData("text/plain", inv.id);
-                                      }}
-                                      style={{ cursor: 'grab', transition: 'background-color 0.2s' }}
-                                      className="table-row-hover"
-                                    >
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>{inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id)}</td>
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}>
-                                        <strong>{inv.clientCompany}</strong>
-                                        <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', flexDirection: 'column' }}>
-                                          <span>Client No: {inv.simplicityClientNo || '—'} &bull; Limit: {inv.simplicityCreditLimit || '—'}</span>
-                                          <div style={{ display: 'flex', gap: '4px', marginTop: '2px' }}>
-                                            {inv.noaRequired && <span style={{ color: '#38bdf8', fontSize: '8px', fontWeight: 'bold', backgroundColor: 'rgba(56, 189, 248, 0.08)', padding: '1px 3px', borderRadius: '2px' }}>NOA</span>}
-                                            {inv.consultantInvoiceReceived && <span style={{ color: 'var(--success)', fontSize: '8px', fontWeight: 'bold', backgroundColor: 'rgba(16, 185, 129, 0.08)', padding: '1px 3px', borderRadius: '2px' }}>Consultant Inv</span>}
-                                          </div>
-                                        </div>
-                                      </td>
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }}>{inv.candidateName}</td>
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>{inv.recruiterNames}</td>
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', whiteSpace: 'nowrap' }}>{inv.startDate}</td>
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                                        {inv.balanceOutstanding > 0 ? (() => {
-                                          const days = inv.daysSinceStart;
-                                          if (days >= 120) {
-                                            return <span style={{ color: 'var(--danger)', fontSize: '10.5px', fontWeight: 'bold' }}>🟥 Recourse (D{days})</span>;
-                                          } else if (days >= 90) {
-                                            return <span style={{ color: 'var(--warning)', fontSize: '10.5px', fontWeight: 'bold' }}>🟧 Credit Loss (D{days})</span>;
-                                          } else if (days >= 31) {
-                                            return <span style={{ color: '#38bdf8', fontSize: '10.5px', fontWeight: '600' }}>🟨 Follow-up (D{days})</span>;
-                                          } else {
-                                            return <span style={{ color: 'var(--text-secondary)', fontSize: '10.5px' }}>Grace (D{days})</span>;
-                                          }
-                                        })() : (
-                                          <span style={{ color: 'var(--success)', fontSize: '10.5px' }}>Paid / Settled</span>
-                                        )}
-                                      </td>
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{(Number(inv.grossBillAmount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.9704).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.9704 * 0.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)' }}>{symbol}{((Number(inv.grossBillAmount) || 0) * 0.9704 * 1.20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>
-                                        <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>{statusObj.label}</span>
-                                      </td>
-                                      <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>{inv.invoiceFileUrl ? <a href={inv.invoiceFileUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--primary)' }}><FileDown size={12} /></a> : '-'}</td>
-                                    </tr>
-                                  );
-                                })}
-                                
-                                <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 'bold' }}>
-                                  <td colSpan="6" style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right' }}>📊 WEEK ending {week.weekDate} TOTALS:</td>
-                                  <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>£{week.netTotalSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                  <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)' }}>£{week.totalToHumresSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                  <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace' }}>£{week.vatSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                  <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--primary)' }}>£{week.totalInclVatSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                  <td colSpan="2" style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontSize: '12px' }} />
-                                </tr>
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
+                      return renderSimplicityTable(
+                        `📅 Week Ending Friday: ${week.weekDate} (${week.invoices.length} Starters)`,
+                        week.invoices,
+                        "rgba(99, 102, 241, 0.04)",
+                        "var(--primary)",
+                        "Drag invoice here to reschedule",
+                        true,
+                        week.weekDate
                       );
                     })}
                   </div>
@@ -1650,6 +1779,87 @@ export default function CreditControlDashboard({
             );
           })()}
 
+        </div>
+      )}
+
+      {/* Floating Selected Sums Bar Overlay */}
+      {selectedSums && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: '#1e293b',
+          border: '2px solid var(--primary)',
+          borderRadius: '12px',
+          padding: '12px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '24px',
+          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.4)',
+          zIndex: 9999,
+          animation: 'fadeInUp 0.2s ease-out',
+          borderLeftWidth: '8px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderRight: '1px solid var(--border-color)', paddingRight: '16px' }}>
+            <span style={{ fontSize: '18px' }}>📊</span>
+            <div>
+              <strong style={{ display: 'block', fontSize: '13px', color: '#fff' }}>{selectedSums.count} Rows Selected</strong>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Excel-style Aggregates</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '16px', fontSize: '11px', fontFamily: 'monospace' }}>
+            {activeSubTab === 'direct' ? (
+              <>
+                <div>
+                  <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '9px', textTransform: 'uppercase' }}>Gross/Invoice Total:</span>
+                  <strong style={{ fontSize: '13px', color: '#fff' }}>£{selectedSums.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '9px', textTransform: 'uppercase' }}>Net Fee Total:</span>
+                  <strong style={{ fontSize: '13px', color: '#fff' }}>£{selectedSums.net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '9px', textTransform: 'uppercase' }}>Humres Friday (97.04%):</span>
+                  <strong style={{ fontSize: '13px', color: 'var(--success)' }}>£{selectedSums.factored.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '9px', textTransform: 'uppercase' }}>Factored VAT (20%):</span>
+                  <strong style={{ fontSize: '13px', color: '#fff' }}>£{selectedSums.vat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '9px', textTransform: 'uppercase' }}>Payout Incl. VAT:</span>
+                  <strong style={{ fontSize: '13px', color: 'var(--primary)' }}>£{selectedSums.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                </div>
+              </>
+            )}
+            <div style={{ borderLeft: '1px dashed var(--border-color)', paddingLeft: '16px' }}>
+              <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '9px', textTransform: 'uppercase' }}>Total Outstanding:</span>
+              <strong style={{ fontSize: '13px', color: 'var(--danger)' }}>£{selectedSums.outstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+            </div>
+          </div>
+
+          <button 
+            type="button" 
+            onClick={() => setSelectedInvoiceIds(new Set())}
+            style={{
+              padding: '6px 12px',
+              fontSize: '11px',
+              fontWeight: 700,
+              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+              color: 'var(--danger)',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              marginLeft: '12px'
+            }}
+          >
+            Clear
+          </button>
         </div>
       )}
 

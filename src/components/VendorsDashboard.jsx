@@ -36,6 +36,44 @@ const CURRENCIES = [
 
 const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
 
+const getCategoryStyles = (category) => {
+  const cat = String(category || '').toLowerCase();
+  if (cat.includes('software') || cat.includes('license') || cat.includes('it') || cat.includes('saas')) {
+    return {
+      accent: 'var(--primary)',
+      bg: 'rgba(99, 102, 241, 0.08)',
+      border: 'rgba(99, 102, 241, 0.2)',
+      indicator: '💻',
+      badgeColor: '#38bdf8'
+    };
+  }
+  if (cat.includes('rent') || cat.includes('lease') || cat.includes('landlord') || cat.includes('office')) {
+    return {
+      accent: 'var(--success)',
+      bg: 'rgba(16, 185, 129, 0.08)',
+      border: 'rgba(16, 185, 129, 0.2)',
+      indicator: '🏢',
+      badgeColor: '#34d399'
+    };
+  }
+  if (cat.includes('utilities') || cat.includes('utility') || cat.includes('phone') || cat.includes('internet') || cat.includes('comm')) {
+    return {
+      accent: 'var(--warning)',
+      bg: 'rgba(245, 158, 11, 0.08)',
+      border: 'rgba(245, 158, 11, 0.2)',
+      indicator: '📞',
+      badgeColor: '#fbbf24'
+    };
+  }
+  return {
+    accent: 'var(--text-secondary)',
+    bg: 'rgba(148, 163, 184, 0.08)',
+    border: 'rgba(148, 163, 184, 0.2)',
+    indicator: '💼',
+    badgeColor: '#cbd5e1'
+  };
+};
+
 export default function VendorsDashboard({ 
   companies = [], 
   staff = [], 
@@ -499,35 +537,38 @@ export default function VendorsDashboard({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Sub-tab Navigation */}
+      {/* Sub-tab Navigation (Premium Glassmorphic Segmented Control) */}
       <div style={{ 
         display: 'flex', 
-        backgroundColor: 'var(--bg-secondary)', 
+        backgroundColor: 'rgba(30, 41, 59, 0.5)', 
         border: '1px solid var(--border-color)',
-        borderRadius: 'var(--radius-md)',
-        padding: '4px',
+        borderRadius: '30px',
+        padding: '5px',
         width: 'fit-content',
-        gap: '4px'
+        gap: '6px',
+        backdropFilter: 'blur(8px)',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
       }}>
         {[
-          { key: 'vendors', label: 'Vendor Directory' },
-          { key: 'contracts', label: 'Contracts & Leases' },
-          { key: 'allocations', label: 'License Allocations' },
-          { key: 'forecast', label: 'Expense Forecasting' }
+          { key: 'vendors', label: '📁 Vendor Directory' },
+          { key: 'contracts', label: '📜 Contracts & Leases' },
+          { key: 'allocations', label: '🔑 License Allocations' },
+          { key: 'forecast', label: '📊 Expense Forecasting' }
         ].map(t => (
           <button
             key={t.key}
             onClick={() => setActiveSubTab(t.key)}
             style={{
-              background: activeSubTab === t.key ? 'var(--bg-sidebar)' : 'none',
+              background: activeSubTab === t.key ? 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)' : 'none',
               border: 'none',
-              color: activeSubTab === t.key ? 'var(--accent)' : 'var(--text-secondary)',
-              padding: '8px 16px',
-              borderRadius: 'var(--radius-sm)',
-              fontWeight: 600,
-              fontSize: '13px',
+              color: activeSubTab === t.key ? '#fff' : 'var(--text-secondary)',
+              padding: '10px 20px',
+              borderRadius: '24px',
+              fontWeight: 700,
+              fontSize: '12.5px',
               cursor: 'pointer',
-              transition: 'all var(--transition-fast)'
+              boxShadow: activeSubTab === t.key ? '0 4px 15px rgba(99, 102, 241, 0.2)' : 'none',
+              transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
             }}
           >
             {t.label}
@@ -849,114 +890,112 @@ export default function VendorsDashboard({
               <Building2 size={16} /> Vendor Partners Directory ({vendors.length})
             </div>
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-              {vendors.map(v => (
-                <div 
-                  key={v.id} 
-                  onClick={() => setSelectedVendorProfileId(v.id)}
-                  style={{ 
-                    flex: '1 1 300px', 
-                    backgroundColor: 'var(--bg-card)', 
-                    border: '1px solid var(--border-color)', 
-                    padding: '12px', 
-                    borderRadius: '6px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--accent)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.08)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--border-color)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>{v.name}</span>
-                      <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600, textTransform: 'uppercase' }}>{v.category}</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
+              {vendors.map(v => {
+                const catStyles = getCategoryStyles(v.category);
+                const vendorContracts = contracts.filter(c => c.vendorId === v.id);
+                return (
+                  <div 
+                    key={v.id} 
+                    onClick={() => setSelectedVendorProfileId(v.id)}
+                    style={{ 
+                      flex: '1 1 320px', 
+                      backgroundColor: 'var(--bg-card)', 
+                      border: '1px solid var(--border-color)', 
+                      borderTop: `4px solid ${catStyles.accent}`,
+                      padding: '20px', 
+                      borderRadius: '12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = catStyles.accent;
+                      e.currentTarget.style.transform = 'translateY(-4px)';
+                      e.currentTarget.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.25), 0 10px 10px -5px rgba(0, 0, 0, 0.20)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = 'var(--border-color)';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)' }}>{v.name}</span>
+                        <span style={{ 
+                          fontSize: '9.5px', 
+                          color: catStyles.badgeColor, 
+                          fontWeight: 700, 
+                          textTransform: 'uppercase',
+                          backgroundColor: catStyles.bg,
+                          border: `1px solid ${catStyles.border}`,
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          width: 'fit-content',
+                          letterSpacing: '0.5px'
+                        }}>
+                          {catStyles.indicator} {v.category}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }} onClick={(e) => e.stopPropagation()}>
+                        <button className="btn-icon" onClick={() => handleEditVendor(v)} title="Edit Vendor" style={{ padding: '6px', borderRadius: '6px' }}>
+                          <Edit3 size={12} />
+                        </button>
+                        <button className="btn-icon delete" onClick={() => {
+                          if (window.confirm(`Are you sure you want to delete vendor "${v.name}"?`)) {
+                            onDeleteVendor(v.id);
+                            onShowToast(`Deleted vendor "${v.name}"`, "info");
+                          }
+                        }} title="Delete Vendor" style={{ padding: '6px', borderRadius: '6px' }}>
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '6px' }} onClick={(e) => e.stopPropagation()}>
-                      <button className="btn-icon" onClick={() => handleEditVendor(v)} title="Edit Vendor">
-                        <Edit3 size={11} />
-                      </button>
-                      <button className="btn-icon delete" onClick={() => {
-                        if (window.confirm(`Are you sure you want to delete vendor "${v.name}"?`)) {
-                          onDeleteVendor(v.id);
-                          onShowToast(`Deleted vendor "${v.name}"`, "info");
-                        }
-                      }} title="Delete Vendor">
-                        <Trash2 size={11} />
+
+                    {v.description && (
+                      <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', margin: '4px 0', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', height: '34px', textOverflow: 'ellipsis' }}>
+                        {v.description}
+                      </p>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11.5px', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: '10px', marginTop: 'auto' }}>
+                      {v.contactEmail && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Mail size={12} style={{ color: 'var(--primary)' }} />{v.contactEmail}</span>
+                      )}
+                      {v.phone && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Phone size={12} style={{ color: 'var(--accent)' }} />{v.phone}</span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '6px', alignItems: 'center', justifyContent: 'space-between' }} onClick={(e) => e.stopPropagation()}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
+                        🗂️ {vendorContracts.length} Contracts
+                      </span>
+                      <button 
+                        className="btn-secondary"
+                        onClick={() => setSelectedVendorProfileId(v.id)}
+                        style={{ 
+                          padding: '6px 12px', 
+                          fontSize: '11px', 
+                          fontWeight: 700,
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)',
+                          backgroundColor: 'var(--bg-secondary)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Profile Details ➔
                       </button>
                     </div>
                   </div>
-
-                  <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: 'var(--text-secondary)' }}>
-                    {v.contactEmail && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Mail size={10} />{v.contactEmail}</span>
-                    )}
-                    {v.phone && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Phone size={10} />{v.phone}</span>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }} onClick={(e) => e.stopPropagation()}>
-                    <button 
-                      className="btn-secondary"
-                      onClick={() => setSelectedVendorProfileId(v.id)}
-                      style={{ 
-                        flex: 1,
-                        padding: '4px 8px', 
-                        fontSize: '11px', 
-                        justifyContent: 'center', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '4px',
-                        borderRadius: '4px'
-                      }}
-                    >
-                      View Profile ➔
-                    </button>
-                    <button 
-                      className="btn-secondary" 
-                      onClick={() => {
-                        setActiveSubTab('contracts');
-                        setEditingContractId(null);
-                        setContractName('');
-                        setContractVendorId(v.id);
-                        setUnitCost('');
-                        setQuantityPurchased('1');
-                        setTaxRate('20.0');
-                        setStartDate('');
-                        setEndDate('');
-                        setRenewalDate('');
-                        setPaymentDueDate('');
-                        setPaymentReminderDate('');
-                        setShowContractForm(true);
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                      }}
-                      style={{ 
-                        flex: 1.2,
-                        padding: '4px 8px', 
-                        fontSize: '11px', 
-                        justifyContent: 'center', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '4px',
-                        border: '1px dashed var(--accent)',
-                        color: 'var(--accent)',
-                        borderRadius: '4px'
-                      }}
-                    >
-                      <Plus size={12} /> Add Contract
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1014,8 +1053,32 @@ export default function VendorsDashboard({
 
               const alert = getPaymentAlert(contract.paymentDueDate);
 
+              const catStyles = getCategoryStyles(matchedVendor?.category);
               return (
-                <div key={contract.id} className="doc-card" style={{ padding: '20px', flexDirection: 'column', alignItems: 'stretch', gap: '16px', backgroundColor: 'var(--bg-card)' }}>
+                <div 
+                  key={contract.id} 
+                  className="doc-card" 
+                  style={{ 
+                    padding: '24px', 
+                    flexDirection: 'column', 
+                    alignItems: 'stretch', 
+                    gap: '16px', 
+                    backgroundColor: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderLeft: `4px solid ${catStyles.accent}`,
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = catStyles.accent;
+                    e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.2)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border-color)';
+                    e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+                  }}
+                >
                   
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ display: 'flex', gap: '12px' }}>

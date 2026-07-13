@@ -383,7 +383,7 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
 
   // Current date anchor: June 29, 2026
-  const CURRENT_DATE = new Date('2026-06-29');
+  const CURRENT_DATE = new Date(); CURRENT_DATE.setHours(0, 0, 0, 0);
 
   // Firebase connection flag
   const isCloudConnected = firebaseService.isConfigured();

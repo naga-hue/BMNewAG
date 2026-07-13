@@ -25,8 +25,8 @@ export default function Dashboard({
   vendors = []
 }) {
   // Current date anchor: June 29, 2026
-  const CURRENT_DATE = new Date('2026-06-29');
-  const [calDate, setCalDate] = useState(new Date('2026-06-01'));
+  const CURRENT_DATE = new Date(); CURRENT_DATE.setHours(0, 0, 0, 0);
+  const [calDate, setCalDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 
   // Helper to compile core document/insurance alerts
   const getComplianceAlerts = (company) => {

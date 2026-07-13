@@ -148,7 +148,7 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
       return { label: 'No Active Policy', color: 'var(--danger)', isExpired: true, daysLeft: null };
     }
     
-    const CURRENT_DATE = new Date('2026-06-29');
+    const CURRENT_DATE = new Date(); CURRENT_DATE.setHours(0, 0, 0, 0);
     const expiry = new Date(company.insurance.expiryDate);
     const diffTime = expiry - CURRENT_DATE;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -387,7 +387,7 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
 
   const getTaskDaysLeftStr = (task) => {
     if (task.status === 'completed') return 'Completed';
-    const CURRENT_DATE = new Date('2026-06-29');
+    const CURRENT_DATE = new Date(); CURRENT_DATE.setHours(0, 0, 0, 0);
     const due = new Date(task.dueDate);
     const diff = Math.ceil((due - CURRENT_DATE) / (1000 * 60 * 60 * 24));
     
@@ -398,7 +398,7 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
 
   const getTaskStatusColor = (task) => {
     if (task.status === 'completed') return 'var(--success)';
-    const CURRENT_DATE = new Date('2026-06-29');
+    const CURRENT_DATE = new Date(); CURRENT_DATE.setHours(0, 0, 0, 0);
     const due = new Date(task.dueDate);
     const diff = Math.ceil((due - CURRENT_DATE) / (1000 * 60 * 60 * 24));
     

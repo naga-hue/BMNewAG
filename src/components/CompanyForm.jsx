@@ -116,7 +116,7 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
 
   // Helper to pre-seed standard compliances based on country
   const getInitialCompliances = (selectedCountry) => {
-    const CURRENT_DATE = new Date('2026-06-29');
+    const CURRENT_DATE = new Date(); CURRENT_DATE.setHours(0, 0, 0, 0);
     
     const getFutureDate = (days) => {
       const copy = new Date(CURRENT_DATE);

@@ -59,7 +59,7 @@ import ExpensesDashboard from './components/ExpensesDashboard';
 import LogsDashboard from './components/LogsDashboard';
 import ReportsDashboard from './components/ReportsDashboard';
 import RBACDashboard from './components/RBACDashboard';
-import { toGBP, formatGBP } from './utils/currency';
+import { toGBP, formatGBP, fetchLiveFxRates } from './utils/currency';
 import { initialNominalCodes, initialExpenses } from './mockExpenses';
 
 export default function App() {
@@ -108,6 +108,16 @@ export default function App() {
   // Navigation tab: 'dashboard' | 'directory' | 'staff'
   const [activeTab, setActiveTab] = useState('dashboard');
   const [letterTemplates, setLetterTemplates] = useState([]);
+  const [fxRatesVersion, setFxRatesVersion] = useState(0);
+
+  // Fetch live exchange rates on mount and trigger a re-render when finished
+  useEffect(() => {
+    fetchLiveFxRates().then((updated) => {
+      if (updated) {
+        setFxRatesVersion(v => v + 1);
+      }
+    });
+  }, []);
   const [currentTime, setCurrentTime] = useState(new Date());
   
   // Persistent Sidebar minimize state

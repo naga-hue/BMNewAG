@@ -64,10 +64,8 @@ export default function WhatsImportantDashboard({
       start.setDate(start.getDate() + diffToNextMonday);
       end.setDate(start.getDate() + 6);
     } else if (horizon === 'this_month') {
-      // Monday after next week (July 27) to last day of current month (July 31)
-      const dayOfWeek = ANCHOR_DATE.getDay();
-      const diffToNextMonday = 8 - (dayOfWeek === 0 ? 7 : dayOfWeek);
-      start.setDate(start.getDate() + diffToNextMonday + 7);
+      // First day of current month to last day of current month
+      start.setDate(1);
       end.setMonth(end.getMonth() + 1);
       end.setDate(0);
     } else if (horizon === 'next_month') {
@@ -462,7 +460,7 @@ export default function WhatsImportantDashboard({
     if (activeHorizon === 'tomorrow') return 'tomorrow';
     if (activeHorizon === 'this_week') return 'this week';
     if (activeHorizon === 'next_week') return 'next week';
-    if (activeHorizon === 'this_month') return 'the rest of this month';
+    if (activeHorizon === 'this_month') return 'this month';
     return 'next month';
   };
 

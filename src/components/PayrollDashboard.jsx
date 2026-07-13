@@ -129,6 +129,7 @@ export default function PayrollDashboard({
   const [employerPension, setEmployerPension] = useState('0.00');
   const [employeeTaxNic, setEmployeeTaxNic] = useState('0.00');
   const [employeePension, setEmployeePension] = useState('0.00');
+  const [reimbursementsInput, setReimbursementsInput] = useState('0.00');
 
   // FX Rates representation
   const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
@@ -868,8 +869,9 @@ export default function PayrollDashboard({
         isReconciled: !!record.isReconciled,
         basic: record.isReconciled ? Number(record.basicSalary) : baselineBasic,
         commission: record.isReconciled ? Number(record.commission) : baselineCommission,
+        reimbursements: record.isReconciled ? Number(record.reimbursements || 0) : 0,
         total: record.isReconciled 
-          ? (Number(record.basicSalary) + Number(record.commission) + Number(record.employerNi || 0) + Number(record.employerPension || 0)) 
+          ? (Number(record.basicSalary) + Number(record.commission) + Number(record.reimbursements || 0) + Number(record.employerNi || 0) + Number(record.employerPension || 0)) 
           : (baselineBasic + baselineCommission + projectedEmployerNi + projectedEmployerPension),
         employerNi: record.isReconciled ? Number(record.employerNi || 0) : projectedEmployerNi,
         employerPension: record.isReconciled ? Number(record.employerPension || 0) : projectedEmployerPension,
@@ -884,6 +886,7 @@ export default function PayrollDashboard({
       isReconciled: false,
       basic: baselineBasic,
       commission: baselineCommission,
+      reimbursements: 0,
       total: baselineBasic + baselineCommission + projectedEmployerNi + projectedEmployerPension,
       employerNi: projectedEmployerNi,
       employerPension: projectedEmployerPension,
@@ -905,6 +908,7 @@ export default function PayrollDashboard({
     setEmployerPension((data.employerPension || 0).toFixed(2));
     setEmployeeTaxNic((data.employeeTaxNic || 0).toFixed(2));
     setEmployeePension((data.employeePension || 0).toFixed(2));
+    setReimbursementsInput((data.reimbursements || 0).toFixed(2));
     
     const record = payrollRecords.find(r => r.staffId === staffMember.id && r.month === month);
     setLinkedExpenseId(record?.linkedExpenseId || '');
@@ -917,7 +921,7 @@ export default function PayrollDashboard({
   // Save the override / reconciliation details
   const handleSaveOverride = async () => {
     if (!selectedCell) return;
-    const { staffMember, month } = selectedCell;
+        const { staffMember, month } = selectedCell;
 
     const baseVal = Number(basicSalaryOverride) || 0;
     const commVal = Number(commissionOverride) || 0;
@@ -925,6 +929,7 @@ export default function PayrollDashboard({
     const empPensionVal = Number(employerPension) || 0;
     const taxNicVal = Number(employeeTaxNic) || 0;
     const pensionVal = Number(employeePension) || 0;
+    const reimbursementsVal = Number(reimbursementsInput) || 0;
 
     const record = {
       id: `${staffMember.id}_${month}`,
@@ -933,6 +938,7 @@ export default function PayrollDashboard({
       isReconciled,
       basicSalary: baseVal,
       commission: commVal,
+      reimbursements: reimbursementsVal,
       employerNi: empNiVal,
       employerPension: empPensionVal,
       employeeTaxNic: taxNicVal,
@@ -1338,7 +1344,7 @@ export default function PayrollDashboard({
                                         title={`${s.fullName} - ${m}
 Salary (Gross): £${Math.round(cell.basic).toLocaleString()}
 Comm: £${Math.round(cell.commission).toLocaleString()}
-${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleString()}\n` : ''}${cell.employerPension > 0 ? `Employer Pension: £${Math.round(cell.employerPension).toLocaleString()}\n` : ''}${cell.employeeTaxNic > 0 ? `Employee Tax/NIC: £${Math.round(cell.employeeTaxNic).toLocaleString()}\n` : ''}${cell.employeePension > 0 ? `Employee Pension: £${Math.round(cell.employeePension).toLocaleString()}\n` : ''}Click to edit override`}
+${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements).toLocaleString()}\n` : ''}${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleString()}\n` : ''}${cell.employerPension > 0 ? `Employer Pension: £${Math.round(cell.employerPension).toLocaleString()}\n` : ''}${cell.employeeTaxNic > 0 ? `Employee Tax/NIC: £${Math.round(cell.employeeTaxNic).toLocaleString()}\n` : ''}${cell.employeePension > 0 ? `Employee Pension: £${Math.round(cell.employeePension).toLocaleString()}\n` : ''}Click to edit override`}
                                       >
                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
                                           <span>£{Math.round(cell.total).toLocaleString()}</span>
@@ -2178,6 +2184,23 @@ ${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleSt
                     </div>
                   );
                 })()}
+              </div>
+
+              {/* Reimbursements & Allowances Override Field */}
+              <div className="form-group">
+                <label className="form-label">
+                  Reimbursements & Allowances Component (£ GBP)
+                </label>
+                <input 
+                  type="number"
+                  className="form-input"
+                  value={reimbursementsInput}
+                  onChange={(e) => setReimbursementsInput(e.target.value)}
+                  style={{ width: '100%', padding: '10px' }}
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                  Enter any travel, phone, office expenses or petty cash reimbursements to pay to this employee.
+                </span>
               </div>
 
               {/* Contributions & Deductions Breakdown */}

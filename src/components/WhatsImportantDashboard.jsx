@@ -167,8 +167,8 @@ export default function WhatsImportantDashboard({
       .map(t => ({
         id: `filing-${c.id}-${t.id}`,
         category: 'filings',
-        title: t.taskName,
-        desc: `Filing due for ${c.name} (Deadline: ${t.dueDate}). Description: ${t.description || 'Statutory requirement'}`,
+        title: t.name,
+        desc: `Filing due for ${c.name} (Deadline: ${t.dueDate}). ${t.notes ? 'Notes: ' + t.notes : ''}`,
         badge: 'Filing Due',
         type: 'warning',
         company: c

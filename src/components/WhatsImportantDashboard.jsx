@@ -43,12 +43,22 @@ export default function WhatsImportantDashboard({
     } else if (horizon === 'tomorrow') {
       start.setDate(start.getDate() + 1);
       end.setDate(end.getDate() + 1);
+    } else if (horizon === 'this_week') {
+      // Today (Monday, July 13) to Sunday of this week (July 19)
+      const dayOfWeek = ANCHOR_DATE.getDay();
+      const diffToSunday = 7 - (dayOfWeek === 0 ? 7 : dayOfWeek);
+      end.setDate(end.getDate() + diffToSunday);
     } else if (horizon === 'next_week') {
-      start.setDate(start.getDate() + 2); // July 15
-      end.setDate(end.getDate() + 8);    // July 21
+      // Monday of next week (July 20) to Sunday of next week (July 26)
+      const dayOfWeek = ANCHOR_DATE.getDay();
+      const diffToNextMonday = 8 - (dayOfWeek === 0 ? 7 : dayOfWeek);
+      start.setDate(start.getDate() + diffToNextMonday);
+      end.setDate(start.getDate() + 6);
     } else if (horizon === 'this_month') {
-      start.setDate(start.getDate() + 9); // July 22
-      // Last day of current month (July 31)
+      // Monday after next week (July 27) to last day of current month (July 31)
+      const dayOfWeek = ANCHOR_DATE.getDay();
+      const diffToNextMonday = 8 - (dayOfWeek === 0 ? 7 : dayOfWeek);
+      start.setDate(start.getDate() + diffToNextMonday + 7);
       end.setMonth(end.getMonth() + 1);
       end.setDate(0);
     } else if (horizon === 'next_month') {
@@ -326,7 +336,8 @@ export default function WhatsImportantDashboard({
   const getDaysCountLabel = () => {
     if (activeHorizon === 'today') return 'today';
     if (activeHorizon === 'tomorrow') return 'tomorrow';
-    if (activeHorizon === 'next_week') return 'the next 7 days';
+    if (activeHorizon === 'this_week') return 'this week';
+    if (activeHorizon === 'next_week') return 'next week';
     if (activeHorizon === 'this_month') return 'the rest of this month';
     return 'next month';
   };
@@ -381,6 +392,7 @@ export default function WhatsImportantDashboard({
           {[
             { id: 'today', label: 'Today' },
             { id: 'tomorrow', label: 'Tomorrow' },
+            { id: 'this_week', label: 'This Week' },
             { id: 'next_week', label: 'Next Week' },
             { id: 'this_month', label: 'This Month' },
             { id: 'next_month', label: 'Next Month' }

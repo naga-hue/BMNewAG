@@ -101,7 +101,6 @@ button, input, select, textarea {
   background-color: var(--bg-sidebar);
   border-right: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
-  flex-direction: flex-direction;
   flex-direction: column;
   padding: 24px;
   position: fixed;
@@ -110,6 +109,7 @@ button, input, select, textarea {
   top: 0;
   z-index: 100;
   color: #fff;
+  overflow-y: auto;
 }
 
 .logo-container {

@@ -2699,6 +2699,8 @@ export default function App() {
               vendors={vendors}
               contracts={contracts}
               assetAssignments={assetAssignments}
+              expenses={scopedExpenses}
+              onSaveExpense={handleSaveExpense}
               onSaveVendor={handleSaveVendor}
               onDeleteVendor={handleDeleteVendor}
               onSaveContract={handleSaveContract}

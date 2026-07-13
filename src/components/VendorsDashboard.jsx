@@ -80,6 +80,8 @@ export default function VendorsDashboard({
   vendors = [], 
   contracts = [], 
   assetAssignments = [],
+  expenses = [],
+  onSaveExpense,
   onSaveVendor,
   onDeleteVendor,
   onSaveContract,
@@ -91,6 +93,10 @@ export default function VendorsDashboard({
   const [activeSubTab, setActiveSubTab] = useState('vendors'); // vendors, contracts, allocations, forecast
   const [selectedVendorProfileId, setSelectedVendorProfileId] = useState(null);
   const [presetCategory, setPresetCategory] = useState('Software License');
+  
+  // Reconciliation states for 12-Month Vendor Matrix
+  const [reconcilingCell, setReconcilingCell] = useState(null); // { contract, monthKey, projectedAmount }
+  const [selectedExpenseId, setSelectedExpenseId] = useState('');
 
   const allAvailableDepts = useMemo(() => {
     const set = new Set();
@@ -2140,6 +2146,22 @@ export default function VendorsDashboard({
         });
 
         const getContractCostForMonth = (c, year, monthIndex) => {
+          const monthKey = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+          const linkedExp = expenses?.find(e => e.linkedVendorCellId === `${c.id}_${monthKey}`);
+          
+          if (linkedExp) {
+            const actualGBP = Number(linkedExp.amount) || 0;
+            let actualTarget = actualGBP;
+            if (forecastCurrency !== 'GBP') {
+              actualTarget = actualGBP / (FX_RATES[forecastCurrency] || 1.0);
+            }
+            if (forecastCompanyFilter !== 'all') {
+              const share = getContractCompanyShare(c, forecastCompanyFilter, year, monthIndex);
+              return actualTarget * share;
+            }
+            return actualTarget;
+          }
+
           const parseContractDate = (dateStr, fallbackYear, fallbackMonth) => {
             if (!dateStr) return new Date(fallbackYear, fallbackMonth, 1);
             const cleanStr = String(dateStr).trim();
@@ -2195,6 +2217,17 @@ export default function VendorsDashboard({
             return fullCost;
           }
           return 0;
+        };
+
+        const handleCellClick = (contract, year, monthIndex, projectedVal) => {
+          const monthKey = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+          setReconcilingCell({
+            contract,
+            monthKey,
+            projectedAmount: projectedVal
+          });
+          const linkedExp = expenses?.find(e => e.linkedVendorCellId === `${contract.id}_${monthKey}`);
+          setSelectedExpenseId(linkedExp ? linkedExp.id : '');
         };
 
         const monthlyFixedTotal = Array(12).fill(0);
@@ -2403,9 +2436,26 @@ export default function VendorsDashboard({
                                 {forecastMonths.map((m, idx) => {
                                   const val = getContractCostForMonth(c, m.year, m.monthIndex);
                                   rowSum += val;
+                                  const monthKey = `${m.year}-${String(m.monthIndex + 1).padStart(2, '0')}`;
+                                  const linkedExp = expenses?.find(e => e.linkedVendorCellId === `${c.id}_${monthKey}`);
                                   return (
-                                    <td key={idx} style={{ textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
-                                      {val > 0 ? Math.round(val).toLocaleString() : '-'}
+                                    <td 
+                                      key={idx} 
+                                      onClick={() => handleCellClick(c, m.year, m.monthIndex, val)}
+                                      style={{ 
+                                        textAlign: 'right', 
+                                        fontFamily: 'monospace', 
+                                        cursor: 'pointer',
+                                        backgroundColor: linkedExp ? 'rgba(16, 185, 129, 0.08)' : 'transparent',
+                                        color: linkedExp ? 'var(--success)' : 'var(--text-muted)',
+                                        transition: 'all 0.15s'
+                                      }}
+                                      title={linkedExp ? `Reconciled & Paid\nActual: £${Math.round(linkedExp.amount).toLocaleString()} on ${linkedExp.date}\nPayee: ${linkedExp.payee}\nClick to unlink/change` : `Projected Cost: £${Math.round(val).toLocaleString()}\nClick to reconcile with bank payment`}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                                        {linkedExp && <span style={{ fontSize: '9px', fontWeight: 800 }}>🔗</span>}
+                                        <span>{val > 0 ? Math.round(val).toLocaleString() : '-'}</span>
+                                      </div>
                                     </td>
                                   );
                                 })}
@@ -2491,9 +2541,26 @@ export default function VendorsDashboard({
                                 {forecastMonths.map((m, idx) => {
                                   const val = getContractCostForMonth(c, m.year, m.monthIndex);
                                   rowSum += val;
+                                  const monthKey = `${m.year}-${String(m.monthIndex + 1).padStart(2, '0')}`;
+                                  const linkedExp = expenses?.find(e => e.linkedVendorCellId === `${c.id}_${monthKey}`);
                                   return (
-                                    <td key={idx} style={{ textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
-                                      {val > 0 ? Math.round(val).toLocaleString() : '-'}
+                                    <td 
+                                      key={idx} 
+                                      onClick={() => handleCellClick(c, m.year, m.monthIndex, val)}
+                                      style={{ 
+                                        textAlign: 'right', 
+                                        fontFamily: 'monospace', 
+                                        cursor: 'pointer',
+                                        backgroundColor: linkedExp ? 'rgba(16, 185, 129, 0.08)' : 'transparent',
+                                        color: linkedExp ? 'var(--success)' : 'var(--text-muted)',
+                                        transition: 'all 0.15s'
+                                      }}
+                                      title={linkedExp ? `Reconciled & Paid\nActual: £${Math.round(linkedExp.amount).toLocaleString()} on ${linkedExp.date}\nPayee: ${linkedExp.payee}\nClick to unlink/change` : `Projected Cost: £${Math.round(val).toLocaleString()}\nClick to reconcile with bank payment`}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                                        {linkedExp && <span style={{ fontSize: '9px', fontWeight: 800 }}>🔗</span>}
+                                        <span>{val > 0 ? Math.round(val).toLocaleString() : '-'}</span>
+                                      </div>
                                     </td>
                                   );
                                 })}
@@ -3233,6 +3300,202 @@ export default function VendorsDashboard({
           </div>
         </div>
       )}
+
+      {/* Reconcile Vendor Cell Modal */}
+      {reconcilingCell && (() => {
+        const { contract, monthKey, projectedAmount } = reconcilingCell;
+        const vendor = vendors.find(v => v.id === contract.vendorId);
+        const vendorName = vendor ? vendor.name : 'Unknown Vendor';
+        
+        // Find currently linked expense
+        const currentLinkedExp = expenses?.find(
+          e => e.linkedVendorCellId === `${contract.id}_${monthKey}`
+        );
+
+        // Candidate filter: same month, and not linked to payroll/other vendors (unless it's the current one)
+        const candidates = (expenses || []).filter(e => {
+          if (!e.date || !e.date.startsWith(monthKey)) return false;
+          if (e.id === currentLinkedExp?.id) return true; // keep current
+          return !e.linkedPayrollCellId && (!e.linkedVendorCellId || e.linkedVendorCellId === `${contract.id}_${monthKey}`);
+        });
+
+        // Sort candidates: matches vendor name substring first
+        const term = vendorName.toLowerCase();
+        candidates.sort((a, b) => {
+          const aMatch = a.payee?.toLowerCase().includes(term) || term.includes(a.payee?.toLowerCase() || '');
+          const bMatch = b.payee?.toLowerCase().includes(term) || term.includes(b.payee?.toLowerCase() || '');
+          if (aMatch && !bMatch) return -1;
+          if (!aMatch && bMatch) return 1;
+          return 0;
+        });
+
+        const handleSaveLink = () => {
+          if (!selectedExpenseId) {
+            onShowToast('Please select a payment transaction to link.', 'error');
+            return;
+          }
+          const chosenExp = expenses.find(e => e.id === selectedExpenseId);
+          if (!chosenExp) return;
+
+          // Save linkage
+          const updatedExp = {
+            ...chosenExp,
+            linkedVendorCellId: `${contract.id}_${monthKey}`,
+            recipientType: 'vendor',
+            recipientId: contract.vendorId
+          };
+          
+          onSaveExpense(updatedExp);
+          onShowToast(`Linked payment successfully!`, 'success');
+          setReconcilingCell(null);
+        };
+
+        const handleUnlink = () => {
+          if (!currentLinkedExp) return;
+          const updatedExp = {
+            ...currentLinkedExp,
+            linkedVendorCellId: ''
+          };
+          onSaveExpense(updatedExp);
+          onShowToast(`Unlinked payment successfully!`, 'success');
+          setReconcilingCell(null);
+        };
+
+        // Format month key for display
+        const displayMonth = new Date(monthKey + '-02').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+
+        return (
+          <div className="form-wizard-overlay" onClick={() => setReconcilingCell(null)}>
+            <div className="form-wizard-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+              <div className="wizard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="wizard-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '8px', borderRadius: '8px' }}>
+                    <span style={{ fontSize: '18px', fontWeight: 800 }}>🔗</span>
+                  </div>
+                  <div>
+                    <h2 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#fff' }}>
+                      Reconcile Vendor Payment
+                    </h2>
+                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>Link contract matrix cell to bank/ledger expense</span>
+                  </div>
+                </div>
+                <button type="button" className="btn-close" onClick={() => setReconcilingCell(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px' }}>
+                  ✕
+                </button>
+              </div>
+
+              <div className="wizard-body" style={{ padding: '16px', overflowY: 'auto' }}>
+                <div style={{ padding: '12px', backgroundColor: 'rgba(255, 255, 255, 0.02)', borderRadius: '8px', marginBottom: '16px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Contract:</span>
+                    <span style={{ fontWeight: 600, color: '#fff' }}>{contract.name}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Vendor Partner:</span>
+                    <span style={{ fontWeight: 600, color: '#fff' }}>{vendorName}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Target Month:</span>
+                    <span style={{ fontWeight: 600, color: '#fff' }}>{displayMonth}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Projected Budget:</span>
+                    <span style={{ fontWeight: 600, color: 'var(--primary)', fontFamily: 'monospace' }}>
+                      {symbolMap[forecastCurrency] || '£'}{Math.round(projectedAmount).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {currentLinkedExp ? (
+                  <div style={{ marginTop: '12px' }}>
+                    <div style={{ padding: '12px', backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '8px', marginBottom: '16px' }}>
+                      <h4 style={{ margin: '0 0 8px 0', color: 'var(--success)', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span>✅</span> Currently Reconciled & Paid
+                      </h4>
+                      <div style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--text-muted)' }}>Bank Date:</span>
+                          <span style={{ color: '#fff' }}>{currentLinkedExp.date}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--text-muted)' }}>Payee Description:</span>
+                          <span style={{ color: '#fff', fontWeight: 600 }}>{currentLinkedExp.payee}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--text-muted)' }}>Actual Paid Amount:</span>
+                          <span style={{ color: 'var(--success)', fontWeight: 700, fontFamily: 'monospace' }}>
+                            £{Number(currentLinkedExp.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        {currentLinkedExp.notes && (
+                          <div style={{ marginTop: '4px', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '6px' }}>
+                            <span style={{ color: 'var(--text-muted)', display: 'block' }}>Notes:</span>
+                            <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>{currentLinkedExp.notes}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+                      <button type="button" className="btn-secondary" onClick={handleUnlink} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)' }}>
+                        Unlink Payment Transaction
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <h3 style={{ fontSize: '12px', fontWeight: 700, margin: '0 0 10px 0', color: '#fff' }}>
+                      Select bank statement transaction to reconcile:
+                    </h3>
+                    {candidates.length === 0 ? (
+                      <div style={{ padding: '20px', border: '1px dashed var(--border-color)', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+                        No unlinked expense transactions found for {displayMonth}.
+                        Please upload or log a transaction in the Ledger/Expenses tab first.
+                      </div>
+                    ) : (
+                      <div className="form-group" style={{ marginBottom: '16px' }}>
+                        <select
+                          className="select-filter"
+                          value={selectedExpenseId}
+                          onChange={(e) => setSelectedExpenseId(e.target.value)}
+                          style={{ width: '100%', padding: '10px' }}
+                        >
+                          <option value="">-- Choose Transaction --</option>
+                          {candidates.map(e => {
+                            const isNameMatch = e.payee?.toLowerCase().includes(term) || term.includes(e.payee?.toLowerCase() || '');
+                            return (
+                              <option key={e.id} value={e.id}>
+                                {isNameMatch ? '⭐ ' : ''}{e.date} | {e.payee} - £{Number(e.amount).toLocaleString()}
+                              </option>
+                            );
+                          })}
+                        </select>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                          ⭐ indicates matching payee name suggested for this vendor.
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="wizard-footer" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                      <button type="button" className="btn-secondary" onClick={() => setReconcilingCell(null)}>
+                        Cancel
+                      </button>
+                      <button 
+                        type="button" 
+                        className="btn-primary" 
+                        onClick={handleSaveLink}
+                        disabled={!selectedExpenseId}
+                      >
+                        Reconcile with Selected Payment
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       
     </div>
   );

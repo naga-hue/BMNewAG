@@ -171,6 +171,7 @@ export default function CreditControlDashboard({
   const [uploadedFileUrl, setUploadedFileUrl] = useState('');
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [expandDebtors60, setExpandDebtors60] = useState(false);
+  const [collapseAnalytics, setCollapseAnalytics] = useState(true);
 
   // Helper date conversions
   const todayStr = useMemo(() => {
@@ -1365,7 +1366,51 @@ export default function CreditControlDashboard({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      
+      {/* Sleek dashboard summary control bar */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        backgroundColor: 'var(--bg-card)', 
+        border: '1px solid var(--border-color)', 
+        borderRadius: '8px', 
+        padding: '10px 16px',
+        marginBottom: '4px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '12px' }}>
+          <span style={{ fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>📈 Credit Analytics</span>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+            <span>Overdue: <strong style={{ color: 'var(--danger)', fontFamily: 'monospace' }}>£{dashboardStats.overdueTotal.toLocaleString()}</strong></span>
+            <span style={{ opacity: 0.3 }}>|</span>
+            <span>Legal: <strong style={{ color: '#fca5a5', fontFamily: 'monospace' }}>£{dashboardStats.legalTotal.toLocaleString()}</strong></span>
+            <span style={{ opacity: 0.3 }}>|</span>
+            <span>Expected (30d): <strong style={{ color: 'var(--accent)', fontFamily: 'monospace' }}>£{dashboardStats.next30DaysTotal.toLocaleString()}</strong></span>
+            <span style={{ opacity: 0.3 }}>|</span>
+            <span>This Month: <strong style={{ color: 'var(--primary)', fontFamily: 'monospace' }}>£{dashboardStats.thisMonthTotal.toLocaleString()}</strong></span>
+          </div>
+        </div>
+        <button
+          onClick={() => setCollapseAnalytics(!collapseAnalytics)}
+          style={{
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-primary)',
+            padding: '4px 12px',
+            borderRadius: '6px',
+            fontSize: '11px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
+          {collapseAnalytics ? '📊 Show Dashboard Overview' : 'Hide Dashboard Overview'}
+        </button>
+      </div>
+
+      {!collapseAnalytics && (
+        <>
       
       {/* -------------------------------------------------------------
           DASHBOARD HEADERS & RISK BLOCKS
@@ -1477,6 +1522,8 @@ export default function CreditControlDashboard({
           </div>
         </div>
       </div>
+        </>
+      )}
 
       {/* DISPUTED INVOICES BANNER PANEL */}
       {dashboardStats.disputedList.length > 0 && (
@@ -1612,7 +1659,7 @@ export default function CreditControlDashboard({
         </div>
 
         {/* Simplicity Recourse Alert Banner */}
-        {activeSubTab === 'simplicity' && (
+        {!collapseAnalytics && activeSubTab === 'simplicity' && (
           <div style={{ 
             backgroundColor: 'rgba(239, 68, 68, 0.03)', 
             border: '1px solid rgba(239, 68, 68, 0.15)', 

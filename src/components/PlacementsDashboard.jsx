@@ -99,6 +99,7 @@ export default function PlacementsDashboard({
   // Client payment inputs
   const [clientPaymentStatusInput, setClientPaymentStatusInput] = useState('unpaid'); // paid, unpaid
   const [clientPaidDateInput, setClientPaidDateInput] = useState('');
+  const [commissionPaidMonthInput, setCommissionPaidMonthInput] = useState('');
 
   // Credit Control Invoice States
   const [invoiceTypeInput, setInvoiceTypeInput] = useState('direct');
@@ -193,6 +194,7 @@ export default function PlacementsDashboard({
       : [{ staffId: '', percentage: 100 }]);
     setClientPaymentStatusInput(placement.clientPaymentStatus || 'unpaid');
     setClientPaidDateInput(placement.clientPaidDate || '');
+    setCommissionPaidMonthInput(placement.commissionPaidMonth || '');
     setInvoiceTypeInput(placement.invoiceType || 'direct');
     setSimplicityClientNoInput(placement.simplicityClientNo || '');
     setSimplicityCreditLimitInput(placement.simplicityCreditLimit || '');
@@ -330,9 +332,9 @@ export default function PlacementsDashboard({
       dnsAmount: statusInput === 'dns' ? gross : 0,
       rebateAmount: statusInput === 'rebate' || (statusInput !== 'dns' && deductions > 0) ? deductions : 0,
       netScoreValue: netScore,
-      splits: cleanSplits,
       clientPaymentStatus: clientPaymentStatusInput,
       clientPaidDate: clientPaymentStatusInput === 'paid' ? (clientPaidDateInput || new Date().toISOString().split('T')[0]) : null,
+      commissionPaidMonth: commissionPaidMonthInput || null,
       importKey: editingPlacementId ? (placements.find(p => p.id === editingPlacementId)?.importKey || null) : "manual",
       
       // Credit Control parameters
@@ -381,9 +383,9 @@ export default function PlacementsDashboard({
       setDnsDateInput('');
       setStatusInput('active');
       setGrossInput('');
-      setDeductionsInput('0');
       setClientPaymentStatusInput('unpaid');
       setClientPaidDateInput('');
+      setCommissionPaidMonthInput('');
       setSplitsInput([{ staffId: '', percentage: 100 }]);
       setInvoiceTypeInput('direct');
       setSimplicityClientNoInput('');
@@ -1708,6 +1710,22 @@ export default function PlacementsDashboard({
                     />
                   </div>
                 )}
+              </div>
+
+              {/* Commission Payout Override Month */}
+              <div className="form-group" style={{ marginTop: '12px' }}>
+                <label className="form-label">Override Commission Payout Month</label>
+                <input 
+                  type="month" 
+                  className="form-input"
+                  placeholder="e.g. 2026-08"
+                  value={commissionPaidMonthInput}
+                  onChange={(e) => setCommissionPaidMonthInput(e.target.value)}
+                  style={{ width: '100%' }}
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginTop: '4px' }}>
+                  Optional. Defaults to the month following placement start date. Override to force payment in a specific month (format: YYYY-MM).
+                </span>
               </div>
 
               {/* Splits setup */}

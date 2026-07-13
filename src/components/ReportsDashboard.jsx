@@ -147,14 +147,6 @@ export default function ReportsDashboard({
     if (isLocked) return 0;
 
     const [payYear, payMonth] = monthStr.split('-').map(Number);
-    
-    // Placements evaluated are those starting in the PREVIOUS month
-    let cycleYear = payYear;
-    let cycleMonth = payMonth - 1;
-    if (cycleMonth === 0) {
-      cycleMonth = 12;
-      cycleYear = payYear - 1;
-    }
 
     // Determine target staff members
     let targetStaffIds = [member.id];
@@ -168,19 +160,25 @@ export default function ReportsDashboard({
       }
     }
 
-    // Helper to calculate total recruiter split billing for a specific start month
-    const getRecruiterBillingForStartMonth = (yearVal, monthVal) => {
+    // Helper to calculate total recruiter split billing for a specific target payout month
+    const getRecruiterBillingForPayoutMonth = (targetMonthStr) => {
       let sum = 0;
       placementsList.forEach(p => {
         if (!p.startDate || p.status === 'dns') return;
-        const pStart = new Date(p.startDate);
-        if (pStart.getFullYear() === yearVal && (pStart.getMonth() + 1) === monthVal) {
-          p.splits?.forEach(s => {
-            if (targetStaffIds.includes(s.staffId)) {
-              sum += (p.netScoreValue * s.percentage) / 100;
-            }
-          });
-        }
+        
+        const pMonth = p.commissionPaidMonth ? p.commissionPaidMonth : (() => {
+          const d = new Date(p.startDate);
+          d.setMonth(d.getMonth() + 1);
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        })();
+
+        if (pMonth !== targetMonthStr) return;
+
+        p.splits?.forEach(s => {
+          if (targetStaffIds.includes(s.staffId)) {
+            sum += (p.netScoreValue * s.percentage) / 100;
+          }
+        });
       });
       return sum;
     };
@@ -230,31 +228,39 @@ export default function ReportsDashboard({
 
       let cumulativeBilling = 0;
       for (let m = startMonthOfQuarter; m <= monthVal; m++) {
-        cumulativeBilling += getRecruiterBillingForStartMonth(yearVal, m);
+        const targetMonthStr = `${yearVal}-${String(m).padStart(2, '0')}`;
+        cumulativeBilling += getRecruiterBillingForPayoutMonth(targetMonthStr);
       }
       const cumulativeCommission = getPolicyCommission(cumulativeBilling);
 
       let previousBilling = 0;
       for (let m = startMonthOfQuarter; m <= monthVal - 1; m++) {
-        previousBilling += getRecruiterBillingForStartMonth(yearVal, m);
+        const targetMonthStr = `${yearVal}-${String(m).padStart(2, '0')}`;
+        previousBilling += getRecruiterBillingForPayoutMonth(targetMonthStr);
       }
       const previousCommission = getPolicyCommission(previousBilling);
 
       return Math.max(0, cumulativeCommission - previousCommission);
     };
 
-    // 1. Current Cycle calculations (starts in previous month)
-    const currentCycleBilling = getRecruiterBillingForStartMonth(cycleYear, cycleMonth);
+    // 1. Current Cycle calculations (payout scheduled in target monthStr)
+    const currentCycleBilling = getRecruiterBillingForPayoutMonth(monthStr);
     const baseEarned = policy.calcInterval === 'quarterly'
-      ? getQuarterlyCommissionForMonth(cycleYear, cycleMonth)
+      ? getQuarterlyCommissionForMonth(payYear, payMonth)
       : getPolicyCommission(currentCycleBilling);
 
     let totalPaidNow = 0;
 
     placementsList.forEach(p => {
       if (!p.startDate || p.status === 'dns') return;
-      const pStart = new Date(p.startDate);
-      if (pStart.getFullYear() === cycleYear && (pStart.getMonth() + 1) === cycleMonth) {
+      
+      const pMonth = p.commissionPaidMonth ? p.commissionPaidMonth : (() => {
+        const d = new Date(p.startDate);
+        d.setMonth(d.getMonth() + 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      })();
+
+      if (pMonth === monthStr) {
         const mySplits = p.splits?.filter(s => targetStaffIds.includes(s.staffId)) || [];
         if (mySplits.length > 0) {
           const totalSplitPct = mySplits.reduce((acc, s) => acc + s.percentage, 0);
@@ -272,16 +278,19 @@ export default function ReportsDashboard({
       }
     });
 
-    // 2. Releases from Prior Withholds (starts before the previous month)
+    // 2. Releases from Prior Withholds (payout scheduled before target monthStr)
     let totalReleased = 0;
 
     placementsList.forEach(p => {
       if (!p.startDate || p.status === 'dns') return;
-      const pStart = new Date(p.startDate);
-      const pStartYear = pStart.getFullYear();
-      const pStartMonth = pStart.getMonth() + 1;
+      
+      const pMonth = p.commissionPaidMonth ? p.commissionPaidMonth : (() => {
+        const d = new Date(p.startDate);
+        d.setMonth(d.getMonth() + 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      })();
 
-      const isPriorStart = pStartYear < cycleYear || (pStartYear === cycleYear && pStartMonth < cycleMonth);
+      const isPriorStart = pMonth < monthStr;
 
       if (isPriorStart) {
         const mySplits = p.splits?.filter(s => targetStaffIds.includes(s.staffId)) || [];
@@ -289,9 +298,10 @@ export default function ReportsDashboard({
           const totalSplitPct = mySplits.reduce((acc, s) => acc + s.percentage, 0);
           const myBillingShare = (p.netScoreValue * totalSplitPct) / 100;
 
-          const histCycleBilling = getRecruiterBillingForStartMonth(pStartYear, pStartMonth);
+          const histCycleBilling = getRecruiterBillingForPayoutMonth(pMonth);
+          const [pMonthYear, pMonthVal] = pMonth.split('-').map(Number);
           const histBaseEarned = policy.calcInterval === 'quarterly'
-            ? getQuarterlyCommissionForMonth(pStartYear, pStartMonth)
+            ? getQuarterlyCommissionForMonth(pMonthYear, pMonthVal)
             : getPolicyCommission(histCycleBilling);
 
           const myCommShare = histCycleBilling > 0 

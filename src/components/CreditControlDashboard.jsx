@@ -55,22 +55,25 @@ export default function CreditControlDashboard({
   const [activeSubTab, setActiveSubTab] = useState('direct'); // direct or simplicity
   const [showColConfig, setShowColConfig] = useState(false);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState(new Set());
-  const [columnsConfig, setColumnsConfig] = useState([
+    const [columnsConfig, setColumnsConfig] = useState([
     { id: 'placementId', label: 'Placement ID', visible: true },
+    { id: 'ems', label: 'EMS', visible: true },
     { id: 'clientCompany', label: 'Client Company', visible: true },
-    { id: 'internalCompany', label: 'Humres Entity', visible: true },
+    { id: 'noaRequired', label: 'NOA Required', visible: true },
+    { id: 'consultantInvoiceReceived', label: 'Consultant Inv Recd', visible: true },
+    { id: 'invoiceNumber', label: 'Invoice Number', visible: true },
     { id: 'candidateName', label: 'Candidate Name', visible: true },
     { id: 'recruiter', label: 'Recruiter', visible: true },
-    { id: 'startDate', label: 'Start Date', visible: false },
+    { id: 'startDate', label: 'Start Date', visible: true },
     { id: 'scoredDate', label: 'Scored Date', visible: false },
-    { id: 'invoiceNumber', label: 'Invoice Number', visible: false },
     { id: 'invoiceRaisedDate', label: 'Invoice Raised Date', visible: false },
     { id: 'paymentTermsDays', label: 'Payment Terms (Days)', visible: false },
     { id: 'dueDate', label: 'Due Date', visible: true },
+    { id: 'payoutDate', label: 'Expected Payout Date', visible: true },
     { id: 'riskTimeline', label: 'Simplicity Risk', visible: true },
     { id: 'netTotal', label: 'Net Total', visible: true },
-    { id: 'factoredGross', label: 'Factored Gross (97.04%)', visible: true },
-    { id: 'vat', label: 'VAT (20%)', visible: true },
+    { id: 'factoredGross', label: 'Total to Humres', visible: true },
+    { id: 'vat', label: 'VAT', visible: true },
     { id: 'totalInclVat', label: 'Total Incl. VAT', visible: true },
     { id: 'amount', label: 'Total Invoice', visible: true },
     { id: 'status', label: 'Status', visible: true },
@@ -78,11 +81,11 @@ export default function CreditControlDashboard({
     { id: 'doc', label: 'Doc', visible: true }
   ]);
 
-  const activeColumns = useMemo(() => {
+    const activeColumns = useMemo(() => {
     return columnsConfig.filter(col => {
       if (!col.visible) return false;
       if (activeSubTab === 'direct') {
-        return !['riskTimeline', 'netTotal', 'factoredGross', 'vat', 'totalInclVat'].includes(col.id);
+        return !['ems', 'noaRequired', 'consultantInvoiceReceived', 'riskTimeline', 'netTotal', 'factoredGross', 'vat', 'totalInclVat', 'payoutDate'].includes(col.id);
       } else {
         return !['amount'].includes(col.id);
       }
@@ -188,7 +191,9 @@ export default function CreditControlDashboard({
   };
 
   const invoices = useMemo(() => {
-    return placements.map(p => {
+    return placements
+      .filter(p => p.status !== 'dns')
+      .map(p => {
       const gross = Number(p.grossBillAmount) || 0;
       let vat = (p.vatAmount !== undefined && p.vatAmount !== null && p.vatAmount !== '') 
         ? (Number(p.vatAmount) || 0) 
@@ -843,6 +848,42 @@ export default function CreditControlDashboard({
     let cellContent = null;
     
     switch (col.id) {
+      case 'ems':
+        cellContent = (
+          <input 
+            type="checkbox"
+            checked={!!inv.ems}
+            onChange={() => handleTogglePlacementField(inv.id, 'ems', !!inv.ems)}
+            onClick={(e) => e.stopPropagation()}
+            style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+          />
+        );
+        break;
+      case 'noaRequired':
+        cellContent = (
+          <input 
+            type="checkbox"
+            checked={!!inv.noaRequired}
+            onChange={() => handleTogglePlacementField(inv.id, 'noaRequired', !!inv.noaRequired)}
+            onClick={(e) => e.stopPropagation()}
+            style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+          />
+        );
+        break;
+      case 'consultantInvoiceReceived':
+        cellContent = (
+          <input 
+            type="checkbox"
+            checked={!!inv.consultantInvoiceReceived}
+            onChange={() => handleTogglePlacementField(inv.id, 'consultantInvoiceReceived', !!inv.consultantInvoiceReceived)}
+            onClick={(e) => e.stopPropagation()}
+            style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+          />
+        );
+        break;
+      case 'payoutDate':
+        cellContent = inv.overridePayoutDate || inv.simplicityPayoutDate || '—';
+        break;
       case 'placementId':
         cellContent = inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id);
         break;
@@ -857,7 +898,43 @@ export default function CreditControlDashboard({
         cellContent = inv.scoredDate || '—';
         break;
       case 'invoiceNumber':
-        cellContent = inv.invoiceNumber || '—';
+        cellContent = (
+          <input
+            type="text"
+            defaultValue={inv.invoiceNumber || ''}
+            placeholder="Inv#"
+            onBlur={async (e) => {
+              const val = e.target.value;
+              if (val !== inv.invoiceNumber) {
+                const original = placements.find(p => p.id === inv.id);
+                if (original) {
+                  try {
+                    await onUpdatePlacement({ ...original, invoiceNumber: val });
+                    onShowToast(`Updated Invoice Number to ${val}`, "success");
+                  } catch (err) {
+                    onShowToast(`Failed to update Invoice Number: ${err.message}`, "warning");
+                  }
+                }
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.target.blur();
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '90px',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text-primary)',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              fontSize: '11px',
+              fontFamily: 'monospace'
+            }}
+          />
+        );
         break;
       case 'invoiceRaisedDate':
         cellContent = inv.invoiceRaisedDate || '—';
@@ -929,9 +1006,50 @@ export default function CreditControlDashboard({
         break;
       case 'status':
         cellContent = (
-          <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>
-            {statusObj.label}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={(e) => e.stopPropagation()}>
+            <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>
+              {statusObj.label}
+            </span>
+            {inv.paymentStatus !== 'paid' && (
+              <button
+                title="Mark as Paid"
+                onClick={async () => {
+                  if (window.confirm(`Mark placement for ${inv.candidateName} as Paid?`)) {
+                    const original = placements.find(p => p.id === inv.id);
+                    if (original) {
+                      try {
+                        await onUpdatePlacement({ 
+                          ...original, 
+                          paymentStatus: 'paid', 
+                          clientPaymentStatus: 'paid',
+                          paymentReceivedDate: todayStr,
+                          amountPaid: inv.totalInvoiceAmount
+                        });
+                        onShowToast(`Marked ${inv.candidateName} as Paid`, "success");
+                      } catch (err) {
+                        onShowToast(`Failed: ${err.message}`, "warning");
+                      }
+                    }
+                  }
+                }}
+                style={{
+                  background: 'var(--success)',
+                  border: 'none',
+                  color: '#fff',
+                  borderRadius: '50%',
+                  width: '18px',
+                  height: '18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  padding: 0
+                }}
+              >
+                ✓
+              </button>
+            )}
+          </div>
         );
         break;
       case 'outstanding':
@@ -1053,6 +1171,23 @@ export default function CreditControlDashboard({
       onShowToast(`Moved ${inv.candidateName} to week ending ${targetWeekDate}`, "success");
     } catch (e) {
       onShowToast(`Failed to move invoice: ${e.message}`, "warning");
+    }
+  };
+
+  const handleTogglePlacementField = async (placementId, fieldName, currentValue) => {
+    const originalPlacement = placements.find(p => p.id === placementId);
+    if (!originalPlacement) return;
+
+    const updatedPlacement = {
+      ...originalPlacement,
+      [fieldName]: !currentValue
+    };
+
+    try {
+      await onUpdatePlacement(updatedPlacement);
+      onShowToast(`Updated ${fieldName}`, "success");
+    } catch (e) {
+      onShowToast(`Failed to update ${fieldName}: ${e.message}`, "warning");
     }
   };
 
@@ -1743,12 +1878,15 @@ export default function CreditControlDashboard({
                           return (
                             <tr key={inv.id} onClick={() => handleOpenDetail(inv)} style={{ cursor: 'pointer' }} className="table-row-hover">
                               <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', width: '40px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                                <input 
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                                   <span style={{ cursor: 'grab', color: 'var(--text-muted)', fontSize: '14px', userSelect: 'none' }} title="Drag to reschedule week">⠿</span>
+                                   <input 
                                   type="checkbox" 
                                   checked={selectedInvoiceIds.has(inv.id)}
                                   onChange={(e) => handleToggleSelectRow(inv.id, e)}
                                   style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
                                 />
+                                 </div>
                               </td>
                               {activeColumns.map(col => renderTableBodyCell(inv, col))}
                             </tr>

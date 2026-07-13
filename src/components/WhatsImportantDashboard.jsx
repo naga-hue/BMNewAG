@@ -34,6 +34,14 @@ export default function WhatsImportantDashboard({
   // Fixed Anchor Date representing "Today"
   const ANCHOR_DATE = new Date('2026-07-13');
 
+  const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
+  const getContractCostText = (c) => {
+    const symbol = symbolMap[c.currency] || '£';
+    const totalVal = c.unitCost * c.quantityPurchased;
+    const intervalSuffix = c.costInterval === 'monthly' ? '/mo' : (c.costInterval === 'annual' ? '/yr' : ' (one-off)');
+    return `${symbol}${totalVal.toLocaleString()}${intervalSuffix}`;
+  };
+
   // Calculate the start and end dates for the selected time horizon
   const getHorizonRange = (horizon) => {
     const start = new Date(ANCHOR_DATE.getTime());
@@ -274,7 +282,7 @@ export default function WhatsImportantDashboard({
         id: `contract-exp-${c.id}`,
         category: 'operational',
         title: `Vendor Contract Ending`,
-        desc: `Contract for ${c.serviceName} with ${vend ? vend.name : 'Unknown Vendor'} expires on ${c.endDate}. Value: £${c.monthlyCost?.toLocaleString()}/mo.`,
+        desc: `Contract for ${c.name} with ${vend ? vend.name : 'Unknown Vendor'} expires on ${c.endDate}. Value: ${getContractCostText(c)}.`,
         badge: 'Contract Expiring',
         type: 'warning'
       };
@@ -338,8 +346,8 @@ export default function WhatsImportantDashboard({
       return {
         id: `ap-${c.id}`,
         category: 'apAlerts',
-        title: `AP Vendor Payment: ${vend ? vend.name : 'Unknown Vendor'}`,
-        desc: `Vendor contract payout for ${c.serviceName} (Amount: £${(c.monthlyCost || 0).toLocaleString()}/mo). Due: ${c.paymentDueDate}`,
+        title: `AP Vendor Payment: ${vend ? vend.name : 'Unknown Vendor'} (${c.name})`,
+        desc: `Vendor contract payout for ${c.name} (Amount: ${getContractCostText(c)}). Due: ${c.paymentDueDate}`,
         badge: isExpired ? 'Payment Overdue' : 'Payment Imminent',
         type: isExpired ? 'critical' : 'warning',
         contract: c

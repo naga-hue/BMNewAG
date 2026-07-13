@@ -125,8 +125,8 @@ export default function ReportsDashboard({
     return (Number(amount) || 0) * rate;
   };
 
-  // Helper to calculate exact cash-received commission payout (matching Incentive Commissions ledger)
-  const calculateCashReceivedCommission = (member, policy, monthStr, staffList, companiesList, placementsList) => {
+  // Helper to calculate recruiter commission payout
+  const calculateCashReceivedCommission = (member, policy, monthStr, staffList, companiesList, placementsList, basis = 'written') => {
     if (!policy) return 0;
 
     const getMonthsOfService = (startStr, dateStr) => {
@@ -315,15 +315,18 @@ export default function ReportsDashboard({
       }
     });
 
+    if (basis === 'written') {
+      return baseEarned;
+    }
     return totalPaidNow + totalReleased;
   };
 
   // Recruiter Commission calculator helper
-  const calculateCommissionForRecruiter = (recruiterId, monthKey) => {
+  const calculateCommissionForRecruiter = (recruiterId, monthKey, basis = 'written') => {
     const member = staff.find(s => s.id === recruiterId);
     if (!member) return 0;
     const policy = commissionPolicies.find(p => p.id === member.commissionPolicyId);
-    return calculateCashReceivedCommission(member, policy, monthKey, staff, companies, placements);
+    return calculateCashReceivedCommission(member, policy, monthKey, staff, companies, placements, basis);
   };
 
   const getBusinessDaysInMonth = (monthKey, staffMember) => {

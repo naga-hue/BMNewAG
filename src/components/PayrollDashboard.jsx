@@ -479,8 +479,8 @@ export default function PayrollDashboard({
     ]);
   };
 
-  // Helper to calculate exact cash-received commission payout (matching Incentive Commissions ledger)
-  const calculateCashReceivedCommission = (member, policy, monthStr, staffList, companiesList, placementsList) => {
+  // Helper to calculate recruiter commission payout
+  const calculateCashReceivedCommission = (member, policy, monthStr, staffList, companiesList, placementsList, basis = 'written') => {
     if (!policy) return 0;
 
     const getMonthsOfService = (startStr, dateStr) => {
@@ -669,15 +669,18 @@ export default function PayrollDashboard({
       }
     });
 
+    if (basis === 'written') {
+      return baseEarned;
+    }
     return totalPaidNow + totalReleased;
   };
 
   // Helper to calculate commission on placements starting in a specific month
-  const calculateCommissionForRecruiter = (recruiterId, monthKey) => {
+  const calculateCommissionForRecruiter = (recruiterId, monthKey, basis = 'written') => {
     const member = staff.find(s => s.id === recruiterId);
     if (!member) return 0;
     const policy = commissionPolicies.find(p => p.id === member.commissionPolicyId);
-    return calculateCashReceivedCommission(member, policy, monthKey, staff, companies, placements);
+    return calculateCashReceivedCommission(member, policy, monthKey, staff, companies, placements, basis);
   };
 
   // Get active departments
@@ -2122,6 +2125,49 @@ ${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleSt
                   onChange={(e) => setCommissionOverride(e.target.value)}
                   style={{ width: '100%', padding: '10px' }}
                 />
+                {selectedCell && (() => {
+                  const { staffMember, month } = selectedCell;
+                  const commWritten = calculateCommissionForRecruiter(staffMember.id, month, 'written');
+                  const commCash = calculateCommissionForRecruiter(staffMember.id, month, 'cash_received');
+                  
+                  return (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '11px', marginTop: '6px' }}>
+                      <button 
+                        type="button" 
+                        style={{ 
+                          background: 'none', 
+                          border: 'none', 
+                          color: 'var(--primary)', 
+                          cursor: 'pointer', 
+                          padding: 0, 
+                          textDecoration: 'underline',
+                          fontWeight: 500
+                        }}
+                        onClick={() => setCommissionOverride(commWritten.toFixed(2))}
+                      >
+                        Use Projected (Written): £{Math.round(commWritten).toLocaleString()}
+                      </button>
+                      <button 
+                        type="button" 
+                        style={{ 
+                          background: 'none', 
+                          border: 'none', 
+                          color: 'var(--success)', 
+                          cursor: 'pointer', 
+                          padding: 0, 
+                          textDecoration: 'underline',
+                          fontWeight: 500
+                        }}
+                        onClick={() => {
+                          setCommissionOverride(commCash.toFixed(2));
+                          setIsReconciled(true);
+                        }}
+                      >
+                        Use Concluded (Cash): £{Math.round(commCash).toLocaleString()}
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Contributions & Deductions Breakdown */}

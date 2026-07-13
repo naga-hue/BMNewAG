@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
+  Bell,
   LayoutDashboard, 
   Building2, 
   Users, 
@@ -59,6 +60,7 @@ import ExpensesDashboard from './components/ExpensesDashboard';
 import LogsDashboard from './components/LogsDashboard';
 import ReportsDashboard from './components/ReportsDashboard';
 import RBACDashboard from './components/RBACDashboard';
+import WhatsImportantDashboard from './components/WhatsImportantDashboard';
 import { toGBP, formatGBP, fetchLiveFxRates } from './utils/currency';
 import { initialNominalCodes, initialExpenses } from './mockExpenses';
 
@@ -106,7 +108,7 @@ export default function App() {
   const [payrollPolicies, setPayrollPolicies] = useState([]);
 
   // Navigation tab: 'dashboard' | 'directory' | 'staff'
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('whats_important');
   const [letterTemplates, setLetterTemplates] = useState([]);
   const [fxRatesVersion, setFxRatesVersion] = useState(0);
 
@@ -1527,6 +1529,16 @@ export default function App() {
             <ul className="nav-links">
               <li>
                 <div 
+                  className={`nav-item ${activeTab === 'whats_important' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('whats_important')}
+                >
+                  <Bell size={18} />
+                  <span>What's Important</span>
+                </div>
+              </li>
+
+              <li>
+                <div 
                   className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
                   onClick={() => setActiveTab('dashboard')}
                 >
@@ -1781,7 +1793,8 @@ export default function App() {
           <div className="page-title">
             <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <Briefcase size={24} style={{ color: 'var(--primary)' }} />
-              {activeTab === 'dashboard' ? 'Group Dashboard' : 
+              {activeTab === 'whats_important' ? "What's Important Dashboard" :
+               activeTab === 'dashboard' ? 'Group Dashboard' : 
                activeTab === 'directory' ? 'Entity Management Directory' : 
                activeTab === 'staff' ? 'Staff & Personnel Directory' : 
                activeTab === 'leaves' ? 'Leaves & Holidays Dashboard' : 
@@ -1895,6 +1908,22 @@ export default function App() {
         {/* Content canvas */}
         <div className="content-wrapper">
           
+          {/* TAB 0: What's Important */}
+          {activeTab === 'whats_important' && (
+            <WhatsImportantDashboard 
+              companies={scopedCompanies} 
+              staff={scopedStaff}
+              leaveRequests={scopedLeaves}
+              holidays={holidays}
+              contracts={contracts}
+              vendors={vendors}
+              placements={placements}
+              setActiveTab={setActiveTab}
+              setSelectedCompany={setSelectedCompany}
+              setSelectedStaff={setSelectedStaff}
+            />
+          )}
+
           {/* TAB 1: Dashboard */}
           {activeTab === 'dashboard' && (
             <Dashboard 

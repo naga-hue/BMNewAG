@@ -540,6 +540,15 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
                       {company.registrationDate || 'N/A'}
                     </span>
                   </div>
+                  <div className="detail-item">
+                    <span className="detail-label">Consolidation Status</span>
+                    <span className="detail-value" style={{ 
+                      fontWeight: 600, 
+                      color: company.includeInConsolidation !== false ? 'var(--success)' : 'var(--warning)' 
+                    }}>
+                      {company.includeInConsolidation !== false ? 'Included in Group Reports' : 'Excluded from Group Reports'}
+                    </span>
+                  </div>
                 </div>
                 {company.notes && (
                   <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>

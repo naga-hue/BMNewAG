@@ -93,6 +93,14 @@ export default function ReportsDashboard({
   const [selectedRecruiterPlacements, setSelectedRecruiterPlacements] = useState(null); // { recruiterName, placements: [...] }
   const [expandedExitedRatios, setExpandedExitedRatios] = useState(false);
   const [expandedExitedLeaguesBillings, setExpandedExitedLeaguesLeaguesBillings] = useState(false);
+  // Companies included based on consolidation preference
+  const activeCompaniesForPL = companies.filter(c => {
+    if (companyFilter.includes('all')) {
+      return c.includeInConsolidation !== false;
+    }
+    return companyFilter.includes(c.id);
+  });
+  const activeCompanyIds = activeCompaniesForPL.map(c => c.id);
   const [expandedExitedLeaguesPlacements, setExpandedExitedLeaguesLeaguesPlacements] = useState(false);
   const [expandedExitedOverheads, setExpandedExitedOverheads] = useState(false);
 
@@ -555,8 +563,11 @@ export default function ReportsDashboard({
     const activeStaff = staff.filter(s => {
       const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
       if (daysWorked < 10) return false;
-      const compF = overrideCompanyId ? [overrideCompanyId] : companyFilter;
-      if (!compF.includes('all') && !compF.includes(s.companyId)) return false;
+      if (overrideCompanyId) {
+        if (s.companyId !== overrideCompanyId) return false;
+      } else {
+        if (!activeCompanyIds.includes(s.companyId)) return false;
+      }
       if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) return false;
       return true;
     });
@@ -739,7 +750,7 @@ export default function ReportsDashboard({
         const endM = contract.endDate.substring(0, 7);
 
         if (monthKey >= startM && monthKey <= endM) {
-          if (!companyFilter.includes('all') && !companyFilter.includes(contract.companyId)) return;
+          if (!activeCompanyIds.includes(contract.companyId)) return;
 
           let cost = 0;
           if (contract.costInterval === 'monthly') {
@@ -771,7 +782,7 @@ export default function ReportsDashboard({
       const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
       if (daysWorked < 10) return false;
       
-      if (!companyFilter.includes('all') && !companyFilter.includes(s.companyId)) return false;
+      if (!activeCompanyIds.includes(s.companyId)) return false;
       if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) return false;
       return true;
     });
@@ -785,7 +796,7 @@ export default function ReportsDashboard({
       p.splits?.forEach(s => {
         const member = staff.find(st => st.id === s.staffId);
         if (member) {
-          if (!companyFilter.includes('all') && !companyFilter.includes(member.companyId)) return;
+          if (!activeCompanyIds.includes(member.companyId)) return;
           if (!deptFilter.includes('all') && !deptFilter.includes(member.department)) return;
           const share = (p.netScoreValue * s.percentage) / 100;
           cellSum += toGBP(share, 'GBP');
@@ -830,7 +841,7 @@ export default function ReportsDashboard({
   const departmentOptions = Array.from(
     new Set(
       staff
-        .filter(s => companyFilter.includes('all') || companyFilter.includes(s.companyId))
+        .filter(s => activeCompanyIds.includes(s.companyId))
         .map(s => s.department)
         .filter(Boolean)
     )
@@ -1092,7 +1103,7 @@ export default function ReportsDashboard({
             <thead>
               <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
                 <th style={{ minWidth: '220px' }}>P&L Item (Period Cumulative)</th>
-                {companies.filter(c => companyFilter.includes('all') || companyFilter.includes(c.id)).map(c => (
+                {activeCompaniesForPL.map(c => (
                   <th key={c.id} style={{ textAlign: 'right' }}>{c.name}</th>
                 ))}
                 <th style={{ textAlign: 'right', fontWeight: 700 }}>Total Consolidated</th>
@@ -1237,7 +1248,7 @@ export default function ReportsDashboard({
                 });
 
                 const renderSplitRow = (label, key, isBold = false, isSub = false, color = 'var(--text-primary)') => {
-                  const visibleCompanies = companies.filter(c => companyFilter.includes('all') || companyFilter.includes(c.id));
+                  const visibleCompanies = activeCompaniesForPL;
                   const totalCons = visibleCompanies.reduce((sum, c) => sum + companyDataMap[c.id][key], 0);
                   return (
                     <tr style={{ fontWeight: isBold ? 700 : 400 }}>
@@ -1335,7 +1346,7 @@ export default function ReportsDashboard({
                       const rec = staff.find(st => st.id === s.staffId);
                       if (rec && deptDataMap[rec.department]) {
                         // Apply company filter
-                        if (companyFilter.includes('all') || companyFilter.includes(rec.companyId)) {
+                        if (activeCompanyIds.includes(rec.companyId)) {
                           const share = (p.netScoreValue * s.percentage) / 100;
                           deptDataMap[rec.department].revenue += toGBP(share, 'GBP');
                         }
@@ -1346,7 +1357,7 @@ export default function ReportsDashboard({
                   // Salaries & Commissions
                   staff.forEach(s => {
                     if (!s.startDate || s.startDate.substring(0, 7) > mKey) return;
-                    if (!companyFilter.includes('all') && !companyFilter.includes(s.companyId)) return;
+                    if (!activeCompanyIds.includes(s.companyId)) return;
 
                     if (deptDataMap[s.department]) {
                       const pay = getStaffPayrollForMonth(s, mKey);
@@ -1379,7 +1390,7 @@ export default function ReportsDashboard({
                             const compHead = compStaff.length || 1;
                             const perStaffShare = companyShare / compHead;
                             compStaff.forEach(st => {
-                              if (deptDataMap[st.department] && (companyFilter.includes('all') || companyFilter.includes(st.companyId))) {
+                              if (deptDataMap[st.department] && (activeCompanyIds.includes(st.companyId))) {
                                 deptDataMap[st.department].overheads += perStaffShare;
                               }
                             });
@@ -1389,7 +1400,7 @@ export default function ReportsDashboard({
                           const totalHead = eligibleStaff.length || 1;
                           const perStaffShare = gbpAmt / totalHead;
                           eligibleStaff.forEach(st => {
-                            if (deptDataMap[st.department] && (companyFilter.includes('all') || companyFilter.includes(st.companyId))) {
+                            if (deptDataMap[st.department] && (activeCompanyIds.includes(st.companyId))) {
                               deptDataMap[st.department].overheads += perStaffShare;
                             }
                           });
@@ -1406,7 +1417,7 @@ export default function ReportsDashboard({
                             const deptHead = deptStaff.length || 1;
                             const perStaffShare = deptShare / deptHead;
                             deptStaff.forEach(st => {
-                              if (deptDataMap[st.department] && (companyFilter.includes('all') || companyFilter.includes(st.companyId))) {
+                              if (deptDataMap[st.department] && (activeCompanyIds.includes(st.companyId))) {
                                 deptDataMap[st.department].overheads += perStaffShare;
                               }
                             });
@@ -1416,7 +1427,7 @@ export default function ReportsDashboard({
                           const totalHead = eligibleStaff.length || 1;
                           const perStaffShare = gbpAmt / totalHead;
                           eligibleStaff.forEach(st => {
-                            if (deptDataMap[st.department] && (companyFilter.includes('all') || companyFilter.includes(st.companyId))) {
+                            if (deptDataMap[st.department] && (activeCompanyIds.includes(st.companyId))) {
                               deptDataMap[st.department].overheads += perStaffShare;
                             }
                           });
@@ -1431,7 +1442,7 @@ export default function ReportsDashboard({
                               const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
                               const perStaffShare = gbpAmt * (percent / 100);
                               const st = activeStaffInMonth.find(item => item.id === staffId);
-                              if (st && deptDataMap[st.department] && (companyFilter.includes('all') || companyFilter.includes(st.companyId))) {
+                              if (st && deptDataMap[st.department] && (activeCompanyIds.includes(st.companyId))) {
                                 deptDataMap[st.department].overheads += perStaffShare;
                               }
                             }
@@ -1441,7 +1452,7 @@ export default function ReportsDashboard({
                           targets.forEach(staffId => {
                             if (activeStaffInMonthIds.includes(staffId)) {
                               const st = activeStaffInMonth.find(item => item.id === staffId);
-                              if (st && deptDataMap[st.department] && (companyFilter.includes('all') || companyFilter.includes(st.companyId))) {
+                              if (st && deptDataMap[st.department] && (activeCompanyIds.includes(st.companyId))) {
                                 deptDataMap[st.department].overheads += perStaffShare;
                               }
                             }
@@ -1451,7 +1462,7 @@ export default function ReportsDashboard({
                     } else {
                       const groupHead = activeStaffInMonth.length || 1;
                       activeStaffInMonth.forEach(st => {
-                        if (deptDataMap[st.department] && (companyFilter.includes('all') || companyFilter.includes(st.companyId))) {
+                        if (deptDataMap[st.department] && (activeCompanyIds.includes(st.companyId))) {
                           deptDataMap[st.department].overheads += gbpAmt / groupHead;
                         }
                       });
@@ -1556,7 +1567,7 @@ export default function ReportsDashboard({
                     const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, pKey);
                     if (daysWorked < 10) return false;
                     
-                    if (!companyFilter.includes('all') && !companyFilter.includes(s.companyId)) return false;
+                    if (!activeCompanyIds.includes(s.companyId)) return false;
                     if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) return false;
                     return true;
                   });
@@ -1570,7 +1581,7 @@ export default function ReportsDashboard({
                     p.splits?.forEach(s => {
                       const member = staff.find(st => st.id === s.staffId);
                       if (member) {
-                        if (!companyFilter.includes('all') && !companyFilter.includes(member.companyId)) return;
+                        if (!activeCompanyIds.includes(member.companyId)) return;
                         if (!deptFilter.includes('all') && !deptFilter.includes(member.department)) return;
                         cellSum += toGBP((p.netScoreValue * s.percentage) / 100, 'GBP');
                       }
@@ -1745,7 +1756,7 @@ export default function ReportsDashboard({
               {(() => {
                 // Filter staff members by company/dept (show all staff)
                 const recruitersList = staff.filter(s => {
-                  if (!companyFilter.includes('all') && !companyFilter.includes(s.companyId)) return false;
+                  if (!activeCompanyIds.includes(s.companyId)) return false;
                   if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) return false;
                   return true;
                 });
@@ -2339,13 +2350,13 @@ export default function ReportsDashboard({
                       {(() => {
                         const activeStaffFiltered = activeStaff.filter(s => {
                           if (s.status === 'exited') return false;
-                          if (!companyFilter.includes('all') && !companyFilter.includes(s.companyId)) return false;
+                          if (!activeCompanyIds.includes(s.companyId)) return false;
                           if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) return false;
                           return true;
                         });
                         const exitedStaffFiltered = activeStaff.filter(s => {
                           if (s.status !== 'exited') return false;
-                          if (!companyFilter.includes('all') && !companyFilter.includes(s.companyId)) return false;
+                          if (!activeCompanyIds.includes(s.companyId)) return false;
                           if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) return false;
                           return true;
                         });

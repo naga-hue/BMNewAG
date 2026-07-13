@@ -49,6 +49,7 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
   // Documents state (created during wizard)
   const [documents, setDocuments] = useState([]);
   const [uploadDocType, setUploadDocType] = useState('registration');
+  const [includeInConsolidation, setIncludeInConsolidation] = useState(true);
 
   // Load editing company data if present
   useEffect(() => {
@@ -60,6 +61,7 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
       setRegistrationDate(company.registrationDate || '');
       setVatNumber(company.vatNumber || '');
       setNotes(company.notes || '');
+      setIncludeInConsolidation(company.includeInConsolidation !== false);
 
       if (company.pointOfContact) {
         setPocName(company.pointOfContact.name || '');
@@ -102,6 +104,7 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
       setInsStartDate('');
       setInsExpiryDate('');
       setDocuments([]);
+      setIncludeInConsolidation(true);
     }
     setCurrentStep(1);
   }, [company, isOpen]);
@@ -227,6 +230,7 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
       registrationDate,
       vatNumber,
       notes,
+      includeInConsolidation,
       pointOfContact: pocName ? {
         name: pocName,
         role: pocRole,
@@ -368,6 +372,19 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
                     onChange={(e) => setNotes(e.target.value)} 
                     style={{ resize: 'vertical' }}
                   />
+                </div>
+                
+                <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '8px', display: 'flex', marginTop: '12px' }}>
+                  <input 
+                    type="checkbox" 
+                    id="includeInConsolidation"
+                    checked={includeInConsolidation} 
+                    onChange={(e) => setIncludeInConsolidation(e.target.checked)} 
+                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="includeInConsolidation" className="form-label" style={{ margin: 0, cursor: 'pointer', fontWeight: 600 }}>
+                    Include in Consolidated Group Financial Reports (P&L, Cashflow, and Overhead calculations)
+                  </label>
                 </div>
               </div>
             )}

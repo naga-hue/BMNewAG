@@ -136,6 +136,7 @@ export default function CashflowDashboard({
     if (selectedCompanyId === 'all') {
       const allAccs = [];
       companies.forEach(c => {
+        if (c.includeInConsolidation === false) return;
         (c.bankAccounts || []).forEach(acc => {
           allAccs.push({ ...acc, companyName: c.name });
         });
@@ -171,7 +172,11 @@ export default function CashflowDashboard({
   const startingCashGBP = useMemo(() => {
     let total = 0;
     companies.forEach(c => {
-      if (selectedCompanyId !== 'all' && c.id !== selectedCompanyId) return;
+      if (selectedCompanyId === 'all') {
+        if (c.includeInConsolidation === false) return;
+      } else if (c.id !== selectedCompanyId) {
+        return;
+      }
 
       (c.bankAccounts || []).forEach(acc => {
         if (selectedBankAccountId !== 'all' && acc.id !== selectedBankAccountId) return;
@@ -278,7 +283,12 @@ export default function CashflowDashboard({
       };
     }).filter(inv => {
       if (inv.outstanding <= 0 || ['paid', 'written-off', 'dns-rebate'].includes(inv.status)) return false;
-      if (selectedCompanyId !== 'all' && inv.companyId !== selectedCompanyId) return false;
+      if (selectedCompanyId === 'all') {
+        const comp = companies.find(c => c.id === inv.companyId);
+        if (comp && comp.includeInConsolidation === false) return false;
+      } else if (inv.companyId !== selectedCompanyId) {
+        return false;
+      }
       if (selectedBankAccountInfo) {
         if (inv.companyId !== selectedBankAccountInfo.company.id) return false;
       }
@@ -478,7 +488,12 @@ export default function CashflowDashboard({
 
     return [...contractOutflows, ...payrollOutflows, ...expenseOutflows, ...simplicityClawbacks].filter(out => {
       if (!out.dueDate) return false;
-      if (selectedCompanyId !== 'all' && out.companyId !== selectedCompanyId) return false;
+      if (selectedCompanyId === 'all') {
+        const comp = companies.find(c => c.id === out.companyId);
+        if (comp && comp.includeInConsolidation === false) return false;
+      } else if (out.companyId !== selectedCompanyId) {
+        return false;
+      }
 
       if (selectedBankAccountInfo) {
         if (out.bankAccountId) {

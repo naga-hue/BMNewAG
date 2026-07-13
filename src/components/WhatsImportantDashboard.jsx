@@ -12,7 +12,8 @@ import {
   User, 
   Building2, 
   TrendingUp, 
-  ShieldCheck 
+  ShieldCheck,
+  Receipt
 } from 'lucide-react';
 
 export default function WhatsImportantDashboard({
@@ -293,6 +294,58 @@ export default function WhatsImportantDashboard({
       ]
     : [];
 
+  // 7. Accounts Receivable (AR)
+  const horizonARInvoices = placements
+    .filter(p => p.status !== 'dns' && p.clientPaymentStatus !== 'paid' && p.invoiceNumber)
+    .filter(p => {
+      if (!p.invoiceDueDate) return false;
+      const dueDate = new Date(p.invoiceDueDate);
+      const isExpired = dueDate < ANCHOR_DATE;
+      
+      return isExpired 
+        ? (activeHorizon === 'today' || activeHorizon === 'this_week')
+        : isDateInRange(p.invoiceDueDate, rangeStart, rangeEnd);
+    })
+    .map(p => {
+      const dueDate = new Date(p.invoiceDueDate);
+      const isExpired = dueDate < ANCHOR_DATE;
+      return {
+        id: `ar-${p.id}`,
+        category: 'arAlerts',
+        title: `AR Invoice Unpaid: ${p.clientCompany}`,
+        desc: `Invoice #${p.invoiceNumber} for Candidate ${p.candidateName} (Amount: £${(p.balanceOutstanding || p.totalInvoiceAmount || 0).toLocaleString()}). Due: ${p.invoiceDueDate}`,
+        badge: isExpired ? 'Invoice Overdue' : 'Payment Due',
+        type: isExpired ? 'critical' : 'warning',
+        placement: p
+      };
+    });
+
+  // 8. Accounts Payable (AP)
+  const horizonAPBills = contracts
+    .filter(c => {
+      if (!c.paymentDueDate) return false;
+      const dueDate = new Date(c.paymentDueDate);
+      const isExpired = dueDate < ANCHOR_DATE;
+      
+      return isExpired 
+        ? (activeHorizon === 'today' || activeHorizon === 'this_week')
+        : isDateInRange(c.paymentDueDate, rangeStart, rangeEnd);
+    })
+    .map(c => {
+      const vend = vendors.find(v => v.id === c.vendorId);
+      const dueDate = new Date(c.paymentDueDate);
+      const isExpired = dueDate < ANCHOR_DATE;
+      return {
+        id: `ap-${c.id}`,
+        category: 'apAlerts',
+        title: `AP Vendor Payment: ${vend ? vend.name : 'Unknown Vendor'}`,
+        desc: `Vendor contract payout for ${c.serviceName} (Amount: £${(c.monthlyCost || 0).toLocaleString()}/mo). Due: ${c.paymentDueDate}`,
+        badge: isExpired ? 'Payment Overdue' : 'Payment Imminent',
+        type: isExpired ? 'critical' : 'warning',
+        contract: c
+      };
+    });
+
   // Combine everything
   const allAlerts = [
     ...horizonLeaves,
@@ -303,6 +356,8 @@ export default function WhatsImportantDashboard({
     ...horizonCelebrations,
     ...horizonPlacementStarts,
     ...horizonContractExpiries,
+    ...horizonARInvoices,
+    ...horizonAPBills,
     ...upcomingEvents
   ];
 
@@ -322,6 +377,8 @@ export default function WhatsImportantDashboard({
     absences: { title: 'Leave & Absences', icon: <Calendar size={16} />, color: '#0ea5e9', items: [] },
     filings: { title: 'Statutory Filings', icon: <Clock size={16} />, color: '#f59e0b', items: [] },
     docAlerts: { title: 'Document Alerts', icon: <AlertTriangle size={16} />, color: '#ef4444', items: [] },
+    arAlerts: { title: 'Accounts Receivable (AR)', icon: <TrendingUp size={16} />, color: '#10b981', items: [] },
+    apAlerts: { title: 'Accounts Payable (AP)', icon: <Receipt size={16} />, color: '#f43f5e', items: [] },
     celebrations: { title: 'Birthdays & Anniversaries', icon: <Cake size={16} />, color: '#ec4899', items: [] },
     operational: { title: 'Operational Deadlines', icon: <Briefcase size={16} />, color: '#6366f1', items: [] },
     events: { title: 'Other Events', icon: <Info size={16} />, color: '#10b981', items: [] }
@@ -528,7 +585,7 @@ export default function WhatsImportantDashboard({
                         </p>
 
                         {/* Navigation Quick Links */}
-                        {(item.staffMember || item.company) && (
+                        {(item.staffMember || item.company || item.placement || item.contract) && (
                           <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
                             {item.staffMember && (
                               <button
@@ -568,6 +625,44 @@ export default function WhatsImportantDashboard({
                                 }}
                               >
                                 Go to Compliance Tasks
+                              </button>
+                            )}
+                            {item.placement && (
+                              <button
+                                onClick={() => {
+                                  setActiveTab('credit_control');
+                                }}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'var(--primary)',
+                                  fontSize: '10px',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                  textDecoration: 'underline'
+                                }}
+                              >
+                                Go to Credit Control Ledger
+                              </button>
+                            )}
+                            {item.contract && (
+                              <button
+                                onClick={() => {
+                                  setActiveTab('vendors');
+                                }}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'var(--primary)',
+                                  fontSize: '10px',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                  textDecoration: 'underline'
+                                }}
+                              >
+                                Go to Vendor Contracts
                               </button>
                             )}
                           </div>

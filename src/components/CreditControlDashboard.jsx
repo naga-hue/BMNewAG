@@ -59,6 +59,8 @@ export default function CreditControlDashboard({
     { id: 'placementId', label: 'Placement ID', visible: true },
     { id: 'ems', label: 'EMS', visible: true },
     { id: 'clientCompany', label: 'Client Company', visible: true },
+    { id: 'simplicityClientNo', label: 'Client No', visible: true },
+    { id: 'simplicityCreditLimit', label: 'Credit Limit', visible: true },
     { id: 'noaRequired', label: 'NOA Required', visible: true },
     { id: 'consultantInvoiceReceived', label: 'Consultant Inv Recd', visible: true },
     { id: 'invoiceNumber', label: 'Invoice Number', visible: true },
@@ -85,7 +87,7 @@ export default function CreditControlDashboard({
     return columnsConfig.filter(col => {
       if (!col.visible) return false;
       if (activeSubTab === 'direct') {
-        return !['ems', 'noaRequired', 'consultantInvoiceReceived', 'riskTimeline', 'netTotal', 'factoredGross', 'vat', 'totalInclVat', 'payoutDate'].includes(col.id);
+        return !['ems', 'noaRequired', 'consultantInvoiceReceived', 'simplicityClientNo', 'simplicityCreditLimit', 'riskTimeline', 'netTotal', 'factoredGross', 'vat', 'totalInclVat', 'payoutDate'].includes(col.id);
       } else {
         return !['amount'].includes(col.id);
       }
@@ -154,6 +156,8 @@ export default function CreditControlDashboard({
 
   // Edit fields inside Details Modal
   const [editInvoiceNumber, setEditInvoiceNumber] = useState('');
+  const [editSimplicityClientNo, setEditSimplicityClientNo] = useState('');
+  const [editSimplicityCreditLimit, setEditSimplicityCreditLimit] = useState('');
   const [editGrossAmount, setEditGrossAmount] = useState('');
   const [editVatAmount, setEditVatAmount] = useState('');
   const [editRaisedDate, setEditRaisedDate] = useState('');
@@ -849,6 +853,84 @@ export default function CreditControlDashboard({
     let cellContent = null;
     
     switch (col.id) {
+      case 'simplicityClientNo':
+        cellContent = (
+          <input
+            type="text"
+            defaultValue={inv.simplicityClientNo || ''}
+            placeholder="Client No"
+            onBlur={async (e) => {
+              const val = e.target.value;
+              if (val !== inv.simplicityClientNo) {
+                const original = placements.find(p => p.id === inv.id);
+                if (original) {
+                  try {
+                    await onUpdatePlacement({ ...original, simplicityClientNo: val });
+                    onShowToast(`Updated Client Number to ${val}`, "success");
+                  } catch (err) {
+                    onShowToast(`Failed to update Client Number: ${err.message}`, "warning");
+                  }
+                }
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.target.blur();
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '80px',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text-primary)',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              fontSize: '11px',
+              fontFamily: 'monospace'
+            }}
+          />
+        );
+        break;
+      case 'simplicityCreditLimit':
+        cellContent = (
+          <input
+            type="text"
+            defaultValue={inv.simplicityCreditLimit || ''}
+            placeholder="Limit"
+            onBlur={async (e) => {
+              const val = e.target.value;
+              if (val !== inv.simplicityCreditLimit) {
+                const original = placements.find(p => p.id === inv.id);
+                if (original) {
+                  try {
+                    await onUpdatePlacement({ ...original, simplicityCreditLimit: val });
+                    onShowToast(`Updated Credit Limit to ${val}`, "success");
+                  } catch (err) {
+                    onShowToast(`Failed to update Credit Limit: ${err.message}`, "warning");
+                  }
+                }
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.target.blur();
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '90px',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text-primary)',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              fontSize: '11px',
+              fontFamily: 'monospace'
+            }}
+          />
+        );
+        break;
       case 'ems':
         cellContent = (
           <input 
@@ -1214,6 +1296,8 @@ export default function CreditControlDashboard({
   const handleOpenDetail = (invoice) => {
     setSelectedInvoice(invoice);
     setEditInvoiceNumber(invoice.invoiceNumber || '');
+    setEditSimplicityClientNo(invoice.simplicityClientNo || '');
+    setEditSimplicityCreditLimit(invoice.simplicityCreditLimit || '');
     setEditGrossAmount(String(invoice.grossBillAmount || ''));
     setEditVatAmount(String(invoice.vatAmount || ''));
     setEditRaisedDate(invoice.invoiceRaisedDate || '');
@@ -1304,6 +1388,8 @@ export default function CreditControlDashboard({
     const updatedPlacement = {
       ...selectedInvoice,
       invoiceNumber: editInvoiceNumber.trim() || null,
+      simplicityClientNo: editSimplicityClientNo.trim() || null,
+      simplicityCreditLimit: editSimplicityCreditLimit.trim() || null,
       grossBillAmount: gross,
       vatAmount: vat,
       totalInvoiceAmount: total,
@@ -2436,6 +2522,31 @@ export default function CreditControlDashboard({
                       />
                     </div>
                   </div>
+
+                  {selectedInvoice.invoiceType === 'simplicity' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">Simplicity Client Number</label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          value={editSimplicityClientNo} 
+                          onChange={(e) => setEditSimplicityClientNo(e.target.value)} 
+                          placeholder="e.g. 4035560"
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">Available Credit Limit</label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          value={editSimplicityCreditLimit} 
+                          onChange={(e) => setEditSimplicityCreditLimit(e.target.value)} 
+                          placeholder="e.g. £35,600.00"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '16px' }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>

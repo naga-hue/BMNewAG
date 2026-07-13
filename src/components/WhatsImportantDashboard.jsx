@@ -383,6 +383,31 @@ export default function WhatsImportantDashboard({
       };
     });
 
+  // 7b. Debtors Over 60 Days
+  const debtorOver60Alerts = placements
+    .filter(p => p.status !== 'dns' && p.clientPaymentStatus !== 'paid' && p.invoiceDueDate)
+    .filter(p => {
+      const due = new Date(p.invoiceDueDate);
+      const diff = ANCHOR_DATE.getTime() - due.getTime();
+      const overdueDays = diff > 0 ? Math.ceil(diff / (1000 * 60 * 60 * 24)) : 0;
+      return overdueDays > 60;
+    })
+    .map(p => {
+      const due = new Date(p.invoiceDueDate);
+      const diff = ANCHOR_DATE.getTime() - due.getTime();
+      const overdueDays = Math.ceil(diff / (1000 * 60 * 60 * 24));
+      const amount = Number(p.balanceOutstanding || p.totalInvoiceAmount || p.grossBillAmount || 0);
+      return {
+        id: `debtor-60-${p.id}`,
+        category: 'debtorAlerts',
+        title: `Overdue Debtor (>60 Days): ${p.clientCompany}`,
+        desc: `Invoice #${p.invoiceNumber || 'N/A'} for Candidate ${p.candidateName} is overdue by ${overdueDays} days. Outstanding: £${amount.toLocaleString()}`,
+        badge: '60+ Days Overdue',
+        type: 'critical',
+        placement: p
+      };
+    });
+
   // Combine everything
   const allAlerts = [
     ...horizonLeaves,
@@ -396,6 +421,7 @@ export default function WhatsImportantDashboard({
     ...horizonARInvoices,
     ...horizonAPBills,
     ...horizonInvoicesToRaise,
+    ...debtorOver60Alerts,
     ...upcomingEvents
   ];
 
@@ -414,6 +440,7 @@ export default function WhatsImportantDashboard({
   const categories = {
     absences: { title: 'Leave & Absences', icon: <Calendar size={16} />, color: '#0ea5e9', items: [] },
     filings: { title: 'Statutory Filings', icon: <Clock size={16} />, color: '#f59e0b', items: [] },
+    debtorAlerts: { title: 'Debtors Over 60 Days', icon: <AlertTriangle size={16} />, color: '#ef4444', items: [] },
     docAlerts: { title: 'Document Alerts', icon: <AlertTriangle size={16} />, color: '#ef4444', items: [] },
     arAlerts: { title: 'Accounts Receivable (AR)', icon: <TrendingUp size={16} />, color: '#10b981', items: [] },
     apAlerts: { title: 'Accounts Payable (AP)', icon: <Receipt size={16} />, color: '#f43f5e', items: [] },

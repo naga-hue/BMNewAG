@@ -167,6 +167,7 @@ export default function CreditControlDashboard({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedFileUrl, setUploadedFileUrl] = useState('');
   const [uploadedFileName, setUploadedFileName] = useState('');
+  const [expandDebtors60, setExpandDebtors60] = useState(false);
 
   // Helper date conversions
   const todayStr = useMemo(() => {
@@ -748,14 +749,12 @@ export default function CreditControlDashboard({
     const activeInvoices = filteredInvoices.filter(inv => 
       inv.invoiceType === 'simplicity' && 
       !['legal', 'disputed', 'paid', 'written-off', 'dns-rebate', 'overdue'].includes(inv.paymentStatus) &&
-      inv.balanceOutstanding > 0
+      inv.balanceOutstanding > 0 &&
+      (inv.simplicityPayoutDate >= '2026-07-13' || inv.overridePayoutDate >= '2026-07-13') // Only current and future weeks
     );
 
     activeInvoices.forEach(inv => {
-      let payoutFriday = inv.overridePayoutDate || inv.simplicityPayoutDate || '—';
-      if (payoutFriday !== '—' && payoutFriday < '2026-07-13') {
-        payoutFriday = '2026-07-17';
-      }
+      const payoutFriday = inv.overridePayoutDate || inv.simplicityPayoutDate || '—';
       if (!groups[payoutFriday]) {
         groups[payoutFriday] = [];
       }
@@ -778,6 +777,24 @@ export default function CreditControlDashboard({
         totalInclVatSum
       };
     });
+  }, [filteredInvoices]);
+
+  const simplicityPriorWeeks = useMemo(() => {
+    return filteredInvoices.filter(inv => 
+      inv.invoiceType === 'simplicity' && 
+      !['legal', 'disputed', 'paid', 'written-off', 'dns-rebate', 'overdue'].includes(inv.paymentStatus) &&
+      inv.balanceOutstanding > 0 &&
+      (!inv.simplicityPayoutDate || inv.simplicityPayoutDate < '2026-07-13') &&
+      (!inv.overridePayoutDate || inv.overridePayoutDate < '2026-07-13') // Prior period weeks
+    );
+  }, [filteredInvoices]);
+
+  const debtorsOver60 = useMemo(() => {
+    return filteredInvoices.filter(inv =>
+      inv.balanceOutstanding > 0 &&
+      inv.overdueDays > 60 &&
+      !['paid', 'legal', 'written-off', 'dns-rebate'].includes(inv.paymentStatus)
+    );
   }, [filteredInvoices]);
 
   // Helper to render table header cell dynamically
@@ -1351,7 +1368,74 @@ export default function CreditControlDashboard({
         </div>
       )}
 
-      {/* -------------------------------------------------------------
+            {/* DEBTORS OVER 60 DAYS BANNER PANEL */}
+      {debtorsOver60.length > 0 && (
+        <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.15)', borderRadius: '12px', padding: '16px 20px', marginTop: '20px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--danger)' }}>
+              <AlertTriangle size={18} />
+              <h4 style={{ margin: 0, fontWeight: 700, fontSize: '13px', textTransform: 'uppercase' }}>
+                ⚠️ Ageing Debtors Over 60 Days (Total Outstanding: £{debtorsOver60.reduce((sum, inv) => sum + inv.balanceOutstanding, 0).toLocaleString()})
+              </h4>
+            </div>
+            <button
+              onClick={() => setExpandDebtors60(!expandDebtors60)}
+              style={{
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-primary)',
+                padding: '4px 12px',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              {expandDebtors60 ? 'Collapse Details' : 'Expand Details'}
+            </button>
+          </div>
+
+          {expandDebtors60 && (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11.5px', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                    <th style={{ padding: '8px 10px' }}>Placement ID</th>
+                    <th style={{ padding: '8px 10px' }}>Client Company</th>
+                    <th style={{ padding: '8px 10px' }}>Candidate Name</th>
+                    <th style={{ padding: '8px 10px' }}>Due Date</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>Days Overdue</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>Amount Outstanding</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {debtorsOver60.map(inv => (
+                    <tr key={inv.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                      <td style={{ padding: '10px 10px', fontWeight: 600 }}>{inv.placementId || 'N/A'}</td>
+                      <td style={{ padding: '10px 10px', fontWeight: 600, color: 'var(--text-primary)' }}>{inv.clientCompany}</td>
+                      <td style={{ padding: '10px 10px' }}>{inv.candidateName}</td>
+                      <td style={{ padding: '10px 10px', color: 'var(--danger)' }}>{inv.invoiceDueDate}</td>
+                      <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>{inv.overdueDays} Days</td>
+                      <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>£{inv.balanceOutstanding.toLocaleString()}</td>
+                      <td style={{ padding: '10px 10px', textAlign: 'center' }}>
+                        <button
+                          onClick={() => handleOpenDetail(inv)}
+                          style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline', padding: 0, fontSize: '11px' }}
+                        >
+                          View Details
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+{/* -------------------------------------------------------------
           TABS & FILTERS SECTION
           ------------------------------------------------------------- */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '8px' }}>
@@ -1899,7 +1983,16 @@ export default function CreditControlDashboard({
                 {/* 3. ACTIVE SIMPLICITY RECORDS GROUPED BY WEEK */}
                 <div>
                   <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '12px', letterSpacing: '0.5px' }}>
-                    📅 Active Weekly Pipeline:
+                                    {/* 2b. PRIOR PERIOD SIMPLICITY RECORDS */}
+                {simplicityPriorWeeks.length > 0 && renderSimplicityTable(
+                  "⏳ Outstanding Simplicity Invoices (Prior Periods)",
+                  simplicityPriorWeeks,
+                  "rgba(156, 163, 175, 0.04)",
+                  "var(--text-secondary)",
+                  "Prior Period Placements"
+                )}
+
+📅 Active Weekly Pipeline:
                   </span>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                     {simplicityActiveWeeks.map(week => {

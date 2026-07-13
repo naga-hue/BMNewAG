@@ -260,31 +260,32 @@ export default function WhatsImportantDashboard({
       return items;
     });
 
-  // 5. Operational Deadlines
-  // Placements starting
+  // 5. Candidate Starts
   const horizonPlacementStarts = placements
     .filter(p => p.status !== 'dns' && isDateInRange(p.startDate, rangeStart, rangeEnd))
     .map(p => ({
       id: `p-start-${p.id}`,
-      category: 'operational',
-      title: `Placement Starts: ${p.candidateName}`,
-      desc: `Starts placement at ${p.clientName} as ${p.jobTitle || 'Recruit'}. Split: ${p.splits?.map(s => s.staffName).join(', ') || 'No splits'}.`,
+      category: 'candidateStarts',
+      title: `Candidate Start: ${p.candidateName}`,
+      desc: `Starts placement at ${p.clientCompany} as ${p.jobTitle || 'Recruit'}. Split: ${p.splits?.map(s => s.staffName).join(', ') || 'No splits'}.`,
       badge: 'Placement Start',
-      type: 'indigo'
+      type: 'indigo',
+      placement: p
     }));
 
-  // Contracts expiring (Vendor/App contracts)
+  // Vendor Contracts Expiring
   const horizonContractExpiries = contracts
     .filter(c => isDateInRange(c.endDate, rangeStart, rangeEnd))
     .map(c => {
       const vend = vendors.find(v => v.id === c.vendorId);
       return {
         id: `contract-exp-${c.id}`,
-        category: 'operational',
-        title: `Vendor Contract Ending`,
-        desc: `Contract for ${c.name} with ${vend ? vend.name : 'Unknown Vendor'} expires on ${c.endDate}. Value: ${getContractCostText(c)}.`,
+        category: 'expiringContracts',
+        title: `Vendor Contract Expiring: ${c.name}`,
+        desc: `Contract with ${vend ? vend.name : 'Unknown Vendor'} expires on ${c.endDate}. Value: ${getContractCostText(c)}.`,
         badge: 'Contract Expiring',
-        type: 'warning'
+        type: 'warning',
+        contract: c
       };
     });
 
@@ -354,6 +355,34 @@ export default function WhatsImportantDashboard({
       };
     });
 
+  // Invoices to be Raised (unpaid and has no invoice number yet)
+  const horizonInvoicesToRaise = placements
+    .filter(p => p.status !== 'dns' && !p.invoiceNumber)
+    .filter(p => {
+      const triggerDateStr = p.invoiceTriggerCustomDate || p.startDate;
+      if (!triggerDateStr) return false;
+      const triggerDate = new Date(triggerDateStr);
+      const isExpired = triggerDate < ANCHOR_DATE;
+      
+      return isExpired 
+        ? (activeHorizon === 'today' || activeHorizon === 'this_week')
+        : isDateInRange(triggerDateStr, rangeStart, rangeEnd);
+    })
+    .map(p => {
+      const triggerDateStr = p.invoiceTriggerCustomDate || p.startDate;
+      const triggerDate = new Date(triggerDateStr);
+      const isExpired = triggerDate < ANCHOR_DATE;
+      return {
+        id: `raise-${p.id}`,
+        category: 'invoicesToRaise',
+        title: `Raise Invoice: ${p.clientCompany}`,
+        desc: `Candidate: ${p.candidateName}. Gross billing: £${(p.grossBillAmount || 0).toLocaleString()}. Trigger event: ${p.invoiceTriggerType || 'start-date'} (${triggerDateStr})`,
+        badge: isExpired ? 'Raise Overdue' : 'Action Required',
+        type: isExpired ? 'critical' : 'warning',
+        placement: p
+      };
+    });
+
   // Combine everything
   const allAlerts = [
     ...horizonLeaves,
@@ -366,6 +395,7 @@ export default function WhatsImportantDashboard({
     ...horizonContractExpiries,
     ...horizonARInvoices,
     ...horizonAPBills,
+    ...horizonInvoicesToRaise,
     ...upcomingEvents
   ];
 
@@ -387,8 +417,10 @@ export default function WhatsImportantDashboard({
     docAlerts: { title: 'Document Alerts', icon: <AlertTriangle size={16} />, color: '#ef4444', items: [] },
     arAlerts: { title: 'Accounts Receivable (AR)', icon: <TrendingUp size={16} />, color: '#10b981', items: [] },
     apAlerts: { title: 'Accounts Payable (AP)', icon: <Receipt size={16} />, color: '#f43f5e', items: [] },
+    invoicesToRaise: { title: 'Invoices to be Raised', icon: <FileText size={16} />, color: '#8b5cf6', items: [] },
+    candidateStarts: { title: 'Candidate Starts', icon: <User size={16} />, color: '#6366f1', items: [] },
+    expiringContracts: { title: 'Vendor Contracts Expiring', icon: <Briefcase size={16} />, color: '#f59e0b', items: [] },
     celebrations: { title: 'Birthdays & Anniversaries', icon: <Cake size={16} />, color: '#ec4899', items: [] },
-    operational: { title: 'Operational Deadlines', icon: <Briefcase size={16} />, color: '#6366f1', items: [] },
     events: { title: 'Other Events', icon: <Info size={16} />, color: '#10b981', items: [] }
   };
 
@@ -523,7 +555,8 @@ export default function WhatsImportantDashboard({
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '14px',
-                boxShadow: '0 2px 10px -2px rgba(0,0,0,0.1)'
+                boxShadow: '0 2px 10px -2px rgba(0,0,0,0.1)',
+                gridColumn: key === 'arAlerts' ? '1 / -1' : 'auto'
               }}
             >
               
@@ -550,149 +583,266 @@ export default function WhatsImportantDashboard({
               </div>
 
               {/* Category Items List */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
-                {hasItems ? (
-                  category.items.map(item => {
-                    const badgeStyle = getHorizonBadgeColor(item.type);
-                    return (
-                      <div 
-                        key={item.id}
-                        className="important-alert-card"
-                        style={{
-                          border: '1px solid var(--border-color)',
-                          background: 'var(--bg-primary)',
-                          borderRadius: '8px',
-                          padding: '12px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '6px',
-                          borderLeft: `4px solid ${category.color}`,
-                          transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-                          cursor: 'default'
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                            {item.title}
-                          </span>
-                          <span style={{ 
-                            fontSize: '9px', 
-                            fontWeight: 700,
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            textTransform: 'uppercase',
-                            whiteSpace: 'nowrap',
-                            ...badgeStyle
-                          }}>
-                            {item.badge}
-                          </span>
-                        </div>
-                        
-                        <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
-                          {item.desc}
-                        </p>
-
-                        {/* Navigation Quick Links */}
-                        {(item.staffMember || item.company || item.placement || item.contract) && (
-                          <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                            {item.staffMember && (
-                              <button
-                                onClick={() => {
-                                  setSelectedStaff(item.staffMember);
-                                  setActiveTab('staff');
-                                }}
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  color: 'var(--primary)',
-                                  fontSize: '10px',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                  padding: 0,
-                                  textDecoration: 'underline'
-                                }}
-                              >
-                                View Staff Profile
-                              </button>
+              {key === 'arAlerts' ? (() => {
+                const simplicityAR = category.items.filter(item => item.placement?.invoiceType === 'simplicity');
+                const directAR = category.items.filter(item => item.placement?.invoiceType !== 'simplicity');
+                
+                return (
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', marginTop: '4px' }}>
+                    
+                    {/* Simplicity Table */}
+                    <div style={{ flex: 1, minWidth: '320px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <h4 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', margin: '0 0 4px 0', display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border-color)', paddingBottom: '6px' }}>
+                        <span>Simplicity Accounts Receivable</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>({simplicityAR.length} due)</span>
+                      </h4>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
+                          <thead>
+                            <tr style={{ color: 'var(--text-muted)' }}>
+                              <th style={{ padding: '6px 4px', fontWeight: 600 }}>Client / Candidate</th>
+                              <th style={{ padding: '6px 4px', fontWeight: 600 }}>Due Date</th>
+                              <th style={{ padding: '6px 4px', fontWeight: 600, textAlign: 'right' }}>Amount</th>
+                              <th style={{ padding: '6px 4px', fontWeight: 600, textAlign: 'center' }}>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {simplicityAR.length > 0 ? simplicityAR.map(item => (
+                              <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                                <td style={{ padding: '8px 4px' }}>
+                                  <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.placement.clientCompany}</div>
+                                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{item.placement.candidateName}</div>
+                                </td>
+                                <td style={{ padding: '8px 4px' }}>
+                                  <span style={{ 
+                                    color: item.type === 'critical' ? 'var(--danger)' : 'inherit',
+                                    fontWeight: item.type === 'critical' ? 700 : 'normal'
+                                  }}>
+                                    {item.placement.invoiceDueDate}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '8px 4px', textAlign: 'right', fontWeight: 600 }}>
+                                  £{(item.placement.balanceOutstanding || 0).toLocaleString()}
+                                </td>
+                                <td style={{ padding: '8px 4px', textAlign: 'center' }}>
+                                  <button
+                                    onClick={() => setActiveTab('credit_control')}
+                                    style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline', padding: 0, fontSize: '10px' }}
+                                  >
+                                    Ledger
+                                  </button>
+                                </td>
+                              </tr>
+                            )) : (
+                              <tr>
+                                <td colSpan="4" style={{ padding: '24px 0', color: 'var(--text-muted)', textAlign: 'center' }}>No simplicity invoices due</td>
+                              </tr>
                             )}
-                            {item.company && (
-                              <button
-                                onClick={() => {
-                                  setSelectedCompany(item.company);
-                                  setActiveTab('directory');
-                                }}
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  color: 'var(--primary)',
-                                  fontSize: '10px',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                  padding: 0,
-                                  textDecoration: 'underline'
-                                }}
-                              >
-                                Go to Compliance Tasks
-                              </button>
-                            )}
-                            {item.placement && (
-                              <button
-                                onClick={() => {
-                                  setActiveTab('credit_control');
-                                }}
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  color: 'var(--primary)',
-                                  fontSize: '10px',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                  padding: 0,
-                                  textDecoration: 'underline'
-                                }}
-                              >
-                                Go to Credit Control Ledger
-                              </button>
-                            )}
-                            {item.contract && (
-                              <button
-                                onClick={() => {
-                                  setActiveTab('vendors');
-                                }}
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  color: 'var(--primary)',
-                                  fontSize: '10px',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                  padding: 0,
-                                  textDecoration: 'underline'
-                                }}
-                              >
-                                Go to Vendor Contracts
-                              </button>
-                            )}
-                          </div>
-                        )}
+                          </tbody>
+                        </table>
                       </div>
-                    );
-                  })
-                ) : (
-                  <div style={{ 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    padding: '24px 0',
-                    color: 'var(--text-muted)',
-                    gap: '4px',
-                    flex: 1
-                  }}>
-                    <span style={{ fontSize: '11px' }}>No items pending</span>
+                    </div>
+
+                    {/* Direct Table */}
+                    <div style={{ flex: 1, minWidth: '320px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <h4 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', margin: '0 0 4px 0', display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border-color)', paddingBottom: '6px' }}>
+                        <span>Direct Accounts Receivable</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>({directAR.length} due)</span>
+                      </h4>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
+                          <thead>
+                            <tr style={{ color: 'var(--text-muted)' }}>
+                              <th style={{ padding: '6px 4px', fontWeight: 600 }}>Client / Candidate</th>
+                              <th style={{ padding: '6px 4px', fontWeight: 600 }}>Due Date</th>
+                              <th style={{ padding: '6px 4px', fontWeight: 600, textAlign: 'right' }}>Amount</th>
+                              <th style={{ padding: '6px 4px', fontWeight: 600, textAlign: 'center' }}>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {directAR.length > 0 ? directAR.map(item => (
+                              <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                                <td style={{ padding: '8px 4px' }}>
+                                  <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.placement.clientCompany}</div>
+                                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{item.placement.candidateName}</div>
+                                </td>
+                                <td style={{ padding: '8px 4px' }}>
+                                  <span style={{ 
+                                    color: item.type === 'critical' ? 'var(--danger)' : 'inherit',
+                                    fontWeight: item.type === 'critical' ? 700 : 'normal'
+                                  }}>
+                                    {item.placement.invoiceDueDate}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '8px 4px', textAlign: 'right', fontWeight: 600 }}>
+                                  £{(item.placement.balanceOutstanding || 0).toLocaleString()}
+                                </td>
+                                <td style={{ padding: '8px 4px', textAlign: 'center' }}>
+                                  <button
+                                    onClick={() => setActiveTab('credit_control')}
+                                    style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline', padding: 0, fontSize: '10px' }}
+                                  >
+                                    Ledger
+                                  </button>
+                                </td>
+                              </tr>
+                            )) : (
+                              <tr>
+                                <td colSpan="4" style={{ padding: '24px 0', color: 'var(--text-muted)', textAlign: 'center' }}>No direct invoices due</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
                   </div>
-                )}
-              </div>
+                );
+              })() : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
+                  {hasItems ? (
+                    category.items.map(item => {
+                      const badgeStyle = getHorizonBadgeColor(item.type);
+                      return (
+                        <div 
+                          key={item.id}
+                          className="important-alert-card"
+                          style={{
+                            border: '1px solid var(--border-color)',
+                            background: 'var(--bg-primary)',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '6px',
+                            borderLeft: `4px solid ${category.color}`,
+                            transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                            cursor: 'default'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              {item.title}
+                            </span>
+                            <span style={{ 
+                              fontSize: '9px', 
+                              fontWeight: 700,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              textTransform: 'uppercase',
+                              whiteSpace: 'nowrap',
+                              ...badgeStyle
+                            }}>
+                              {item.badge}
+                            </span>
+                          </div>
+                          
+                          <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
+                            {item.desc}
+                          </p>
+
+                          {/* Navigation Quick Links */}
+                          {(item.staffMember || item.company || item.placement || item.contract) && (
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                              {item.staffMember && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedStaff(item.staffMember);
+                                    setActiveTab('staff');
+                                  }}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--primary)',
+                                    fontSize: '10px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    textDecoration: 'underline'
+                                  }}
+                                >
+                                  View Staff Profile
+                                </button>
+                              )}
+                              {item.company && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedCompany(item.company);
+                                    setActiveTab('directory');
+                                  }}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--primary)',
+                                    fontSize: '10px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    textDecoration: 'underline'
+                                  }}
+                                >
+                                  Go to Compliance Tasks
+                                </button>
+                              )}
+                              {item.placement && (
+                                <button
+                                  onClick={() => {
+                                    setActiveTab('credit_control');
+                                  }}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--primary)',
+                                    fontSize: '10px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    textDecoration: 'underline'
+                                  }}
+                                >
+                                  Go to Credit Control Ledger
+                                </button>
+                              )}
+                              {item.contract && (
+                                <button
+                                  onClick={() => {
+                                    setActiveTab('vendors');
+                                  }}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--primary)',
+                                    fontSize: '10px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    textDecoration: 'underline'
+                                  }}
+                                >
+                                  Go to Vendor Contracts
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div style={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      padding: '24px 0',
+                      color: 'var(--text-muted)',
+                      gap: '4px',
+                      flex: 1
+                    }}>
+                      <span style={{ fontSize: '11px' }}>No items pending</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

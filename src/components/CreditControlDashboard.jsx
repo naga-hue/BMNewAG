@@ -752,7 +752,10 @@ export default function CreditControlDashboard({
     );
 
     activeInvoices.forEach(inv => {
-      const payoutFriday = inv.overridePayoutDate || inv.simplicityPayoutDate || '—';
+      let payoutFriday = inv.overridePayoutDate || inv.simplicityPayoutDate || '—';
+      if (payoutFriday !== '—' && payoutFriday < '2026-07-13') {
+        payoutFriday = '2026-07-17';
+      }
       if (!groups[payoutFriday]) {
         groups[payoutFriday] = [];
       }

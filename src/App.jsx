@@ -49,7 +49,7 @@ import StaffDetail from './components/StaffDetail';
 import StaffForm from './components/StaffForm';
 import StaffExitModal from './components/StaffExitModal';
 import ExitEmailTriggerModal from './components/ExitEmailTriggerModal';
-import CreditControlDashboard from './components/CreditControlDashboard';
+import CreditControlDashboard from './components/credit-control';
 import CashflowDashboard from './components/CashflowDashboard';
 import BulkStaffImportModal from './components/BulkStaffImportModal';
 import LeavesDashboard from './components/LeavesDashboard';

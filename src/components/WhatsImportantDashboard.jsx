@@ -148,9 +148,11 @@ export default function WhatsImportantDashboard({
         desc: `On Leave: ${req.startDate} to ${req.endDate} (${req.totalDays} Days) - Reason: ${req.leaveType || 'General'}`,
         badge: 'Leave Active',
         type: 'info',
-        staffMember: sMember
+        staffMember: sMember,
+        startDate: req.startDate
       };
-    });
+    })
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
 
   const horizonHolidays = holidays
     .filter(h => isDateInRange(h.date, rangeStart, rangeEnd))
@@ -162,9 +164,11 @@ export default function WhatsImportantDashboard({
         title: h.name,
         desc: `Public Holiday for ${comp ? comp.name : 'all offices'} on ${h.date}`,
         badge: 'Public Holiday',
-        type: 'success'
+        type: 'success',
+        date: h.date
       };
-    });
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
 
   // 2. Statutory Filing Deadlines
   const horizonFilingTasks = companies.flatMap(c => {
@@ -178,12 +182,12 @@ export default function WhatsImportantDashboard({
         desc: `Filing due for ${c.name} (Deadline: ${t.dueDate}). ${t.notes ? 'Notes: ' + t.notes : ''}`,
         badge: 'Filing Due',
         type: 'warning',
-        company: c
+        company: c,
+        dueDate: t.dueDate
       }));
-  });
+  }).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
   // 3. Company Document Alerts
-  // Outstanding missing contract alerts (rendered under "Today" or "This Month" as reminders)
   const missingContractAlerts = (activeHorizon === 'today' || activeHorizon === 'this_month') 
     ? activeStaff
         .filter(s => !s.documents || !s.documents.some(d => d.type === 'appointment'))
@@ -198,14 +202,13 @@ export default function WhatsImportantDashboard({
         }))
     : [];
 
-  // Expiry alerts for company insurances
   const insuranceExpiryAlerts = companies.flatMap(c => {
     if (!c.insurance || !c.insurance.expiryDate) return [];
     const expDate = new Date(c.insurance.expiryDate);
     const expired = expDate < ANCHOR_DATE;
     
     const matchesPeriod = expired 
-      ? (activeHorizon === 'today') // expired show up immediately as critical items today
+      ? (activeHorizon === 'today')
       : isDateInRange(c.insurance.expiryDate, rangeStart, rangeEnd);
 
     if (!matchesPeriod) return [];
@@ -219,9 +222,10 @@ export default function WhatsImportantDashboard({
         : `Liability coverage expires on ${c.insurance.expiryDate} (Policy: ${c.insurance.policyNumber})`,
       badge: expired ? 'Critical Expiry' : 'Insurance Expiring',
       type: 'critical',
-      company: c
+      company: c,
+      expiryDate: c.insurance.expiryDate
     }];
-  });
+  }).sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
 
   // 4. Birthdays & Anniversaries
   const horizonCelebrations = staff
@@ -268,8 +272,10 @@ export default function WhatsImportantDashboard({
       desc: `Starts placement at ${p.clientCompany} as ${p.jobTitle || 'Recruit'}. Split: ${p.splits?.map(s => s.staffName).join(', ') || 'No splits'}.`,
       badge: 'Placement Start',
       type: 'indigo',
-      placement: p
-    }));
+      placement: p,
+      startDate: p.startDate
+    }))
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
 
   // Vendor Contracts Expiring
   const horizonContractExpiries = contracts
@@ -283,9 +289,11 @@ export default function WhatsImportantDashboard({
         desc: `Contract with ${vend ? vend.name : 'Unknown Vendor'} expires on ${c.endDate}. Value: ${getContractCostText(c)}.`,
         badge: 'Contract Expiring',
         type: 'warning',
-        contract: c
+        contract: c,
+        endDate: c.endDate
       };
-    });
+    })
+    .sort((a, b) => a.endDate.localeCompare(b.endDate));
 
   // 6. Other Upcoming Events
   const upcomingEvents = (activeHorizon === 'today') 
@@ -323,9 +331,11 @@ export default function WhatsImportantDashboard({
         desc: `Invoice #${p.invoiceNumber} for Candidate ${p.candidateName} (Amount: £${(p.balanceOutstanding || p.totalInvoiceAmount || 0).toLocaleString()}). Due: ${p.invoiceDueDate}`,
         badge: isExpired ? 'Invoice Overdue' : 'Payment Due',
         type: isExpired ? 'critical' : 'warning',
-        placement: p
+        placement: p,
+        dueDate: p.invoiceDueDate
       };
-    });
+    })
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
   // 8. Accounts Payable (AP)
   const horizonAPBills = contracts
@@ -349,9 +359,11 @@ export default function WhatsImportantDashboard({
         desc: `Vendor contract payout for ${c.name} (Amount: ${getContractCostText(c)}). Due: ${c.paymentDueDate}`,
         badge: isExpired ? 'Payment Overdue' : 'Payment Imminent',
         type: isExpired ? 'critical' : 'warning',
-        contract: c
+        contract: c,
+        dueDate: c.paymentDueDate
       };
-    });
+    })
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
   // Invoices to be Raised (unpaid and has no invoice number yet)
   const horizonInvoicesToRaise = placements
@@ -377,9 +389,11 @@ export default function WhatsImportantDashboard({
         desc: `Candidate: ${p.candidateName}. Gross billing: £${(p.grossBillAmount || 0).toLocaleString()}. Trigger event: ${p.invoiceTriggerType || 'start-date'} (${triggerDateStr})`,
         badge: isExpired ? 'Raise Overdue' : 'Action Required',
         type: isExpired ? 'critical' : 'warning',
-        placement: p
+        placement: p,
+        triggerDate: triggerDateStr
       };
-    });
+    })
+    .sort((a, b) => a.triggerDate.localeCompare(b.triggerDate));
 
   // 7b. Debtors Over 60 Days
   const debtorOver60Alerts = placements
@@ -402,9 +416,11 @@ export default function WhatsImportantDashboard({
         desc: `Invoice #${p.invoiceNumber || 'N/A'} for Candidate ${p.candidateName} is overdue by ${overdueDays} days. Outstanding: £${amount.toLocaleString()}`,
         badge: '60+ Days Overdue',
         type: 'critical',
-        placement: p
+        placement: p,
+        dueDate: p.invoiceDueDate
       };
-    });
+    })
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
   // Combine everything
   const allAlerts = [

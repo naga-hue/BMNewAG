@@ -41,6 +41,7 @@ import { initialCommissionPolicies } from './mockCommissions';
 import { initialVendors, initialContracts, initialAssetAssignments } from './mockVendors';
 import { initialPlacements } from './mockPlacements';
 import { firebaseService } from './services/firebase';
+import { useBoundStore } from './store/useBoundStore';
 import Dashboard from './components/Dashboard';
 import CompanyDetail from './components/CompanyDetail';
 import CompanyForm from './components/CompanyForm';
@@ -91,17 +92,17 @@ export default function App() {
   });
 
   // Database lists
-  const [companies, setCompanies] = useState([]);
-  const [staff, setStaff] = useState([]);
-  const [leavePolicies, setLeavePolicies] = useState([]);
-  const [holidays, setHolidays] = useState([]);
-  const [leaveRequests, setLeaveRequests] = useState([]);
+  const companies = useBoundStore(state => state.companies);
+  const staff = useBoundStore(state => state.staff);
+  const leavePolicies = useBoundStore(state => state.leavePolicies);
+  const holidays = useBoundStore(state => state.holidays);
+  const leaveRequests = useBoundStore(state => state.leaveRequests);
   const [commissionPolicies, setCommissionPolicies] = useState([]);
-  const [vendors, setVendors] = useState([]);
-  const [contracts, setContracts] = useState([]);
+  const vendors = useBoundStore(state => state.vendors);
+  const contracts = useBoundStore(state => state.contracts);
   const [assetAssignments, setAssetAssignments] = useState([]);
-  const [placements, setPlacements] = useState([]);
-  const [expenses, setExpenses] = useState([]);
+  const placements = useBoundStore(state => state.placements);
+  const expenses = useBoundStore(state => state.expenses);
   const [nominalCodes, setNominalCodes] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [payrollRecords, setPayrollRecords] = useState([]);
@@ -111,6 +112,66 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('whats_important');
   const [letterTemplates, setLetterTemplates] = useState([]);
   const [fxRatesVersion, setFxRatesVersion] = useState(0);
+
+  const initSubscriptions = useBoundStore(state => state.initSubscriptions);
+
+  useEffect(() => {
+    const unsubscribe = initSubscriptions({
+      companies: initialCompanies,
+      staff: initialStaff,
+      leavePolicies: initialPolicies,
+      holidays: initialHolidays,
+      leaveRequests: initialLeaveRequests,
+      placements: initialPlacements,
+      expenses: initialExpenses,
+      contracts: initialContracts,
+      vendors: initialVendors
+    });
+
+    // Handle initial current user sync on load when staff loads
+    const checkUser = () => {
+      const storedId = localStorage.getItem('bm-logged-in-user-id');
+      if (storedId === 'super-admin') {
+        setCurrentUser(DEFAULT_ADMIN_USER);
+      } else if (storedId && useBoundStore.getState().staff.length > 0) {
+        const found = useBoundStore.getState().staff.find(s => s.id === storedId);
+        if (found) {
+          const permissions = found.permissions || {
+            role: found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
+            dataScope: found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
+            allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors']
+          };
+          setCurrentUser({ ...found, permissions });
+        }
+      }
+    };
+    checkUser();
+    
+    // Listen to changes to staff in store to auto-sync user permissions
+    const unsubStaffStore = useBoundStore.subscribe(
+      (state) => state.staff,
+      (staffList) => {
+        const storedId = localStorage.getItem('bm-logged-in-user-id');
+        if (storedId && storedId !== 'super-admin') {
+          const found = staffList.find(s => s.id === storedId);
+          if (found) {
+            const permissions = found.permissions || {
+              role: found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
+              dataScope: found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
+              allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors']
+            };
+            setCurrentUser({ ...found, permissions });
+          }
+        }
+      }
+    );
+
+    return () => {
+      unsubscribe();
+      unsubStaffStore();
+    };
+  }, [initSubscriptions]);
+
 
   // Fetch live exchange rates on mount and trigger a re-render when finished
   useEffect(() => {
@@ -447,15 +508,7 @@ export default function App() {
 
   const { scopedCompanies, scopedStaff, scopedLeaves, scopedPlacements, scopedExpenses } = getScopedData();
 
-  // Sync companies from Firebase Service (with LocalStorage fallback)
-  useEffect(() => {
-    const unsubscribe = firebaseService.subscribeCompanies((updatedList) => {
-      const sorted = [...updatedList].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-      setCompanies(sorted);
-    }, initialCompanies);
 
-    return () => unsubscribe();
-  }, []);
 
   // Update selectedCompany when companies list updates
   useEffect(() => {
@@ -467,36 +520,7 @@ export default function App() {
     }
   }, [companies]);
 
-  // Sync staff from Firebase Service (with LocalStorage fallback)
-  useEffect(() => {
-    const unsubscribe = firebaseService.subscribeStaff((updatedList) => {
-      const sorted = [...updatedList].sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
-      setStaff(sorted);
 
-      // Auto-restore or synchronize active logged-in user profile
-      const storedId = localStorage.getItem('bm-logged-in-user-id');
-      if (storedId) {
-        if (storedId === 'super-admin') {
-          setCurrentUser(DEFAULT_ADMIN_USER);
-        } else {
-          const found = updatedList.find(s => s.id === storedId);
-          if (found) {
-            const permissions = found.permissions || {
-              role: found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
-              dataScope: found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
-              allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors']
-            };
-            setCurrentUser({
-              ...found,
-              permissions
-            });
-          }
-        }
-      }
-    }, initialStaff);
-
-    return () => unsubscribe();
-  }, []);
 
   // Update selectedStaff when staff list updates
   useEffect(() => {
@@ -508,29 +532,11 @@ export default function App() {
     }
   }, [staff]);
 
-  // Sync leave policies
-  useEffect(() => {
-    const unsubscribe = firebaseService.subscribeLeavePolicies((updatedList) => {
-      setLeavePolicies(updatedList);
-    }, initialPolicies);
-    return () => unsubscribe();
-  }, []);
 
-  // Sync holidays
-  useEffect(() => {
-    const unsubscribe = firebaseService.subscribeHolidays((updatedList) => {
-      setHolidays(updatedList);
-    }, initialHolidays);
-    return () => unsubscribe();
-  }, []);
 
-  // Sync leave requests
-  useEffect(() => {
-    const unsubscribe = firebaseService.subscribeLeaveRequests((updatedList) => {
-      setLeaveRequests(updatedList);
-    }, initialLeaveRequests);
-    return () => unsubscribe();
-  }, []);
+
+
+
 
   // Sync commission policies
   useEffect(() => {
@@ -540,22 +546,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Sync vendors
-  useEffect(() => {
-    const unsubscribe = firebaseService.subscribeVendors((updatedList) => {
-      const sorted = [...updatedList].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-      setVendors(sorted);
-    }, initialVendors);
-    return () => unsubscribe();
-  }, []);
 
-  // Sync contracts
-  useEffect(() => {
-    const unsubscribe = firebaseService.subscribeContracts((updatedList) => {
-      setContracts(updatedList);
-    }, initialContracts);
-    return () => unsubscribe();
-  }, []);
 
   // Sync asset assignments
   useEffect(() => {
@@ -567,21 +558,7 @@ export default function App() {
 
 
 
-  // Sync placements
-  useEffect(() => {
-    const unsubscribe = firebaseService.subscribePlacements((updatedList) => {
-      setPlacements(updatedList);
-    }, initialPlacements);
-    return () => unsubscribe();
-  }, []);
 
-  // Sync expenses
-  useEffect(() => {
-    const unsubscribe = firebaseService.subscribeExpenses((updatedList) => {
-      setExpenses(updatedList);
-    }, initialExpenses);
-    return () => unsubscribe();
-  }, []);
 
   // Sync nominal codes
   useEffect(() => {

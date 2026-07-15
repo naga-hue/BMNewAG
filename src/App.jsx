@@ -40,6 +40,7 @@ import { initialPolicies, initialHolidays, initialLeaveRequests } from './mockLe
 import { initialCommissionPolicies } from './mockCommissions';
 import { initialVendors, initialContracts, initialAssetAssignments } from './mockVendors';
 import { initialPlacements } from './mockPlacements';
+import { initialPayrollPolicies } from './mockPayroll';
 import { firebaseService } from './services/firebase';
 import { useBoundStore } from './store/useBoundStore';
 import Dashboard from './components/Dashboard';
@@ -128,7 +129,8 @@ export default function App() {
       expenses: initialExpenses,
       contracts: initialContracts,
       vendors: initialVendors,
-      nominalCodes: initialNominalCodes
+      nominalCodes: initialNominalCodes,
+      payrollPolicies: initialPayrollPolicies
     });
 
     // Handle initial current user sync on load when staff loads

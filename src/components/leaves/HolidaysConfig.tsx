@@ -182,54 +182,89 @@ export default function HolidaysConfig({
         </div>
       </div>
 
-      {holidays.length === 0 ? (
-        <div className="empty-state">
-          <Calendar size={64} className="empty-state-icon" />
-          <h2>No Public Holidays Defined</h2>
-        </div>
-      ) : (
-        <div className="table-container">
-          <table className="entity-table">
-            <thead>
-              <tr>
-                <th>Holiday Title</th>
-                <th>Date Scheduled</th>
-                <th>Applicable Company</th>
-                <th>Region / Country</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {holidays
-                .filter(h => holidayCompanyId === 'All' || h.companyId === holidayCompanyId)
-                .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-                .map(h => {
-                  const matComp = companies.find(c => c.id === h.companyId);
+      {(() => {
+        // Group holidays by name and date to avoid duplication in UI list
+        const groups: Record<string, { name: string; date: string; ids: string[]; companyIds: string[] }> = {};
+        
+        holidays.forEach(h => {
+          if (holidayCompanyId !== 'All' && h.companyId !== holidayCompanyId) return;
+          
+          const key = `${h.name.toLowerCase().trim()}_${h.date}`;
+          if (!groups[key]) {
+            groups[key] = {
+              name: h.name,
+              date: h.date,
+              ids: [],
+              companyIds: []
+            };
+          }
+          groups[key].ids.push(h.id);
+          groups[key].companyIds.push(h.companyId);
+        });
+
+        const sortedGrouped = Object.values(groups).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+        if (sortedGrouped.length === 0) {
+          return (
+            <div className="empty-state">
+              <Calendar size={64} className="empty-state-icon" />
+              <h2>No Public Holidays Defined</h2>
+            </div>
+          );
+        }
+
+        return (
+          <div className="table-container">
+            <table className="entity-table">
+              <thead>
+                <tr>
+                  <th>Holiday Title</th>
+                  <th>Date Scheduled</th>
+                  <th>Applicable Companies</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedGrouped.map(h => {
                   return (
-                    <tr key={h.id}>
+                    <tr key={`${h.name}-${h.date}`}>
                       <td style={{ fontWeight: 600 }}>{h.name}</td>
-                      <td style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Calendar size={14} style={{ color: 'var(--text-muted)' }} />
-                        {h.date}
-                      </td>
-                      <td>{matComp ? matComp.name : 'Unknown Group'}</td>
                       <td>
-                        <span className={`country-badge country-${matComp ? matComp.country.toLowerCase().replace(/[^a-z]/g, '') : 'uk'}`}>
-                          {matComp ? matComp.country : 'Unknown'}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Calendar size={14} style={{ color: 'var(--text-muted)' }} />
+                          {h.date}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {h.companyIds.map(cId => {
+                            const matComp = companies.find(c => c.id === cId);
+                            return matComp ? (
+                              <span key={cId} style={{ fontSize: '10px', backgroundColor: 'rgba(99, 102, 241, 0.08)', color: 'var(--accent)', border: '1px solid rgba(99, 102, 241, 0.15)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500 }}>
+                                {matComp.name} <span style={{ opacity: 0.6 }}>({matComp.country})</span>
+                              </span>
+                            ) : null;
+                          })}
+                        </div>
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                           {onDeleteHoliday && (
                             <button 
                               className="btn-icon delete" 
-                              onClick={() => {
-                                if (window.confirm(`Are you sure you want to delete holiday "${h.name}"?`)) {
-                                  onDeleteHoliday(h.id);
-                                  onShowToast(`Deleted holiday "${h.name}"`, "info");
+                              onClick={async () => {
+                                if (window.confirm(`Are you sure you want to delete holiday "${h.name}" for all ${h.companyIds.length} companies?`)) {
+                                  try {
+                                    for (const id of h.ids) {
+                                      await onDeleteHoliday(id);
+                                    }
+                                    onShowToast(`Deleted holiday "${h.name}" successfully.`, "info");
+                                  } catch (err: any) {
+                                    onShowToast(`Error deleting holiday: ${err.message}`, "warning");
+                                  }
                                 }
                               }}
-                              title="Remove Holiday"
+                              title="Remove Holiday for all selected companies"
                             >
                               <Trash2 size={12} />
                             </button>
@@ -239,10 +274,11 @@ export default function HolidaysConfig({
                     </tr>
                   );
                 })}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
     </div>
   );
 }

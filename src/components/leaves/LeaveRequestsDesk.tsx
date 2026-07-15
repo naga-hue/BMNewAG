@@ -29,7 +29,7 @@ export default function LeaveRequestsDesk({
   onShowToast
 }: LeaveRequestsDeskProps) {
   const [showReqForm, setShowReqForm] = useState(false);
-  const [reqStaffId, setReqStaffId] = useState('');
+  const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   const [reqType, setReqType] = useState('annual');
   const [reqStartDate, setReqStartDate] = useState('');
   const [reqEndDate, setReqEndDate] = useState('');
@@ -41,31 +41,31 @@ export default function LeaveRequestsDesk({
 
   const handleRequestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reqStaffId || !reqStartDate || !reqEndDate || !reqDays || Number(reqDays) <= 0) {
-      onShowToast("Please enter all required leave request details.", "warning");
+    if (selectedStaffIds.length === 0 || !reqStartDate || !reqEndDate || !reqDays || Number(reqDays) <= 0) {
+      onShowToast("Please select at least one staff member and fill in all leave request details.", "warning");
       return;
     }
 
-    const selectedEmployee = staff.find(s => s.id === reqStaffId);
-    if (!selectedEmployee) return;
-
-    const newRequest = {
-      id: `req-${Date.now()}`,
-      staffId: reqStaffId,
-      leaveType: reqType,
-      startDate: reqStartDate,
-      endDate: reqEndDate,
-      totalDays: Number(reqDays),
-      status: "approved", // auto-approve admin bookings
-      notes: `${reqNotes.trim()} (Admin Booked)`
-    };
-
     try {
-      await onSaveLeaveRequest(newRequest);
-      onShowToast(`Successfully booked ${reqDays} days of ${reqType} leave for ${selectedEmployee.fullName}`, "success");
+      for (let i = 0; i < selectedStaffIds.length; i++) {
+        const sId = selectedStaffIds[i];
+        const newRequest = {
+          id: `req-${Date.now()}-${i}`,
+          staffId: sId,
+          leaveType: reqType,
+          startDate: reqStartDate,
+          endDate: reqEndDate,
+          totalDays: Number(reqDays),
+          status: "approved", // auto-approve admin bookings
+          notes: reqNotes.trim() ? `${reqNotes.trim()} (Admin Booked)` : "(Admin Booked)"
+        };
+        await onSaveLeaveRequest(newRequest);
+      }
+
+      onShowToast(`Successfully booked ${reqDays} days of ${reqType} leave for ${selectedStaffIds.length} employees.`, "success");
       
       // Reset form
-      setReqStaffId('');
+      setSelectedStaffIds([]);
       setReqStartDate('');
       setReqEndDate('');
       setReqDays('');
@@ -131,24 +131,73 @@ export default function LeaveRequestsDesk({
             <Plus size={14} /> Book Leave on Behalf of Employee
           </div>
 
-          <div className="form-group-row">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '16px' }}>
             <div className="form-group">
-              <label className="form-label">Select Employee <span>*</span></label>
-              <select 
-                className="select-filter"
-                value={reqStaffId}
-                onChange={(e) => setReqStaffId(e.target.value)}
-                style={{ width: '100%', padding: '10px' }}
-                required
-              >
-                <option value="">-- Choose Employee --</option>
+              <label className="form-label">Select Staff Members (Check all that apply) <span>*</span></label>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                gap: '8px',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px',
+                maxHeight: '130px',
+                overflowY: 'auto',
+                backgroundColor: 'var(--bg-secondary)',
+                width: '100%'
+              }}>
+                <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', marginBottom: '4px' }}>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setSelectedStaffIds(staff.map(s => s.id))}
+                    style={{ padding: '2px 8px', fontSize: '10px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setSelectedStaffIds([])}
+                    style={{ padding: '2px 8px', fontSize: '10px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                  >
+                    Deselect All
+                  </button>
+                </div>
                 {staff.map(s => {
+                  const isChecked = selectedStaffIds.includes(s.id);
                   const employer = companies.find(c => c.id === s.companyId);
                   return (
-                    <option key={s.id} value={s.id}>{s.fullName} ({s.jobTitle} - {employer ? employer.name : 'Group'})</option>
+                    <label 
+                      key={s.id} 
+                      style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '8px', 
+                        fontSize: '12px', 
+                        cursor: 'pointer',
+                        padding: '4px',
+                        borderRadius: '4px',
+                        backgroundColor: isChecked ? 'rgba(99,102,241,0.05)' : 'transparent',
+                        userSelect: 'none'
+                      }}
+                    >
+                      <input 
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {
+                          setSelectedStaffIds(prev => 
+                            prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
+                          );
+                        }}
+                      />
+                      <span style={{ fontWeight: isChecked ? 600 : 400 }}>
+                        {s.fullName} <span style={{ color: 'var(--text-muted)' }}>({s.jobTitle} - {employer ? employer.name : 'Group'})</span>
+                      </span>
+                    </label>
                   );
                 })}
-              </select>
+              </div>
             </div>
 
             <div className="form-group">

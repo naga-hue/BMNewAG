@@ -1357,10 +1357,10 @@ export default function PlacementsRegistry({
         <table className="entity-table dense">
           <thead>
             <tr>
-              <th onClick={() => handleHeaderClick('placementId')} style={getHeaderStyle('placementId')}>
+              <th onClick={() => handleHeaderClick('placementId')} style={getHeaderStyle('placementId')} className="freeze-col-1">
                 Placement ID {renderSortIndicator('placementId')}
               </th>
-              <th onClick={() => handleHeaderClick('clientCompany')} style={getHeaderStyle('clientCompany')}>
+              <th onClick={() => handleHeaderClick('clientCompany')} style={getHeaderStyle('clientCompany')} className="freeze-col-2">
                 Client Company {renderSortIndicator('clientCompany')}
               </th>
               <th onClick={() => handleHeaderClick('candidateName')} style={getHeaderStyle('candidateName')}>
@@ -1405,11 +1405,11 @@ export default function PlacementsRegistry({
                   style={{ cursor: 'pointer', transition: 'background-color 0.2s' }}
                   className="placement-row-hover"
                 >
-                  <td style={{ fontWeight: 700, fontFamily: 'monospace' }}>
+                  <td style={{ fontWeight: 700, fontFamily: 'monospace' }} className="freeze-col-1">
                     <div>{p.placementId}</div>
                     {p.invoiceNumber && <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'normal' }}>Invoice: {p.invoiceNumber}</div>}
                   </td>
-                  <td>{p.clientCompany}</td>
+                  <td className="freeze-col-2">{p.clientCompany}</td>
                   <td>{p.candidateName}</td>
                   <td style={{ fontSize: '11px' }}>
                     <div>Start: <strong>{p.startDate}</strong></div>

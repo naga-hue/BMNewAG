@@ -88,6 +88,16 @@ export default function SimplicityLedgerTable({
     const sortField = sortFieldMap[col.id] || col.id;
     const isMonetary = ['netTotal', 'factoredGross', 'vat', 'totalInclVat', 'amount', 'outstanding'].includes(col.id);
 
+    const colIdx = activeColumns.findIndex(c => c.id === col.id);
+    const isSticky = colIdx === 0 || colIdx === 1;
+    const stickyStyle: React.CSSProperties = isSticky ? {
+      position: 'sticky',
+      left: colIdx === 0 ? '56px' : '176px', // 56px represents width of checkbox column + padding
+      zIndex: 20,
+      backgroundColor: 'var(--bg-secondary)',
+      boxShadow: '2px 0 5px -2px rgba(0,0,0,0.3)'
+    } : {};
+
     return (
       <th 
         key={col.id}
@@ -102,7 +112,8 @@ export default function SimplicityLedgerTable({
           textAlign: isMonetary ? 'right' : 'left', 
           whiteSpace: 'nowrap',
           cursor: isSortable ? 'pointer' : 'default',
-          userSelect: 'none'
+          userSelect: 'none',
+          ...stickyStyle
         }}
         onClick={isSortable ? () => handleSort(sortField) : undefined}
       >
@@ -417,6 +428,16 @@ export default function SimplicityLedgerTable({
         cellContent = null;
     }
 
+    const colIdx = activeColumns.findIndex(c => c.id === col.id);
+    const isSticky = colIdx === 0 || colIdx === 1;
+    const stickyStyle: React.CSSProperties = isSticky ? {
+      position: 'sticky',
+      left: colIdx === 0 ? '56px' : '176px',
+      zIndex: 10,
+      backgroundColor: 'var(--bg-card)',
+      boxShadow: '2px 0 5px -2px rgba(0,0,0,0.3)'
+    } : {};
+
     return (
       <td 
         key={col.id}
@@ -426,7 +447,8 @@ export default function SimplicityLedgerTable({
           fontSize: '12px',
           color: 'var(--text-primary)',
           textAlign: isMonetary ? 'right' : 'left',
-          fontFamily: isMonetary || col.id === 'placementId' || col.id === 'dueDate' ? 'monospace' : 'inherit'
+          fontFamily: isMonetary || col.id === 'placementId' || col.id === 'dueDate' ? 'monospace' : 'inherit',
+          ...stickyStyle
         }}
       >
         {cellContent}
@@ -466,7 +488,7 @@ export default function SimplicityLedgerTable({
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
             <thead>
               <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', width: '40px', textAlign: 'center', backgroundColor: 'var(--bg-secondary)' }}>
+                <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', width: '56px', minWidth: '56px', textAlign: 'center', backgroundColor: 'var(--bg-secondary)', position: 'sticky', left: 0, zIndex: 20 }}>
                   <input 
                     type="checkbox" 
                     checked={list.length > 0 && list.every(inv => selectedInvoiceIds.has(inv.id))}
@@ -490,7 +512,7 @@ export default function SimplicityLedgerTable({
                     style={{ cursor: 'grab' }} 
                     className="table-row-hover"
                   >
-                    <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', width: '40px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                    <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', width: '56px', minWidth: '56px', textAlign: 'center', position: 'sticky', left: 0, zIndex: 10, backgroundColor: 'var(--bg-card)' }} onClick={(e) => e.stopPropagation()}>
                       <input 
                         type="checkbox" 
                         checked={selectedInvoiceIds.has(inv.id)}

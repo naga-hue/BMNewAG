@@ -246,8 +246,8 @@ export default function CommissionsMatrix({
         <table className="entity-table dense" style={{ minWidth: '1200px', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '2px solid var(--border-color)' }}>
-              <th style={{ minWidth: '180px', fontWeight: 700, padding: '12px' }}>Recruiter Name</th>
-              <th style={{ minWidth: '150px', fontWeight: 700, padding: '12px' }}>Scheme Name</th>
+              <th style={{ position: 'sticky', left: 0, zIndex: 12, backgroundColor: 'var(--bg-secondary)', minWidth: '180px', fontWeight: 700, padding: '12px' }}>Recruiter Name</th>
+              <th style={{ position: 'sticky', left: '180px', zIndex: 12, backgroundColor: 'var(--bg-secondary)', minWidth: '150px', fontWeight: 700, padding: '12px' }}>Scheme Name</th>
               {matrixMonths.map(m => {
                 const monthName = new Date(`2026-${m}-02`).toLocaleDateString(undefined, { month: 'short' });
                 return <th key={m} style={{ textAlign: 'right', fontWeight: 700, padding: '12px' }}>{monthName}</th>;
@@ -262,7 +262,7 @@ export default function CommissionsMatrix({
 
               const renderMatrixRow = (row: any) => (
                 <tr key={row.member.id} style={{ borderBottom: '1px solid var(--border-color)', opacity: row.member.status === 'exited' ? 0.75 : 1 }}>
-                  <td style={{ fontWeight: 600, padding: '12px' }}>
+                  <td style={{ position: 'sticky', left: 0, zIndex: 10, backgroundColor: 'var(--bg-card)', fontWeight: 600, padding: '12px' }}>
                     <span 
                       style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }}
                       onClick={() => {
@@ -273,7 +273,7 @@ export default function CommissionsMatrix({
                     </span>
                     {row.member.status === 'exited' && <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 500, marginLeft: '4px' }}>(Exited)</span>}
                   </td>
-                  <td style={{ color: 'var(--text-secondary)', padding: '12px' }}>
+                  <td style={{ position: 'sticky', left: '180px', zIndex: 10, backgroundColor: 'var(--bg-card)', color: 'var(--text-secondary)', padding: '12px' }}>
                     {row.policy ? row.policy.name : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>None Mapped</span>}
                   </td>
                   {matrixMonths.map(m => {

@@ -338,18 +338,28 @@ export default function App() {
     }
   };
 
-  const handleSendExitEmail = async (notification) => {
+  const handleSendExitEmail = async (notifications) => {
     try {
-      await firebaseService.logEmailNotification(notification);
+      if (Array.isArray(notifications)) {
+        for (const notif of notifications) {
+          await firebaseService.logEmailNotification(notif);
+        }
+      } else {
+        await firebaseService.logEmailNotification(notifications);
+      }
       setIsExitEmailTriggerOpen(false);
       
-      handleShowToast("Exit notification emails successfully queued for HR, Admin, IT & Director!", 'success');
+      const count = Array.isArray(notifications) ? notifications.length : 1;
+      handleShowToast(`Successfully dispatched ${count} offboarding exit emails!`, 'success');
       
       // Immediately open checklist for offboarding in detail view
-      const matched = staff.find(s => s.id === notification.staffId);
-      if (matched) {
-        setSelectedStaff(matched);
-        setIsStaffDetailOpen(true);
+      const staffId = Array.isArray(notifications) ? notifications[0]?.staffId : notifications.staffId;
+      if (staffId) {
+        const matched = staff.find(s => s.id === staffId);
+        if (matched) {
+          setSelectedStaff(matched);
+          setIsStaffDetailOpen(true);
+        }
       }
     } catch (err) {
       console.error("Send exit email error:", err);
@@ -2907,6 +2917,8 @@ export default function App() {
         staffMember={exitEmailTriggerStaff}
         exitSettings={exitSettings}
         companies={companies}
+        staff={staff}
+        assetAssignments={assetAssignments}
         onSend={handleSendExitEmail}
       />
 

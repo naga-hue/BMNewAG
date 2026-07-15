@@ -61,6 +61,8 @@ export default function RBACDashboard({
   const [tempType, setTempType] = useState('offer-letter');
   const [tempBody, setTempBody] = useState('');
 
+  const [editingTemplateRole, setEditingTemplateRole] = useState('hr');
+
   // Exit settings states
   const [hrEmail, setHrEmail] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
@@ -68,12 +70,39 @@ export default function RBACDashboard({
   const [directorEmail, setDirectorEmail] = useState('');
   const [exitEmailTemplate, setExitEmailTemplate] = useState('');
 
+  // Role templates and flags
+  const [hrTemplate, setHrTemplate] = useState('');
+  const [itTemplate, setItTemplate] = useState('');
+  const [opsTemplate, setOpsTemplate] = useState('');
+  const [mdTemplate, setMdTemplate] = useState('');
+  const [sendToHr, setSendToHr] = useState(true);
+  const [sendToIt, setSendToIt] = useState(true);
+  const [sendToOps, setSendToOps] = useState(true);
+  const [sendToMd, setSendToMd] = useState(true);
+
+  // Bulk Company Contacts selection states
+  const [selectedContactCompanyIds, setSelectedContactCompanyIds] = useState([]);
+  const [matrixHrStaffId, setMatrixHrStaffId] = useState('');
+  const [matrixItStaffId, setMatrixItStaffId] = useState('');
+  const [matrixOpsStaffId, setMatrixOpsStaffId] = useState('');
+  const [matrixMdStaffId, setMatrixMdStaffId] = useState('');
+
   React.useEffect(() => {
     setHrEmail(exitSettings.hrEmail || 'hr@humres.co.uk');
     setAdminEmail(exitSettings.adminEmail || 'admin@humres.co.uk');
     setItEmail(exitSettings.itEmail || 'it@humres.co.uk');
     setDirectorEmail(exitSettings.directorEmail || 'director@humres.co.uk');
     setExitEmailTemplate(exitSettings.exitEmailTemplate || `Dear Team,\n\nPlease be informed that {{staff_name}} will be leaving {{company_name}}. Their actual last working date will be {{last_working_date}}.\n\nNotice Details:\n- Notice Period: {{notice_period}}\n- Notice Pay Period: {{notice_pay_period}}\n- Salary Paid Until: {{salary_paid_until}}\n- Severance Payment: {{severance_pay}}\n\nPlease configure account deactivation clearances and asset recovery clear-offs.\n\nSincerely,\nHR Operations`);
+    
+    setHrTemplate(exitSettings.hrTemplate || `Dear HR Team,\n\nPlease note that {{staff_name}} will be leaving the company on {{last_working_date}}.\n\nWork Location Details:\n{{office_locations}}\n\nPlease schedule their exit interview and process local HR clearances.\n\nSincerely,\nOperations`);
+    setItTemplate(exitSettings.itTemplate || `Dear IT Helpdesk,\n\nPlease de-provision accounts and recover all assigned company assets for {{staff_name}} who is exiting on {{last_working_date}}.\n\nAssigned Assets on File:\n{{asset_list}}\n\nSincerely,\nOperations`);
+    setOpsTemplate(exitSettings.opsTemplate || `Dear Operations Team,\n\nPlease process operational offboarding for {{staff_name}} ({{job_title}}). Last working date is {{last_working_date}}.\n\nSincerely,\nHR Department`);
+    setMdTemplate(exitSettings.mdTemplate || `Dear Managing Director,\n\nFor your information, {{staff_name}} ({{job_title}}) is leaving the company. Notice details: {{notice_period}} (Notice pay: {{notice_pay_period}}). Last day: {{last_working_date}}.\n\nSincerely,\nHR Department`);
+    
+    setSendToHr(exitSettings.sendToHr !== false);
+    setSendToIt(exitSettings.sendToIt !== false);
+    setSendToOps(exitSettings.sendToOps !== false);
+    setSendToMd(exitSettings.sendToMd !== false);
   }, [exitSettings]);
 
   const handleSaveExits = async () => {
@@ -82,13 +111,53 @@ export default function RBACDashboard({
       adminEmail,
       itEmail,
       directorEmail,
-      exitEmailTemplate
+      exitEmailTemplate,
+      hrTemplate,
+      itTemplate,
+      opsTemplate,
+      mdTemplate,
+      sendToHr,
+      sendToIt,
+      sendToOps,
+      sendToMd
     };
     try {
       await onSaveExitSettings(settings);
       onShowToast("Exit settings saved successfully!", "success");
     } catch (e) {
       onShowToast("Error saving exit settings: " + e.message, "danger");
+    }
+  };
+
+  const handleBulkAssignContacts = async () => {
+    if (selectedContactCompanyIds.length === 0) {
+      onShowToast("Please select at least one company to assign contacts.", "warning");
+      return;
+    }
+    let count = 0;
+    try {
+      for (const compId of selectedContactCompanyIds) {
+        const company = companies.find(c => c.id === compId);
+        if (company) {
+          const updated = {
+            ...company,
+            hrContactId: matrixHrStaffId || company.hrContactId || '',
+            itContactId: matrixItStaffId || company.itContactId || '',
+            opsContactId: matrixOpsStaffId || company.opsContactId || '',
+            mdContactId: matrixMdStaffId || company.mdContactId || ''
+          };
+          await onUpdateCompany(updated);
+          count++;
+        }
+      }
+      onShowToast(`Successfully assigned contacts for ${count} companies!`, "success");
+      setSelectedContactCompanyIds([]);
+      setMatrixHrStaffId('');
+      setMatrixItStaffId('');
+      setMatrixOpsStaffId('');
+      setMatrixMdStaffId('');
+    } catch (err) {
+      onShowToast("Error updating company contacts: " + err.message, "danger");
     }
   };
 
@@ -775,51 +844,270 @@ Yours sincerely,
 
     </div>
   ) : activeSubTab === 'exits' ? (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', backgroundColor: 'var(--bg-card)', maxWidth: '700px' }}>
-      <div>
-        <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--accent)' }}><AlertTriangle size={16} style={{ marginRight: '6px' }} /> Offboarding Exit Notification Settings</h3>
-        <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Configure recipient email endpoints and the dynamic email broadcast template triggered when marking a consultant as exited.</p>
+    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px', alignItems: 'start', animation: 'fadeIn 0.2s', width: '100%' }}>
+      {/* LEFT COLUMN: Corporate Role Contacts */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        
+        {/* Contact Matrix Form */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', backgroundColor: 'var(--bg-card)' }}>
+          <div>
+            <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+              <Users size={16} /> Corporate Contacts Assignment Matrix
+            </h3>
+            <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>Bulk assign key contacts to multiple entities simultaneously.</p>
+          </div>
+
+          {/* Company Multi-select list */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" style={{ fontSize: '11px', fontWeight: 600 }}>Select Target Companies</label>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+              <button type="button" className="btn-secondary" style={{ padding: '2px 6px', fontSize: '10px', minHeight: 'auto' }} onClick={() => setSelectedContactCompanyIds(companies.map(c => c.id))}>Select All</button>
+              <button type="button" className="btn-secondary" style={{ padding: '2px 6px', fontSize: '10px', minHeight: 'auto' }} onClick={() => setSelectedContactCompanyIds([])}>Deselect All</button>
+            </div>
+            <div style={{ maxHeight: '120px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px', backgroundColor: 'var(--bg-secondary)' }}>
+              {companies.map(c => {
+                const isChecked = selectedContactCompanyIds.includes(c.id);
+                return (
+                  <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={isChecked}
+                      onChange={() => {
+                        setSelectedContactCompanyIds(prev => 
+                          prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id]
+                        );
+                      }}
+                    />
+                    <span>{c.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '11px' }}>HR Contact</label>
+              <select className="form-input" value={matrixHrStaffId} onChange={e => setMatrixHrStaffId(e.target.value)}>
+                <option value="">-- No Change / Clear --</option>
+                {staff.filter(s => s.status !== 'exited').map(s => (
+                  <option key={s.id} value={s.id}>{s.fullName}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '11px' }}>IT Contact</label>
+              <select className="form-input" value={matrixItStaffId} onChange={e => setMatrixItStaffId(e.target.value)}>
+                <option value="">-- No Change / Clear --</option>
+                {staff.filter(s => s.status !== 'exited').map(s => (
+                  <option key={s.id} value={s.id}>{s.fullName}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '11px' }}>Head of Operations</label>
+              <select className="form-input" value={matrixOpsStaffId} onChange={e => setMatrixOpsStaffId(e.target.value)}>
+                <option value="">-- No Change / Clear --</option>
+                {staff.filter(s => s.status !== 'exited').map(s => (
+                  <option key={s.id} value={s.id}>{s.fullName}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '11px' }}>Managing Director (MD)</label>
+              <select className="form-input" value={matrixMdStaffId} onChange={e => setMatrixMdStaffId(e.target.value)}>
+                <option value="">-- No Change / Clear --</option>
+                {staff.filter(s => s.status !== 'exited').map(s => (
+                  <option key={s.id} value={s.id}>{s.fullName}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <button type="button" className="btn-primary" onClick={handleBulkAssignContacts} style={{ alignSelf: 'flex-start' }}>
+            Assign Contacts
+          </button>
+        </div>
+
+        {/* Mappings Summary Table */}
+        <div style={{ border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', backgroundColor: 'var(--bg-card)', overflowX: 'auto' }}>
+          <h4 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 12px 0' }}>Current Contacts Summary</h4>
+          <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                <th style={{ padding: '6px' }}>Entity</th>
+                <th style={{ padding: '6px' }}>HR Contact</th>
+                <th style={{ padding: '6px' }}>IT Contact</th>
+                <th style={{ padding: '6px' }}>Operations</th>
+                <th style={{ padding: '6px' }}>MD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {companies.map(c => {
+                const hr = staff.find(s => s.id === c.hrContactId);
+                const it = staff.find(s => s.id === c.itContactId);
+                const ops = staff.find(s => s.id === c.opsContactId);
+                const md = staff.find(s => s.id === c.mdContactId);
+                return (
+                  <tr key={c.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                    <td style={{ padding: '6px', fontWeight: 600 }}>{c.name}</td>
+                    <td style={{ padding: '6px', color: hr ? 'var(--text-primary)' : 'var(--text-muted)' }}>{hr ? hr.fullName : 'Not set'}</td>
+                    <td style={{ padding: '6px', color: it ? 'var(--text-primary)' : 'var(--text-muted)' }}>{it ? it.fullName : 'Not set'}</td>
+                    <td style={{ padding: '6px', color: ops ? 'var(--text-primary)' : 'var(--text-muted)' }}>{ops ? ops.fullName : 'Not set'}</td>
+                    <td style={{ padding: '6px', color: md ? 'var(--text-primary)' : 'var(--text-muted)' }}>{md ? md.fullName : 'Not set'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-        <div className="form-group">
-          <label className="form-label">HR Notification Email</label>
-          <input type="email" className="form-input" value={hrEmail} onChange={(e) => setHrEmail(e.target.value)} />
+      {/* RIGHT COLUMN: Offboarding Templates & Rules */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', backgroundColor: 'var(--bg-card)' }}>
+        <div>
+          <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+            <Settings size={16} /> Notification Templates & Rules
+          </h3>
+          <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>Toggle recipients and customize exit email copies.</p>
         </div>
-        <div className="form-group">
-          <label className="form-label">Admin Notification Email</label>
-          <input type="email" className="form-input" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
-        </div>
-      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-        <div className="form-group">
-          <label className="form-label">IT / Systems Support Email</label>
-          <input type="email" className="form-input" value={itEmail} onChange={(e) => setItEmail(e.target.value)} />
+        {/* Global Fallback Emails */}
+        <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ fontWeight: 600, fontSize: '12px', color: 'var(--text-primary)' }}>Global Fallback Recipients (if entity contact is missing)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '10px' }}>Global HR Email</label>
+              <input type="email" className="form-input" style={{ padding: '6px', fontSize: '11px' }} value={hrEmail} onChange={e => setHrEmail(e.target.value)} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '10px' }}>Global IT Email</label>
+              <input type="email" className="form-input" style={{ padding: '6px', fontSize: '11px' }} value={itEmail} onChange={e => setItEmail(e.target.value)} />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '10px' }}>Global Ops/Admin Email</label>
+              <input type="email" className="form-input" style={{ padding: '6px', fontSize: '11px' }} value={adminEmail} onChange={e => setAdminEmail(e.target.value)} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '10px' }}>Global MD/Director Email</label>
+              <input type="email" className="form-input" style={{ padding: '6px', fontSize: '11px' }} value={directorEmail} onChange={e => setDirectorEmail(e.target.value)} />
+            </div>
+          </div>
         </div>
-        <div className="form-group">
-          <label className="form-label">Director / Management Email</label>
-          <input type="email" className="form-input" value={directorEmail} onChange={(e) => setDirectorEmail(e.target.value)} />
-        </div>
-      </div>
 
-      <div className="form-group">
-        <label className="form-label">Exit Notification Email Body (Supports Tokens)</label>
-        <textarea 
-          className="form-input" 
-          rows="8" 
-          value={exitEmailTemplate} 
-          onChange={(e) => setExitEmailTemplate(e.target.value)}
-          style={{ fontFamily: 'monospace', fontSize: '12px' }}
-        />
-        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
-          Supported tokens: {"{{staff_name}}, {{job_title}}, {{company_name}}, {{last_working_date}}, {{notice_period}}, {{notice_pay_period}}, {{salary_paid_until}}, {{severance_pay}}"}
+        {/* Active Dispatch Rules checkboxes */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+          <div style={{ fontWeight: 600, fontSize: '12px', color: 'var(--text-primary)' }}>Active Role Recipients (Select to Notify)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={sendToHr} onChange={e => setSendToHr(e.target.checked)} />
+              <span>Notify HR Contact</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={sendToIt} onChange={e => setSendToIt(e.target.checked)} />
+              <span>Notify IT Contact</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={sendToOps} onChange={e => setSendToOps(e.target.checked)} />
+              <span>Notify Ops Contact</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={sendToMd} onChange={e => setSendToMd(e.target.checked)} />
+              <span>Notify MD Contact</span>
+            </label>
+          </div>
         </div>
-      </div>
 
-      <button className="btn-primary" onClick={handleSaveExits} style={{ alignSelf: 'flex-start' }}>
-        Save Exit Configuration
-      </button>
+        {/* Template Select & Textarea */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" style={{ fontSize: '12px', fontWeight: 600 }}>Configure Role Email Templates</label>
+            <select 
+              className="form-input" 
+              style={{ marginBottom: '10px' }}
+              value={editingTemplateRole} 
+              onChange={e => setEditingTemplateRole(e.target.value)}
+            >
+              <option value="hr">HR Offboarding Notice Template</option>
+              <option value="it">IT Systems Deactivation Template</option>
+              <option value="ops">Operations Offboarding Notice Template</option>
+              <option value="md">Managing Director Offboarding Notice Template</option>
+            </select>
+
+            {editingTemplateRole === 'hr' && (
+              <>
+                <textarea 
+                  className="form-input" 
+                  rows="8" 
+                  value={hrTemplate} 
+                  onChange={e => setHrTemplate(e.target.value)} 
+                  style={{ fontFamily: 'monospace', fontSize: '11px' }}
+                />
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Supported tokens: {"{{staff_name}}, {{job_title}}, {{company_name}}, {{last_working_date}}, {{office_locations}}"}
+                </div>
+              </>
+            )}
+
+            {editingTemplateRole === 'it' && (
+              <>
+                <textarea 
+                  className="form-input" 
+                  rows="8" 
+                  value={itTemplate} 
+                  onChange={e => setItTemplate(e.target.value)} 
+                  style={{ fontFamily: 'monospace', fontSize: '11px' }}
+                />
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Supported tokens: {"{{staff_name}}, {{job_title}}, {{company_name}}, {{last_working_date}}, {{asset_list}}"}
+                </div>
+              </>
+            )}
+
+            {editingTemplateRole === 'ops' && (
+              <>
+                <textarea 
+                  className="form-input" 
+                  rows="8" 
+                  value={opsTemplate} 
+                  onChange={e => setOpsTemplate(e.target.value)} 
+                  style={{ fontFamily: 'monospace', fontSize: '11px' }}
+                />
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Supported tokens: {"{{staff_name}}, {{job_title}}, {{company_name}}, {{last_working_date}}, {{notice_period}}, {{notice_pay_period}}, {{salary_paid_until}}, {{severance_pay}}"}
+                </div>
+              </>
+            )}
+
+            {editingTemplateRole === 'md' && (
+              <>
+                <textarea 
+                  className="form-input" 
+                  rows="8" 
+                  value={mdTemplate} 
+                  onChange={e => setMdTemplate(e.target.value)} 
+                  style={{ fontFamily: 'monospace', fontSize: '11px' }}
+                />
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Supported tokens: {"{{staff_name}}, {{job_title}}, {{company_name}}, {{last_working_date}}, {{notice_period}}, {{notice_pay_period}}, {{salary_paid_until}}, {{severance_pay}}"}
+                </div>
+              </>
+            )}
+
+          </div>
+        </div>
+
+        <button type="button" className="btn-primary" onClick={handleSaveExits} style={{ alignSelf: 'flex-start', marginTop: '12px' }}>
+          Save Email Config & Rules
+        </button>
+
+      </div>
     </div>
   ) : activeSubTab === 'custom-roles' ? (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '24px', alignItems: 'start', animation: 'fadeIn 0.2s', width: '100%' }}>

@@ -523,7 +523,10 @@ export default function WhatsImportantDashboard({
     .sort()
     .join(',');
 
+  console.log("[WhatsImportantDashboard] render. criticalAlertIds:", criticalAlertIds || "none");
+
   React.useEffect(() => {
+    console.log("[WhatsImportantDashboard] useEffect triggered. criticalAlertIds:", criticalAlertIds || "none");
     const criticalAlerts = filteredAlerts.filter(a => a.type === 'critical');
     if (criticalAlerts.length === 0) return;
 
@@ -536,6 +539,7 @@ export default function WhatsImportantDashboard({
       criticalAlerts.forEach(a => {
         const alreadyLogged = prev.some(log => log.alertId === a.id);
         if (!alreadyLogged) {
+          console.log("[WhatsImportantDashboard] logging new critical alert:", a.id);
           newLogs.push({
             id: `log-${Date.now()}-${a.id}`,
             alertId: a.id,

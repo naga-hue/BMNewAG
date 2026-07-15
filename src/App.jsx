@@ -513,34 +513,29 @@ export default function App() {
 
   const { scopedCompanies, scopedStaff, scopedLeaves, scopedPlacements, scopedExpenses } = getScopedData();
 
-
-
   // Update selectedCompany when companies list updates
   useEffect(() => {
     if (selectedCompany) {
       const refreshed = companies.find(c => c.id === selectedCompany.id);
+      console.log("[App] selectedCompany useEffect. refreshed:", refreshed ? refreshed.name : "not found", "current:", selectedCompany.name);
       if (refreshed && refreshed !== selectedCompany) {
+        console.log("[App] updating selectedCompany to refreshed object reference");
         setSelectedCompany(refreshed);
       }
     }
-  }, [companies]);
-
-
+  }, [companies, selectedCompany]);
 
   // Update selectedStaff when staff list updates
   useEffect(() => {
     if (selectedStaff) {
       const refreshed = staff.find(s => s.id === selectedStaff.id);
+      console.log("[App] selectedStaff useEffect. refreshed:", refreshed ? refreshed.fullName : "not found", "current:", selectedStaff.fullName);
       if (refreshed && refreshed !== selectedStaff) {
+        console.log("[App] updating selectedStaff to refreshed object reference");
         setSelectedStaff(refreshed);
       }
     }
-  }, [staff]);
-
-
-
-
-
+  }, [staff, selectedStaff]);
 
 
   // Sync commission policies

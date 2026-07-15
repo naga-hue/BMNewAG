@@ -49,6 +49,10 @@ export default function Dashboard({
     return monthlySum;
   }, [placements]);
 
+  const maxMonthlyRevenue = useMemo(() => {
+    return Math.max(...monthlyRevenue, 10000);
+  }, [monthlyRevenue]);
+
   const activeChartCompanyIds = useMemo(() => {
     return companies.map(c => c.id).filter(id => chartCompanyFilters[id] === true);
   }, [companies, chartCompanyFilters]);

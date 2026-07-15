@@ -24,7 +24,7 @@ export default function LeavePoliciesSetup({
   const [showPolicyForm, setShowPolicyForm] = useState(false);
   const [editingPolicyId, setEditingPolicyId] = useState<string | null>(null);
   const [policyName, setPolicyName] = useState('');
-  const [policyCompanyId, setPolicyCompanyId] = useState(companies[0]?.id || '');
+  const [policyCompanyIds, setPolicyCompanyIds] = useState<string[]>([]);
   const [policyAnnual, setPolicyAnnual] = useState('25');
   const [policySick, setPolicySick] = useState('10');
   const [policyDesc, setPolicyDesc] = useState('');
@@ -47,27 +47,44 @@ export default function LeavePoliciesSetup({
 
   const handlePolicySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!policyName.trim() || !policyCompanyId || !policyAnnual || !policySick) {
-      onShowToast("Please fill in all policy details.", "warning");
+    if (!policyName.trim() || policyCompanyIds.length === 0 || !policyAnnual || !policySick) {
+      onShowToast("Please select at least one company and fill in all policy details.", "warning");
       return;
     }
 
-    const payload = {
-      id: editingPolicyId || `policy-${Date.now()}`,
-      name: policyName.trim(),
-      companyId: policyCompanyId,
-      annualAllowance: Number(policyAnnual),
-      sickAllowance: Number(policySick),
-      description: policyDesc.trim(),
-      departmentOverrides: deptOverrides
-    };
-
     try {
-      await onSavePolicy(payload);
-      onShowToast(editingPolicyId ? `Updated leave policy "${policyName}"` : `Created leave policy "${policyName}"`, "success");
+      if (editingPolicyId) {
+        const payload = {
+          id: editingPolicyId,
+          name: policyName.trim(),
+          companyId: policyCompanyIds[0] || companies[0]?.id || '',
+          annualAllowance: Number(policyAnnual),
+          sickAllowance: Number(policySick),
+          description: policyDesc.trim(),
+          departmentOverrides: deptOverrides
+        };
+        await onSavePolicy(payload);
+      } else {
+        for (let i = 0; i < policyCompanyIds.length; i++) {
+          const cid = policyCompanyIds[i];
+          const payload = {
+            id: `policy-${Date.now()}-${i}`,
+            name: policyName.trim(),
+            companyId: cid,
+            annualAllowance: Number(policyAnnual),
+            sickAllowance: Number(policySick),
+            description: policyDesc.trim(),
+            departmentOverrides: deptOverrides
+          };
+          await onSavePolicy(payload);
+        }
+      }
+
+      onShowToast(editingPolicyId ? `Updated leave policy "${policyName}"` : `Created leave policy "${policyName}" for ${policyCompanyIds.length} companies.`, "success");
       setPolicyName('');
       setPolicyDesc('');
       setDeptOverrides({});
+      setPolicyCompanyIds([]);
       setEditingPolicyId(null);
       setShowPolicyForm(false);
     } catch (err: any) {
@@ -114,44 +131,131 @@ export default function LeavePoliciesSetup({
             />
           </div>
 
-          <div className="form-group-row">
-            <div className="form-group">
-              <label className="form-label">Applicable Company <span>*</span></label>
-              <select 
-                className="select-filter"
-                value={policyCompanyId}
-                onChange={(e) => setPolicyCompanyId(e.target.value)}
-                style={{ width: '100%', padding: '10px' }}
-                required
-              >
-                {companies.map(c => (
-                  <option key={c.id} value={c.id}>{c.name} ({c.country})</option>
-                ))}
-              </select>
-            </div>
+          {editingPolicyId ? (
+            <div className="form-group-row">
+              <div className="form-group">
+                <label className="form-label">Applicable Company (Locked during Edit)</label>
+                <div style={{ padding: '10px', backgroundColor: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: 600 }}>
+                  {companies.find(c => c.id === policyCompanyIds[0])?.name || 'Unknown Company'}
+                </div>
+              </div>
 
-            <div className="form-group">
-              <label className="form-label">Annual Allowance (Days) <span>*</span></label>
-              <input 
-                type="number" 
-                className="form-input" 
-                value={policyAnnual}
-                onChange={(e) => setPolicyAnnual(e.target.value)}
-                required
-              />
-            </div>
+              <div className="form-group">
+                <label className="form-label">Annual Allowance (Days) <span>*</span></label>
+                <input 
+                  type="number" 
+                  className="form-input" 
+                  value={policyAnnual}
+                  onChange={(e) => setPolicyAnnual(e.target.value)}
+                  required
+                />
+              </div>
 
-            <div className="form-group">
-              <label className="form-label">Sick Allowance (Days) <span>*</span></label>
-              <input 
-                type="number" 
-                className="form-input" 
-                value={policySick}
-                onChange={(e) => setPolicySick(e.target.value)}
-                required
-              />
+              <div className="form-group">
+                <label className="form-label">Sick Allowance (Days) <span>*</span></label>
+                <input 
+                  type="number" 
+                  className="form-input" 
+                  value={policySick}
+                  onChange={(e) => setPolicySick(e.target.value)}
+                  required
+                />
+              </div>
             </div>
-          </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '16px' }}>
+              <div className="form-group">
+                <label className="form-label">Applicable Companies (Select all that apply) <span>*</span></label>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                  gap: '8px',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '12px',
+                  maxHeight: '130px',
+                  overflowY: 'auto',
+                  backgroundColor: 'var(--bg-secondary)',
+                  width: '100%'
+                }}>
+                  <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', marginBottom: '4px' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setPolicyCompanyIds(companies.map(c => c.id))}
+                      style={{ padding: '2px 8px', fontSize: '10px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setPolicyCompanyIds([])}
+                      style={{ padding: '2px 8px', fontSize: '10px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                    >
+                      Deselect All
+                    </button>
+                  </div>
+                  {companies.map(c => {
+                    const isChecked = policyCompanyIds.includes(c.id);
+                    return (
+                      <label 
+                        key={c.id} 
+                        style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '8px', 
+                          fontSize: '12px', 
+                          cursor: 'pointer',
+                          padding: '4px',
+                          borderRadius: '4px',
+                          backgroundColor: isChecked ? 'rgba(99,102,241,0.05)' : 'transparent',
+                          userSelect: 'none'
+                        }}
+                      >
+                        <input 
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            setPolicyCompanyIds(prev => 
+                              prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id]
+                            );
+                          }}
+                        />
+                        <span style={{ fontWeight: isChecked ? 600 : 400 }}>
+                          {c.name} <span style={{ color: 'var(--text-muted)' }}>({c.country})</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="form-group-row">
+                <div className="form-group">
+                  <label className="form-label">Annual Allowance (Days) <span>*</span></label>
+                  <input 
+                    type="number" 
+                    className="form-input" 
+                    value={policyAnnual}
+                    onChange={(e) => setPolicyAnnual(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Sick Allowance (Days) <span>*</span></label>
+                  <input 
+                    type="number" 
+                    className="form-input" 
+                    value={policySick}
+                    onChange={(e) => setPolicySick(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="form-group">
             <label className="form-label">Description / Internal Rules</label>
@@ -248,6 +352,7 @@ export default function LeavePoliciesSetup({
                 setPolicyAnnual('25');
                 setPolicySick('10');
                 setDeptOverrides({});
+                setPolicyCompanyIds([]);
                 setShowPolicyForm(false);
               }}
               style={{ flex: 1, justifyContent: 'center' }}
@@ -337,7 +442,7 @@ export default function LeavePoliciesSetup({
                   onClick={() => {
                     setEditingPolicyId(p.id);
                     setPolicyName(p.name);
-                    setPolicyCompanyId(p.companyId);
+                    setPolicyCompanyIds([p.companyId]);
                     setPolicyAnnual(p.annualAllowance);
                     setPolicySick(p.sickAllowance);
                     setPolicyDesc(p.description || '');

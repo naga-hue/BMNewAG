@@ -517,6 +517,12 @@ export default function WhatsImportantDashboard({
     );
   });
 
+  const criticalAlertIds = filteredAlerts
+    .filter(a => a.type === 'critical')
+    .map(a => a.id)
+    .sort()
+    .join(',');
+
   React.useEffect(() => {
     const criticalAlerts = filteredAlerts.filter(a => a.type === 'critical');
     if (criticalAlerts.length === 0) return;
@@ -525,31 +531,31 @@ export default function WhatsImportantDashboard({
       Notification.requestPermission();
     }
 
-    const newLogs = [];
-    criticalAlerts.forEach(a => {
-      const alreadyLogged = dispatchLogs.some(log => log.alertId === a.id);
-      if (!alreadyLogged) {
-        newLogs.push({
-          id: `log-${Date.now()}-${a.id}`,
-          alertId: a.id,
-          timestamp: new Date().toLocaleTimeString(),
-          title: a.title,
-          status: 'Dispatched',
-          method: 'Web Push & Email Dispatch to AP/Finance desk'
-        });
-
-        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-          new Notification(`⚠️ Humres Risk Alert: ${a.title}`, {
-            body: a.desc
+    setDispatchLogs(prev => {
+      const newLogs = [];
+      criticalAlerts.forEach(a => {
+        const alreadyLogged = prev.some(log => log.alertId === a.id);
+        if (!alreadyLogged) {
+          newLogs.push({
+            id: `log-${Date.now()}-${a.id}`,
+            alertId: a.id,
+            timestamp: new Date().toLocaleTimeString(),
+            title: a.title,
+            status: 'Dispatched',
+            method: 'Web Push & Email Dispatch to AP/Finance desk'
           });
-        }
-      }
-    });
 
-    if (newLogs.length > 0) {
-      setDispatchLogs(prev => [...newLogs, ...prev].slice(0, 15));
-    }
-  }, [filteredAlerts]);
+          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+            new Notification(`⚠️ Humres Risk Alert: ${a.title}`, {
+              body: a.desc
+            });
+          }
+        }
+      });
+      if (newLogs.length === 0) return prev;
+      return [...newLogs, ...prev].slice(0, 15);
+    });
+  }, [criticalAlertIds]);
 
   // Categorize for rendering
   const categories = {

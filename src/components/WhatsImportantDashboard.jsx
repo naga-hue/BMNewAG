@@ -55,40 +55,6 @@ export default function WhatsImportantDashboard({
 
   const [dispatchLogs, setDispatchLogs] = useState([]);
 
-  React.useEffect(() => {
-    const criticalAlerts = filteredAlerts.filter(a => a.type === 'critical');
-    if (criticalAlerts.length === 0) return;
-
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-
-    const newLogs = [];
-    criticalAlerts.forEach(a => {
-      const alreadyLogged = dispatchLogs.some(log => log.alertId === a.id);
-      if (!alreadyLogged) {
-        newLogs.push({
-          id: `log-${Date.now()}-${a.id}`,
-          alertId: a.id,
-          timestamp: new Date().toLocaleTimeString(),
-          title: a.title,
-          status: 'Dispatched',
-          method: 'Web Push & Email Dispatch to AP/Finance desk'
-        });
-
-        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-          new Notification(`⚠️ Humres Risk Alert: ${a.title}`, {
-            body: a.desc
-          });
-        }
-      }
-    });
-
-    if (newLogs.length > 0) {
-      setDispatchLogs(prev => [...newLogs, ...prev].slice(0, 15));
-    }
-  }, [filteredAlerts]);
-
   // Fixed Anchor Date representing "Today"
   const ANCHOR_DATE = new Date('2026-07-13');
 
@@ -550,6 +516,40 @@ export default function WhatsImportantDashboard({
       a.badge.toLowerCase().includes(q)
     );
   });
+
+  React.useEffect(() => {
+    const criticalAlerts = filteredAlerts.filter(a => a.type === 'critical');
+    if (criticalAlerts.length === 0) return;
+
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    const newLogs = [];
+    criticalAlerts.forEach(a => {
+      const alreadyLogged = dispatchLogs.some(log => log.alertId === a.id);
+      if (!alreadyLogged) {
+        newLogs.push({
+          id: `log-${Date.now()}-${a.id}`,
+          alertId: a.id,
+          timestamp: new Date().toLocaleTimeString(),
+          title: a.title,
+          status: 'Dispatched',
+          method: 'Web Push & Email Dispatch to AP/Finance desk'
+        });
+
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          new Notification(`⚠️ Humres Risk Alert: ${a.title}`, {
+            body: a.desc
+          });
+        }
+      }
+    });
+
+    if (newLogs.length > 0) {
+      setDispatchLogs(prev => [...newLogs, ...prev].slice(0, 15));
+    }
+  }, [filteredAlerts]);
 
   // Categorize for rendering
   const categories = {

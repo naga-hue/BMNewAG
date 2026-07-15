@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { 
   Bell,
   LayoutDashboard, 
@@ -49,21 +49,23 @@ import StaffDetail from './components/StaffDetail';
 import StaffForm from './components/StaffForm';
 import StaffExitModal from './components/StaffExitModal';
 import ExitEmailTriggerModal from './components/ExitEmailTriggerModal';
-import CreditControlDashboard from './components/credit-control';
-import CashflowDashboard from './components/CashflowDashboard';
 import BulkStaffImportModal from './components/BulkStaffImportModal';
-import LeavesDashboard from './components/LeavesDashboard';
-import CommissionsDashboard from './components/CommissionsDashboard';
-import PayrollDashboard from './components/PayrollDashboard';
-import VendorsDashboard from './components/VendorsDashboard';
-import PlacementsDashboard from './components/PlacementsDashboard';
-import ExpensesDashboard from './components/ExpensesDashboard';
-import LogsDashboard from './components/LogsDashboard';
-import ReportsDashboard from './components/ReportsDashboard';
-import RBACDashboard from './components/RBACDashboard';
-import WhatsImportantDashboard from './components/WhatsImportantDashboard';
 import { toGBP, formatGBP, fetchLiveFxRates } from './utils/currency';
 import { initialNominalCodes, initialExpenses } from './mockExpenses';
+
+// Lazy load dashboard components
+const CreditControlDashboard = lazy(() => import('./components/credit-control'));
+const CashflowDashboard = lazy(() => import('./components/CashflowDashboard'));
+const LeavesDashboard = lazy(() => import('./components/LeavesDashboard'));
+const CommissionsDashboard = lazy(() => import('./components/CommissionsDashboard'));
+const PayrollDashboard = lazy(() => import('./components/PayrollDashboard'));
+const VendorsDashboard = lazy(() => import('./components/vendors'));
+const PlacementsDashboard = lazy(() => import('./components/PlacementsDashboard'));
+const ExpensesDashboard = lazy(() => import('./components/expenses'));
+const LogsDashboard = lazy(() => import('./components/LogsDashboard'));
+const ReportsDashboard = lazy(() => import('./components/ReportsDashboard'));
+const RBACDashboard = lazy(() => import('./components/RBACDashboard'));
+const WhatsImportantDashboard = lazy(() => import('./components/WhatsImportantDashboard'));
 
 export default function App() {
   // Theme state
@@ -103,10 +105,10 @@ export default function App() {
   const [assetAssignments, setAssetAssignments] = useState([]);
   const placements = useBoundStore(state => state.placements);
   const expenses = useBoundStore(state => state.expenses);
-  const [nominalCodes, setNominalCodes] = useState([]);
+  const nominalCodes = useBoundStore(state => state.nominalCodes);
   const [auditLogs, setAuditLogs] = useState([]);
-  const [payrollRecords, setPayrollRecords] = useState([]);
-  const [payrollPolicies, setPayrollPolicies] = useState([]);
+  const payrollRecords = useBoundStore(state => state.payrollRecords);
+  const payrollPolicies = useBoundStore(state => state.payrollPolicies);
 
   // Navigation tab: 'dashboard' | 'directory' | 'staff'
   const [activeTab, setActiveTab] = useState('whats_important');
@@ -125,7 +127,8 @@ export default function App() {
       placements: initialPlacements,
       expenses: initialExpenses,
       contracts: initialContracts,
-      vendors: initialVendors
+      vendors: initialVendors,
+      nominalCodes: initialNominalCodes
     });
 
     // Handle initial current user sync on load when staff loads
@@ -560,35 +563,12 @@ export default function App() {
 
 
 
-  // Sync nominal codes
-  useEffect(() => {
-    const unsubscribe = firebaseService.subscribeNominalCodes((updatedList) => {
-      const sorted = [...updatedList].sort((a, b) => (a.code || '').localeCompare(b.code || ''));
-      setNominalCodes(sorted);
-    }, initialNominalCodes);
-    return () => unsubscribe();
-  }, []);
+
 
   // Sync audit logs
   useEffect(() => {
     const unsubscribe = firebaseService.subscribeAuditLogs((updatedList) => {
       setAuditLogs(updatedList);
-    }, []);
-    return () => unsubscribe();
-  }, []);
-
-  // Sync payroll records
-  useEffect(() => {
-    const unsubscribe = firebaseService.subscribePayrollRecords((updatedList) => {
-      setPayrollRecords(updatedList);
-    }, []);
-    return () => unsubscribe();
-  }, []);
-
-  // Sync payroll policies
-  useEffect(() => {
-    const unsubscribe = firebaseService.subscribePayrollPolicies((updatedList) => {
-      setPayrollPolicies(updatedList);
     }, []);
     return () => unsubscribe();
   }, []);
@@ -1884,6 +1864,11 @@ export default function App() {
 
         {/* Content canvas */}
         <div className="content-wrapper">
+          <Suspense fallback={
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '300px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+              ⏳ Loading Dashboard View...
+            </div>
+          }>
           
           {/* TAB 0: What's Important */}
           {activeTab === 'whats_important' && (
@@ -2831,7 +2816,7 @@ export default function App() {
               onSaveExitSettings={handleSaveExitSettings}
             />
           )}
-
+          </Suspense>
         </div>
 
       </main>

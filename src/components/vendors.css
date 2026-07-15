@@ -1,0 +1,45 @@
+/* Vendors premium layouts */
+
+.vendors-tab-nav {
+  display: flex; 
+  background-color: rgba(30, 41, 59, 0.5); 
+  border: 1px solid var(--border-color);
+  border-radius: 30px;
+  padding: 5px;
+  width: fit-content;
+  gap: 6px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.vendors-tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  padding: 10px 20px;
+  border-radius: 24px;
+  font-weight: 700;
+  font-size: 12.5px;
+  cursor: pointer;
+  box-shadow: none;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vendors-tab-btn.active {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+  color: #fff;
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.2);
+}
+
+.vendors-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  gap: 24px;
+}
+
+.vendors-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}

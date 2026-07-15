@@ -10,6 +10,7 @@ interface InvoiceDetailDrawerProps {
   setIsDetailOpen: (val: boolean) => void;
   setSelectedInvoice: (invoice: any) => void;
   todayStr: string;
+  currentUser: any;
   onShowToast: (msg: string, type?: string) => void;
 }
 
@@ -19,12 +20,12 @@ export default function InvoiceDetailDrawer({
   setIsDetailOpen,
   setSelectedInvoice,
   todayStr,
+  currentUser,
   onShowToast
 }: InvoiceDetailDrawerProps) {
   const placements = useBoundStore(state => state.placements);
   const companies = useBoundStore(state => state.companies);
   const updatePlacement = useBoundStore(state => state.updatePlacement);
-  const currentUser = useBoundStore(state => state.currentUser || {});
 
   // Edit fields inside Details Modal
   const [editInvoiceNumber, setEditInvoiceNumber] = useState('');

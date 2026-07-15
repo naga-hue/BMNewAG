@@ -23,6 +23,8 @@ interface ColumnConfig {
   visible: boolean;
 }
 
+const EMPTY_USER = {};
+
 export default function CreditControlDashboard({
   placements: propPlacements,
   companies: propCompanies,
@@ -34,13 +36,12 @@ export default function CreditControlDashboard({
   const storePlacements = useBoundStore(state => state.placements);
   const storeCompanies = useBoundStore(state => state.companies);
   const storeStaff = useBoundStore(state => state.staff);
-  const storeCurrentUser = useBoundStore(state => state.currentUser || {});
   const storeUpdatePlacement = useBoundStore(state => state.updatePlacement);
 
   const placements = propPlacements || storePlacements;
   const companies = propCompanies || storeCompanies;
   const staff = propStaff || storeStaff;
-  const currentUser = propCurrentUser || storeCurrentUser;
+  const currentUser = propCurrentUser || EMPTY_USER;
   const onUpdatePlacement = propOnUpdatePlacement || storeUpdatePlacement;
 
   const [activeSubTab, setActiveSubTab] = useState<'direct' | 'simplicity'>('direct');
@@ -1169,6 +1170,7 @@ export default function CreditControlDashboard({
         setIsDetailOpen={setIsDetailOpen}
         setSelectedInvoice={setSelectedInvoice}
         todayStr={todayStr}
+        currentUser={currentUser}
         onShowToast={onShowToast}
       />
 

@@ -1,4 +1,9 @@
-export const CURRENCIES = [
+export interface Currency {
+  code: string;
+  symbol: string;
+}
+
+export const CURRENCIES: Currency[] = [
   { code: 'GBP', symbol: '£' },
   { code: 'USD', symbol: '$' },
   { code: 'AED', symbol: 'AED ' },
@@ -6,16 +11,22 @@ export const CURRENCIES = [
   { code: 'ZAR', symbol: 'R' }
 ];
 
-export const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
+export const symbolMap: Record<string, string> = {
+  GBP: '£',
+  USD: '$',
+  AED: 'AED ',
+  INR: '₹',
+  ZAR: 'R'
+};
 
 export const DEPARTMENTS = ["Sales", "Technology", "Recruitment", "HR", "Finance", "Legal", "Marketing", "Corporate"];
 
-export const getDaysWorkedInMonth = (startDateStr, exitDateStr, monthKey) => {
+export const getDaysWorkedInMonth = (startDateStr: string | undefined | null, exitDateStr: string | undefined | null, monthKey: string): number => {
   const [y, m] = monthKey.split('-').map(Number);
   const monthStart = new Date(Date.UTC(y, m - 1, 1));
   const monthEnd = new Date(Date.UTC(y, m, 0));
   
-  const parseUTC = (dateStr) => {
+  const parseUTC = (dateStr: string | undefined | null): Date | null => {
     if (!dateStr) return null;
     const parts = dateStr.split('-');
     if (parts.length < 3) return null;

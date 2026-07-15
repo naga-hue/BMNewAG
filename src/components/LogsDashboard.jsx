@@ -24,6 +24,9 @@ export default function LogsDashboard({
   const [sortBy, setSortBy] = useState('timestamp');
   const [sortOrder, setSortOrder] = useState('desc'); // desc or asc
 
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
   const handleHeaderClick = (columnKey) => {
     if (sortBy === columnKey) {
       setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -57,6 +60,17 @@ export default function LogsDashboard({
   const filteredLogs = auditLogs.filter(log => {
     if (moduleFilter !== 'all' && log.module !== moduleFilter) return false;
     if (actionFilter !== 'all' && log.action !== actionFilter) return false;
+
+    if (startDate) {
+      const logTime = new Date(log.timestamp).getTime();
+      const startLimit = new Date(`${startDate}T00:00:00`).getTime();
+      if (logTime < startLimit) return false;
+    }
+    if (endDate) {
+      const logTime = new Date(log.timestamp).getTime();
+      const endLimit = new Date(`${endDate}T23:59:59`).getTime();
+      if (logTime > endLimit) return false;
+    }
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -92,20 +106,55 @@ export default function LogsDashboard({
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Track entries, edits, and deletions across all business modules in real-time.</p>
         </div>
 
-        {auditLogs.length > 0 && (
-          <button 
-            className="btn-secondary delete" 
-            style={{ borderColor: 'rgba(239, 68, 68, 0.2)' }}
-            onClick={() => {
-              if (window.confirm("Are you sure you want to clear all history audit logs? This action is permanent.")) {
-                onClearLogs();
-                onShowToast("Cleared audit log history registry.", "info");
-              }
-            }}
-          >
-            <Trash2 size={14} /> Clear Logs History
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: '10px' }}>
+          {sortedAndFiltered.length > 0 && (
+            <button 
+              className="btn-secondary"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+              onClick={() => {
+                const headers = ["Timestamp", "User", "Module", "Action", "Description"];
+                const csvRowsContent = [headers.join(",")];
+                sortedAndFiltered.forEach(log => {
+                  const row = [
+                    `"${log.timestamp || ''}"`,
+                    `"${(log.user || '').replace(/"/g, '""')}"`,
+                    `"${log.module || ''}"`,
+                    `"${log.action || ''}"`,
+                    `"${(log.description || '').replace(/"/g, '""')}"`
+                  ];
+                  csvRowsContent.push(row.join(","));
+                });
+
+                const csvContent = "data:text/csv;charset=utf-8," + csvRowsContent.join("\n");
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `audit_logs_${new Date().toISOString().split('T')[0]}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                onShowToast("📥 Audit logs exported successfully!", "success");
+              }}
+            >
+              📥 Export CSV
+            </button>
+          )}
+
+          {auditLogs.length > 0 && (
+            <button 
+              className="btn-secondary delete" 
+              style={{ borderColor: 'rgba(239, 68, 68, 0.2)' }}
+              onClick={() => {
+                if (window.confirm("Are you sure you want to clear all history audit logs? This action is permanent.")) {
+                  onClearLogs();
+                  onShowToast("Cleared audit log history registry.", "info");
+                }
+              }}
+            >
+              <Trash2 size={14} /> Clear Logs History
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filter toolbar */}
@@ -143,6 +192,34 @@ export default function LogsDashboard({
             <option value="UPDATE">UPDATE</option>
             <option value="DELETE">DELETE</option>
           </select>
+
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '11px' }}>
+            <span style={{ color: 'var(--text-muted)' }}>From:</span>
+            <input 
+              type="date" 
+              className="select-filter" 
+              value={startDate} 
+              onChange={(e) => setStartDate(e.target.value)} 
+              style={{ padding: '6px', fontSize: '11px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+            />
+            <span style={{ color: 'var(--text-muted)' }}>To:</span>
+            <input 
+              type="date" 
+              className="select-filter" 
+              value={endDate} 
+              onChange={(e) => setEndDate(e.target.value)} 
+              style={{ padding: '6px', fontSize: '11px', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+            />
+            {(startDate || endDate) && (
+              <button 
+                type="button" 
+                onClick={() => { setStartDate(''); setEndDate(''); }}
+                style={{ background: 'none', border: 'none', color: 'var(--danger)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

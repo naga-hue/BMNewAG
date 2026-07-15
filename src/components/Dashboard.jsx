@@ -22,11 +22,131 @@ export default function Dashboard({
   leaveRequests = [],
   holidays = [],
   contracts = [],
-  vendors = []
+  vendors = [],
+  placements = []
 }) {
   // Current date anchor: June 29, 2026
   const CURRENT_DATE = new Date(); CURRENT_DATE.setHours(0, 0, 0, 0);
   const [calDate, setCalDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+
+  const [hoveredPoint, setHoveredPoint] = useState(null);
+  const [chartCompanyFilters, setChartCompanyFilters] = useState({ consolidated: true });
+  
+  const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const companyColors = ['#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
+  
+  const monthlyRevenue = useMemo(() => {
+    const monthlySum = Array(12).fill(0);
+    placements.forEach(p => {
+      if (p.status !== 'dns' && p.startDate) {
+        const dateObj = new Date(p.startDate);
+        if (!isNaN(dateObj.getTime()) && dateObj.getFullYear() === 2026) {
+          const monthIndex = dateObj.getMonth();
+          monthlySum[monthIndex] += Number(p.grossBillAmount || 0);
+        }
+      }
+    });
+    return monthlySum;
+  }, [placements]);
+
+  const activeChartCompanyIds = useMemo(() => {
+    return companies.map(c => c.id).filter(id => chartCompanyFilters[id] === true);
+  }, [companies, chartCompanyFilters]);
+
+  const companyMonthlyRevenues = useMemo(() => {
+    const res = {};
+    companies.forEach(c => {
+      res[c.id] = Array(12).fill(0);
+    });
+
+    placements.forEach(p => {
+      if (p.status !== 'dns' && p.startDate && p.companyId) {
+        const dateObj = new Date(p.startDate);
+        if (!isNaN(dateObj.getTime()) && dateObj.getFullYear() === 2026) {
+          const monthIndex = dateObj.getMonth();
+          if (res[p.companyId]) {
+            res[p.companyId][monthIndex] += Number(p.grossBillAmount || 0);
+          }
+        }
+      }
+    });
+    return res;
+  }, [placements, companies]);
+
+  const chartData = useMemo(() => {
+    const width = 800;
+    const height = 240;
+    const paddingLeft = 70;
+    const paddingRight = 30;
+    const paddingTop = 30;
+    const paddingBottom = 40;
+
+    const chartWidth = width - paddingLeft - paddingRight;
+    const chartHeight = height - paddingTop - paddingBottom;
+
+    const lines = [];
+
+    // Consolidated Total
+    const consSum = Array(12).fill(0);
+    companies.forEach(c => {
+      const revs = companyMonthlyRevenues[c.id] || [];
+      revs.forEach((r, i) => { consSum[i] += r; });
+    });
+
+    const consPoints = consSum.map((val, idx) => {
+      const x = paddingLeft + (idx / 11) * chartWidth;
+      const ratio = val / maxMonthlyRevenue;
+      const y = height - paddingBottom - ratio * chartHeight;
+      return { x, y, value: val, month: MONTH_LABELS[idx] };
+    });
+
+    const consLinePath = consPoints.length > 0 
+      ? `M ${consPoints[0].x} ${consPoints[0].y} ` + consPoints.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ')
+      : '';
+
+    const consAreaPath = consPoints.length > 0
+      ? `${consLinePath} L ${consPoints[consPoints.length - 1].x} ${height - paddingBottom} L ${consPoints[0].x} ${height - paddingBottom} Z`
+      : '';
+
+    lines.push({
+      id: 'consolidated',
+      name: 'Consolidated Total',
+      color: 'var(--primary)',
+      points: consPoints,
+      linePath: consLinePath,
+      areaPath: consAreaPath,
+      isArea: true
+    });
+
+    // Individual lines
+    companies.forEach((c, idx) => {
+      if (chartCompanyFilters[c.id] === true) {
+        const revs = companyMonthlyRevenues[c.id] || Array(12).fill(0);
+        const pts = revs.map((val, mIdx) => {
+          const x = paddingLeft + (mIdx / 11) * chartWidth;
+          const ratio = val / maxMonthlyRevenue;
+          const y = height - paddingBottom - ratio * chartHeight;
+          return { x, y, value: val, month: MONTH_LABELS[mIdx] };
+        });
+
+        const lp = pts.length > 0 
+          ? `M ${pts[0].x} ${pts[0].y} ` + pts.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ')
+          : '';
+
+        lines.push({
+          id: c.id,
+          name: c.name,
+          color: companyColors[idx % companyColors.length],
+          points: pts,
+          linePath: lp,
+          areaPath: '',
+          isArea: false
+        });
+      }
+    });
+
+    return { lines, width, height, paddingLeft, paddingRight, paddingTop, paddingBottom, chartWidth, chartHeight };
+  }, [monthlyRevenue, maxMonthlyRevenue, chartCompanyFilters, companies, companyMonthlyRevenues]);
 
   // Helper to compile core document/insurance alerts
   const getComplianceAlerts = (company) => {
@@ -518,6 +638,167 @@ export default function Dashboard({
           </div>
         </div>
 
+      </div>
+
+      {/* YTD Group Revenue SVG Trend Chart */}
+      <div className="chart-card" style={{ padding: '20px', width: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ fontSize: '13px', margin: 0, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            📈 2026 Group Monthly Placement Billings (YTD Trend)
+          </h3>
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+            Calculated in real-time based on active scored placements
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', backgroundColor: 'rgba(0,0,0,0.1)', padding: '10px 14px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+            <input 
+              type="checkbox" 
+              checked={chartCompanyFilters['consolidated'] !== false}
+              onChange={(e) => setChartCompanyFilters(prev => ({ ...prev, consolidated: e.target.checked }))}
+            />
+            <span style={{ fontWeight: 600, color: 'var(--primary)' }}>■ Consolidated Total</span>
+          </label>
+          {companies.map((c, idx) => {
+            const color = companyColors[idx % companyColors.length];
+            return (
+              <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                <input 
+                  type="checkbox" 
+                  checked={!!chartCompanyFilters[c.id]}
+                  onChange={(e) => setChartCompanyFilters(prev => ({ ...prev, [c.id]: e.target.checked }))}
+                />
+                <span style={{ fontWeight: 600, color }}>■ {c.name}</span>
+              </label>
+            );
+          })}
+        </div>
+
+        <div style={{ position: 'relative', width: '100%', overflowX: 'auto', backgroundColor: 'rgba(0,0,0,0.1)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+          <svg viewBox={`0 0 ${chartData.width} ${chartData.height}`} style={{ width: '100%', height: 'auto', minWidth: '700px' }}>
+            <defs>
+              <linearGradient id="dashboardAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.3" />
+                <stop offset="100%" stopColor="var(--primary)" stopOpacity="0.0" />
+              </linearGradient>
+            </defs>
+
+            {/* Grid Lines */}
+            {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
+              const y = chartData.height - chartData.paddingBottom - ratio * chartData.chartHeight;
+              const labelVal = Math.round(ratio * maxMonthlyRevenue);
+              return (
+                <g key={idx}>
+                  <line 
+                    x1={chartData.paddingLeft} 
+                    y1={y} 
+                    x2={chartData.width - chartData.paddingRight} 
+                    y2={y} 
+                    stroke="var(--border-color)" 
+                    strokeDasharray="4 4" 
+                    strokeWidth={0.5}
+                  />
+                  <text 
+                    x={chartData.paddingLeft - 10} 
+                    y={y + 4} 
+                    fill="var(--text-muted)" 
+                    fontSize={10} 
+                    textAnchor="end"
+                    fontFamily="monospace"
+                  >
+                    £{labelVal.toLocaleString()}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Area Path (Consolidated Only) */}
+            {chartCompanyFilters['consolidated'] !== false && chartData.lines[0] && (
+              <path d={chartData.lines[0].areaPath} fill="url(#dashboardAreaGrad)" />
+            )}
+
+            {/* Line Paths */}
+            {chartData.lines.map(line => {
+              if (line.id === 'consolidated' && chartCompanyFilters['consolidated'] === false) return null;
+              return (
+                <path 
+                  key={line.id}
+                  d={line.linePath} 
+                  fill="none" 
+                  stroke={line.color} 
+                  strokeWidth={3} 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                />
+              );
+            })}
+
+            {/* X Axis Labels */}
+            {chartData.lines[0]?.points.map((p, idx) => (
+              <text 
+                key={idx} 
+                x={p.x} 
+                y={chartData.height - 15} 
+                fill="var(--text-muted)" 
+                fontSize={10} 
+                textAnchor="middle"
+              >
+                {p.month}
+              </text>
+            ))}
+
+            {/* Interactive Data Nodes */}
+            {chartData.lines.map(line => {
+              if (line.id === 'consolidated' && chartCompanyFilters['consolidated'] === false) return null;
+              return line.points.map((p, idx) => (
+                <g 
+                  key={`${line.id}-${idx}`}
+                  onMouseEnter={() => setHoveredPoint({ ...p, lineName: line.name, lineColor: line.color })}
+                  onMouseLeave={() => setHoveredPoint(null)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <circle 
+                    cx={p.x} 
+                    cy={p.y} 
+                    r={hoveredPoint?.month === p.month && hoveredPoint?.lineName === line.name ? 7 : 4} 
+                    fill={line.color} 
+                    stroke="#fff" 
+                    strokeWidth={2}
+                    style={{ transition: 'all 0.15s' }}
+                  />
+                  <circle 
+                    cx={p.x} 
+                    cy={p.y} 
+                    r={15} 
+                    fill="transparent" 
+                  />
+                </g>
+              ));
+            })}
+          </svg>
+
+          {/* Interactive Tooltip Overlay */}
+          {hoveredPoint && (
+            <div style={{
+              position: 'absolute',
+              top: `${hoveredPoint.y - 50}px`,
+              left: `${hoveredPoint.x - 60}px`,
+              backgroundColor: 'var(--bg-secondary)',
+              border: `1px solid ${hoveredPoint.lineColor || 'var(--primary)'}`,
+              padding: '6px 10px',
+              borderRadius: '4px',
+              fontSize: '11px',
+              color: 'var(--text-primary)',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+              pointerEvents: 'none',
+              zIndex: 100
+            }}>
+              <strong>{hoveredPoint.month} 2026</strong><br/>
+              <span style={{ color: hoveredPoint.lineColor }}>{hoveredPoint.lineName}</span>: <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>£{Math.round(hoveredPoint.value).toLocaleString()}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Analytics Cockpit Layout */}

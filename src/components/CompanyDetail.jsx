@@ -756,31 +756,71 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
                     <div style={{ fontSize: '13px' }}>No documents uploaded for this company.</div>
                   </div>
                 ) : (
-                  <div className="doc-list">
-                    {company.documents.map(doc => (
-                      <div className="doc-card" key={doc.id}>
-                        <div className="doc-info">
-                          <div className="doc-icon">
-                            <FileText size={18} />
-                          </div>
-                          <div className="doc-name-group">
-                            <span className="doc-name" title={doc.name}>{doc.name}</span>
-                            <span className="doc-meta">
-                              <span style={{ textTransform: 'uppercase', color: 'var(--accent)', fontWeight: 600 }}>{doc.type}</span> 
-                              {' '}&bull; {doc.fileSize} &bull; Uploaded {doc.uploadDate}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="doc-actions">
-                          <button className="btn-icon" title="View Document" onClick={() => handlePreviewDoc(doc)}>
-                            <Eye size={14} />
-                          </button>
-                          <button className="btn-icon delete" title="Delete Document" onClick={() => handleDeleteDoc(doc)}>
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {(() => {
+                      const categories = {
+                        registration: { title: 'Incorporation & Registration', docs: [] },
+                        vat: { title: 'Tax & VAT Registrations', docs: [] },
+                        license: { title: 'Operating Licenses', docs: [] },
+                        insurance: { title: 'Insurance Policies & Coverages', docs: [] },
+                        other: { title: 'Miscellaneous Filings', docs: [] }
+                      };
+                      
+                      (company.documents || []).forEach(doc => {
+                        const type = doc.type || 'other';
+                        if (categories[type]) {
+                          categories[type].docs.push(doc);
+                        } else {
+                          categories['other'].docs.push(doc);
+                        }
+                      });
+
+                      return Object.entries(categories).map(([catKey, cat]) => {
+                        if (cat.docs.length === 0) return null;
+                        return (
+                          <details key={catKey} open style={{ border: '1px solid var(--border-color)', borderRadius: '6px', backgroundColor: 'var(--bg-secondary)', overflow: 'hidden' }}>
+                            <summary style={{ padding: '10px 14px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', color: 'var(--text-primary)', outline: 'none', userSelect: 'none' }}>
+                              📁 {cat.title} ({cat.docs.length})
+                            </summary>
+                            <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-primary)' }}>
+                              {cat.docs.map(doc => {
+                                const isExpiring = doc.name.toLowerCase().includes('expire') || doc.type === 'insurance';
+                                return (
+                                  <div className="doc-card" key={doc.id} style={{ margin: 0, padding: '8px 12px' }}>
+                                    <div className="doc-info">
+                                      <div className="doc-icon">
+                                        <FileText size={16} />
+                                      </div>
+                                      <div className="doc-name-group">
+                                        <span className="doc-name" title={doc.name} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                                          {doc.name}
+                                          {isExpiring && (
+                                            <span style={{ fontSize: '9px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)', padding: '1px 5px', borderRadius: '3px', fontWeight: 700 }}>
+                                              ⚠️ Expiry Warning
+                                            </span>
+                                          )}
+                                        </span>
+                                        <span className="doc-meta" style={{ fontSize: '10px' }}>
+                                          {doc.fileSize} &bull; Uploaded {doc.uploadDate}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="doc-actions">
+                                      <button type="button" className="btn-icon" title="View Document" onClick={() => handlePreviewDoc(doc)}>
+                                        <Eye size={12} />
+                                      </button>
+                                      <button type="button" className="btn-icon delete" title="Delete Document" onClick={() => handleDeleteDoc(doc)}>
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </details>
+                        );
+                      });
+                    })()}
                   </div>
                 )}
 

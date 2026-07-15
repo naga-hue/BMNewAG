@@ -28,8 +28,23 @@ export default function RBACDashboard({
   exitSettings = {},
   onSaveExitSettings
 }) {
-  const [activeSubTab, setActiveSubTab] = useState('permissions'); // permissions, letterheads
+  const [activeSubTab, setActiveSubTab] = useState('permissions'); // permissions, letterheads, custom-roles
   const [editingStaffId, setEditingStaffId] = useState(null);
+
+  // Custom Roles state
+  const [customRoles, setCustomRoles] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bm-custom-roles');
+      return saved ? JSON.parse(saved) : {
+        'Finance Auditor': ['directory', 'expenses', 'credit_control', 'reports'],
+        'HR Specialist': ['directory', 'staff', 'leaves']
+      };
+    } catch {
+      return {};
+    }
+  });
+  const [newRoleBuilderName, setNewRoleBuilderName] = useState('');
+  const [newRoleBuilderModules, setNewRoleBuilderModules] = useState([]);
 
   // Letterhead editing states
   const [selectedLhCompanyId, setSelectedLhCompanyId] = useState(companies[0] ? companies[0].id : '');
@@ -274,6 +289,21 @@ Yours sincerely,
         >
           <AlertTriangle size={14} style={{ marginRight: '6px' }} /> Exit Settings & Emails
         </button>
+        <button 
+          onClick={() => setActiveSubTab('custom-roles')}
+          style={{ 
+            padding: '10px 16px', 
+            border: 'none', 
+            background: 'none', 
+            fontSize: '14px', 
+            fontWeight: 600, 
+            cursor: 'pointer',
+            borderBottom: activeSubTab === 'custom-roles' ? '3px solid var(--primary)' : '3px solid transparent',
+            color: activeSubTab === 'custom-roles' ? 'var(--primary)' : 'var(--text-secondary)'
+          }}
+        >
+          <Shield size={14} style={{ marginRight: '6px' }} /> Custom Roles Builder
+        </button>
       </div>
 
       {activeSubTab === 'permissions' ? (
@@ -324,17 +354,27 @@ Yours sincerely,
                         className="select-filter" 
                         value={editRole} 
                         onChange={(e) => {
-                          setEditRole(e.target.value);
-                          // Auto set scope guidelines
-                          if (e.target.value === 'admin') setEditScope('all');
-                          else if (e.target.value === 'manager') setEditScope('department');
-                          else setEditScope('self');
+                          const val = e.target.value;
+                          setEditRole(val);
+                          if (val === 'admin') {
+                            setEditScope('all');
+                          } else if (val === 'manager') {
+                            setEditScope('department');
+                          } else if (customRoles[val]) {
+                            setEditScope('department');
+                            setEditModules(customRoles[val]);
+                          } else {
+                            setEditScope('self');
+                          }
                         }}
                         style={{ padding: '4px 8px', fontSize: '12px' }}
                       >
                         <option value="recruiter">Recruiter / Consultant</option>
                         <option value="manager">Manager</option>
                         <option value="admin">Super Admin</option>
+                        {Object.keys(customRoles).map(rName => (
+                          <option key={rName} value={rName}>{rName}</option>
+                        ))}
                       </select>
                     ) : (
                       <span style={{ 
@@ -393,28 +433,65 @@ Yours sincerely,
                   {/* Allowed Modules column */}
                   <td style={{ maxWidth: '350px' }}>
                     {isEditing ? (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', padding: '6px 0' }}>
-                        {MODULES_LIST.map(m => {
-                          const checked = editModules.includes(m.key);
-                          return (
-                            <div 
-                              key={m.key} 
-                              onClick={() => handleToggleModule(m.key)}
-                              style={{ 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                gap: '6px', 
-                                fontSize: '11px', 
-                                cursor: 'pointer',
-                                userSelect: 'none',
-                                color: checked ? 'var(--accent)' : 'var(--text-muted)'
-                              }}
-                            >
-                              {checked ? <CheckSquare size={13} style={{ color: 'var(--accent)' }} /> : <Square size={13} />}
-                              <span>{m.label}</span>
-                            </div>
-                          );
-                        })}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '6px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditRole('admin');
+                              setEditScope('all');
+                              setEditModules(MODULES_LIST.map(m => m.key));
+                            }}
+                            style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--accent)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
+                          >
+                            ⭐ Super Admin Blueprint
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditRole('recruiter');
+                              setEditScope('self');
+                              setEditModules(['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors']);
+                            }}
+                            style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
+                          >
+                            💼 Recruiter Blueprint
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditRole('manager');
+                              setEditScope('all');
+                              setEditModules(['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors', 'credit_control', 'cashflow', 'reports']);
+                            }}
+                            style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--warning)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
+                          >
+                            📊 Finance Blueprint
+                          </button>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', padding: '6px 0' }}>
+                          {MODULES_LIST.map(m => {
+                            const checked = editModules.includes(m.key);
+                            return (
+                              <div 
+                                key={m.key} 
+                                onClick={() => handleToggleModule(m.key)}
+                                style={{ 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  gap: '6px', 
+                                  fontSize: '11px', 
+                                  cursor: 'pointer',
+                                  userSelect: 'none',
+                                  color: checked ? 'var(--accent)' : 'var(--text-muted)'
+                                }}
+                              >
+                                {checked ? <CheckSquare size={13} style={{ color: 'var(--accent)' }} /> : <Square size={13} />}
+                                <span>{m.label}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
@@ -697,7 +774,7 @@ Yours sincerely,
       </div>
 
     </div>
-  ) : (
+  ) : activeSubTab === 'exits' ? (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', backgroundColor: 'var(--bg-card)', maxWidth: '700px' }}>
       <div>
         <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--accent)' }}><AlertTriangle size={16} style={{ marginRight: '6px' }} /> Offboarding Exit Notification Settings</h3>
@@ -744,7 +821,112 @@ Yours sincerely,
         Save Exit Configuration
       </button>
     </div>
-  )}
+  ) : activeSubTab === 'custom-roles' ? (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '24px', alignItems: 'start', animation: 'fadeIn 0.2s', width: '100%' }}>
+      {/* Create Custom Role panel */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', backgroundColor: 'var(--bg-card)' }}>
+        <div>
+          <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--accent)' }}><Plus size={16} style={{ marginRight: '6px' }} /> Create Custom Role</h3>
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Assign a unique role title and set allowed module access.</p>
+        </div>
+        
+        <div className="form-group">
+          <label className="form-label">Role Name</label>
+          <input
+            type="text"
+            placeholder="e.g. HR Specialist"
+            className="form-input"
+            value={newRoleBuilderName}
+            onChange={(e) => setNewRoleBuilderName(e.target.value)}
+          />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label" style={{ marginBottom: '8px', display: 'block' }}>Permitted Modules</label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
+            {MODULES_LIST.map(m => {
+              const checked = newRoleBuilderModules.includes(m.key);
+              return (
+                <div
+                  key={m.key}
+                  onClick={() => {
+                    setNewRoleBuilderModules(prev => 
+                      prev.includes(m.key) ? prev.filter(item => item !== m.key) : [...prev, m.key]
+                    );
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer', color: checked ? 'var(--accent)' : 'var(--text-secondary)', userSelect: 'none' }}
+                >
+                  {checked ? <CheckSquare size={14} style={{ color: 'var(--accent)' }} /> : <Square size={14} />}
+                  <span>{m.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => {
+            if (!newRoleBuilderName.trim()) {
+              onShowToast("Please enter a name for the custom role.", "warning");
+              return;
+            }
+            const updated = { ...customRoles, [newRoleBuilderName.trim()]: newRoleBuilderModules };
+            setCustomRoles(updated);
+            localStorage.setItem('bm-custom-roles', JSON.stringify(updated));
+            onShowToast(`Saved custom role: ${newRoleBuilderName.trim()}`, "success");
+            setNewRoleBuilderName('');
+            setNewRoleBuilderModules([]);
+          }}
+        >
+          Save Custom Role
+        </button>
+      </div>
+
+      {/* List of Custom Roles */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', backgroundColor: 'var(--bg-card)' }}>
+        <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>Active Custom Roles Registry</h3>
+        {Object.keys(customRoles).length === 0 ? (
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>No custom roles created yet.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {Object.entries(customRoles).map(([rName, modules]) => (
+              <div key={rName} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+                <div>
+                  <strong style={{ fontSize: '13px', color: 'var(--accent)' }}>{rName}</strong>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                    {modules.map(mKey => {
+                      const label = MODULES_LIST.find(ml => ml.key === mKey)?.label || mKey;
+                      return (
+                        <span key={mKey} style={{ fontSize: '9px', backgroundColor: 'rgba(99,102,241,0.08)', color: 'var(--accent)', border: '1px solid rgba(99,102,241,0.15)', padding: '1px 5px', borderRadius: '3px' }}>
+                          {label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn-secondary delete"
+                  style={{ padding: '4px 8px', fontSize: '10px' }}
+                  onClick={() => {
+                    const updated = { ...customRoles };
+                    delete updated[rName];
+                    setCustomRoles(updated);
+                    localStorage.setItem('bm-custom-roles', JSON.stringify(updated));
+                    onShowToast(`Deleted custom role: ${rName}`, "info");
+                  }}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null}
 </div>
 );
 }

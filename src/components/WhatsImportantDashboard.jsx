@@ -30,6 +30,64 @@ export default function WhatsImportantDashboard({
 }) {
   const [activeHorizon, setActiveHorizon] = useState('today');
   const [searchQuery, setSearchQuery] = useState('');
+  const [dismissedIds, setDismissedIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bm-dismissed-alerts');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const handleDismissAlert = (id) => {
+    const updated = [...dismissedIds, id];
+    setDismissedIds(updated);
+    localStorage.setItem('bm-dismissed-alerts', JSON.stringify(updated));
+  };
+
+  const [showDismissedDrawer, setShowDismissedDrawer] = useState(false);
+
+  const handleRestoreAlert = (id) => {
+    const updated = dismissedIds.filter(x => x !== id);
+    setDismissedIds(updated);
+    localStorage.setItem('bm-dismissed-alerts', JSON.stringify(updated));
+  };
+
+  const [dispatchLogs, setDispatchLogs] = useState([]);
+
+  React.useEffect(() => {
+    const criticalAlerts = filteredAlerts.filter(a => a.type === 'critical');
+    if (criticalAlerts.length === 0) return;
+
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    const newLogs = [];
+    criticalAlerts.forEach(a => {
+      const alreadyLogged = dispatchLogs.some(log => log.alertId === a.id);
+      if (!alreadyLogged) {
+        newLogs.push({
+          id: `log-${Date.now()}-${a.id}`,
+          alertId: a.id,
+          timestamp: new Date().toLocaleTimeString(),
+          title: a.title,
+          status: 'Dispatched',
+          method: 'Web Push & Email Dispatch to AP/Finance desk'
+        });
+
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          new Notification(`⚠️ Humres Risk Alert: ${a.title}`, {
+            body: a.desc
+          });
+        }
+      }
+    });
+
+    if (newLogs.length > 0) {
+      setDispatchLogs(prev => [...newLogs, ...prev].slice(0, 15));
+    }
+  }, [filteredAlerts]);
 
   // Fixed Anchor Date representing "Today"
   const ANCHOR_DATE = new Date('2026-07-13');
@@ -422,8 +480,47 @@ export default function WhatsImportantDashboard({
     })
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
+  const staffExpiryAlerts = [];
+  activeStaff.forEach(s => {
+    if (s.visaExpiryDate) {
+      const expDate = new Date(s.visaExpiryDate);
+      const diffTime = expDate.getTime() - ANCHOR_DATE.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      if (diffDays <= 60) {
+        const isExpired = diffDays < 0;
+        staffExpiryAlerts.push({
+          id: `staff-visa-${s.id}`,
+          category: 'docAlerts',
+          title: `Visa Expiry: ${s.fullName}`,
+          desc: `${s.fullName}'s work visa ${isExpired ? 'expired on' : 'expires on'} ${s.visaExpiryDate} (${isExpired ? 'Expired' : `${diffDays} days remaining`}).`,
+          badge: isExpired ? 'Visa Expired' : 'Visa Expiring',
+          type: isExpired ? 'critical' : 'warning',
+          staffId: s.id
+        });
+      }
+    }
+
+    if (s.contractRenewalDate) {
+      const renDate = new Date(s.contractRenewalDate);
+      const diffTime = renDate.getTime() - ANCHOR_DATE.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      if (diffDays <= 60) {
+        const isExpired = diffDays < 0;
+        staffExpiryAlerts.push({
+          id: `staff-contract-${s.id}`,
+          category: 'docAlerts',
+          title: `Contract Renewal: ${s.fullName}`,
+          desc: `${s.fullName}'s employment contract is due for renewal on ${s.contractRenewalDate}.`,
+          badge: isExpired ? 'Renewal Overdue' : 'Renewal Impending',
+          type: isExpired ? 'critical' : 'warning',
+          staffId: s.id
+        });
+      }
+    }
+  });
+
   // Combine everything
-  const allAlerts = [
+  const rawAllAlerts = [
     ...horizonLeaves,
     ...horizonHolidays,
     ...horizonFilingTasks,
@@ -436,8 +533,12 @@ export default function WhatsImportantDashboard({
     ...horizonAPBills,
     ...horizonInvoicesToRaise,
     ...debtorOver60Alerts,
-    ...upcomingEvents
+    ...upcomingEvents,
+    ...staffExpiryAlerts
   ];
+
+  const dismissedAlerts = rawAllAlerts.filter(a => dismissedIds.includes(a.id));
+  const allAlerts = rawAllAlerts.filter(a => !dismissedIds.includes(a.id));
 
   // Apply search query
   const filteredAlerts = allAlerts.filter(a => {
@@ -555,25 +656,37 @@ export default function WhatsImportantDashboard({
           ))}
         </div>
 
-        {/* Search bar */}
-        <div style={{ position: 'relative', width: '260px' }}>
-          <Search size={14} style={{ position: 'absolute', left: '10px', top: '11px', color: 'var(--text-muted)' }} />
-          <input
-            type="text"
-            placeholder="Search important items..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px 8px 32px',
-              fontSize: '12px',
-              background: 'var(--bg-secondary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '6px',
-              color: 'var(--text-primary)',
-              outline: 'none'
-            }}
-          />
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Search bar */}
+          <div style={{ position: 'relative', width: '260px' }}>
+            <Search size={14} style={{ position: 'absolute', left: '10px', top: '11px', color: 'var(--text-muted)' }} />
+            <input
+              type="text"
+              placeholder="Search important items..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px 12px 8px 32px',
+                fontSize: '12px',
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                color: 'var(--text-primary)',
+                outline: 'none'
+              }}
+            />
+          </div>
+          {dismissedIds.length > 0 && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setShowDismissedDrawer(true)}
+              style={{ fontSize: '11px', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+            >
+              🔄 History ({dismissedIds.length})
+            </button>
+          )}
         </div>
       </div>
 
@@ -765,17 +878,38 @@ export default function WhatsImportantDashboard({
                             <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
                               {item.title}
                             </span>
-                            <span style={{ 
-                              fontSize: '9px', 
-                              fontWeight: 700,
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              textTransform: 'uppercase',
-                              whiteSpace: 'nowrap',
-                              ...badgeStyle
-                            }}>
-                              {item.badge}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ 
+                                fontSize: '9px', 
+                                fontWeight: 700,
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                textTransform: 'uppercase',
+                                whiteSpace: 'nowrap',
+                                ...badgeStyle
+                              }}>
+                                {item.badge}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDismissAlert(item.id);
+                                }}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'var(--text-muted)',
+                                  fontSize: '11px',
+                                  cursor: 'pointer',
+                                  padding: '2px',
+                                  lineHeight: 1
+                                }}
+                                title="Dismiss Alert"
+                              >
+                                ✕
+                              </button>
+                            </div>
                           </div>
                           
                           <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
@@ -888,6 +1022,78 @@ export default function WhatsImportantDashboard({
           );
         })}
       </div>
+
+      {/* Dispatch logs simulator console */}
+      <div className="detail-section" style={{ marginTop: '24px', backgroundColor: 'rgba(0,0,0,0.15)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px' }}>
+        <h3 style={{ fontSize: '13px', margin: '0 0 8px 0', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>🛡️ Automatic Web Push & Email Dispatch Logs</span>
+          <span style={{ fontSize: '10px', fontWeight: 'normal', color: 'var(--text-muted)' }}>(Realtime alerts monitoring)</span>
+        </h3>
+        {dispatchLogs.length === 0 ? (
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+            No critical risk alerts dispatched yet. Automatic push-notifications will log here.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto' }}>
+            {dispatchLogs.map(log => (
+              <div key={log.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', borderBottom: '1px dashed rgba(255,255,255,0.03)', paddingBottom: '4px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>[{log.status}]</span>
+                  <span style={{ color: 'var(--text-primary)' }}>{log.title}</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>({log.method})</span>
+                </div>
+                <div style={{ color: 'var(--text-muted)', fontFamily: 'monospace' }}>{log.timestamp}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Dismissed Alerts History Drawer */}
+      {showDismissedDrawer && (
+        <div className="form-wizard-overlay" onClick={() => setShowDismissedDrawer(false)}>
+          <div className="form-wizard-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '550px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="wizard-header">
+              <h2 className="wizard-title" style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>🔄 Dismissed Alerts History Log</h2>
+              <button type="button" className="btn-close" onClick={() => setShowDismissedDrawer(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>✕</button>
+            </div>
+
+            <div className="wizard-content" style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                The following alerts were hidden from the primary dashboard feed. Click "Restore Alert" to reactivate them.
+              </p>
+              {dismissedAlerts.length === 0 ? (
+                <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '12px' }}>
+                  No dismissed alerts found in history.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {dismissedAlerts.map(item => (
+                    <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, marginRight: '12px' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>{item.title}</span>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{item.desc}</span>
+                      </div>
+                      <button 
+                        type="button" 
+                        className="btn-secondary" 
+                        onClick={() => handleRestoreAlert(item.id)}
+                        style={{ fontSize: '10px', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
+                      >
+                        Restore Alert
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="wizard-footer" style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 24px', borderTop: '1px solid var(--border-color)' }}>
+              <button type="button" className="btn-secondary" onClick={() => setShowDismissedDrawer(false)}>Close History</button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

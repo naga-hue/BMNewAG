@@ -186,7 +186,61 @@ export default function CashflowDashboard({
     return total;
   }, [companies, selectedCompanyId, selectedBankAccountId, realtimeRates]);
 
+  // Calculate Average Monthly Overhead Burn and Cash Runway
+  const averageMonthlyOverheadBurn = useMemo(() => {
+    if (!expenses || expenses.length === 0) return 10000;
+    let totalExpensesGBP = 0;
+    const months = new Set();
+    
+    expenses.forEach(e => {
+      if (e.amount && e.currency) {
+        totalExpensesGBP += convertToGBP(e.amount, e.currency, false);
+        if (e.plMonth) {
+          months.add(e.plMonth);
+        }
+      }
+    });
+    
+    const divisor = months.size || 1;
+    return totalExpensesGBP / divisor;
+  }, [expenses, realtimeRates]);
+
+  const cashRunwayMonths = useMemo(() => {
+    if (averageMonthlyOverheadBurn <= 0) return 999;
+    return startingCashGBP / averageMonthlyOverheadBurn;
+  }, [startingCashGBP, averageMonthlyOverheadBurn]);
+
   // 1. Inflows: Unpaid Placements
+  const clientAverageDelays = useMemo(() => {
+    const delaysByClient = {};
+    placements.forEach(p => {
+      if (
+        (p.clientPaymentStatus === 'paid' || p.paymentStatus === 'paid') &&
+        p.invoiceDueDate &&
+        (p.clientPaidDate || p.paymentReceivedDate)
+      ) {
+        const due = new Date(p.invoiceDueDate);
+        const paid = new Date(p.clientPaidDate || p.paymentReceivedDate);
+        if (!isNaN(due.getTime()) && !isNaN(paid.getTime())) {
+          const diffDays = Math.round((paid.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+          const client = p.clientCompany || 'Default Client';
+          if (!delaysByClient[client]) {
+            delaysByClient[client] = [];
+          }
+          delaysByClient[client].push(diffDays);
+        }
+      }
+    });
+
+    const averages = {};
+    Object.keys(delaysByClient).forEach(client => {
+      const list = delaysByClient[client];
+      const sum = list.reduce((a, b) => a + b, 0);
+      averages[client] = Math.max(0, Math.round(sum / list.length));
+    });
+    return averages;
+  }, [placements]);
+
   const inflows = useMemo(() => {
     return placements.map(p => {
       const gross = Number(p.grossBillAmount) || 0;
@@ -247,6 +301,25 @@ export default function CashflowDashboard({
         }
       }
 
+      // Adjust expected payout date by client paid delay average for unpaid invoices
+      let expectedDueDate = dueDate || raisedDate;
+      const isUnpaid = p.clientPaymentStatus !== 'paid' && p.paymentStatus !== 'paid';
+      if (isUnpaid) {
+        const clientDelay = clientAverageDelays[p.clientCompany] || 0;
+        if (clientDelay > 0 && expectedDueDate) {
+          try {
+            const d = new Date(expectedDueDate);
+            if (!isNaN(d.getTime())) {
+              d.setDate(d.getDate() + clientDelay);
+              const y = d.getFullYear();
+              const m = String(d.getMonth() + 1).padStart(2, '0');
+              const dayVal = String(d.getDate()).padStart(2, '0');
+              expectedDueDate = `${y}-${m}-${dayVal}`;
+            }
+          } catch (e) {}
+        }
+      }
+
       const paid = Number(p.amountPaid) || 0;
       const outstanding = Math.max(0, total - paid);
 
@@ -272,7 +345,7 @@ export default function CashflowDashboard({
         placementId: p.placementId,
         clientCompany: p.clientCompany,
         candidateName: p.candidateName,
-        dueDate: dueDate || raisedDate,
+        dueDate: expectedDueDate,
         totalInvoice: total,
         outstanding,
         outstandingGBP,
@@ -715,8 +788,26 @@ export default function CashflowDashboard({
           </div>
 
           {/* Metric Tiles (Normalized to GBP) */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.2fr', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
             
+            {/* Cash Runway Card */}
+            <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--accent)', borderRadius: '12px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  ⏳ Cash Runway
+                </span>
+                <h2 style={{ fontSize: '20px', fontWeight: 800, margin: '4px 0 2px 0', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                  {cashRunwayMonths > 100 ? '100+' : cashRunwayMonths.toFixed(1)} Mo
+                </h2>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                  Burn: £{Math.round(averageMonthlyOverheadBurn).toLocaleString()}/mo
+                </span>
+              </div>
+              <div style={{ backgroundColor: 'rgba(99, 102, 241, 0.1)', color: 'var(--accent)', padding: '8px', borderRadius: '8px' }}>
+                <Clock size={18} />
+              </div>
+            </div>
+
             {/* Live Bank Starting Cash */}
             <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>

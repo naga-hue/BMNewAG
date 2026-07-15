@@ -1,16 +1,37 @@
 import React, { useState, useMemo } from 'react';
+// @ts-ignore
 import MultiSelectFilter from '../MultiSelectFilter';
 import { useBoundStore } from '../../store/useBoundStore';
 import { toGBP } from '../../utils/currency';
 import { getDaysWorkedInMonth } from './shared';
+
+interface YtdAllocationMatrixProps {
+  setDrilldownMonthIdx: (idx: number | 'ytd') => void;
+  setDrilldownRowId: (id: string | null) => void;
+  setDrilldownRowType: (type: string | null) => void;
+  setDrilldownTargetVal: (val: string | null) => void;
+  onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
+}
+
+interface MatrixItem {
+  id: string;
+  name: string;
+  type: 'company' | 'nominal' | 'party';
+  targetVal: string;
+  months: number[];
+  transactionsByMonth: any[][];
+  total: number;
+  children: MatrixItem[];
+  subtitle?: string;
+}
 
 export default function YtdAllocationMatrix({
   setDrilldownMonthIdx,
   setDrilldownRowId,
   setDrilldownRowType,
   setDrilldownTargetVal,
-  onShowToast
-}) {
+  onShowToast: _onShowToast
+}: YtdAllocationMatrixProps) {
   const staff = useBoundStore(state => state.staff);
   const vendors = useBoundStore(state => state.vendors);
   const expenses = useBoundStore(state => state.expenses);
@@ -19,11 +40,11 @@ export default function YtdAllocationMatrix({
 
   // Matrix Filter states
   const [matrixYear, setMatrixYear] = useState('2026');
-  const [matrixCompanyFilter, setMatrixCompanyFilter] = useState(['all']);
-  const [matrixDeptFilter, setMatrixDeptFilter] = useState(['all']);
+  const [matrixCompanyFilter, setMatrixCompanyFilter] = useState<string[]>(['all']);
+  const [matrixDeptFilter, setMatrixDeptFilter] = useState<string[]>(['all']);
   const [matrixStaffFilter, setMatrixStaffFilter] = useState('all');
-  const [matrixGroupingMode, setMatrixGroupingMode] = useState('company-first'); // company-first, nominal-first
-  const [matrixExpandedKeys, setMatrixExpandedKeys] = useState({});
+  const [matrixGroupingMode, setMatrixGroupingMode] = useState<'company-first' | 'nominal-first'>('company-first'); // company-first, nominal-first
+  const [matrixExpandedKeys, setMatrixExpandedKeys] = useState<Record<string, boolean>>({});
 
   const companyOptions = useMemo(() => {
     return [
@@ -33,7 +54,7 @@ export default function YtdAllocationMatrix({
   }, [companies]);
 
   const activeNominalCodes = useMemo(() => {
-    return (nominalCodes || []).map(c => {
+    return (nominalCodes || []).map((c: any) => {
       if (typeof c === 'string') {
         const parts = c.split(' - ');
         return { id: parts[0] || c, code: c, type: 'indirect' };
@@ -46,13 +67,13 @@ export default function YtdAllocationMatrix({
         };
       }
       return null;
-    }).filter(c => c && c.code);
+    }).filter((c): c is { id: string; code: string; type: string } => c !== null && !!c.code);
   }, [nominalCodes]);
 
   const matrixDeptOptions = useMemo(() => {
-    const depts = [];
+    const depts: string[] = [];
     companies.forEach(c => {
-      (c.departments || []).forEach(d => {
+      (c.departments || []).forEach((d: any) => {
         const name = d.name || d;
         if (name && !depts.includes(name)) depts.push(name);
       });
@@ -69,8 +90,8 @@ export default function YtdAllocationMatrix({
   }, [companies, staff]);
 
   const { flatRowsForMatrix, computedMatrixData } = useMemo(() => {
-    const staffOverhead = {};
-    const staffTrans = {};
+    const staffOverhead: Record<string, number[]> = {};
+    const staffTrans: Record<string, any[][]> = {};
     staff.forEach(s => {
       staffOverhead[s.id] = Array(12).fill(0);
       staffTrans[s.id] = Array.from({ length: 12 }, () => []);
@@ -91,11 +112,11 @@ export default function YtdAllocationMatrix({
         const gbpAmt = toGBP(exp.amount, exp.currency);
 
         if (exp.allocationType === 'company') {
-          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+          const targets = (Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean)) as string[];
           if (targets.length > 0) {
             if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
               targets.forEach(compId => {
-                const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
+                const percent = parseInt(String(exp.manualAllocationShares?.[compId] || 0), 10);
                 const companyShare = gbpAmt * (percent / 100);
                 const compStaff = activeStaff.filter(s => s.companyId === compId);
                 const compHead = compStaff.length || 1;
@@ -116,11 +137,11 @@ export default function YtdAllocationMatrix({
             }
           }
         } else if (exp.allocationType === 'department') {
-          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+          const targets = (Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean)) as string[];
           if (targets.length > 0) {
             if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
               targets.forEach(dept => {
-                const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
+                const percent = parseInt(String(exp.manualAllocationShares?.[dept] || 0), 10);
                 const deptShare = gbpAmt * (percent / 100);
                 const deptStaff = activeStaff.filter(s => s.department === dept);
                 const deptHead = deptStaff.length || 1;
@@ -131,7 +152,7 @@ export default function YtdAllocationMatrix({
                 });
               });
             } else {
-              const eligibleStaff = activeStaff.filter(s => targets.includes(s.department));
+              const eligibleStaff = activeStaff.filter(s => s.department && targets.includes(s.department));
               const totalHead = eligibleStaff.length || 1;
               const perStaffShare = gbpAmt / totalHead;
               eligibleStaff.forEach(s => {
@@ -141,12 +162,12 @@ export default function YtdAllocationMatrix({
             }
           }
         } else if (exp.allocationType === 'staff') {
-          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
+          const targets = (Array.isArray(exp.allocationTarget) ? exp.allocationTarget : []) as string[];
           if (targets.length > 0) {
             if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
               targets.forEach(staffId => {
                 if (activeStaffIds.includes(staffId)) {
-                  const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
+                  const percent = parseInt(String(exp.manualAllocationShares?.[staffId] || 0), 10);
                   const perStaffShare = gbpAmt * (percent / 100);
                   staffOverhead[staffId][mIdx] += perStaffShare;
                   staffTrans[staffId][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: `Direct Staff Custom Split (${percent}%)` });
@@ -172,7 +193,7 @@ export default function YtdAllocationMatrix({
       });
     }
 
-    const computedData = [];
+    const computedData: MatrixItem[] = [];
 
     if (matrixGroupingMode === 'nominal-first') {
       const visibleCompanies = companies.filter(c => matrixCompanyFilter.includes('all') || matrixCompanyFilter.includes(c.id));
@@ -180,12 +201,12 @@ export default function YtdAllocationMatrix({
 
       activeNominalCodes.forEach(nominal => {
         const nominalMonths = Array(12).fill(0);
-        const nominalTransactionsByMonth = Array.from({ length: 12 }, () => []);
-        const companiesMap = {};
+        const nominalTransactionsByMonth: any[][] = Array.from({ length: 12 }, () => []);
+        const companiesMap: Record<string, { id: string; months: number[]; transactionsByMonth: any[][]; parties: Record<string, { months: number[]; transactionsByMonth: any[][] }> }> = {};
 
         staff.forEach(member => {
           if (matrixStaffFilter !== 'all' && member.id !== matrixStaffFilter) return false;
-          if (!matrixDeptFilter.includes('all') && !matrixDeptFilter.includes(member.department)) return false;
+          if (!matrixDeptFilter.includes('all') && (!member.department || !matrixDeptFilter.includes(member.department))) return false;
           if (!visibleCompaniesIds.includes(member.companyId)) return false;
 
           const memberTransactionsByMonth = staffTrans[member.id] || Array.from({ length: 12 }, () => []);
@@ -238,10 +259,10 @@ export default function YtdAllocationMatrix({
           }
         });
 
-        const compRows = [];
+        const compRows: MatrixItem[] = [];
         Object.keys(companiesMap).sort().forEach(compName => {
           const compData = companiesMap[compName];
-          const partyRows = [];
+          const partyRows: MatrixItem[] = [];
 
           Object.keys(compData.parties).sort().forEach(payee => {
             const partyData = compData.parties[payee];
@@ -286,14 +307,14 @@ export default function YtdAllocationMatrix({
       visibleCompanies.forEach(company => {
         const companyStaff = staff.filter(s => {
           if (s.companyId !== company.id) return false;
-          if (!matrixDeptFilter.includes('all') && !matrixDeptFilter.includes(s.department)) return false;
+          if (!matrixDeptFilter.includes('all') && (!s.department || !matrixDeptFilter.includes(s.department))) return false;
           if (matrixStaffFilter !== 'all' && s.id !== matrixStaffFilter) return false;
           return true;
         });
 
         const companyMonths = Array(12).fill(0);
-        const companyTransactionsByMonth = Array.from({ length: 12 }, () => []);
-        const nominalsMap = {};
+        const companyTransactionsByMonth: any[][] = Array.from({ length: 12 }, () => []);
+        const nominalsMap: Record<string, { months: number[]; transactionsByMonth: any[][]; parties: Record<string, { months: number[]; transactionsByMonth: any[][] }> }> = {};
 
         companyStaff.forEach(member => {
           const memberTransactionsByMonth = staffTrans[member.id] || Array.from({ length: 12 }, () => []);
@@ -342,10 +363,10 @@ export default function YtdAllocationMatrix({
           }
         });
 
-        const nominalRows = [];
+        const nominalRows: MatrixItem[] = [];
         Object.keys(nominalsMap).sort().forEach(nom => {
           const nomData = nominalsMap[nom];
-          const partyRows = [];
+          const partyRows: MatrixItem[] = [];
 
           Object.keys(nomData.parties).sort().forEach(payee => {
             const partyData = nomData.parties[payee];
@@ -386,7 +407,7 @@ export default function YtdAllocationMatrix({
       });
     }
 
-    const flatRows = [];
+    const flatRows: MatrixItem[] = [];
     computedData.forEach(compRow => {
       flatRows.push(compRow);
       if (matrixExpandedKeys[compRow.id]) {
@@ -421,7 +442,7 @@ export default function YtdAllocationMatrix({
     return colTotals.reduce((a, b) => a + b, 0);
   }, [colTotals]);
 
-  const toggleKey = (key) => {
+  const toggleKey = (key: string) => {
     setMatrixExpandedKeys(prev => ({
       ...prev,
       [key]: !prev[key]
@@ -429,7 +450,7 @@ export default function YtdAllocationMatrix({
   };
 
   const expandAll = () => {
-    const newKeys = {};
+    const newKeys: Record<string, boolean> = {};
     computedMatrixData.forEach(compRow => {
       newKeys[compRow.id] = true;
       compRow.children.forEach(nomRow => {
@@ -469,7 +490,7 @@ export default function YtdAllocationMatrix({
           <MultiSelectFilter
             options={companyOptions}
             selectedValues={matrixCompanyFilter}
-            onChange={(vals) => {
+            onChange={(vals: string[]) => {
               setMatrixCompanyFilter(vals);
               setMatrixDeptFilter(['all']);
               setMatrixStaffFilter('all');
@@ -480,7 +501,7 @@ export default function YtdAllocationMatrix({
           <MultiSelectFilter
             options={matrixDeptOptions}
             selectedValues={matrixDeptFilter}
-            onChange={(vals) => {
+            onChange={(vals: string[]) => {
               setMatrixDeptFilter(vals);
               setMatrixStaffFilter('all');
             }}
@@ -499,7 +520,7 @@ export default function YtdAllocationMatrix({
                 ? staff
                 : staff.filter(s => matrixCompanyFilter.includes(s.companyId));
               const activeVisibleStaff = visibleStaff.filter(s => {
-                if (!matrixDeptFilter.includes('all') && !matrixDeptFilter.includes(s.department)) return false;
+                if (!matrixDeptFilter.includes('all') && (!s.department || !matrixDeptFilter.includes(s.department))) return false;
                 return true;
               });
               return activeVisibleStaff.map(s => (
@@ -511,7 +532,7 @@ export default function YtdAllocationMatrix({
           <select
             className="select-filter"
             value={matrixGroupingMode}
-            onChange={(e) => setMatrixGroupingMode(e.target.value)}
+            onChange={(e) => setMatrixGroupingMode(e.target.value as 'company-first' | 'nominal-first')}
             style={{ padding: '6px', fontSize: '12px', minWidth: '160px', backgroundColor: 'rgba(99, 102, 241, 0.08)', color: 'var(--primary)', fontWeight: 600, border: '1px solid rgba(99, 102, 241, 0.2)' }}
           >
             <option value="company-first">🏢 Company ➔ Nominal ➔ Party</option>
@@ -542,7 +563,7 @@ export default function YtdAllocationMatrix({
           <tbody>
             {flatRowsForMatrix.length === 0 ? (
               <tr>
-                <td colSpan="14" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                <td colSpan={14} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
                   No corporate entities configured.
                 </td>
               </tr>
@@ -550,7 +571,6 @@ export default function YtdAllocationMatrix({
               flatRowsForMatrix.map(row => {
                 const isLevel1 = (matrixGroupingMode === 'company-first' && row.type === 'company') || (matrixGroupingMode === 'nominal-first' && row.type === 'nominal');
                 const isLevel2 = (matrixGroupingMode === 'company-first' && row.type === 'nominal') || (matrixGroupingMode === 'nominal-first' && row.type === 'company');
-                const isLevel3 = row.type === 'party';
 
                 const paddingLeft = isLevel1 ? '12px' : isLevel2 ? '32px' : '52px';
                 const hasChildren = isLevel1 || isLevel2;
@@ -614,9 +634,6 @@ export default function YtdAllocationMatrix({
                           >
                             {row.name}
                           </button>
-                          {isLevel3 && row.subtitle && (
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>{row.subtitle}</span>
-                          )}
                         </div>
                       </div>
                     </td>

@@ -56,11 +56,11 @@ import { initialNominalCodes, initialExpenses } from './mockExpenses';
 // Lazy load dashboard components
 const CreditControlDashboard = lazy(() => import('./components/credit-control'));
 const CashflowDashboard = lazy(() => import('./components/CashflowDashboard'));
-const LeavesDashboard = lazy(() => import('./components/LeavesDashboard'));
-const CommissionsDashboard = lazy(() => import('./components/CommissionsDashboard'));
-const PayrollDashboard = lazy(() => import('./components/PayrollDashboard'));
+const LeavesDashboard = lazy(() => import('./components/leaves'));
+const CommissionsDashboard = lazy(() => import('./components/commissions'));
+const PayrollDashboard = lazy(() => import('./components/payroll'));
 const VendorsDashboard = lazy(() => import('./components/vendors'));
-const PlacementsDashboard = lazy(() => import('./components/PlacementsDashboard'));
+const PlacementsDashboard = lazy(() => import('./components/placements'));
 const ExpensesDashboard = lazy(() => import('./components/expenses'));
 const LogsDashboard = lazy(() => import('./components/LogsDashboard'));
 const ReportsDashboard = lazy(() => import('./components/ReportsDashboard'));
@@ -1896,6 +1896,7 @@ export default function App() {
               holidays={holidays}
               contracts={contracts}
               vendors={vendors}
+              placements={scopedPlacements}
             />
           )}
 

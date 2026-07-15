@@ -85,6 +85,46 @@ export default function CreditControlDashboard({
   const [expandDebtors60, setExpandDebtors60] = useState(false);
   const [collapseAnalytics, setCollapseAnalytics] = useState(true);
 
+  // Simplicity importer states
+  const [showSimplicityImporter, setShowSimplicityImporter] = useState(false);
+  const [simplicityPastedData, setSimplicityPastedData] = useState('');
+
+  const handleImportSimplicitySchedule = async () => {
+    if (!simplicityPastedData.trim()) {
+      onShowToast("Please paste Simplicity factoring schedule rows first.", "warning");
+      return;
+    }
+
+    const lines = simplicityPastedData.split('\n').map(l => l.trim()).filter(Boolean);
+    let matchCount = 0;
+    
+    for (const line of lines) {
+      const parts = line.split(/[\t,]/).map(p => p.trim());
+      if (parts.length < 2) continue;
+      
+      const invNumber = parts[0];
+      const amtPaid = parseFloat(parts[1].replace(/[^0-9.-]/g, '')) || 0;
+
+      const matched = placements.find(p => p.invoiceNumber && p.invoiceNumber.toLowerCase() === invNumber.toLowerCase());
+      if (matched && matched.clientPaymentStatus !== 'paid') {
+        const currentBalance = matched.balanceOutstanding !== undefined ? Number(matched.balanceOutstanding) : (Number(matched.totalInvoiceAmount) || Number(matched.grossBillAmount) * 1.20);
+        const isFullyPaid = amtPaid >= currentBalance;
+        const updated = {
+          ...matched,
+          clientPaymentStatus: isFullyPaid ? 'paid' as const : 'unpaid' as const,
+          balanceOutstanding: Math.max(0, currentBalance - amtPaid),
+          clientPaidDate: new Date().toISOString().split('T')[0]
+        };
+        await onUpdatePlacement(updated);
+        matchCount++;
+      }
+    }
+
+    onShowToast(`⚡ Simplicity Importer: Successfully matched and updated ${matchCount} invoices.`, "success");
+    setSimplicityPastedData('');
+    setShowSimplicityImporter(false);
+  };
+
   // Helper date conversions
   const todayStr = useMemo(() => {
     return new Date().toISOString().split('T')[0];
@@ -386,6 +426,51 @@ export default function CreditControlDashboard({
     link.click();
     document.body.removeChild(link);
     onShowToast("Ledger exported to CSV successfully.", "success");
+  };
+
+  const handleExportSimplicity = () => {
+    const headers = [
+      'Invoice Number',
+      'Invoice Date',
+      'Client Company',
+      'Candidate Name',
+      'Gross Amount (£)',
+      'VAT (£)',
+      'Total Incl VAT (£)',
+      'Due Date',
+      'Factored Advance Value (£)',
+      'Status'
+    ];
+    const rows = filteredInvoices.map(inv => {
+      const gross = Number(inv.grossBillAmount) || 0;
+      const vat = gross * 0.20;
+      const total = gross * 1.20;
+      const advance = gross * 0.9704;
+      return [
+        inv.invoiceNumber || '',
+        inv.invoiceRaisedDate || '',
+        inv.clientCompany || '',
+        inv.candidateName || '',
+        gross.toFixed(2),
+        vat.toFixed(2),
+        total.toFixed(2),
+        inv.invoiceDueDate || '',
+        advance.toFixed(2),
+        inv.paymentStatus || ''
+      ];
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + [headers.join(","), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Simplicity_Factoring_Upload_${activeSubTab}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    onShowToast("Simplicity factoring file exported successfully.", "success");
   };
 
   const selectedSums = useMemo(() => {
@@ -878,13 +963,31 @@ export default function CreditControlDashboard({
           <option value="next-month">Expected Next Month</option>
         </select>
 
-        <button 
+         <button 
           type="button" 
           className="btn-secondary" 
           onClick={handleExportCSV}
           style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '10px 14px' }}
         >
           📥 Export CSV
+        </button>
+
+        <button 
+          type="button" 
+          className="btn-primary" 
+          onClick={handleExportSimplicity}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '10px 14px' }}
+        >
+          ⚡ Simplicity Factoring Export
+        </button>
+
+        <button 
+          type="button" 
+          className="btn-secondary" 
+          onClick={() => setShowSimplicityImporter(true)}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '10px 14px' }}
+        >
+          ⚡ Simplicity Importer
         </button>
 
         <div style={{ position: 'relative', flex: '0 0 auto' }}>
@@ -1068,6 +1171,37 @@ export default function CreditControlDashboard({
         todayStr={todayStr}
         onShowToast={onShowToast}
       />
+
+      {/* Simplicity Importer Overlay Modal */}
+      {showSimplicityImporter && (
+        <div className="form-wizard-overlay" onClick={() => setShowSimplicityImporter(false)}>
+          <div className="form-wizard-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', display: 'flex', flexDirection: 'column' }}>
+            <div className="wizard-header">
+              <h2 className="wizard-title" style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>⚡ Simplicity Factoring Importer</h2>
+              <button type="button" className="btn-close" onClick={() => setShowSimplicityImporter(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>✕</button>
+            </div>
+
+            <div className="wizard-content" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                Paste columns from your Simplicity statement/remittance (Invoice Number in Column 1, Paid Cash Amount in Column 2). Comma or tab separated.
+              </p>
+              <textarea
+                className="form-input"
+                rows={8}
+                placeholder="INV-001, 15000&#10;INV-002, 8500"
+                value={simplicityPastedData}
+                onChange={(e) => setSimplicityPastedData(e.target.value)}
+                style={{ fontFamily: 'monospace', fontSize: '11px', resize: 'vertical' }}
+              />
+            </div>
+
+            <div className="wizard-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', padding: '12px 24px', borderTop: '1px solid var(--border-color)' }}>
+              <button type="button" className="btn-secondary" onClick={() => setShowSimplicityImporter(false)}>Cancel</button>
+              <button type="button" className="btn-primary" onClick={handleImportSimplicitySchedule}>Run Importer Matcher</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

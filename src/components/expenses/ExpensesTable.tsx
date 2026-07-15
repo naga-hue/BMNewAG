@@ -1,25 +1,42 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Trash2, Eye, Edit3, Search, Settings, AlertTriangle } from 'lucide-react';
+// @ts-ignore
 import MultiSelectFilter from '../MultiSelectFilter';
 import { useBoundStore } from '../../store/useBoundStore';
 import { toGBP } from '../../utils/currency';
 import { symbolMap } from './shared';
 
+interface ExpensesTableProps {
+  handleEditExpense: (expense: any) => void;
+  setLinkingPayrollExpId: (id: string | null) => void;
+  setLinkingStaffId: (id: string | null) => void;
+  setLinkingMonth: (month: string | null) => void;
+  setAllocatingRowId: (id: string | null) => void;
+  setAllocatingType: (type: string) => void;
+  setAllocatingTarget: (target: string[]) => void;
+  setAllocatingStaffIds: (ids: string[]) => void;
+  setAllocatingMode: (mode: string) => void;
+  setAllocatingManualShares: (shares: Record<string, number>) => void;
+  setExpandedSections: React.Dispatch<React.SetStateAction<{ company: boolean; department: boolean; staff: boolean }>>;
+  setAllocationSearch: (search: string) => void;
+  onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
+}
+
 export default function ExpensesTable({
   handleEditExpense,
-  setLinkingPayrollExpId,
-  setLinkingStaffId,
-  setLinkingMonth,
-  setAllocatingRowId,
-  setAllocatingType,
-  setAllocatingTarget,
-  setAllocatingStaffIds,
-  setAllocatingMode,
-  setAllocatingManualShares,
-  setExpandedSections,
-  setAllocationSearch,
+  setLinkingPayrollExpId: _setLinkingPayrollExpId,
+  setLinkingStaffId: _setLinkingStaffId,
+  setLinkingMonth: _setLinkingMonth,
+  setAllocatingRowId: _setAllocatingRowId,
+  setAllocatingType: _setAllocatingType,
+  setAllocatingTarget: _setAllocatingTarget,
+  setAllocatingStaffIds: _setAllocatingStaffIds,
+  setAllocatingMode: _setAllocatingMode,
+  setAllocatingManualShares: _setAllocatingManualShares,
+  setExpandedSections: _setExpandedSections,
+  setAllocationSearch: _setAllocationSearch,
   onShowToast
-}) {
+}: ExpensesTableProps) {
   const expenses = useBoundStore(state => state.expenses);
   const companies = useBoundStore(state => state.companies);
   const staff = useBoundStore(state => state.staff);
@@ -27,9 +44,9 @@ export default function ExpensesTable({
   const placements = useBoundStore(state => state.placements);
   const nominalCodes = useBoundStore(state => state.nominalCodes);
 
-  const saveExpense = useBoundStore(state => state.saveExpense || useBoundStore(state => state.updateExpense));
+  const updateExpense = useBoundStore(state => state.updateExpense);
+  const saveExpense = updateExpense;
   const deleteExpense = useBoundStore(state => state.deleteExpense);
-  const savePayrollRecord = useBoundStore(state => state.savePayrollRecord);
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
@@ -37,15 +54,15 @@ export default function ExpensesTable({
   const [vendorFilter, setVendorFilter] = useState('all');
   const [plMonthFilter, setPlMonthFilter] = useState('all');
   const [bankAccountFilter, setBankAccountFilter] = useState('all');
-  const [companyFilter, setCompanyFilter] = useState(['all']);
-  const [deptFilter, setDeptFilter] = useState(['all']);
+  const [companyFilter, setCompanyFilter] = useState<string[]>(['all']);
+  const [deptFilter, setDeptFilter] = useState<string[]>(['all']);
   const [staffFilter, setStaffFilter] = useState('all');
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
 
   // Column Visibility
   const [showColPicker, setShowColPicker] = useState(false);
-  const [visibleCols, setVisibleCols] = useState({
+  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>({
     select: true,
     date: true,
     plMonth: true,
@@ -61,20 +78,20 @@ export default function ExpensesTable({
 
   // Sorting State
   const [sortBy, setSortBy] = useState('date');
-  const [sortOrder, setSortOrder] = useState('desc');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // Multi-Selection State
-  const [selectedExpenseIds, setSelectedExpenseIds] = useState([]);
+  const [selectedExpenseIds, setSelectedExpenseIds] = useState<string[]>([]);
 
   // High Risk Action Confirmation Modal states
   const [showHighRiskModal, setShowHighRiskModal] = useState(false);
-  const [highRiskAction, setHighRiskAction] = useState(null); // 'reset' or 'bulk-delete'
+  const [highRiskAction, setHighRiskAction] = useState<'reset' | 'bulk-delete' | null>(null);
   const [highRiskMessage, setHighRiskMessage] = useState('');
   const [highRiskTimer, setHighRiskTimer] = useState(20);
   const [highRiskUnderstandChecked, setHighRiskUnderstandChecked] = useState(false);
 
   useEffect(() => {
-    let interval = null;
+    let interval: any = null;
     if (showHighRiskModal && highRiskTimer > 0) {
       interval = setInterval(() => {
         setHighRiskTimer(prev => prev - 1);
@@ -86,7 +103,7 @@ export default function ExpensesTable({
   }, [showHighRiskModal, highRiskTimer]);
 
   const activeNominalCodes = useMemo(() => {
-    return (nominalCodes || []).map(c => {
+    return (nominalCodes || []).map((c: any) => {
       if (typeof c === 'string') {
         const parts = c.split(' - ');
         return { id: parts[0] || c, code: c, type: 'indirect' };
@@ -99,13 +116,13 @@ export default function ExpensesTable({
         };
       }
       return null;
-    }).filter(c => c && c.code);
+    }).filter((c): c is { id: string; code: string; type: string } => c !== null && !!c.code);
   }, [nominalCodes]);
 
   const allAvailableDepts = useMemo(() => {
-    const depts = [];
+    const depts: string[] = [];
     companies.forEach(c => {
-      (c.departments || []).forEach(d => {
+      (c.departments || []).forEach((d: any) => {
         const name = d.name || d;
         if (name && !depts.includes(name)) depts.push(name);
       });
@@ -132,13 +149,13 @@ export default function ExpensesTable({
       // Company filter
       if (!companyFilter.includes('all')) {
         const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-        if (exp.allocationType !== 'company' || !targets.some(t => companyFilter.includes(t))) return false;
+        if (exp.allocationType !== 'company' || !targets.some(t => t && companyFilter.includes(t))) return false;
       }
 
       // Department filter
       if (!deptFilter.includes('all')) {
         const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-        if (exp.allocationType !== 'department' || !targets.some(t => deptFilter.includes(t))) return false;
+        if (exp.allocationType !== 'department' || !targets.some(t => t && deptFilter.includes(t))) return false;
       }
 
       // Staff filter
@@ -174,8 +191,8 @@ export default function ExpensesTable({
 
   const sortedExpenses = useMemo(() => {
     return [...filteredExpenses].sort((a, b) => {
-      let valA = a[sortBy] || '';
-      let valB = b[sortBy] || '';
+      let valA: any = a[sortBy as keyof typeof a] || '';
+      let valB: any = b[sortBy as keyof typeof b] || '';
 
       if (sortBy === 'amount' || sortBy === 'taxRate') {
         valA = Number(valA) || 0;
@@ -208,7 +225,7 @@ export default function ExpensesTable({
   }, [expenses]);
 
   const allBankAccounts = useMemo(() => {
-    const list = [];
+    const list: { id: string; ref: string }[] = [];
     companies.forEach(c => {
       if (c.bankAccounts) {
         c.bankAccounts.forEach(b => {
@@ -236,7 +253,7 @@ export default function ExpensesTable({
     ];
   }, [allAvailableDepts]);
 
-  const handleHeaderClick = (columnKey) => {
+  const handleHeaderClick = (columnKey: string) => {
     if (sortBy === columnKey) {
       setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
@@ -245,7 +262,7 @@ export default function ExpensesTable({
     }
   };
 
-  const renderSortIndicator = (columnKey) => {
+  const renderSortIndicator = (columnKey: string) => {
     if (sortBy !== columnKey) {
       return <span style={{ opacity: 0.3, marginLeft: '6px' }}>⇅</span>;
     }
@@ -253,7 +270,7 @@ export default function ExpensesTable({
   };
 
   // Bulk Actions
-  const handleBulkUpdateNominal = async (nominalCode) => {
+  const handleBulkUpdateNominal = async (nominalCode: string) => {
     if (!nominalCode || selectedExpenseIds.length === 0) return;
     try {
       let count = 0;
@@ -269,12 +286,12 @@ export default function ExpensesTable({
       }
       onShowToast(`Bulk updated Nominal Code for ${count} transactions.`, "success");
       setSelectedExpenseIds([]);
-    } catch (err) {
+    } catch (err: any) {
       onShowToast(`Error bulk updating: ${err.message}`, "warning");
     }
   };
 
-  const handleBulkUpdatePLMonth = async (monthVal) => {
+  const handleBulkUpdatePLMonth = async (monthVal: string) => {
     if (!monthVal || selectedExpenseIds.length === 0) return;
     try {
       let count = 0;
@@ -290,12 +307,12 @@ export default function ExpensesTable({
       }
       onShowToast(`Bulk updated P&L Month for ${count} transactions.`, "success");
       setSelectedExpenseIds([]);
-    } catch (err) {
+    } catch (err: any) {
       onShowToast(`Error bulk updating P&L Month: ${err.message}`, "warning");
     }
   };
 
-  const handleBulkUpdateRecipient = async (val) => {
+  const handleBulkUpdateRecipient = async (val: string) => {
     if (selectedExpenseIds.length === 0) return;
     try {
       let count = 0;
@@ -321,8 +338,37 @@ export default function ExpensesTable({
       }
       onShowToast(`Bulk updated Payee mapping for ${count} transactions.`, "success");
       setSelectedExpenseIds([]);
-    } catch (err) {
+    } catch (err: any) {
       onShowToast(`Error bulk updating payee: ${err.message}`, "warning");
+    }
+  };
+
+  const handleBulkUpdateAllocation = async (
+    type: string,
+    target: string[],
+    mode: string,
+    manualShares: Record<string, number>
+  ) => {
+    if (selectedExpenseIds.length === 0) return;
+    try {
+      let count = 0;
+      for (const id of selectedExpenseIds) {
+        const original = expenses.find(e => e.id === id);
+        if (original) {
+          await saveExpense({
+            ...original,
+            allocationType: type,
+            allocationTarget: target,
+            allocationMode: mode,
+            manualAllocationShares: manualShares
+          });
+          count++;
+        }
+      }
+      onShowToast(`Bulk updated Cost Allocation for ${count} transactions.`, "success");
+      setSelectedExpenseIds([]);
+    } catch (err: any) {
+      onShowToast(`Error bulk updating allocations: ${err.message}`, "warning");
     }
   };
 
@@ -349,7 +395,7 @@ export default function ExpensesTable({
         }
         onShowToast(`Permanently deleted ${count} expense records.`, "success");
         setSelectedExpenseIds([]);
-      } catch (err) {
+      } catch (err: any) {
         onShowToast(`Error bulk deleting: ${err.message}`, "warning");
       }
     }
@@ -391,7 +437,7 @@ export default function ExpensesTable({
       exp.linkedPlacementId || ''
     ]);
     
-    const escapeCsv = (val) => {
+    const escapeCsv = (val: any) => {
       if (val === null || val === undefined) return '';
       const str = typeof val === 'object' ? JSON.stringify(val) : String(val);
       const escaped = str.replace(/"/g, '""');
@@ -414,6 +460,15 @@ export default function ExpensesTable({
     document.body.removeChild(link);
     onShowToast("Expenses ledger exported to CSV successfully.", "success");
   };
+
+  const [allocationSearch, setAllocationSearchLocal] = useState('');
+  const [allocatingRowId, setAllocatingRowIdLocal] = useState<string | null>(null);
+  const [allocatingType, setAllocatingTypeLocal] = useState('company');
+  const [allocatingTarget, setAllocatingTargetLocal] = useState<string[]>([]);
+  const [allocatingStaffIds, setAllocatingStaffIdsLocal] = useState<string[]>([]);
+  const [allocatingMode, setAllocatingModeLocal] = useState('auto');
+  const [allocatingManualShares, setAllocatingManualSharesLocal] = useState<Record<string, number>>({});
+  const [expandedSections, setExpandedSectionsLocal] = useState({ company: true, department: false, staff: false });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -480,7 +535,7 @@ export default function ExpensesTable({
           <MultiSelectFilter
             options={companyOptions}
             selectedValues={companyFilter}
-            onChange={(vals) => {
+            onChange={(vals: string[]) => {
               setCompanyFilter(vals);
               setDeptFilter(['all']);
               setStaffFilter('all');
@@ -491,7 +546,7 @@ export default function ExpensesTable({
           <MultiSelectFilter
             options={ledgerDeptOptions}
             selectedValues={deptFilter}
-            onChange={(vals) => setDeptFilter(vals)}
+            onChange={(vals: string[]) => setDeptFilter(vals)}
             placeholder="Select Departments"
           />
 
@@ -692,12 +747,12 @@ export default function ExpensesTable({
               type="button"
               className="btn-secondary"
               onClick={() => {
-                setAllocatingRowId('bulk');
-                setAllocatingType('company');
-                setAllocatingTarget([]);
-                setAllocatingStaffIds([]);
-                setExpandedSections({ company: true, department: false, staff: false });
-                setAllocationSearch('');
+                setAllocatingRowIdLocal('bulk');
+                setAllocatingTypeLocal('company');
+                setAllocatingTargetLocal([]);
+                setAllocatingStaffIdsLocal([]);
+                setExpandedSectionsLocal({ company: true, department: false, staff: false });
+                setAllocationSearchLocal('');
               }}
               style={{ padding: '6px 12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
             >
@@ -937,7 +992,7 @@ export default function ExpensesTable({
                     <td>
                       <span 
                         onClick={() => {
-                          setAllocatingRowId(exp.id);
+                          setAllocatingRowIdLocal(exp.id);
                           const rawTarget = exp.allocationTarget || [];
                           const targetArray = Array.isArray(rawTarget) ? rawTarget : [rawTarget].filter(Boolean);
                           const type = exp.allocationType || 'company';
@@ -946,17 +1001,17 @@ export default function ExpensesTable({
                             : type === 'department'
                               ? targetArray.filter(d => allAvailableDepts.includes(d))
                               : targetArray;
-                          setAllocatingType(type);
-                          setAllocatingTarget(validTarget);
-                          setAllocatingStaffIds(type === 'staff' ? targetArray.filter(sid => staff.some(s => s.id === sid)) : []);
-                          setAllocatingMode(exp.allocationMode || 'auto');
-                          setAllocatingManualShares(exp.manualAllocationShares || {});
-                          setExpandedSections({
+                          setAllocatingTypeLocal(type);
+                          setAllocatingTargetLocal(validTarget);
+                          setAllocatingStaffIdsLocal(type === 'staff' ? targetArray.filter(sid => staff.some(s => s.id === sid)) : []);
+                          setAllocatingModeLocal(exp.allocationMode || 'auto');
+                          setAllocatingManualSharesLocal(exp.manualAllocationShares || {});
+                          setExpandedSectionsLocal({
                             company: type === 'company' || !type,
                             department: type === 'department',
                             staff: type === 'staff'
                           });
-                          setAllocationSearch('');
+                          setAllocationSearchLocal('');
                         }}
                         title="Click to modify allocation target"
                         style={{ 
@@ -1029,7 +1084,7 @@ export default function ExpensesTable({
             })}
             {sortedExpenses.length === 0 && (
               <tr>
-                <td colSpan="11" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
+                <td colSpan={11} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
                   No expenses logged matching selected filters.
                 </td>
               </tr>
@@ -1193,11 +1248,11 @@ export default function ExpensesTable({
                   {allocatingRowId === 'bulk' ? 'Bulk Allocate Cost Centers' : 'Select Target Allocation Cost Center'}
                 </h3>
               </div>
-              <button type="button" onClick={() => setAllocatingRowId(null)} style={{ border: 'none', background: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '18px' }}>✕</button>
+              <button type="button" onClick={() => setAllocatingRowIdLocal(null)} style={{ border: 'none', background: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '18px' }}>✕</button>
             </div>
 
             <div style={{ display: 'flex', gap: '8px' }}>
-              <input type="text" className="form-input" placeholder="Search allocation targets by name..." value={allocationSearch} onChange={(e) => setAllocationSearch(e.target.value)} style={{ fontSize: '12px', padding: '8px', width: '100%' }} />
+              <input type="text" className="form-input" placeholder="Search allocation targets by name..." value={allocationSearch} onChange={(e) => setAllocationSearchLocal(e.target.value)} style={{ fontSize: '12px', padding: '8px', width: '100%' }} />
             </div>
 
             {allocatingType !== 'global' && (
@@ -1206,7 +1261,7 @@ export default function ExpensesTable({
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
                     type="button"
-                    onClick={() => setAllocatingMode('auto')}
+                    onClick={() => setAllocatingModeLocal('auto')}
                     style={{
                       flex: 1,
                       padding: '6px 12px',
@@ -1223,7 +1278,7 @@ export default function ExpensesTable({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAllocatingMode('manual')}
+                    onClick={() => setAllocatingModeLocal('manual')}
                     style={{
                       flex: 1,
                       padding: '6px 12px',
@@ -1245,9 +1300,9 @@ export default function ExpensesTable({
             <div style={{ maxHeight: '280px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div 
                 onClick={() => {
-                  setAllocatingType('global');
-                  setAllocatingTarget([]);
-                  setAllocatingStaffIds([]);
+                  setAllocatingTypeLocal('global');
+                  setAllocatingTargetLocal([]);
+                  setAllocatingStaffIdsLocal([]);
                 }}
                 style={{
                   display: 'flex',
@@ -1267,11 +1322,11 @@ export default function ExpensesTable({
               </div>
 
               <div>
-                <div onClick={() => setExpandedSections(prev => ({ ...prev, company: !prev.company }))} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>
+                <div onClick={() => setExpandedSectionsLocal(prev => ({ ...prev, company: !prev.company }))} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>
                   <span>🏢 Companies {allocatingType === 'company' && `(${allocatingTarget.length} selected)`}</span>
                 </div>
                 {expandedSections.company && (
-                  <div style={{ display: 'flex', flexDirection: 'column', padding: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTop: 'none', borderDetail: '0 0 8px 8px', maxHeight: '150px', overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', padding: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: '150px', overflowY: 'auto' }}>
                     {companies.filter(c => c.name.toLowerCase().includes(allocationSearch.toLowerCase())).map(c => {
                       const isChecked = allocatingType === 'company' && allocatingTarget.includes(c.id);
                       return (
@@ -1284,7 +1339,7 @@ export default function ExpensesTable({
                                 value={allocatingManualShares[c.id] || ''} 
                                 onChange={(e) => {
                                   const val = Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0));
-                                  setAllocatingManualShares(prev => ({ ...prev, [c.id]: val }));
+                                  setAllocatingManualSharesLocal(prev => ({ ...prev, [c.id]: val }));
                                 }} 
                                 style={{ width: '45px', textAlign: 'right', fontSize: '11px' }} 
                               />
@@ -1299,9 +1354,9 @@ export default function ExpensesTable({
                                 } else {
                                   current = current.filter(id => id !== c.id);
                                 }
-                                setAllocatingType('company');
-                                setAllocatingTarget(current);
-                                setAllocatingStaffIds([]);
+                                setAllocatingTypeLocal('company');
+                                setAllocatingTargetLocal(current);
+                                setAllocatingStaffIdsLocal([]);
                               }} 
                             />
                           </div>
@@ -1313,11 +1368,11 @@ export default function ExpensesTable({
               </div>
 
               <div>
-                <div onClick={() => setExpandedSections(prev => ({ ...prev, department: !prev.department }))} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>
+                <div onClick={() => setExpandedSectionsLocal(prev => ({ ...prev, department: !prev.department }))} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>
                   <span>📂 Departments {allocatingType === 'department' && `(${allocatingTarget.length} selected)`}</span>
                 </div>
                 {expandedSections.department && (
-                  <div style={{ display: 'flex', flexDirection: 'column', padding: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTop: 'none', borderDetail: '0 0 8px 8px', maxHeight: '150px', overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', padding: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: '150px', overflowY: 'auto' }}>
                     {allAvailableDepts.filter(d => d.toLowerCase().includes(allocationSearch.toLowerCase())).map(d => {
                       const isChecked = allocatingType === 'department' && allocatingTarget.includes(d);
                       return (
@@ -1330,7 +1385,7 @@ export default function ExpensesTable({
                                 value={allocatingManualShares[d] || ''} 
                                 onChange={(e) => {
                                   const val = Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0));
-                                  setAllocatingManualShares(prev => ({ ...prev, [d]: val }));
+                                  setAllocatingManualSharesLocal(prev => ({ ...prev, [d]: val }));
                                 }} 
                                 style={{ width: '45px', textAlign: 'right', fontSize: '11px' }} 
                               />
@@ -1345,9 +1400,9 @@ export default function ExpensesTable({
                                 } else {
                                   current = current.filter(id => id !== d);
                                 }
-                                setAllocatingType('department');
-                                setAllocatingTarget(current);
-                                setAllocatingStaffIds([]);
+                                setAllocatingTypeLocal('department');
+                                setAllocatingTargetLocal(current);
+                                setAllocatingStaffIdsLocal([]);
                               }} 
                             />
                           </div>
@@ -1359,11 +1414,11 @@ export default function ExpensesTable({
               </div>
 
               <div>
-                <div onClick={() => setExpandedSections(prev => ({ ...prev, staff: !prev.staff }))} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>
+                <div onClick={() => setExpandedSectionsLocal(prev => ({ ...prev, staff: !prev.staff }))} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>
                   <span>👥 Recruiters {allocatingType === 'staff' && `(${allocatingStaffIds.length} selected)`}</span>
                 </div>
                 {expandedSections.staff && (
-                  <div style={{ display: 'flex', flexDirection: 'column', padding: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTop: 'none', borderDetail: '0 0 8px 8px', maxHeight: '150px', overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', padding: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: '150px', overflowY: 'auto' }}>
                     {staff.filter(s => s.fullName.toLowerCase().includes(allocationSearch.toLowerCase())).map(s => {
                       const isChecked = allocatingType === 'staff' && allocatingStaffIds.includes(s.id);
                       return (
@@ -1376,7 +1431,7 @@ export default function ExpensesTable({
                                 value={allocatingManualShares[s.id] || ''} 
                                 onChange={(e) => {
                                   const val = Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0));
-                                  setAllocatingManualShares(prev => ({ ...prev, [s.id]: val }));
+                                  setAllocatingManualSharesLocal(prev => ({ ...prev, [s.id]: val }));
                                 }} 
                                 style={{ width: '45px', textAlign: 'right', fontSize: '11px' }} 
                               />
@@ -1391,9 +1446,9 @@ export default function ExpensesTable({
                                 } else {
                                   current = current.filter(id => id !== s.id);
                                 }
-                                setAllocatingType('staff');
-                                setAllocatingStaffIds(current);
-                                setAllocatingTarget([]);
+                                setAllocatingTypeLocal('staff');
+                                setAllocatingStaffIdsLocal(current);
+                                setAllocatingTargetLocal([]);
                               }} 
                             />
                           </div>
@@ -1435,7 +1490,7 @@ export default function ExpensesTable({
                   if (allocatingType !== 'global' && allocatingMode === 'manual') {
                     let totalPercent = 0;
                     finalTarget.forEach(tid => {
-                      totalPercent += parseInt(allocatingManualShares[tid] || 0, 10);
+                      totalPercent += parseInt(String(allocatingManualShares[tid] || 0), 10);
                     });
                     if (totalPercent !== 100) {
                       onShowToast(`Manual split percentages must sum to exactly 100% (currently ${totalPercent}%).`, "warning");
@@ -1458,12 +1513,12 @@ export default function ExpensesTable({
                       onShowToast("Cost allocation updated for transaction.", "success");
                     }
                   }
-                  setAllocatingRowId(null);
+                  setAllocatingRowIdLocal(null);
                 }}
               >
                 Apply
               </button>
-              <button type="button" className="btn-secondary" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setAllocatingRowId(null)}>Cancel</button>
+              <button type="button" className="btn-secondary" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setAllocatingRowIdLocal(null)}>Cancel</button>
             </div>
           </div>
         </div>

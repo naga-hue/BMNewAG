@@ -67,9 +67,19 @@ export default function ForecastMatrix({
     });
   }, [contracts, vendors]);
 
+  const expensesMap = useMemo(() => {
+    const map: Record<string, Expense> = {};
+    (expenses || []).forEach(e => {
+      if (e.linkedVendorCellId) {
+        map[e.linkedVendorCellId] = e;
+      }
+    });
+    return map;
+  }, [expenses]);
+
   const getContractCostForMonth = (c: any, year: number, monthIndex: number) => {
     const monthKey = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
-    const linkedExp = expenses?.find(e => e.linkedVendorCellId === `${c.id}_${monthKey}`);
+    const linkedExp = expensesMap[`${c.id}_${monthKey}`];
     
     if (linkedExp) {
       const actualGBP = Number(linkedExp.amount) || 0;

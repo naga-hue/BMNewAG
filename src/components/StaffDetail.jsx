@@ -149,6 +149,15 @@ Yours sincerely,
     }
   });
 
+  const [onboardingStates, setOnboardingStates] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bm_onboarding_states');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
   const [docTemplateType, setDocTemplateType] = useState('offer-letter');
   const [selectedTemplateId, setSelectedTemplateId] = useState('offer-letter');
   const [docCompanyId, setDocCompanyId] = useState(staffMember ? staffMember.companyId : '');
@@ -192,6 +201,16 @@ Yours sincerely,
     setDeactivationStates(next);
     try {
       localStorage.setItem('deactivation_states', JSON.stringify(next));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleToggleOnboardingState = (key, val) => {
+    const next = { ...onboardingStates, [key]: val };
+    setOnboardingStates(next);
+    try {
+      localStorage.setItem('bm_onboarding_states', JSON.stringify(next));
     } catch (e) {
       console.error(e);
     }
@@ -1059,6 +1078,24 @@ Yours sincerely,
                       {staffMember.startDate}
                     </span>
                   </div>
+                  {staffMember.visaExpiryDate && (
+                    <div className="detail-item">
+                      <span className="detail-label">Visa Expiry Date</span>
+                      <span className="detail-value" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--warning)', fontWeight: 600 }}>
+                        <ShieldAlert size={14} />
+                        {staffMember.visaExpiryDate}
+                      </span>
+                    </div>
+                  )}
+                  {staffMember.contractRenewalDate && (
+                    <div className="detail-item">
+                      <span className="detail-label">Contract Renewal Date</span>
+                      <span className="detail-value" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent)', fontWeight: 600 }}>
+                        <Calendar size={14} />
+                        {staffMember.contractRenewalDate}
+                      </span>
+                    </div>
+                  )}
                   <div className="detail-item">
                     <span className="detail-label">Reporting Manager</span>
                     {reportingManager ? (
@@ -1156,6 +1193,39 @@ Yours sincerely,
                       </div>
                     </>
                   )}
+                  {staffMember.status !== 'exited' && (
+                    <div className="detail-section" style={{ borderLeft: '4px solid var(--success)', backgroundColor: 'rgba(16, 185, 129, 0.02)', gridColumn: 'span 2', padding: '16px', marginTop: '16px' }}>
+                      <div className="section-title" style={{ color: 'var(--success)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <ClipboardList size={16} /> HR Active Onboarding & Documentation Checklist
+                        </span>
+                      </div>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '12px', marginTop: '12px' }}>
+                        {[
+                          { key: 'right-to-work', label: 'Verify Right to Work & passport documents' },
+                          { key: 'employment-contract', label: 'Verify signed employment contract returned' },
+                          { key: 'p45-form', label: 'P45 / New Starter checklist submitted to payroll' },
+                          { key: 'hardware-assigned', label: 'Confirm IT equipment & laptop assigned' },
+                          { key: 'workplace-systems', label: 'Configure workspace accounts (Email, Slack, HubSpot)' },
+                          { key: 'pension-enrol', label: 'Add to Royal London pension enrollment queue' }
+                        ].map(item => {
+                          const stateKey = `onboard-${staffMember.id}-${item.key}`;
+                          return (
+                            <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                              <input 
+                                type="checkbox" 
+                                checked={!!onboardingStates[stateKey]}
+                                onChange={(e) => handleToggleOnboardingState(stateKey, e.target.checked)}
+                              />
+                              <span>{item.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {staffMember.status === 'exited' && (
                     <div className="detail-section" style={{ borderLeft: '4px solid var(--danger)', backgroundColor: 'rgba(239, 68, 68, 0.02)', gridColumn: 'span 2', padding: '16px', marginTop: '16px' }}>
                       <div className="section-title" style={{ color: 'var(--danger)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Search, Check, Square, CheckSquare } from 'lucide-react';
+import { ChevronDown, Search, Square, CheckSquare } from 'lucide-react';
 
 export default function MultiSelectFilter({
   options = [],
@@ -23,12 +23,19 @@ export default function MultiSelectFilter({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Clear search on close
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchQuery('');
+    }
+  }, [isOpen]);
+
   // Format display text on trigger button
   const getDisplayText = () => {
     if (selectedValues.includes('all') || selectedValues.length === 0) {
       // Find "all" option label if exists, else default to "All"
       const allOpt = options.find(o => o.value === 'all');
-      return allOpt ? allOpt.label : 'All';
+      return allOpt ? allOpt.label : placeholder;
     }
     if (selectedValues.length === 1) {
       const opt = options.find(o => o.value === selectedValues[0]);
@@ -167,6 +174,7 @@ export default function MultiSelectFilter({
               }} 
             />
             <input
+              autoFocus
               type="text"
               className="form-input"
               placeholder="Search..."

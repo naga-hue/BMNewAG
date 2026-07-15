@@ -41,6 +41,8 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
   const [leavePolicyId, setLeavePolicyId] = useState('');
   const [commissionPolicyId, setCommissionPolicyId] = useState('');
   const [status, setStatus] = useState('active');
+  const [visaExpiryDate, setVisaExpiryDate] = useState('');
+  const [contractRenewalDate, setContractRenewalDate] = useState('');
   const [exitDate, setExitDate] = useState('');
   const [noticePeriod, setNoticePeriod] = useState('');
   const [salaryPaidUntilDate, setSalaryPaidUntilDate] = useState('');
@@ -124,6 +126,8 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setNoticePayoutOption(staffMember.noticePayoutOption || 'regular-payroll');
       setNoticePayoutCustomDate(normalizeDateForInput(staffMember.noticePayoutCustomDate || ''));
       setPayrollPolicyId(staffMember.payrollPolicyId || '');
+      setVisaExpiryDate(normalizeDateForInput(staffMember.visaExpiryDate || ''));
+      setContractRenewalDate(normalizeDateForInput(staffMember.contractRenewalDate || ''));
       
       setSalary(staffMember.salary || '');
       setCurrency(staffMember.currency || 'GBP');
@@ -159,6 +163,8 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setNoticePayoutOption('regular-payroll');
       setNoticePayoutCustomDate('');
       setPayrollPolicyId('');
+      setVisaExpiryDate('');
+      setContractRenewalDate('');
       
       setSalary('');
       setCurrency(companies[0] ? (
@@ -328,6 +334,8 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       commissionPolicyId,
       payrollPolicyId,
       status,
+      visaExpiryDate,
+      contractRenewalDate,
       exitDate: status === 'exited' ? exitDate : '',
       noticePeriod: status === 'exited' ? noticePeriod : '',
       salaryPaidUntilDate: status === 'exited' ? salaryPaidUntilDate : '',
@@ -583,6 +591,29 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                     </select>
                   </div>
                   
+                  {status !== 'exited' && (
+                    <>
+                      <div className="form-group">
+                        <label className="form-label">Visa Expiry Date</label>
+                        <input 
+                          type="date" 
+                          className="form-input"
+                          value={visaExpiryDate}
+                          onChange={(e) => setVisaExpiryDate(e.target.value)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Contract Renewal Date</label>
+                        <input 
+                          type="date" 
+                          className="form-input"
+                          value={contractRenewalDate}
+                          onChange={(e) => setContractRenewalDate(e.target.value)}
+                        />
+                      </div>
+                    </>
+                  )}
+
                   {status === 'exited' && (
                     <>
                       <div className="form-group">

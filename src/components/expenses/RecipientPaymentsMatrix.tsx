@@ -1,22 +1,44 @@
 import React, { useState, useMemo } from 'react';
+// @ts-ignore
 import MultiSelectFilter from '../MultiSelectFilter';
 import { useBoundStore } from '../../store/useBoundStore';
 import { toGBP } from '../../utils/currency';
+
+interface RecipientPaymentsMatrixProps {
+  setDrilldownMonthIdx: (idx: number | 'ytd') => void;
+  setDrilldownRowId: (id: string | null) => void;
+  setDrilldownRowType: (type: 'recipient' | 'nominal' | null) => void;
+  setDrilldownTargetVal: (val: string | null) => void;
+  onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
+}
+
+interface RecipientRow {
+  id: string;
+  name: string;
+  type: string;
+  rawType: 'staff' | 'vendor' | 'other';
+  rawId: string;
+}
+
+interface ComputedRecipientRow extends RecipientRow {
+  monthlyValues: number[];
+  ytdTotal: number;
+}
 
 export default function RecipientPaymentsMatrix({
   setDrilldownMonthIdx,
   setDrilldownRowId,
   setDrilldownRowType,
   setDrilldownTargetVal,
-  onShowToast
-}) {
+  onShowToast: _onShowToast
+}: RecipientPaymentsMatrixProps) {
   const staff = useBoundStore(state => state.staff);
   const vendors = useBoundStore(state => state.vendors);
   const expenses = useBoundStore(state => state.expenses);
   const companies = useBoundStore(state => state.companies);
   const nominalCodes = useBoundStore(state => state.nominalCodes);
 
-  const [recipientCompanyFilter, setRecipientCompanyFilter] = useState(['all']);
+  const [recipientCompanyFilter, setRecipientCompanyFilter] = useState<string[]>(['all']);
   const [recipientNominalFilter, setRecipientNominalFilter] = useState('all');
   const [recipientSearchQuery, setRecipientSearchQuery] = useState('');
 
@@ -28,7 +50,7 @@ export default function RecipientPaymentsMatrix({
   }, [companies]);
 
   const activeNominalCodes = useMemo(() => {
-    return (nominalCodes || []).map(c => {
+    return (nominalCodes || []).map((c: any) => {
       if (typeof c === 'string') {
         const parts = c.split(' - ');
         return { id: parts[0] || c, code: c, type: 'indirect' };
@@ -41,11 +63,11 @@ export default function RecipientPaymentsMatrix({
         };
       }
       return null;
-    }).filter(c => c && c.code);
+    }).filter((c): c is { id: string; code: string; type: string } => c !== null && !!c.code);
   }, [nominalCodes]);
 
-  const recipientRows = useMemo(() => {
-    const rows = [];
+  const recipientRows = useMemo<RecipientRow[]>((() => {
+    const rows: RecipientRow[] = [];
     
     staff.forEach(s => {
       rows.push({
@@ -85,9 +107,9 @@ export default function RecipientPaymentsMatrix({
     });
 
     return rows;
-  }, [staff, vendors, expenses]);
+  }), [staff, vendors, expenses]);
 
-  const computedRecipientRows = useMemo(() => {
+  const computedRecipientRows = useMemo<ComputedRecipientRow[]>(() => {
     const searched = recipientRows.filter(r => {
       if (!recipientSearchQuery.trim()) return true;
       return r.name.toLowerCase().includes(recipientSearchQuery.toLowerCase()) || r.type.toLowerCase().includes(recipientSearchQuery.toLowerCase());
@@ -100,7 +122,7 @@ export default function RecipientPaymentsMatrix({
         const monthKey = `2026-${String(m + 1).padStart(2, '0')}`;
         const matchingExps = expenses.filter(e => {
           if (e.plMonth !== monthKey) return false;
-          if (!recipientCompanyFilter.includes('all') && !recipientCompanyFilter.includes(e.bankCompanyId)) return false;
+          if (!recipientCompanyFilter.includes('all') && (!e.bankCompanyId || !recipientCompanyFilter.includes(e.bankCompanyId))) return false;
           if (recipientNominalFilter !== 'all' && e.nominalCode !== recipientNominalFilter) return false;
           
           if (row.rawType === 'staff') {
@@ -133,7 +155,7 @@ export default function RecipientPaymentsMatrix({
     }).filter(r => r.ytdTotal > 0 || recipientSearchQuery.trim() !== '');
   }, [recipientRows, expenses, recipientCompanyFilter, recipientNominalFilter, recipientSearchQuery]);
 
-  const monthlyGrandTotals = useMemo(() => {
+  const monthlyGrandTotals = useMemo<number[]>(() => {
     const totals = Array(12).fill(0);
     computedRecipientRows.forEach(row => {
       for (let m = 0; m < 12; m++) {
@@ -143,7 +165,7 @@ export default function RecipientPaymentsMatrix({
     return totals;
   }, [computedRecipientRows]);
 
-  const ytdGrandTotal = useMemo(() => {
+  const ytdGrandTotal = useMemo<number>(() => {
     return monthlyGrandTotals.reduce((acc, curr) => acc + curr, 0);
   }, [monthlyGrandTotals]);
 
@@ -171,7 +193,7 @@ export default function RecipientPaymentsMatrix({
           <MultiSelectFilter
             options={companyOptions}
             selectedValues={recipientCompanyFilter}
-            onChange={(vals) => setRecipientCompanyFilter(vals)}
+            onChange={(vals: string[]) => setRecipientCompanyFilter(vals)}
             placeholder="Select Companies"
           />
         </div>
@@ -343,7 +365,7 @@ export default function RecipientPaymentsMatrix({
             ))}
             {computedRecipientRows.length === 0 && (
               <tr>
-                <td colSpan="15" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <td colSpan={15} style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
                   No recipient payments found matching selected filters.
                 </td>
               </tr>
@@ -351,7 +373,7 @@ export default function RecipientPaymentsMatrix({
           </tbody>
           <tfoot>
             <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--border-color)' }}>
-              <td style={{ padding: '12px 16px' }} colSpan="2">Monthly Totals</td>
+              <td style={{ padding: '12px 16px' }} colSpan={2}>Monthly Totals</td>
               {monthlyGrandTotals.map((val, mIdx) => (
                 <td key={mIdx} style={{ padding: '12px 8px', textAlign: 'right', color: 'var(--text-primary)' }}>
                   £{Math.round(val).toLocaleString()}

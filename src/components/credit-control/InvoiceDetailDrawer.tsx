@@ -184,6 +184,131 @@ export default function InvoiceDetailDrawer({
     }
   };
 
+  const handlePrintInvoice = () => {
+    const printWindow = window.open('', '_blank', 'width=800,height=900');
+    if (!printWindow) {
+      onShowToast("Popup blocker blocked the print window.", "warning");
+      return;
+    }
+
+    const companyName = employerCompany?.name || "Humres Technical Recruitment Ltd";
+    const companyAddress = employerCompany?.address || "30 Stamford Street, London, SE1 9LQ";
+    const invoiceNum = editInvoiceNumber || `INV-2026-${selectedInvoice.id.slice(-4).toUpperCase()}`;
+
+    const htmlContent = `
+      <html>
+        <head>
+          <title>Invoice ${invoiceNum}</title>
+          <style>
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; margin: 40px; line-height: 1.5; }
+            .header { display: flex; justify-content: space-between; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+            .logo { font-size: 24px; font-weight: bold; color: #1e3a8a; }
+            .title { font-size: 28px; font-weight: bold; text-align: right; }
+            .details-row { display: flex; justify-content: space-between; margin-bottom: 30px; }
+            .half { width: 48%; }
+            .label { font-weight: bold; color: #666; margin-bottom: 4px; }
+            .table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+            .table th { background-color: #f3f4f6; text-align: left; padding: 10px; border: 1px solid #e5e7eb; font-weight: bold; }
+            .table td { padding: 10px; border: 1px solid #e5e7eb; }
+            .table-totals { margin-left: auto; width: 40%; }
+            .table-totals td { padding: 8px; border: none; }
+            .table-totals td.val { text-align: right; font-family: monospace; }
+            .footer { border-top: 1px solid #e5e7eb; padding-top: 20px; font-size: 11px; color: #666; text-align: center; margin-top: 60px; }
+            @media print {
+              body { margin: 20px; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <div class="logo">${companyName}</div>
+              <div style="font-size: 12px; margin-top: 4px;">${companyAddress}</div>
+            </div>
+            <div>
+              <div class="title">INVOICE</div>
+              <div style="text-align: right; font-size: 14px; margin-top: 6px;">Invoice No: <strong>${invoiceNum}</strong></div>
+            </div>
+          </div>
+
+          <div class="details-row">
+            <div class="half">
+              <div class="label">INVOICE TO:</div>
+              <div style="font-weight: bold; font-size: 15px;">${selectedInvoice.clientCompany}</div>
+              <div style="color: #4b5563; font-size: 13px; margin-top: 4px;">Accounts Payable Desk</div>
+            </div>
+            <div class="half" style="text-align: right;">
+              <div class="label">INVOICE DETAILS:</div>
+              <div style="font-size: 13px;">Date Raised: ${editRaisedDate}</div>
+              <div style="font-size: 13px;">Payment Terms: ${paymentTermsDays} Days</div>
+              <div style="font-size: 13px;"><strong>Due Date: ${editDueDate}</strong></div>
+            </div>
+          </div>
+
+          <table class="table">
+            <thead>
+              <tr>
+                <th style="width: 70%;">Description</th>
+                <th style="text-align: right; width: 30%;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <strong>Placement Fee &bull; ${selectedInvoice.candidateName}</strong><br/>
+                  <span style="font-size: 12px; color: #4b5563;">Role: ${selectedInvoice.jobTitle || 'Consultant'} | Start Date: ${selectedInvoice.startDate || 'Immediate'}</span>
+                </td>
+                <td style="text-align: right; font-family: monospace;">£${(Number(editGrossBillAmount) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div style="display: flex; justify-content: space-between;">
+            <div style="width: 50%; font-size: 12px;">
+              <div style="font-weight: bold; margin-bottom: 4px;">BACS Payment Instructions:</div>
+              <div>Bank: HSBC UK Bank plc</div>
+              <div>Account Name: ${companyName}</div>
+              <div>Sort Code: 40-02-50</div>
+              <div>Account No: 81927364</div>
+              <div style="margin-top: 8px; color: #6b7280;">Please quote invoice reference <strong>${invoiceNum}</strong> when making payments.</div>
+            </div>
+            <div style="width: 40%;">
+              <table class="table-totals">
+                <tr>
+                  <td style="font-weight: bold;">Subtotal:</td>
+                  <td class="val">£${(Number(editGrossBillAmount) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                </tr>
+                <tr>
+                  <td style="font-weight: bold;">VAT (20%):</td>
+                  <td class="val">£${(Number(editVatAmount) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                </tr>
+                <tr style="border-top: 1.5px solid #333;">
+                  <td style="font-weight: bold; font-size: 15px;">Total Due:</td>
+                  <td class="val" style="font-weight: bold; font-size: 15px; color: #1e3a8a;">£${(Number(editTotalInvoiceAmount) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                </tr>
+              </table>
+            </div>
+          </div>
+
+          <div class="footer">
+            <div>Thank you for your business.</div>
+            <div style="margin-top: 4px; font-size: 9px; color: #9ca3af;">Registered office: ${companyAddress} | Company Registration No: 08927163 &bull; VAT Reg: GB 892 1029 38</div>
+          </div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
   const handleAddChaseNote = async (shortcutText?: string) => {
     const noteText = shortcutText || newNote.trim();
     if (!noteText || !selectedInvoice) return;
@@ -604,6 +729,9 @@ export default function InvoiceDetailDrawer({
 
         {/* Footer Actions */}
         <div className="wizard-footer" style={{ padding: '16px 24px', display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)' }}>
+          <button type="button" className="btn-secondary" onClick={handlePrintInvoice} style={{ marginRight: 'auto', backgroundColor: 'var(--accent)', color: '#fff' }}>
+            🖨️ Print Clean Invoice
+          </button>
           <button type="button" className="btn-secondary" onClick={() => setIsDetailOpen(false)}>
             Cancel
           </button>

@@ -93,6 +93,15 @@ export default function ReportsDashboard({
   const [selectedRecruiterPlacements, setSelectedRecruiterPlacements] = useState(null); // { recruiterName, placements: [...] }
   const [expandedExitedRatios, setExpandedExitedRatios] = useState(false);
   const [expandedExitedLeaguesBillings, setExpandedExitedLeaguesLeaguesBillings] = useState(false);
+  const [whatIfSliders, setWhatIfSliders] = useState({
+    "Recruitment": 100,
+    "Sales & Marketing": 100,
+    "Finance": 100,
+    "Operations": 100,
+    "Sourcing": 100,
+    "HR": 100,
+    "Admin": 100
+  });
   // Companies included based on consolidation preference
   const activeCompaniesForPL = companies.filter(c => {
     if (companyFilter.includes('all')) {
@@ -1320,8 +1329,57 @@ export default function ReportsDashboard({
           TAB 3: DEPARTMENTAL COMPARISONS
           ============================================================== */}
       {activeTab === 'departmental' && (
-        <div className="table-container" style={{ overflowX: 'auto', width: '100%' }}>
-          <table className="entity-table dense" style={{ minWidth: '1000px' }}>
+        <>
+          {/* What-If Simulation Sliders */}
+          <div className="detail-section" style={{ padding: '16px', marginBottom: '16px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+            <h4 style={{ fontSize: '13px', margin: '0 0 8px 0', color: 'var(--accent)', fontWeight: 700 }}>🎛️ What-If Overhead Allocations Simulator Sliders</h4>
+            <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '0 0 16px 0' }}>
+              Adjust the sliders below to simulate a redistribution of overhead expenses per department (e.g. scaling up operations vs downsizing sourcing) and see the Net Margin impact instantly.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+              {Object.keys(whatIfSliders).map(dept => (
+                <div key={dept} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                    <span style={{ fontWeight: 600 }}>{dept}</span>
+                    <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{whatIfSliders[dept]}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="200"
+                    step="5"
+                    value={whatIfSliders[dept]}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setWhatIfSliders(prev => ({ ...prev, [dept]: val }));
+                    }}
+                    style={{ cursor: 'pointer', accentColor: 'var(--accent)' }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ padding: '4px 10px', fontSize: '11px' }}
+                onClick={() => setWhatIfSliders({
+                  "Recruitment": 100,
+                  "Sales & Marketing": 100,
+                  "Finance": 100,
+                  "Operations": 100,
+                  "Sourcing": 100,
+                  "HR": 100,
+                  "Admin": 100
+                })}
+              >
+                Reset Simulator
+              </button>
+            </div>
+          </div>
+
+          <div className="table-container" style={{ overflowX: 'auto', width: '100%' }}>
+            <table className="entity-table dense" style={{ minWidth: '1000px' }}>
             <thead>
               <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
                 <th style={{ minWidth: '220px' }}>P&L Item (Period Cumulative)</th>
@@ -1470,6 +1528,12 @@ export default function ReportsDashboard({
                   });
                 });
 
+                // Apply What-If sliders overheads adjustments
+                depts.forEach(d => {
+                  const factor = whatIfSliders[d] !== undefined ? (whatIfSliders[d] / 100) : 1.0;
+                  deptDataMap[d].overheads = deptDataMap[d].overheads * factor;
+                });
+
                 const renderDeptRow = (label, key, isBold = false, isSub = false, color = 'var(--text-primary)') => {
                   const totalCons = depts.reduce((sum, d) => sum + deptDataMap[d][key], 0);
                   return (
@@ -1536,6 +1600,7 @@ export default function ReportsDashboard({
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {/* ==============================================================

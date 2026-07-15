@@ -1,68 +1,104 @@
 import React, { useState, useMemo } from 'react';
-import { UploadCloud, Grid, Trash2, CheckCircle2, Clock, Check, PlusCircle } from 'lucide-react';
-import MultiSelectFilter from '../MultiSelectFilter';
+import { UploadCloud, Grid, Trash2, CheckCircle2, Clock, Check } from 'lucide-react';
 import { useBoundStore } from '../../store/useBoundStore';
-import { toGBP } from '../../utils/currency';
 
-export default function BankStatementImport({ onShowToast }) {
+interface BankStatementImportProps {
+  onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
+}
+
+interface CategorizedRow {
+  id: string;
+  date: string;
+  plMonth: string;
+  payee: string;
+  reference: string;
+  amount: number;
+  nominalCode: string;
+  recipientType: string;
+  recipientId: string;
+  taxRate: number;
+  allocationType: string;
+  allocationTarget: string | string[];
+  selectedStaffIds: string[];
+  linkedPlacementId: string;
+  isCredit: boolean;
+  committed: boolean;
+  linkedPayrollCellId?: string | null;
+  allocationMode?: string;
+  manualAllocationShares?: Record<string, number>;
+}
+
+export default function BankStatementImport({ onShowToast }: BankStatementImportProps) {
   const companies = useBoundStore(state => state.companies);
   const staff = useBoundStore(state => state.staff);
   const vendors = useBoundStore(state => state.vendors);
-  const expenses = useBoundStore(state => state.expenses);
   const placements = useBoundStore(state => state.placements);
   const nominalCodes = useBoundStore(state => state.nominalCodes);
 
-  const saveExpense = useBoundStore(state => state.saveExpense || useBoundStore(state => state.updateExpense));
+  const updateExpense = useBoundStore(state => state.updateExpense);
+  const saveExpense = updateExpense;
   const saveVendor = useBoundStore(state => state.saveVendor);
   const saveNominalCode = useBoundStore(state => state.saveNominalCode);
   const savePayrollRecord = useBoundStore(state => state.savePayrollRecord);
   const updatePlacement = useBoundStore(state => state.updatePlacement);
 
   const [importStep, setImportStep] = useState(1); // 1: upload, 2: mapping, 3: categorization desk
-  const [csvFile, setCsvFile] = useState(null);
-  const [csvHeaders, setCsvHeaders] = useState([]);
-  const [csvRows, setCsvRows] = useState([]);
-  const [columnMappings, setColumnMappings] = useState({});
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [csvRows, setCsvRows] = useState<string[][]>([]);
+  const [columnMappings, setColumnMappings] = useState<Record<string, string>>({});
+
+  const [savedProfiles, setSavedProfiles] = useState<Record<string, Record<string, string>>>(() => {
+    try {
+      const saved = localStorage.getItem('bm-expenses-import-profiles');
+      return saved ? JSON.parse(saved) : {
+        'Default Bank Map': { date: 'Transaction Date', payee: 'Description', amount: 'Amount', reference: 'Reference' }
+      };
+    } catch {
+      return {};
+    }
+  });
+  const [newProfileName, setNewProfileName] = useState('');
 
   const [statementCompanyId, setStatementCompanyId] = useState('');
   const [statementBankAccountId, setStatementBankAccountId] = useState('');
   const [statementAccountRef, setStatementAccountRef] = useState('Main Current Account');
-  const [categorizedRows, setCategorizedRows] = useState([]);
+  const [categorizedRows, setCategorizedRows] = useState<CategorizedRow[]>([]);
 
   // Target allocation selector states
-  const [allocatingRowId, setAllocatingRowId] = useState(null);
+  const [allocatingRowId, setAllocatingRowId] = useState<string | null>(null);
   const [allocatingType, setAllocatingType] = useState('company');
-  const [allocatingTarget, setAllocatingTarget] = useState([]);
-  const [allocatingStaffIds, setAllocatingStaffIds] = useState([]);
+  const [allocatingTarget, setAllocatingTarget] = useState<string[]>([]);
+  const [allocatingStaffIds, setAllocatingStaffIds] = useState<string[]>([]);
   const [allocatingMode, setAllocatingMode] = useState('auto');
-  const [allocatingManualShares, setAllocatingManualShares] = useState({});
+  const [allocatingManualShares, setAllocatingManualShares] = useState<Record<string, number>>({});
   const [allocationSearch, setAllocationSearch] = useState('');
   const [expandedSections, setExpandedSections] = useState({ company: true, department: false, staff: false });
 
   // Sales Placement linking states
-  const [linkingRowId, setLinkingRowId] = useState(null);
+  const [linkingRowId, setLinkingRowId] = useState<string | null>(null);
   const [linkingPlacementId, setLinkingPlacementId] = useState('');
   const [placementSearch, setPlacementSearch] = useState('');
 
   // Payroll linkage states
-  const [linkingPayrollExpId, setLinkingPayrollExpId] = useState(null);
+  const [linkingPayrollExpId, setLinkingPayrollExpId] = useState<string | null>(null);
   const [linkingStaffId, setLinkingStaffId] = useState('');
   const [linkingMonth, setLinkingMonth] = useState('2026-07');
 
   // Quick Nominals states
   const [quickAddNominalOpen, setQuickAddNominalOpen] = useState(false);
-  const [quickAddRowId, setQuickAddRowId] = useState(null);
+  const [quickAddRowId, setQuickAddRowId] = useState<string | null>(null);
   const [newNominalCodeId, setNewNominalCodeId] = useState('');
   const [newNominalCodeName, setNewNominalCodeName] = useState('');
   const [newNominalType, setNewNominalType] = useState('indirect');
 
   // Quick Vendor states
-  const [quickVendorRowId, setQuickVendorRowId] = useState(null);
+  const [quickVendorRowId, setQuickVendorRowId] = useState<string | null>(null);
   const [quickVendorName, setQuickVendorName] = useState('');
   const [quickVendorCategory, setQuickVendorCategory] = useState('Software License');
 
   const activeNominalCodes = useMemo(() => {
-    return (nominalCodes || []).map(c => {
+    return (nominalCodes || []).map((c: any) => {
       if (typeof c === 'string') {
         const parts = c.split(' - ');
         return { id: parts[0] || c, code: c, type: 'indirect' };
@@ -75,13 +111,13 @@ export default function BankStatementImport({ onShowToast }) {
         };
       }
       return null;
-    }).filter(c => c && c.code);
+    }).filter((c): c is { id: string; code: string; type: string } => c !== null && !!c.code);
   }, [nominalCodes]);
 
   const allAvailableDepts = useMemo(() => {
-    const depts = [];
+    const depts: string[] = [];
     companies.forEach(c => {
-      (c.departments || []).forEach(d => {
+      (c.departments || []).forEach((d: any) => {
         const name = d.name || d;
         if (name && !depts.includes(name)) depts.push(name);
       });
@@ -94,14 +130,12 @@ export default function BankStatementImport({ onShowToast }) {
     return depts.sort();
   }, [companies, staff]);
 
-  const companyOptions = useMemo(() => {
-    return companies.map(c => ({ value: c.id, label: c.name }));
-  }, [companies]);
 
-  const processBankStatementFile = (file) => {
+
+  const processBankStatementFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (event) => {
-      const text = event.target.result;
+      const text = event.target?.result as string;
       const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
       if (lines.length < 2) {
         onShowToast("Bank statement file is empty or invalid.", "warning");
@@ -109,8 +143,8 @@ export default function BankStatementImport({ onShowToast }) {
       }
 
       // Simple CSV line parser
-      const parseCSVLine = (txt) => {
-        const result = [];
+      const parseCSVLine = (txt: string) => {
+        const result: string[] = [];
         let startIdx = 0;
         let insideQuotes = false;
         for (let i = 0; i < txt.length; i++) {
@@ -130,7 +164,7 @@ export default function BankStatementImport({ onShowToast }) {
       };
 
       const headers = parseCSVLine(lines[0]);
-      const rows = [];
+      const rows: string[][] = [];
       for (let i = 1; i < lines.length; i++) {
         const cols = parseCSVLine(lines[i]);
         if (cols.length === headers.length) {
@@ -143,7 +177,7 @@ export default function BankStatementImport({ onShowToast }) {
       setCsvFile(file);
 
       // Auto-detect columns
-      const initialMap = {};
+      const initialMap: Record<string, string> = {};
       const mappingsList = [
         { key: 'date', labels: ['date', 'transaction date', 'booking date', 'val date'] },
         { key: 'payee', labels: ['description', 'payee', 'beneficiary', 'details', 'name'] },
@@ -162,14 +196,14 @@ export default function BankStatementImport({ onShowToast }) {
     reader.readAsText(file);
   };
 
-  const handleCSVDrop = (e) => {
+  const handleCSVDrop = (e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       processBankStatementFile(e.dataTransfer.files[0]);
     }
   };
 
-  const handleCSVSelect = (e) => {
+  const handleCSVSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       processBankStatementFile(e.target.files[0]);
     }
@@ -247,8 +281,8 @@ export default function BankStatementImport({ onShowToast }) {
 
       // Auto-detect target cost center allocation
       let autoAllocType = 'company';
-      let autoAllocTarget = companies[0]?.id || '';
-      let autoStaffIds = [];
+      let autoAllocTarget: string | string[] = companies[0]?.id || '';
+      let autoStaffIds: string[] = [];
 
       if (matchedStaffMember) {
         autoAllocType = 'staff';
@@ -301,7 +335,8 @@ export default function BankStatementImport({ onShowToast }) {
     setImportStep(3);
   };
 
-  const handleUpdateCategorizedRow = (rowId, field, value) => {
+  const handleUpdateCategorizedRow = (rowId: string | null, field: string, value: any) => {
+    if (!rowId) return;
     setCategorizedRows(prev => prev.map(r => {
       if (r.id === rowId) {
         return { ...r, [field]: value };
@@ -341,6 +376,8 @@ export default function BankStatementImport({ onShowToast }) {
           invoiceUrl: "#",
           allocationType: row.allocationType,
           allocationTarget: target,
+          allocationMode: row.allocationMode || 'auto',
+          manualAllocationShares: row.manualAllocationShares || {},
           linkedPlacementId: row.linkedPlacementId || null,
           bankCompanyId: statementCompanyId || (companies[0] ? companies[0].id : ''),
           bankAccountId: statementBankAccountId,
@@ -406,7 +443,7 @@ export default function BankStatementImport({ onShowToast }) {
       } else {
         onShowToast(`${updatedRows.filter(r => r.committed).length} rows committed. Map the remaining rows to commit them too.`, "info");
       }
-    } catch (err) {
+    } catch (err: any) {
       onShowToast(`Error committing statement rows: ${err.message}`, "warning");
     }
   };
@@ -414,6 +451,7 @@ export default function BankStatementImport({ onShowToast }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
+      {/* Importer Steps */}
       <div>
         <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Bank Statement Import & Categorizer</h2>
         <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Upload your corporate bank statements (CSV/Excel) and map transactions to Nominal codes and allocations row-by-row.</p>
@@ -424,7 +462,10 @@ export default function BankStatementImport({ onShowToast }) {
           className="upload-zone"
           onDragOver={(e) => e.preventDefault()}
           onDrop={handleCSVDrop}
-          onClick={() => document.getElementById('statement-file-picker').click()}
+          onClick={() => {
+            const picker = document.getElementById('statement-file-picker');
+            if (picker) picker.click();
+          }}
           style={{ padding: '40px', borderStyle: 'dashed', borderRadius: '8px', cursor: 'pointer' }}
         >
           <input 
@@ -507,6 +548,55 @@ export default function BankStatementImport({ onShowToast }) {
                 </div>
               );
             })}
+          </div>
+
+          {/* Saved Preset Profiles */}
+          <div style={{ marginTop: '16px', backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--accent)' }}>💾 Save or Load Mapping Preset Profile</div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <select 
+                className="select-filter"
+                style={{ flex: 1, padding: '6px' }}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val && savedProfiles[val]) {
+                    setColumnMappings(savedProfiles[val]);
+                    onShowToast(`Loaded mapping preset profile: ${val}`, "info");
+                  }
+                }}
+              >
+                <option value="">-- Load Saved Preset Profile --</option>
+                {Object.keys(savedProfiles).map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <input 
+                type="text"
+                placeholder="New preset profile name"
+                className="form-input"
+                value={newProfileName}
+                onChange={(e) => setNewProfileName(e.target.value)}
+                style={{ width: '160px', padding: '6px' }}
+              />
+              <button 
+                type="button" 
+                className="btn-primary" 
+                style={{ padding: '6px 12px', fontSize: '11px' }}
+                onClick={() => {
+                  if (!newProfileName.trim()) {
+                    onShowToast("Please enter a name for the preset profile.", "warning");
+                    return;
+                  }
+                  const updated = { ...savedProfiles, [newProfileName.trim()]: columnMappings };
+                  setSavedProfiles(updated);
+                  localStorage.setItem('bm-expenses-import-profiles', JSON.stringify(updated));
+                  onShowToast(`Saved mapping preset profile "${newProfileName.trim()}"!`, "success");
+                  setNewProfileName('');
+                }}
+              >
+                Save Preset
+              </button>
+            </div>
           </div>
 
           {/* Target Bank Account and Reference Form */}
@@ -808,7 +898,7 @@ export default function BankStatementImport({ onShowToast }) {
                         onClick={() => {
                           setAllocatingRowId(row.id);
                           const rawTarget = row.allocationTarget || [];
-                          const targetArray = Array.isArray(rawTarget) ? rawTarget : [rawTarget].filter(Boolean);
+                          const targetArray = Array.isArray(rawTarget) ? (rawTarget as string[]) : [rawTarget].filter(Boolean) as string[];
                           const type = row.allocationType || 'company';
                           const validTarget = type === 'company'
                             ? targetArray.filter(tid => companies.some(c => c.id === tid))
@@ -818,6 +908,8 @@ export default function BankStatementImport({ onShowToast }) {
                           setAllocatingType(type);
                           setAllocatingTarget(validTarget);
                           setAllocatingStaffIds(row.selectedStaffIds || []);
+                          setAllocatingMode(row.allocationMode || 'auto');
+                          setAllocatingManualShares(row.manualAllocationShares || {});
                           setAllocationSearch('');
                           setExpandedSections({
                             company: type === 'company' || !type,
@@ -1332,7 +1424,7 @@ export default function BankStatementImport({ onShowToast }) {
                   if (allocatingType !== 'global' && allocatingMode === 'manual') {
                     let totalPercent = 0;
                     finalTarget.forEach(tid => {
-                      totalPercent += parseInt(allocatingManualShares[tid] || 0, 10);
+                      totalPercent += parseInt(String(allocatingManualShares[tid] || 0), 10);
                     });
                     if (totalPercent !== 100) {
                       onShowToast(`Manual split percentages must sum to exactly 100% (currently ${totalPercent}%).`, "warning");
@@ -1449,7 +1541,7 @@ export default function BankStatementImport({ onShowToast }) {
                           <td>{p.clientCompany}</td>
                           <td style={{ fontWeight: 500 }}>{p.candidateName}</td>
                           <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                            £{p.grossFee?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            £{p.netScoreValue?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td>{p.startDate}</td>
                           <td>
@@ -1654,7 +1746,7 @@ export default function BankStatementImport({ onShowToast }) {
                 
                 onShowToast(`Successfully registered vendor "${quickVendorName}"!`, "success");
                 setQuickVendorRowId(null);
-              } catch (err) {
+              } catch (err: any) {
                 onShowToast(`Error registering vendor: ${err.message}`, "warning");
               }
             }}
@@ -1745,7 +1837,7 @@ export default function BankStatementImport({ onShowToast }) {
                 
                 setQuickAddNominalOpen(false);
                 setQuickAddRowId(null);
-              } catch (err) {
+              } catch (err: any) {
                 onShowToast(`Error: ${err.message}`, "warning");
               }
             }}

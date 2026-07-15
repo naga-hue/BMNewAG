@@ -7,47 +7,50 @@ import YtdAllocationMatrix from './YtdAllocationMatrix';
 import RecipientPaymentsMatrix from './RecipientPaymentsMatrix';
 import NominalCodesSetup from './NominalCodesSetup';
 import ExpenseClaimForm from './ExpenseClaimForm';
-import { symbolMap } from './shared';
 import './expenses.css';
 
-export default function ExpensesDashboard({ onShowToast }) {
+interface ExpensesDashboardProps {
+  onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
+}
+
+export default function ExpensesDashboard({ onShowToast }: ExpensesDashboardProps) {
   const [activeSubTab, setActiveSubTab] = useState('ledger');
   const [showForm, setShowForm] = useState(false);
-  const [editingExpenseId, setEditingExpenseId] = useState(null);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
   const expenses = useBoundStore(state => state.expenses);
   const staff = useBoundStore(state => state.staff);
   const vendors = useBoundStore(state => state.vendors);
   const companies = useBoundStore(state => state.companies);
   const nominalCodes = useBoundStore(state => state.nominalCodes);
-  const payrollRecords = useBoundStore(state => state.payrollRecords);
 
-  const saveExpense = useBoundStore(state => state.saveExpense || useBoundStore(state => state.updateExpense));
+  const updateExpense = useBoundStore(state => state.updateExpense);
+  const saveExpense = updateExpense;
   const savePayrollRecord = useBoundStore(state => state.savePayrollRecord);
 
   // Drilldown Overlay Modal State
-  const [drilldownMonthIdx, setDrilldownMonthIdx] = useState(null);
-  const [drilldownRowId, setDrilldownRowId] = useState(null);
-  const [drilldownRowType, setDrilldownRowType] = useState('');
-  const [drilldownTargetVal, setDrilldownTargetVal] = useState('');
+  const [drilldownMonthIdx, setDrilldownMonthIdx] = useState<number | 'ytd' | null>(null);
+  const [drilldownRowId, setDrilldownRowId] = useState<string | null>(null);
+  const [drilldownRowType, setDrilldownRowType] = useState<string | null>('');
+  const [drilldownTargetVal, setDrilldownTargetVal] = useState<string | null>('');
 
   // Payroll Linkage Modal State
-  const [linkingPayrollExpId, setLinkingPayrollExpId] = useState(null);
+  const [linkingPayrollExpId, setLinkingPayrollExpId] = useState<string | null>(null);
   const [linkingStaffId, setLinkingStaffId] = useState('');
   const [linkingMonth, setLinkingMonth] = useState('2026-07');
 
   // Drilldown target allocation state
-  const [allocatingRowId, setAllocatingRowId] = useState(null);
+  const [allocatingRowId, setAllocatingRowId] = useState<string | null>(null);
   const [allocatingType, setAllocatingType] = useState('company');
-  const [allocatingTarget, setAllocatingTarget] = useState([]);
-  const [allocatingStaffIds, setAllocatingStaffIds] = useState([]);
+  const [allocatingTarget, setAllocatingTarget] = useState<string[]>([]);
+  const [allocatingStaffIds, setAllocatingStaffIds] = useState<string[]>([]);
   const [allocatingMode, setAllocatingMode] = useState('auto');
-  const [allocatingManualShares, setAllocatingManualShares] = useState({});
+  const [allocatingManualShares, setAllocatingManualShares] = useState<Record<string, number>>({});
   const [allocationSearch, setAllocationSearch] = useState('');
   const [expandedSections, setExpandedSections] = useState({ company: true, department: false, staff: false });
 
   const activeNominalCodes = useMemo(() => {
-    return (nominalCodes || []).map(c => {
+    return (nominalCodes || []).map((c: any) => {
       if (typeof c === 'string') {
         const parts = c.split(' - ');
         return { id: parts[0] || c, code: c, type: 'indirect' };
@@ -60,13 +63,13 @@ export default function ExpensesDashboard({ onShowToast }) {
         };
       }
       return null;
-    }).filter(c => c && c.code);
+    }).filter((c): c is { id: string; code: string; type: string } => c !== null && !!c.code);
   }, [nominalCodes]);
 
   const allAvailableDepts = useMemo(() => {
-    const depts = [];
+    const depts: string[] = [];
     companies.forEach(c => {
-      (c.departments || []).forEach(d => {
+      (c.departments || []).forEach((d: any) => {
         const name = d.name || d;
         if (name && !depts.includes(name)) depts.push(name);
       });
@@ -82,8 +85,8 @@ export default function ExpensesDashboard({ onShowToast }) {
   // Rebuild the flat apportionment hierarchy (mirroring Matrix calculations to display drilldown counts correctly)
   const matrixYear = '2026';
   const { flatRowsForMatrix } = useMemo(() => {
-    const staffOverhead = {};
-    const staffTrans = {};
+    const staffOverhead: Record<string, number[]> = {};
+    const staffTrans: Record<string, any[][]> = {};
     staff.forEach(s => {
       staffOverhead[s.id] = Array(12).fill(0);
       staffTrans[s.id] = Array.from({ length: 12 }, () => []);
@@ -93,7 +96,7 @@ export default function ExpensesDashboard({ onShowToast }) {
 
     for (let mIdx = 0; mIdx < 12; mIdx++) {
       const monthKey = `${matrixYear}-${String(mIdx + 1).padStart(2, '0')}`;
-      const activeStaff = staff.filter(s => {
+      const activeStaff = staff.filter(() => {
         // Simple mock of worked days in month
         return true;
       });
@@ -103,7 +106,7 @@ export default function ExpensesDashboard({ onShowToast }) {
         const gbpAmt = toGBP(exp.amount, exp.currency);
 
         if (exp.allocationType === 'company') {
-          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+          const targets = (Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean)) as string[];
           if (targets.length > 0) {
             const eligibleStaff = activeStaff.filter(s => targets.includes(s.companyId));
             const totalHead = eligibleStaff.length || 1;
@@ -114,9 +117,9 @@ export default function ExpensesDashboard({ onShowToast }) {
             });
           }
         } else if (exp.allocationType === 'department') {
-          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+          const targets = (Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean)) as string[];
           if (targets.length > 0) {
-            const eligibleStaff = activeStaff.filter(s => targets.includes(s.department));
+            const eligibleStaff = activeStaff.filter(s => s.department && targets.includes(s.department));
             const totalHead = eligibleStaff.length || 1;
             const perStaffShare = gbpAmt / totalHead;
             eligibleStaff.forEach(s => {
@@ -125,7 +128,7 @@ export default function ExpensesDashboard({ onShowToast }) {
             });
           }
         } else if (exp.allocationType === 'staff') {
-          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
+          const targets = (Array.isArray(exp.allocationTarget) ? exp.allocationTarget : []) as string[];
           if (targets.length > 0) {
             const perStaffShare = gbpAmt / targets.length;
             targets.forEach(staffId => {
@@ -143,12 +146,12 @@ export default function ExpensesDashboard({ onShowToast }) {
       });
     }
 
-    const computedData = [];
+    const computedData: any[] = [];
     companies.forEach(company => {
       const companyStaff = staff.filter(s => s.companyId === company.id);
       const companyMonths = Array(12).fill(0);
-      const companyTransactionsByMonth = Array.from({ length: 12 }, () => []);
-      const nominalsMap = {};
+      const companyTransactionsByMonth: any[][] = Array.from({ length: 12 }, () => []);
+      const nominalsMap: Record<string, { months: number[]; transactionsByMonth: any[][]; parties: Record<string, { months: number[]; transactionsByMonth: any[][] }> }> = {};
 
       companyStaff.forEach(member => {
         const memberTransactionsByMonth = staffTrans[member.id] || Array.from({ length: 12 }, () => []);
@@ -184,10 +187,10 @@ export default function ExpensesDashboard({ onShowToast }) {
         }
       });
 
-      const nominalRows = [];
+      const nominalRows: any[] = [];
       Object.keys(nominalsMap).sort().forEach(nom => {
         const nomData = nominalsMap[nom];
-        const partyRows = [];
+        const partyRows: any[] = [];
 
         Object.keys(nomData.parties).sort().forEach(payee => {
           const partyData = nomData.parties[payee];
@@ -224,12 +227,12 @@ export default function ExpensesDashboard({ onShowToast }) {
       });
     });
 
-    const flatRows = [];
+    const flatRows: any[] = [];
     computedData.forEach(compRow => {
       flatRows.push(compRow);
-      compRow.children.forEach(nomRow => {
+      compRow.children.forEach((nomRow: any) => {
         flatRows.push(nomRow);
-        nomRow.children.forEach(partyRow => {
+        nomRow.children.forEach((partyRow: any) => {
           flatRows.push(partyRow);
         });
       });
@@ -238,7 +241,7 @@ export default function ExpensesDashboard({ onShowToast }) {
     return { flatRowsForMatrix: flatRows };
   }, [staff, expenses, companies]);
 
-  const handleEditExpense = (exp) => {
+  const handleEditExpense = (exp: any) => {
     setEditingExpenseId(exp.id);
     setShowForm(true);
   };
@@ -278,7 +281,7 @@ export default function ExpensesDashboard({ onShowToast }) {
 
       onShowToast("Transaction linked to payroll successfully.", "success");
       setLinkingPayrollExpId(null);
-    } catch (err) {
+    } catch (err: any) {
       onShowToast(`Error linking transaction: ${err.message}`, "warning");
     }
   };
@@ -438,7 +441,7 @@ export default function ExpensesDashboard({ onShowToast }) {
                 </thead>
                 <tbody>
                   {(() => {
-                    let matchedRow = null;
+                    let matchedRow: any = null;
                     const hasFlatRows = typeof flatRowsForMatrix !== 'undefined' && flatRowsForMatrix;
                     
                     if (hasFlatRows) {
@@ -446,12 +449,12 @@ export default function ExpensesDashboard({ onShowToast }) {
                     }
                     
                     if (drilldownRowType === 'recipient') {
-                      const [rtype, rid] = drilldownRowId.split(':');
+                      const [rtype, rid] = (drilldownRowId || '').split(':');
                       const matchedStaff = staff.find(s => s.id === rid);
                       const matchedVendor = vendors.find(v => v.id === rid);
                       const name = rtype === 'staff' ? matchedStaff?.fullName : matchedVendor?.name;
 
-                      const recipientTransactionsByMonth = Array.from({ length: 12 }, () => []);
+                      const recipientTransactionsByMonth: any[][] = Array.from({ length: 12 }, () => []);
                       for (let m = 0; m < 12; m++) {
                         const monthKey = `2026-${String(m + 1).padStart(2, '0')}`;
                         const monthlyTransactions = expenses.filter(e => {
@@ -473,7 +476,7 @@ export default function ExpensesDashboard({ onShowToast }) {
                         transactionsByMonth: recipientTransactionsByMonth
                       };
                     } else if (drilldownRowId === 'group-total') {
-                      const allGroupTransactionsByMonth = Array.from({ length: 12 }, () => []);
+                      const allGroupTransactionsByMonth: any[][] = Array.from({ length: 12 }, () => []);
                       if (hasFlatRows) {
                         flatRowsForMatrix.forEach(r => {
                           if (r.type === 'party') {
@@ -493,20 +496,20 @@ export default function ExpensesDashboard({ onShowToast }) {
                     if (!matchedRow) return null;
 
                     // De-duplicate transactions
-                    const uniq = [];
+                    const uniq: any[] = [];
                     const seen = new Set();
                     
                     if (drilldownMonthIdx === 'ytd') {
                       for (let m = 0; m < 12; m++) {
-                        (matchedRow.transactionsByMonth[m] || []).forEach(t => {
+                        (matchedRow.transactionsByMonth[m] || []).forEach((t: any) => {
                           if (!seen.has(t.id)) {
                             seen.add(t.id);
                             uniq.push(t);
                           }
                         });
                       }
-                    } else {
-                      (matchedRow.transactionsByMonth[drilldownMonthIdx] || []).forEach(t => {
+                    } else if (typeof drilldownMonthIdx === 'number') {
+                      (matchedRow.transactionsByMonth[drilldownMonthIdx] || []).forEach((t: any) => {
                         if (!seen.has(t.id)) {
                           seen.add(t.id);
                           uniq.push(t);
@@ -517,7 +520,7 @@ export default function ExpensesDashboard({ onShowToast }) {
                     if (uniq.length === 0) {
                       return (
                         <tr>
-                          <td colSpan="7" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
+                          <td colSpan={7} style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
                             No expenses allocated in this month.
                           </td>
                         </tr>
@@ -914,7 +917,7 @@ export default function ExpensesDashboard({ onShowToast }) {
                   cursor: 'pointer'
                 }}
               >
-                <input type="radio" checked={allocatingType === 'global'} readOnly />
+                <input type="radio" checked={allocatingType === 'global'} readOnly style={{ cursor: 'pointer' }} />
                 <div>
                   <div style={{ fontSize: '12px', fontWeight: 600 }}>🌎 Whole Corporate Group</div>
                 </div>
@@ -925,7 +928,7 @@ export default function ExpensesDashboard({ onShowToast }) {
                   <span>🏢 Companies {allocatingType === 'company' && `(${allocatingTarget.length} selected)`}</span>
                 </div>
                 {expandedSections.company && (
-                  <div style={{ display: 'flex', flexDirection: 'column', padding: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTop: 'none', borderDetail: '0 0 8px 8px', maxHeight: '150px', overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', padding: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: '150px', overflowY: 'auto' }}>
                     {companies.filter(c => c.name.toLowerCase().includes(allocationSearch.toLowerCase())).map(c => {
                       const isChecked = allocatingType === 'company' && allocatingTarget.includes(c.id);
                       return (
@@ -971,7 +974,7 @@ export default function ExpensesDashboard({ onShowToast }) {
                   <span>📂 Departments {allocatingType === 'department' && `(${allocatingTarget.length} selected)`}</span>
                 </div>
                 {expandedSections.department && (
-                  <div style={{ display: 'flex', flexDirection: 'column', padding: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTop: 'none', borderDetail: '0 0 8px 8px', maxHeight: '150px', overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', padding: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: '150px', overflowY: 'auto' }}>
                     {allAvailableDepts.filter(d => d.toLowerCase().includes(allocationSearch.toLowerCase())).map(d => {
                       const isChecked = allocatingType === 'department' && allocatingTarget.includes(d);
                       return (
@@ -1017,7 +1020,7 @@ export default function ExpensesDashboard({ onShowToast }) {
                   <span>👥 Recruiters {allocatingType === 'staff' && `(${allocatingStaffIds.length} selected)`}</span>
                 </div>
                 {expandedSections.staff && (
-                  <div style={{ display: 'flex', flexDirection: 'column', padding: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTop: 'none', borderDetail: '0 0 8px 8px', maxHeight: '150px', overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', padding: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: '150px', overflowY: 'auto' }}>
                     {staff.filter(s => s.fullName.toLowerCase().includes(allocationSearch.toLowerCase())).map(s => {
                       const isChecked = allocatingType === 'staff' && allocatingStaffIds.includes(s.id);
                       return (
@@ -1089,7 +1092,7 @@ export default function ExpensesDashboard({ onShowToast }) {
                   if (allocatingType !== 'global' && allocatingMode === 'manual') {
                     let totalPercent = 0;
                     finalTarget.forEach(tid => {
-                      totalPercent += parseInt(allocatingManualShares[tid] || 0, 10);
+                      totalPercent += parseInt(String(allocatingManualShares[tid] || 0), 10);
                     });
                     if (totalPercent !== 100) {
                       onShowToast(`Manual split percentages must sum to exactly 100% (currently ${totalPercent}%).`, "warning");

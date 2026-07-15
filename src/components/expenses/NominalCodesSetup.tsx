@@ -2,21 +2,25 @@ import React, { useState, useMemo } from 'react';
 import { Trash2, PlusCircle } from 'lucide-react';
 import { useBoundStore } from '../../store/useBoundStore';
 
-export default function NominalCodesSetup({ onShowToast }) {
+interface NominalCodesSetupProps {
+  onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
+}
+
+export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProps) {
   const nominalCodes = useBoundStore(state => state.nominalCodes);
   const saveNominalCode = useBoundStore(state => state.saveNominalCode);
   const deleteNominalCode = useBoundStore(state => state.deleteNominalCode);
 
-  const [nominalMode, setNominalMode] = useState('single'); // single, bulk
+  const [nominalMode, setNominalMode] = useState<'single' | 'bulk'>('single');
   const [newNominalCodeId, setNewNominalCodeId] = useState('');
   const [newNominalCodeName, setNewNominalCodeName] = useState('');
   const [newNominalType, setNewNominalType] = useState('indirect'); // direct, indirect
   const [bulkInput, setBulkInput] = useState('');
-  const [selectedNominalIds, setSelectedNominalIds] = useState([]);
+  const [selectedNominalIds, setSelectedNominalIds] = useState<string[]>([]);
 
   // Normalize nominal codes to handle any legacy string arrays gracefully
   const activeNominalCodes = useMemo(() => {
-    return (nominalCodes || []).map(c => {
+    return (nominalCodes || []).map((c: any) => {
       if (typeof c === 'string') {
         const parts = c.split(' - ');
         return { id: parts[0] || c, code: c, type: 'indirect' };
@@ -29,10 +33,10 @@ export default function NominalCodesSetup({ onShowToast }) {
         };
       }
       return null;
-    }).filter(c => c && c.code);
+    }).filter((c): c is { id: string; code: string; type: string } => c !== null && !!c.code);
   }, [nominalCodes]);
 
-  const handleNominalSubmit = async (e) => {
+  const handleNominalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newNominalCodeId.trim() || !newNominalCodeName.trim()) {
       onShowToast("Please enter both nominal code and description name.", "warning");
@@ -57,12 +61,12 @@ export default function NominalCodesSetup({ onShowToast }) {
       setNewNominalCodeId('');
       setNewNominalCodeName('');
       setNewNominalType('indirect');
-    } catch (err) {
+    } catch (err: any) {
       onShowToast(`Error creating Nominal: ${err.message}`, "warning");
     }
   };
 
-  const handleBulkNominalSubmit = async (e) => {
+  const handleBulkNominalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!bulkInput.trim()) {
       onShowToast("Please enter nominal codes in the text area.", "warning");
@@ -82,8 +86,8 @@ export default function NominalCodesSetup({ onShowToast }) {
       // Try split by comma
       if (line.includes(',')) {
         const parts = line.split(',');
-        codeId = parts[0]?.trim();
-        codeName = parts[1]?.trim();
+        codeId = parts[0]?.trim() || '';
+        codeName = parts[1]?.trim() || '';
         if (parts[2]) {
           const t = parts[2].trim().toLowerCase();
           if (t === 'direct' || t === 'indirect') {
@@ -94,8 +98,8 @@ export default function NominalCodesSetup({ onShowToast }) {
       // Try split by dash
       else if (line.includes(' - ')) {
         const parts = line.split(' - ');
-        codeId = parts[0]?.trim();
-        codeName = parts[1]?.trim();
+        codeId = parts[0]?.trim() || '';
+        codeName = parts[1]?.trim() || '';
       }
       else {
         // Fallback: split by whitespace
@@ -126,7 +130,7 @@ export default function NominalCodesSetup({ onShowToast }) {
           type: typeVal
         });
         successCount++;
-      } catch (err) {
+      } catch {
         failCount++;
       }
     }
@@ -149,7 +153,7 @@ export default function NominalCodesSetup({ onShowToast }) {
       }
       onShowToast(`Successfully deleted ${successCount} nominal categories.`, "success");
       setSelectedNominalIds([]);
-    } catch (err) {
+    } catch (err: any) {
       onShowToast(`Error bulk deleting nominals: ${err.message}`, "warning");
     }
   };
@@ -248,7 +252,7 @@ export default function NominalCodesSetup({ onShowToast }) {
           <div className="form-group">
             <textarea
               className="form-input"
-              rows="8"
+              rows={8}
               placeholder="e.g.&#10;500,Salaries & Wages,direct&#10;501,HMRC PAYE,direct&#10;7000,Marketing Expenses,indirect"
               value={bulkInput}
               onChange={(e) => setBulkInput(e.target.value)}
@@ -348,7 +352,7 @@ export default function NominalCodesSetup({ onShowToast }) {
               ))}
               {activeNominalCodes.length === 0 && (
                 <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>
+                  <td colSpan={5} style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>
                     No nominal categories initialized. Add one above.
                   </td>
                 </tr>

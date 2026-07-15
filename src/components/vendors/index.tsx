@@ -9,6 +9,7 @@ import VendorRegisterModal from './VendorRegisterModal';
 import ContractRegisterModal from './ContractRegisterModal';
 import BatchAllocateSeatsModal from './BatchAllocateSeatsModal';
 import ReconcileCellModal from './ReconcileCellModal';
+import HardwareAssetsRegister from './HardwareAssetsRegister';
 import '../vendors.css';
 
 export interface VendorsDashboardProps {
@@ -120,6 +121,13 @@ export default function VendorsDashboard({
           >
             📊 Forecast Matrix
           </button>
+          <button 
+            type="button" 
+            className={`tab-btn ${activeSubTab === 'hardware' ? 'active' : ''}`}
+            onClick={() => setActiveSubTab('hardware')}
+          >
+            🔌 Hardware Inventory
+          </button>
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -217,6 +225,15 @@ export default function VendorsDashboard({
             const monthKey = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
             setReconcilingCell({ contract, monthKey, projectedAmount: projectedVal });
           }}
+        />
+      )}
+
+      {activeSubTab === 'hardware' && (
+        <HardwareAssetsRegister 
+          staff={staff}
+          assetAssignments={assetAssignments}
+          contracts={contracts}
+          onShowToast={onShowToast}
         />
       )}
 

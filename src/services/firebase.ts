@@ -990,7 +990,7 @@ export const firebaseService: FirebaseServiceInterface = {
     }
   },
 
-    subscribeExpenses(onUpdate, fallbackData = []) {
+  subscribeExpenses(onUpdate: (expenses: any[]) => void, fallbackData: any[] = []) {
     const localCache = localStorage.getItem('bm-expenses');
     if (localCache) {
       try {
@@ -1004,8 +1004,15 @@ export const firebaseService: FirebaseServiceInterface = {
 
     if (isConfigured && db) {
       const refCol = collection(db, 'expenses');
-      return onSnapshot(refCol, (snapshot) => {
-        const list = [];
+      return onSnapshot(refCol, async (snapshot) => {
+        if (snapshot.empty && fallbackData && fallbackData.length > 0) {
+          for (const item of fallbackData) {
+            const docRef = doc(db, 'expenses', item.id);
+            await setDoc(docRef, item);
+          }
+          return;
+        }
+        const list: any[] = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });
@@ -1052,7 +1059,7 @@ export const firebaseService: FirebaseServiceInterface = {
     }
   },
 
-    subscribeNominalCodes(onUpdate, fallbackData = []) {
+  subscribeNominalCodes(onUpdate: (codes: any[]) => void, fallbackData: any[] = []) {
     const localCache = localStorage.getItem('bm-nominal-codes');
     if (localCache) {
       try {
@@ -1066,8 +1073,15 @@ export const firebaseService: FirebaseServiceInterface = {
 
     if (isConfigured && db) {
       const refCol = collection(db, 'nominalCodes');
-      return onSnapshot(refCol, (snapshot) => {
-        const list = [];
+      return onSnapshot(refCol, async (snapshot) => {
+        if (snapshot.empty && fallbackData && fallbackData.length > 0) {
+          for (const item of fallbackData) {
+            const docRef = doc(db, 'nominalCodes', item.id);
+            await setDoc(docRef, item);
+          }
+          return;
+        }
+        const list: any[] = [];
         snapshot.forEach((doc) => {
           list.push(doc.data());
         });

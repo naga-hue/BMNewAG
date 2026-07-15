@@ -1385,16 +1385,25 @@ export const firebaseService: FirebaseServiceInterface = {
   },
 
   async logEmailNotification(notification) {
+    const extensionPayload = {
+      ...notification,
+      to: notification.recipient,
+      message: {
+        subject: notification.subject,
+        text: notification.body
+      }
+    };
+
     if (isConfigured && db) {
       const docRef = doc(db, 'emailNotifications', notification.id || 'email-' + Date.now());
-      await setDoc(docRef, notification);
-      return notification;
+      await setDoc(docRef, extensionPayload);
+      return extensionPayload;
     } else {
       const local = localStorage.getItem('bm-email-notifications');
       const list = local ? JSON.parse(local) : [];
-      list.push(notification);
+      list.push(extensionPayload);
       localStorage.setItem('bm-email-notifications', JSON.stringify(list));
-      return notification;
+      return extensionPayload;
     }
   },
 

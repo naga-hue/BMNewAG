@@ -224,7 +224,9 @@ export default function ContractsRegister({
                       {(() => {
                         const splits: Split[] = contract.splits || [];
                         const splitsCount = splits.length;
-                        const totalSplitPercentage = splits.reduce((acc, curr) => acc + Number(curr.percentage || 0), 0);
+                        const totalSplitPercentage = contract.useHeadcountSplit 
+                          ? 100 
+                          : splits.reduce((acc, curr) => acc + Number(curr.percentage || 0), 0);
                         
                         return (
                           <span 
@@ -472,7 +474,9 @@ export default function ContractsRegister({
 
                   {expandedSplitsContractId === contract.id && (() => {
                     const splits: Split[] = contract.splits || [];
-                    const totalSplitPercentage = splits.reduce((acc, curr) => acc + Number(curr.percentage || 0), 0);
+                    const totalSplitPercentage = contract.useHeadcountSplit 
+                      ? 100 
+                      : splits.reduce((acc, curr) => acc + Number(curr.percentage || 0), 0);
                     const activeStaffList = staff.filter(s => s.status !== 'exited');
                     const sortedStaff = [...activeStaffList].sort((a, b) => a.fullName.localeCompare(b.fullName));
 

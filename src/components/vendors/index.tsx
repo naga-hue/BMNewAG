@@ -130,24 +130,6 @@ export default function VendorsDashboard({
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button 
-            type="button" 
-            className="btn-secondary"
-            onClick={handleCreateVendor}
-          >
-            ➕ Register Vendor
-          </button>
-          <button 
-            type="button" 
-            className="btn-primary"
-            onClick={handleCreateContract}
-            disabled={vendors.length === 0}
-            title={vendors.length === 0 ? "Register a vendor partner first" : "Create contract"}
-          >
-            ➕ Register Contract
-          </button>
-        </div>
       </div>
 
       {/* Main Content Render */}
@@ -196,6 +178,7 @@ export default function VendorsDashboard({
           onDeleteAssetAssignment={onDeleteAssetAssignment}
           onShowToast={onShowToast}
           onBatchAllocateSeatsClick={setMultiAssignContract}
+          onRegisterContractClick={handleCreateContract}
         />
       )}
 

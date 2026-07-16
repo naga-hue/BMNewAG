@@ -1385,9 +1385,13 @@ export const firebaseService: FirebaseServiceInterface = {
   },
 
   async logEmailNotification(notification) {
+    const toEmails = typeof notification.recipient === 'string'
+      ? notification.recipient.split(',').map(s => s.trim()).filter(Boolean)
+      : notification.recipient;
+
     const extensionPayload = {
       ...notification,
-      to: notification.recipient,
+      to: toEmails.length === 1 ? toEmails[0] : toEmails,
       message: {
         subject: notification.subject,
         text: notification.body

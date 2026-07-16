@@ -310,9 +310,20 @@ export default function ExitEmailTriggerModal({
       const commPolicy = commissionPolicies.find(p => p.id === staffMember.commissionPolicyId);
       const commSchemeName = commPolicy ? commPolicy.name : 'None';
       
-      // Calculate monthly commission due this month (July 2026)
+      // Calculate monthly commission due this month (July 2026) in policy currency
       const monthStr = '2026-07';
       const monthlyCommission = calculateCashReceivedCommission(staffMember, commPolicy, monthStr);
+
+      // Resolve the policy currency
+      const policyCompany = companies.find(c => c.id === commPolicy?.companyId);
+      const policyCurrency = policyCompany ? policyCompany.currency : 'GBP';
+
+      // Convert monthly commission to GBP, then to staff currency
+      const totalPayoutGBP = toGBP(monthlyCommission.totalPayout, policyCurrency);
+      const totalPayoutNative = fromGBP(totalPayoutGBP, staffCurrency);
+
+      const withheldGBP = toGBP(monthlyCommission.withheld, policyCurrency);
+      const withheldNative = fromGBP(withheldGBP, staffCurrency);
 
       // 8. Resolve Role Contacts for CC list / Recipients
       const hrContact = staff.find(s => s.id === company.hrContactId);
@@ -356,8 +367,8 @@ FINANCIAL & COMPENSATION PROFILE
 - Monthly Base Salary: ${staffMember.salary ? `${currencySymbol}${Math.round(Number(staffMember.salary) / 12).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / month (${currencySymbol}${Number(staffMember.salary).toLocaleString()} / year ${staffCurrency})` : 'Not specified'}
 - Commission Scheme Mapped: ${commSchemeName}
 - Cumulative Billings (Current Year - 2026 Split): ${currencySymbol}${yearRevenueNative.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (GBP £${yearRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
-- Commission Due for Payment This Month (July 2026): ${currencySymbol}${monthlyCommission.totalPayout.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-- Commission Withheld (Pending Client Payment): ${currencySymbol}${monthlyCommission.withheld.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+- Commission Due for Payment This Month (July 2026): ${currencySymbol}${totalPayoutNative.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (GBP £${totalPayoutGBP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+- Commission Withheld (Pending Client Payment): ${currencySymbol}${withheldNative.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (GBP £${withheldGBP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
 
 RECRUITMENT SALES & CLIENT LEDGER STATUS
 --------------------------------------------------

@@ -20,7 +20,7 @@ rl.question('1. Enter your Application (Client) ID: ', (clientId) => {
         `&response_type=code` +
         `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
         `&response_mode=query` +
-        `&scope=${encodeURIComponent('https://outlook.office.com/SMTP.Send offline_access')}` +
+        `&scope=${encodeURIComponent('https://graph.microsoft.com/Mail.Send offline_access')}` +
         `&state=12345`;
 
       console.log("\n=========================================================================");
@@ -51,7 +51,7 @@ rl.question('1. Enter your Application (Client) ID: ', (clientId) => {
           console.log("\nExchanging authorization code for tokens...");
 
           const postData = `client_id=${clientId.trim()}` +
-            `&scope=${encodeURIComponent('https://outlook.office.com/SMTP.Send offline_access')}` +
+            `&scope=${encodeURIComponent('https://graph.microsoft.com/Mail.Send offline_access')}` +
             `&code=${code}` +
             `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
             `&grant_type=authorization_code` +

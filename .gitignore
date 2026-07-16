@@ -28,3 +28,9 @@ dist-ssr
 .env.local
 .env.*.local
 
+# Diagnostic & test scripts
+test_common_endpoint.cjs
+test_refresh_token_on_common.cjs
+trigger_test_email.js
+run_local_api_test.js
+

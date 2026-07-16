@@ -339,21 +339,66 @@ export default function App() {
   };
 
   const handleSendExitEmail = async (notifications) => {
-    try {
-      if (Array.isArray(notifications)) {
-        for (const notif of notifications) {
-          await firebaseService.logEmailNotification(notif);
+    const list = Array.isArray(notifications) ? notifications : [notifications];
+    let successCount = 0;
+    let failError = null;
+
+    for (const notif of list) {
+      try {
+        const res = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            recipient: notif.recipient,
+            subject: notif.subject,
+            body: notif.body
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP error ${res.status}`);
         }
-      } else {
-        await firebaseService.logEmailNotification(notifications);
+
+        // Successfully sent, save success state to Firestore
+        await firebaseService.logEmailNotification({
+          ...notif,
+          delivery: {
+            state: 'SUCCESS',
+            endTime: new Date(),
+            attempts: 1
+          }
+        });
+        successCount++;
+      } catch (err) {
+        console.error("Failed to send exit email:", err);
+        failError = err.message;
+        
+        // Log the failure to Firestore for auditing
+        try {
+          await firebaseService.logEmailNotification({
+            ...notif,
+            delivery: {
+              state: 'ERROR',
+              error: err.message,
+              endTime: new Date(),
+              attempts: 1
+            }
+          });
+        } catch (dbErr) {
+          console.error("Failed to log email error in Firestore:", dbErr);
+        }
       }
-      setIsExitEmailTriggerOpen(false);
+    }
+
+    setIsExitEmailTriggerOpen(false);
+
+    if (successCount > 0) {
+      handleShowToast(`Successfully sent ${successCount} exit email(s) via Microsoft 365!`, 'success');
       
-      const count = Array.isArray(notifications) ? notifications.length : 1;
-      handleShowToast(`Successfully dispatched ${count} offboarding exit emails!`, 'success');
-      
-      // Immediately open checklist for offboarding in detail view
-      const staffId = Array.isArray(notifications) ? notifications[0]?.staffId : notifications.staffId;
+      const staffId = list[0]?.staffId;
       if (staffId) {
         const matched = staff.find(s => s.id === staffId);
         if (matched) {
@@ -361,9 +406,10 @@ export default function App() {
           setIsStaffDetailOpen(true);
         }
       }
-    } catch (err) {
-      console.error("Send exit email error:", err);
-      handleShowToast("Error saving email log: " + err.message, 'warning');
+    }
+
+    if (failError) {
+      handleShowToast(`Failed to send email: ${failError}`, 'warning');
     }
   };
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);

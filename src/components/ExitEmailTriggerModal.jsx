@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Send, Mail, ShieldAlert, Users, Laptop, FileText, ClipboardList } from 'lucide-react';
+import { toGBP, FX_RATES } from '../utils/currency';
 
 export default function ExitEmailTriggerModal({ 
   isOpen, 
@@ -11,16 +12,237 @@ export default function ExitEmailTriggerModal({
   assetAssignments = [],
   commissionPolicies = [],
   placements = [],
+  contracts = [],
   onSend 
 }) {
   const [emailRecipient, setEmailRecipient] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
 
+  // Currency formatting map
+  const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
+
+  // Convert GBP to target currency
+  const fromGBP = (gbpAmt, targetCur) => {
+    const targetRate = FX_RATES[targetCur] || 1.0;
+    return targetRate > 0 ? gbpAmt / targetRate : gbpAmt;
+  };
+
+  // Monthly payout calculation helper (cash-received commission)
+  const calculateCashReceivedCommission = (member, policy, monthStr) => {
+    if (!policy) {
+      return { 
+        billing: 0, 
+        baseEarned: 0, 
+        withheld: 0, 
+        paidNow: 0, 
+        released: 0, 
+        totalPayout: 0 
+      };
+    }
+
+    const [payYear, payMonth] = monthStr.split('-').map(Number);
+    let cycleYear = payYear;
+    let cycleMonth = payMonth - 1;
+    if (cycleMonth === 0) {
+      cycleMonth = 12;
+      cycleYear = payYear - 1;
+    }
+
+    const getMonthsOfService = (startStr, dateStr) => {
+      if (!startStr) return 999;
+      try {
+        const [startYear, startMonth] = startStr.substring(0, 7).split('-').map(Number);
+        const [pYear, pMonth] = dateStr.split('-').map(Number);
+        return (pYear - startYear) * 12 + (pMonth - startMonth);
+      } catch (e) {
+        return 999;
+      }
+    };
+
+    const monthsOfService = getMonthsOfService(member.startDate, monthStr);
+    const isStarterWaiverActive = policy.starterWaiveThreshold && monthsOfService < 12;
+    const isLocked = policy.effectiveFrom === 'one_year_service' && monthsOfService < 12 && !isStarterWaiverActive;
+
+    if (isLocked) {
+      return { 
+        billing: 0, 
+        baseEarned: 0, 
+        withheld: 0, 
+        paidNow: 0, 
+        released: 0, 
+        totalPayout: 0 
+      };
+    }
+
+    let targetStaffIds = [member.id];
+    if (policy.type === 'manager') {
+      const teamMembers = staff.filter(s => s.reportingManagerId === member.id);
+      targetStaffIds = [member.id, ...teamMembers.map(s => s.id)];
+    }
+
+    const getRecruiterBillingForStartMonth = (yearVal, monthVal) => {
+      let sum = 0;
+      placements.forEach(p => {
+        if (!p.startDate || p.status === 'dns') return;
+        const pStart = new Date(p.startDate);
+        if (pStart.getFullYear() === yearVal && (pStart.getMonth() + 1) === monthVal) {
+          p.splits?.forEach(s => {
+            if (targetStaffIds.includes(s.staffId)) {
+              sum += (p.netScoreValue * s.percentage) / 100;
+            }
+          });
+        }
+      });
+      return sum;
+    };
+
+    const getPolicyCommission = (billingAmt) => {
+      const policyCompany = companies.find(c => c.id === policy.companyId);
+      const policyCurrency = policyCompany ? policyCompany.currency : 'GBP';
+      
+      const thresh = isStarterWaiverActive ? 0 : toGBP(policy.monthlyThreshold || 0, policyCurrency);
+      const commissionable = Math.max(0, billingAmt - thresh);
+      const slabs = policy.slabs || [];
+
+      if (commissionable <= 0) return { earned: 0, commissionable: 0 };
+
+      let highestRate = 0;
+      let isFlatRate = false;
+      slabs.forEach(s => {
+        if (s.rate > highestRate) highestRate = s.rate;
+        if (s.minAmount === 0 && s.maxAmount >= 999999) isFlatRate = true;
+      });
+
+      if (isFlatRate) {
+        return { earned: (commissionable * highestRate) / 100, commissionable };
+      }
+
+      let remaining = commissionable;
+      let earned = 0;
+      slabs.forEach(slab => {
+        const min = toGBP(slab.minAmount || 0, policyCurrency);
+        const max = toGBP(slab.maxAmount || 0, policyCurrency);
+        const rate = Number(slab.rate) || 0;
+        const slabRange = max - min;
+        if (remaining > 0) {
+          const applicable = Math.min(remaining, slabRange);
+          earned += (applicable * rate) / 100;
+          remaining -= applicable;
+        }
+      });
+
+      return { earned, commissionable };
+    };
+
+    const getQuarterlyCommissionForMonth = (yearVal, monthVal) => {
+      const currentQuarterMonth = monthVal;
+      let qStartMonth = 1;
+      if (currentQuarterMonth >= 4 && currentQuarterMonth <= 6) qStartMonth = 4;
+      else if (currentQuarterMonth >= 7 && currentQuarterMonth <= 9) qStartMonth = 7;
+      else if (currentQuarterMonth >= 10 && currentQuarterMonth <= 12) qStartMonth = 10;
+
+      let cumulativeBilling = 0;
+      for (let m = qStartMonth; m <= currentQuarterMonth; m++) {
+        cumulativeBilling += getRecruiterBillingForStartMonth(yearVal, m);
+      }
+
+      const cumulativeRes = getPolicyCommission(cumulativeBilling);
+      
+      let previousBilling = 0;
+      for (let m = qStartMonth; m < currentQuarterMonth; m++) {
+        previousBilling += getRecruiterBillingForStartMonth(yearVal, m);
+      }
+      const previousRes = getPolicyCommission(previousBilling);
+
+      const netEarned = Math.max(0, cumulativeRes.earned - previousRes.earned);
+      return {
+        earned: netEarned,
+        commissionable: cumulativeRes.commissionable
+      };
+    };
+
+    const currentCycleBilling = getRecruiterBillingForStartMonth(cycleYear, cycleMonth);
+    const policyRes = policy.calcInterval === 'quarterly'
+      ? getQuarterlyCommissionForMonth(cycleYear, cycleMonth)
+      : getPolicyCommission(currentCycleBilling);
+    const baseEarned = policyRes.earned;
+
+    let totalPaidNow = 0;
+    let totalWithheld = 0;
+
+    placements.forEach(p => {
+      if (!p.startDate || p.status === 'dns') return;
+      const pStart = new Date(p.startDate);
+      if (pStart.getFullYear() === cycleYear && (pStart.getMonth() + 1) === cycleMonth) {
+        const mySplits = p.splits?.filter(s => targetStaffIds.includes(s.staffId)) || [];
+        if (mySplits.length > 0) {
+          const totalSplitPct = mySplits.reduce((acc, s) => acc + s.percentage, 0);
+          const myBillingShare = (p.netScoreValue * totalSplitPct) / 100;
+          
+          const myCommShare = currentCycleBilling > 0 
+            ? (myBillingShare / currentCycleBilling) * baseEarned 
+            : 0;
+
+          const isPaid = p.clientPaymentStatus === 'paid';
+          if (isPaid) {
+            totalPaidNow += myCommShare;
+          } else {
+            totalWithheld += myCommShare;
+          }
+        }
+      }
+    });
+
+    let totalReleased = 0;
+    placements.forEach(p => {
+      if (!p.startDate || p.status === 'dns') return;
+      const pStart = new Date(p.startDate);
+      const pStartYear = pStart.getFullYear();
+      const pStartMonth = pStart.getMonth() + 1;
+
+      const isBeforeCycle = pStartYear < cycleYear || (pStartYear === cycleYear && pStartMonth < cycleMonth);
+      if (isBeforeCycle) {
+        const mySplits = p.splits?.filter(s => targetStaffIds.includes(s.staffId)) || [];
+        if (mySplits.length > 0) {
+          if (p.clientPaidDate && p.clientPaidDate.substring(0, 7) === monthStr) {
+            const histTotalBilling = getRecruiterBillingForStartMonth(pStartYear, pStartMonth);
+            const histPolicyRes = policy.calcInterval === 'quarterly'
+              ? getQuarterlyCommissionForMonth(pStartYear, pStartMonth)
+              : getPolicyCommission(histTotalBilling);
+            
+            const totalSplitPct = mySplits.reduce((acc, s) => acc + s.percentage, 0);
+            const myBillingShare = (p.netScoreValue * totalSplitPct) / 100;
+            const myCommShare = histTotalBilling > 0 
+              ? (myBillingShare / histTotalBilling) * histPolicyRes.earned 
+              : 0;
+            
+            totalReleased += myCommShare;
+          }
+        }
+      }
+    });
+
+    const totalPayout = totalPaidNow + totalReleased;
+    const policyCompany = companies.find(c => c.id === policy.companyId);
+    const policyCurrency = policyCompany ? policyCompany.currency : 'GBP';
+
+    return {
+      billing: fromGBP(currentCycleBilling, policyCurrency),
+      baseEarned: fromGBP(baseEarned, policyCurrency),
+      withheld: fromGBP(totalWithheld, policyCurrency),
+      paidNow: fromGBP(totalPaidNow, policyCurrency),
+      released: fromGBP(totalReleased, policyCurrency),
+      totalPayout: fromGBP(totalPayout, policyCurrency)
+    };
+  };
+
   useEffect(() => {
     if (staffMember && isOpen) {
       const company = companies.find(c => c.id === staffMember.companyId) || { name: 'Humres Group' };
-      
+      const staffCurrency = staffMember.currency || 'GBP';
+      const currencySymbol = symbolMap[staffCurrency] || '£';
+
       // 1. Resolve Office Location
       const officeLocations = company.addressOverride || company.address || 'Humres HQ Office';
 
@@ -29,12 +251,14 @@ export default function ExitEmailTriggerModal({
       const managerName = reportingManager ? reportingManager.fullName : 'None';
       const managerEmail = reportingManager?.businessEmail || reportingManager?.personalEmail || '';
 
-      // 3. Resolve Assigned Assets (Hardware & Software Seats)
+      // 3. Resolve Assigned Assets (Hardware & Software Seats resolved via matched contracts)
       const myAssignments = assetAssignments.filter(a => a.staffId === staffMember.id);
       const assetLines = myAssignments.map(a => {
+        const matchedContract = contracts.find(c => c.id === a.contractId);
+        const assetName = a.name || a.assetName || matchedContract?.name || a.contractName || 'Unknown Asset/License';
         const detail = a.serialNumber ? `, S/N: ${a.serialNumber}` : '';
-        const typeLabel = a.type ? ` (${a.type})` : ' (Asset)';
-        return `• ${a.name || a.assetName || a.contractName || 'Unlabeled Asset'}${typeLabel}${detail}`;
+        const typeLabel = a.type || (matchedContract ? 'License' : 'Asset');
+        return `• ${assetName} (${typeLabel})${detail}`;
       });
       const assetListText = assetLines.length > 0 ? assetLines.join('\n') : '• No company hardware or software seats currently assigned.';
 
@@ -50,6 +274,7 @@ export default function ExitEmailTriggerModal({
         const rate = sp ? Number(sp.percentage) / 100 : 0;
         return sum + (Number(p.grossBillAmount) || 0) * rate;
       }, 0);
+      const yearRevenueNative = fromGBP(yearRevenue, staffCurrency);
 
       // 5. Calculate Client Outstanding Payments (Employee Split)
       const unpaidPlacements = placements.filter(p => 
@@ -63,6 +288,7 @@ export default function ExitEmailTriggerModal({
         const outstanding = p.balanceOutstanding !== undefined ? Number(p.balanceOutstanding) : (Number(p.grossBillAmount) || 0) * 1.20;
         return sum + outstanding * rate;
       }, 0);
+      const outstandingPaymentsNative = fromGBP(outstandingPayments, staffCurrency);
 
       // 6. Calculate Upcoming Placements to Start
       const today = new Date('2026-07-16');
@@ -76,32 +302,17 @@ export default function ExitEmailTriggerModal({
         const sp = (p.splits || []).find(s => s.staffId === staffMember.id);
         const rate = sp ? Number(sp.percentage) / 100 : 0;
         const splitFee = (Number(p.grossBillAmount) || 0) * rate;
-        return `• Candidate: ${p.candidateName} @ Client: ${p.clientCompany} (Starts: ${p.startDate}, Split Fee: £${splitFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
+        const splitFeeNative = fromGBP(splitFee, staffCurrency);
+        return `• Candidate: ${p.candidateName} @ Client: ${p.clientCompany} (Starts: ${p.startDate}, Split Fee: ${currencySymbol}${splitFeeNative.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / GBP £${splitFee.toLocaleString(undefined, { minimumFractionDigits: 2 })})`;
       }).join('\n') || '• No upcoming placements scheduled to start.';
 
-      // 7. Resolve Commission Plan & Estimate
+      // 7. Resolve Commission Plan & Estimate for "This Month" (July 2026)
       const commPolicy = commissionPolicies.find(p => p.id === staffMember.commissionPolicyId);
       const commSchemeName = commPolicy ? commPolicy.name : 'None';
-      let commissionEstimate = 0;
-      if (commPolicy) {
-        const threshold = Number(commPolicy.threshold) || 0;
-        const commissionable = Math.max(0, yearRevenue - threshold);
-        if (commissionable > 0) {
-          const slabs = commPolicy.slabs || [];
-          let remaining = commissionable;
-          slabs.forEach(slab => {
-            const min = Number(slab.minAmount) || 0;
-            const max = Number(slab.maxAmount) || Infinity;
-            const rate = Number(slab.rate) || 0;
-            const slabRange = max - min;
-            if (remaining > 0) {
-              const applicableAmount = Math.min(remaining, slabRange);
-              commissionEstimate += (applicableAmount * rate) / 100;
-              remaining -= applicableAmount;
-            }
-          });
-        }
-      }
+      
+      // Calculate monthly commission due this month (July 2026)
+      const monthStr = '2026-07';
+      const monthlyCommission = calculateCashReceivedCommission(staffMember, commPolicy, monthStr);
 
       // 8. Resolve Role Contacts for CC list / Recipients
       const hrContact = staff.find(s => s.id === company.hrContactId);
@@ -142,14 +353,15 @@ EMPLOYEE GENERAL INFORMATION
 
 FINANCIAL & COMPENSATION PROFILE
 --------------------------------------------------
-- Monthly Base Salary: ${staffMember.salary ? `£${Number(staffMember.salary).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Not specified'}
+- Monthly Base Salary: ${staffMember.salary ? `${currencySymbol}${Math.round(Number(staffMember.salary) / 12).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / month (${currencySymbol}${Number(staffMember.salary).toLocaleString()} / year ${staffCurrency})` : 'Not specified'}
 - Commission Scheme Mapped: ${commSchemeName}
-- Cumulative Billings (Current Year - 2026 Split): £${yearRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-- Projected Commission Due (Current Year Slabs): £${commissionEstimate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+- Cumulative Billings (Current Year - 2026 Split): ${currencySymbol}${yearRevenueNative.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (GBP £${yearRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+- Commission Due for Payment This Month (July 2026): ${currencySymbol}${monthlyCommission.totalPayout.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+- Commission Withheld (Pending Client Payment): ${currencySymbol}${monthlyCommission.withheld.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 
 RECRUITMENT SALES & CLIENT LEDGER STATUS
 --------------------------------------------------
-- Outstanding Payments from Clients (Employee Split): £${outstandingPayments.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+- Outstanding Payments from Clients (Employee Split): ${currencySymbol}${outstandingPaymentsNative.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (GBP £${outstandingPayments.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
 - Future / Upcoming Placements Scheduled to Start:
 ${upcomingListText}
 
@@ -172,7 +384,7 @@ Operations Portal`;
 
       setEmailBody(emailBodyText);
     }
-  }, [staffMember, exitSettings, companies, staff, assetAssignments, commissionPolicies, placements, isOpen]);
+  }, [staffMember, exitSettings, companies, staff, assetAssignments, commissionPolicies, placements, contracts, isOpen]);
 
   if (!isOpen || !staffMember) return null;
 

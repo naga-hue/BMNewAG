@@ -2921,6 +2921,7 @@ export default function App() {
         assetAssignments={assetAssignments}
         commissionPolicies={commissionPolicies}
         placements={placements}
+        contracts={contracts}
         onSend={handleSendExitEmail}
       />
 

@@ -132,7 +132,8 @@ export default function App() {
       contracts: initialContracts,
       vendors: initialVendors,
       nominalCodes: initialNominalCodes,
-      payrollPolicies: initialPayrollPolicies
+      payrollPolicies: initialPayrollPolicies,
+      reimbursementClaims: []
     });
 
     // Handle initial current user sync on load when staff loads

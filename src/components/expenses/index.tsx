@@ -7,6 +7,7 @@ import YtdAllocationMatrix from './YtdAllocationMatrix';
 import RecipientPaymentsMatrix from './RecipientPaymentsMatrix';
 import NominalCodesSetup from './NominalCodesSetup';
 import ExpenseClaimForm from './ExpenseClaimForm';
+import ReimbursementsDesk from './ReimbursementsDesk';
 import './expenses.css';
 
 interface ExpensesDashboardProps {
@@ -294,6 +295,7 @@ export default function ExpensesDashboard({ onShowToast }: ExpensesDashboardProp
         {[
           { key: 'ledger', label: 'Expenses Ledger Log' },
           { key: 'statement', label: 'Bank Statement Import & Categorizer' },
+          { key: 'reimbursements', label: 'Reimbursement Claims Workflow' },
           { key: 'matrix', label: 'YTD Expenses Allocation Matrix' },
           { key: 'recipients', label: 'Recipient Payments Matrix' },
           { key: 'settings', label: 'Nominal Codes Setup' }
@@ -350,6 +352,10 @@ export default function ExpensesDashboard({ onShowToast }: ExpensesDashboardProp
 
       {activeSubTab === 'statement' && (
         <BankStatementImport onShowToast={onShowToast} />
+      )}
+
+      {activeSubTab === 'reimbursements' && (
+        <ReimbursementsDesk onShowToast={onShowToast} />
       )}
 
       {activeSubTab === 'matrix' && (

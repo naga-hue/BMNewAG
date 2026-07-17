@@ -15,6 +15,7 @@ interface StoreState {
   nominalCodes: NominalCode[];
   payrollRecords: PayrollRecord[];
   payrollPolicies: any[];
+  reimbursementClaims: any[];
 
   initSubscriptions: (initialData?: any) => () => void;
   updatePlacement: (updated: Placement) => Promise<void>;
@@ -26,6 +27,7 @@ interface StoreState {
   deleteNominalCode: (id: string) => Promise<void>;
   saveVendor: (vendor: Vendor) => Promise<void>;
   savePayrollRecord: (record: PayrollRecord) => Promise<void>;
+  saveReimbursementClaim: (claim: any) => Promise<void>;
 }
 
 export const useBoundStore = create<StoreState>((set) => ({
@@ -41,6 +43,7 @@ export const useBoundStore = create<StoreState>((set) => ({
   nominalCodes: [],
   payrollRecords: [],
   payrollPolicies: [],
+  reimbursementClaims: [],
 
   // Subscriptions Setup
   initSubscriptions: (initialData = {}) => {
@@ -145,6 +148,15 @@ export const useBoundStore = create<StoreState>((set) => ({
       );
     }
 
+    // Reimbursement Claims
+    if (firebaseService.subscribeReimbursementClaims) {
+      unsubscribes.push(
+        firebaseService.subscribeReimbursementClaims((list: any[]) => {
+          set({ reimbursementClaims: list });
+        }, initialData.reimbursementClaims || [])
+      );
+    }
+
     // Return combined unsubscribe
     return () => {
       unsubscribes.forEach((unsub) => {
@@ -180,5 +192,8 @@ export const useBoundStore = create<StoreState>((set) => ({
   },
   savePayrollRecord: async (record) => {
     await firebaseService.savePayrollRecord(record);
+  },
+  saveReimbursementClaim: async (claim) => {
+    await firebaseService.saveReimbursementClaim(claim);
   }
 }));

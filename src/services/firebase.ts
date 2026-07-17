@@ -71,6 +71,8 @@ export interface FirebaseServiceInterface {
   deleteLetterTemplate(templateId: string): Promise<boolean>;
   subscribeExitSettings(onUpdate: (settings: any) => void, fallbackData?: any): () => void;
   saveExitSettings(settings: any): Promise<any>;
+  subscribeReimbursementClaims(onUpdate: (claims: any[]) => void, fallbackData?: any[]): () => void;
+  saveReimbursementClaim(claim: any): Promise<any>;
 }
 
 // Check if Firebase configuration is provided
@@ -1408,6 +1410,54 @@ export const firebaseService: FirebaseServiceInterface = {
       list.push(extensionPayload);
       localStorage.setItem('bm-email-notifications', JSON.stringify(list));
       return extensionPayload;
+    }
+  },
+
+  subscribeReimbursementClaims(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-reimbursement-claims');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
+    if (isConfigured && db) {
+      const refCol = collection(db, 'reimbursementClaims');
+      return onSnapshot(refCol, (snapshot) => {
+        const list = [];
+        snapshot.forEach((doc) => {
+          list.push(doc.data());
+        });
+        localStorage.setItem('bm-reimbursement-claims', JSON.stringify(list));
+        onUpdate(list);
+      }, (error) => {
+        console.error("Firestore reimbursementClaims snapshot error:", error);
+      });
+    } else {
+      return () => {};
+    }
+  },
+
+  async saveReimbursementClaim(claim) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'reimbursementClaims', claim.id);
+      await setDoc(docRef, claim);
+      return claim;
+    } else {
+      const local = localStorage.getItem('bm-reimbursement-claims');
+      const list = local ? JSON.parse(local) : [];
+      const index = list.findIndex(c => c.id === claim.id);
+      if (index > -1) {
+        list[index] = claim;
+      } else {
+        list.unshift(claim);
+      }
+      localStorage.setItem('bm-reimbursement-claims', JSON.stringify(list));
+      return claim;
     }
   },
 

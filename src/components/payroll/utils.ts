@@ -377,6 +377,7 @@ export interface PayrollCellData {
   basic: number;
   commission: number;
   reimbursements: number;
+  bonus: number;
   total: number;
   employerNi: number;
   employerPension: number;
@@ -549,13 +550,15 @@ export function getCellData(
   }
 
   if (record) {
+    const bonusVal = Number(record.bonus || 0);
     return {
       isReconciled: !!record.isReconciled,
       basic: record.isReconciled ? Number(record.basicSalary) : baselineBasic,
       commission: record.isReconciled ? Number(record.commission) : baselineCommission,
       reimbursements: record.isReconciled ? Number(record.reimbursements || 0) : 0,
+      bonus: bonusVal,
       total: record.isReconciled 
-        ? (Number(record.basicSalary) + Number(record.commission) + Number(record.reimbursements || 0) + Number(record.employerNi || 0) + Number(record.employerPension || 0)) 
+        ? (Number(record.basicSalary) + Number(record.commission) + Number(record.reimbursements || 0) + bonusVal + Number(record.employerNi || 0) + Number(record.employerPension || 0)) 
         : (baselineBasic + baselineCommission + projectedEmployerNi + projectedEmployerPension),
       employerNi: record.isReconciled ? Number(record.employerNi || 0) : projectedEmployerNi,
       employerPension: record.isReconciled ? Number(record.employerPension || 0) : projectedEmployerPension,
@@ -571,6 +574,7 @@ export function getCellData(
     basic: baselineBasic,
     commission: baselineCommission,
     reimbursements: 0,
+    bonus: 0,
     total: baselineBasic + baselineCommission + projectedEmployerNi + projectedEmployerPension,
     employerNi: projectedEmployerNi,
     employerPension: projectedEmployerPension,

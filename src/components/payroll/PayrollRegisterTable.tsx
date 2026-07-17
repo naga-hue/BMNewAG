@@ -60,6 +60,7 @@ export default function PayrollRegisterTable({
   const [employeeTaxNic, setEmployeeTaxNic] = useState('0.00');
   const [employeePension, setEmployeePension] = useState('0.00');
   const [reimbursementsInput, setReimbursementsInput] = useState('0.00');
+  const [bonusOverride, setBonusOverride] = useState('0.00');
 
   const allAvailableDepts = useMemo(() => {
     const depts: string[] = [];
@@ -279,6 +280,7 @@ export default function PayrollRegisterTable({
     setEmployeeTaxNic((cell.employeeTaxNic || 0).toFixed(2));
     setEmployeePension((cell.employeePension || 0).toFixed(2));
     setReimbursementsInput((cell.reimbursements || 0).toFixed(2));
+    setBonusOverride((cell.bonus || 0).toFixed(2));
     
     const record = payrollRecords.find(r => r.staffId === staffMember.id && r.month === month);
     setLinkedExpenseId(record?.linkedExpenseId || '');
@@ -288,9 +290,17 @@ export default function PayrollRegisterTable({
     setBookExpense(true);
   };
 
-  const handleDownloadInvoice = (staffMember: Staff, monthKey: string, basic: number, commission: number) => {
-    const total = basic + commission;
-    const invoiceNumber = `INV-${monthKey.replace('-', '')}-${staffMember.id.substring(0, 4).toUpperCase()}`;
+  const handleDownloadInvoice = (
+    staffMember: Staff,
+    monthKey: string,
+    basic: number,
+    commission: number,
+    invoiceSubtype: 'base' | 'commission' = 'base'
+  ) => {
+    const isCommission = invoiceSubtype === 'commission';
+    const amount = isCommission ? commission : basic;
+    
+    const invoiceNumber = `INV-${monthKey.replace('-', '')}-${staffMember.id.substring(0, 4).toUpperCase()}-${isCommission ? 'COMM' : 'BASE'}`;
     const invoiceDate = new Date().toISOString().split('T')[0];
     const companyName = companies.find(c => c.id === staffMember.companyId)?.name || 'Humres Technical Recruitment Ltd';
     
@@ -331,6 +341,9 @@ export default function PayrollRegisterTable({
           .totals-table tr.grand-total { font-weight: bold; font-size: 16px; color: #1e3a8a; background-color: #fef3c7; }
           .footer { border-top: 1px solid #e2e8f0; padding-top: 20px; text-align: center; font-size: 11px; color: #64748b; line-height: 1.5; }
           .print-btn { background-color: #f59e0b; color: white; border: none; padding: 10px 20px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; margin-bottom: 20px; display: inline-block; }
+          .attendance-card { background-color: #f8fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 30px; font-size: 13px; }
+          .attendance-card h4 { margin: 0 0 8px 0; color: #1e3a8a; font-size: 14px; }
+          .attendance-card ul { margin: 0; padding-left: 20px; line-height: 1.6; }
           @media print { .print-btn { display: none; } body { padding: 0; } .invoice-box { border: none; box-shadow: none; padding: 0; } }
         </style>
       </head>
@@ -345,9 +358,9 @@ export default function PayrollRegisterTable({
               <p style="margin: 5px 0 0 0; font-size: 14px; color: #64748b;">Invoice #: ${invoiceNumber}</p>
             </div>
             <div style="text-align: right;">
-              <h2 style="margin: 0; font-size: 18px; color: #334155;">{staffMember.fullName}</h2>
-              <p style="margin: 5px 0 0 0; font-size: 13px; color: #64748b;">{staffMember.jobTitle || 'Freelance Contractor'}</p>
-              <p style="margin: 3px 0 0 0; font-size: 13px; color: #64748b;">{staffMember.email || ''}</p>
+              <h2 style="margin: 0; font-size: 18px; color: #334155;">${staffMember.fullName}</h2>
+              <p style="margin: 5px 0 0 0; font-size: 13px; color: #64748b;">${staffMember.jobTitle || 'Freelance Contractor'}</p>
+              <p style="margin: 3px 0 0 0; font-size: 13px; color: #64748b;">${staffMember.businessEmail || staffMember.personalEmail || ''}</p>
             </div>
           </div>
           <div class="meta-info">
@@ -361,41 +374,60 @@ export default function PayrollRegisterTable({
               ${monthKey}
             </div>
           </div>
+
+          ${!isCommission ? `
+          <div class="attendance-card">
+            <h4>🗓️ Attendance & Days Worked Summary</h4>
+            <ul>
+              <li><strong>Total Business Working Days in Month:</strong> ${totalBusinessDays} days</li>
+              <li><strong>Days Off (Approved Leaves / Holidays):</strong> ${leaveDays} days</li>
+              <li><strong>Actual Days Worked:</strong> ${attendanceDays} days</li>
+            </ul>
+          </div>
+          ` : ''}
+
           <table class="table">
             <thead>
               <tr>
                 <th>Description</th>
-                <th style="text-align: center;">Days Worked</th>
-                <th style="text-align: right;">Daily Rate</th>
+                <th style="text-align: center;">${isCommission ? '—' : 'Days Worked'}</th>
+                <th style="text-align: right;">${isCommission ? '—' : 'Daily Rate'}</th>
                 <th style="text-align: right;">Amount</th>
               </tr>
             </thead>
             <tbody>
+              ${!isCommission ? `
               <tr>
-                <td><strong>Professional Consulting Services</strong><br>Base contractor attendance in ${monthKey} (computed from roster calendar business days minus approved leaves).<br>Total Business Days: ${totalBusinessDays} &bull; Approved Leave Days: ${leaveDays}</td>
+                <td>
+                  <strong>Professional Consulting Services (Base)</strong><br>
+                  Base contractor attendance billing (computed from roster calendar business days minus approved leaves).
+                </td>
                 <td style="text-align: center;">${attendanceDays}</td>
-                <td style="text-align: right;">£${((basic / (attendanceDays || 1))).toFixed(2)}</td>
-                <td style="text-align: right;">£${basic.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td style="text-align: right;">£${((amount / (attendanceDays || 1))).toFixed(2)}</td>
+                <td style="text-align: right;">£${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
               </tr>
-              ${commission > 0 ? `
+              ` : `
               <tr>
-                <td><strong>Recruiter Commission Payout</strong><br>Commission share accrued for placement credits in the billing cycle.</td>
+                <td>
+                  <strong>Recruiter Commission Payout</strong><br>
+                  Commission share accrued for placement credits in the billing cycle ${monthKey}.
+                </td>
                 <td style="text-align: center;">—</td>
                 <td style="text-align: right;">—</td>
-                <td style="text-align: right;">£${commission.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td style="text-align: right;">£${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
               </tr>
-              ` : ''}
+              `}
             </tbody>
           </table>
           <table class="totals-table">
-            <tr><td>Subtotal:</td><td style="text-align: right;">£${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td></tr>
-            <tr class="grand-total"><td>Total Due:</td><td style="text-align: right;">£${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td></tr>
+            <tr><td>Subtotal:</td><td style="text-align: right;">£${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td></tr>
+            <tr class="grand-total"><td>Total Due:</td><td style="text-align: right;">£${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td></tr>
           </table>
           <div style="margin-top: 50px; font-size: 13px; color: #475569; background: #fffbeb; padding: 15px; border-radius: 6px; border: 1px solid #fef3c7;">
             <strong>Bank Remittance Account:</strong><br>Bank Name: Lloyds Bank plc<br>Account Name: ${staffMember.fullName}<br>Sort Code: 30-90-09<br>Account Number: 12345678
           </div>
           <div class="footer" style="margin-top: 60px;">
-            Thank you for your business. For any billing queries, please contact ${staffMember.email || 'the contractor directly'}.<br>Generated automatically via Humres Group Business Management Suite.
+            Thank you for your business. For any billing queries, please contact ${staffMember.businessEmail || staffMember.personalEmail || 'the contractor directly'}.<br>Generated automatically via Humres Group Business Management Suite.
           </div>
         </div>
       </body>
@@ -411,6 +443,7 @@ export default function PayrollRegisterTable({
 
     const baseVal = Number(basicSalaryOverride) || 0;
     const commVal = Number(commissionOverride) || 0;
+    const bonusVal = Number(bonusOverride) || 0;
     const empNiVal = Number(employerNi) || 0;
     const empPensionVal = Number(employerPension) || 0;
     const taxNicVal = Number(employeeTaxNic) || 0;
@@ -425,6 +458,7 @@ export default function PayrollRegisterTable({
       basicSalary: baseVal,
       commission: commVal,
       reimbursements: reimbursementsVal,
+      bonus: bonusVal,
       employerNi: empNiVal,
       employerPension: empPensionVal,
       employeeTaxNic: taxNicVal,
@@ -469,7 +503,7 @@ export default function PayrollRegisterTable({
         const taxNominal = nominalCodes.find(c => c.id === '501' || c.code?.includes('501') || c.code?.toLowerCase().includes('paye') || c.code?.toLowerCase().includes('tax') || c.code?.toLowerCase().includes('ni'))?.code || '501 - HMRC PAYE & NI Contributions';
         const pensionNominal = nominalCodes.find(c => c.id === '502' || c.code?.includes('502') || c.code?.toLowerCase().includes('pension'))?.code || '502 - Royal London Pension Contributions';
 
-        const netSalaryAmt = baseVal + commVal - taxNicVal - pensionVal;
+        const netSalaryAmt = baseVal + commVal + bonusVal + reimbursementsVal - taxNicVal - pensionVal;
         const netExp = {
           id: `payroll-salary-${staffMember.id}-${month}`,
           date: `${month}-28`,
@@ -1000,24 +1034,30 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
               </div>
 
               <div className="form-group">
-                <label className="form-label">Basic Salary Component (£ GBP) <span>*</span></label>
+                <label className="form-label" style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span>Basic Salary Component (£ GBP) <span>*</span></span>
+                  <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--text-secondary)' }}>Standard monthly baseline contract rate / salary</span>
+                </label>
                 <input 
                   type="number"
                   className="form-input"
                   value={basicSalaryOverride}
                   onChange={(e) => setBasicSalaryOverride(e.target.value)}
-                  style={{ width: '100%', padding: '10px' }}
+                  style={{ width: '100%', padding: '10px', marginTop: '4px' }}
                 />
               </div>
 
               <div className="form-group">
-                <label className="form-label">Commission Component (£ GBP) <span>*</span></label>
+                <label className="form-label" style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span>Commission Component (£ GBP) <span>*</span></span>
+                  <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--text-secondary)' }}>Add sales recruiter commission element</span>
+                </label>
                 <input 
                   type="number"
                   className="form-input"
                   value={commissionOverride}
                   onChange={(e) => setCommissionOverride(e.target.value)}
-                  style={{ width: '100%', padding: '10px' }}
+                  style={{ width: '100%', padding: '10px', marginTop: '4px' }}
                 />
                 {(() => {
                   const commWritten = calculateCommissionForRecruiter(selectedCell.staffMember.id, selectedCell.month, staff, companies, placements, commissionPolicies, 'written');
@@ -1048,13 +1088,32 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
               </div>
 
               <div className="form-group">
-                <label className="form-label">Reimbursements & Allowances Component (£ GBP)</label>
+                <label className="form-label" style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span>Bonus Component (£ GBP)</span>
+                  <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--text-secondary)' }}>Add discretionary, performance, or exit bonus elements</span>
+                </label>
+                <input 
+                  type="number"
+                  className="form-input"
+                  value={bonusOverride}
+                  onChange={(e) => setBonusOverride(e.target.value)}
+                  placeholder="0.00"
+                  style={{ width: '100%', padding: '10px', marginTop: '4px' }}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span>Reimbursements & Allowances Component (£ GBP)</span>
+                  <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--text-secondary)' }}>Request or add approved business expense reimbursements</span>
+                </label>
                 <input 
                   type="number"
                   className="form-input"
                   value={reimbursementsInput}
                   onChange={(e) => setReimbursementsInput(e.target.value)}
-                  style={{ width: '100%', padding: '10px' }}
+                  placeholder="0.00"
+                  style={{ width: '100%', padding: '10px', marginTop: '4px' }}
                 />
               </div>
 
@@ -1122,19 +1181,19 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                 fontSize: '12px'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
-                  <span>Gross Earnings (Basic + Comm):</span>
-                  <span>£{(Number(basicSalaryOverride) + Number(commissionOverride)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  <span>Gross Earnings (Basic + Comm + Bonus):</span>
+                  <span>£{(Number(basicSalaryOverride) + Number(commissionOverride) + Number(bonusOverride)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
                   <span>Net Take-Home Pay (to Recruiter):</span>
                   <span style={{ fontWeight: 600, color: 'var(--success)' }}>
-                    £{(Number(basicSalaryOverride) + Number(commissionOverride) - Number(employeeTaxNic) - Number(employeePension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    £{(Number(basicSalaryOverride) + Number(commissionOverride) + Number(bonusOverride) + Number(reimbursementsInput) - Number(employeeTaxNic) - Number(employeePension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', borderTop: '1px dashed var(--border-color)', paddingTop: '4px', marginTop: '4px' }}>
                   <span>Total Cost to Company (CoC):</span>
                   <span style={{ fontWeight: 600, color: 'var(--primary)' }}>
-                    £{(Number(basicSalaryOverride) + Number(commissionOverride) + Number(employerNi) + Number(employerPension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    £{(Number(basicSalaryOverride) + Number(commissionOverride) + Number(bonusOverride) + Number(reimbursementsInput) + Number(employerNi) + Number(employerPension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>
@@ -1167,24 +1226,44 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
               )}
             </div>
 
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px', marginTop: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px', marginTop: '4px', alignItems: 'center', flexWrap: 'wrap', width: '100%' }}>
               {(() => {
                 const policy = payrollPolicies.find(p => p.id === selectedCell.staffMember.payrollPolicyId);
                 if (policy && policy.type === 'freelance') {
+                  const hasCommission = (Number(commissionOverride) || 0) > 0;
                   return (
-                    <button
-                      type="button"
-                      className="btn-accent"
-                      onClick={() => handleDownloadInvoice(
-                        selectedCell.staffMember,
-                        selectedCell.month,
-                        Number(basicSalaryOverride) || 0,
-                        Number(commissionOverride) || 0
+                    <div style={{ display: 'flex', gap: '8px', marginRight: 'auto' }}>
+                      <button
+                        type="button"
+                        className="btn-accent"
+                        onClick={() => handleDownloadInvoice(
+                          selectedCell.staffMember,
+                          selectedCell.month,
+                          Number(basicSalaryOverride) || 0,
+                          0,
+                          'base'
+                        )}
+                        style={{ backgroundColor: '#f59e0b', color: 'white', padding: '8px 12px', fontSize: '12px', borderRadius: '6px', cursor: 'pointer' }}
+                      >
+                        📥 {hasCommission ? 'Download Base Invoice' : 'Download Invoice'}
+                      </button>
+                      {hasCommission && (
+                        <button
+                          type="button"
+                          className="btn-accent"
+                          onClick={() => handleDownloadInvoice(
+                            selectedCell.staffMember,
+                            selectedCell.month,
+                            0,
+                            Number(commissionOverride) || 0,
+                            'commission'
+                          )}
+                          style={{ backgroundColor: '#10b981', color: 'white', padding: '8px 12px', fontSize: '12px', borderRadius: '6px', cursor: 'pointer' }}
+                        >
+                          📥 Download Commission Invoice
+                        </button>
                       )}
-                      style={{ marginRight: 'auto', backgroundColor: '#f59e0b', color: 'white' }}
-                    >
-                      📥 Download Invoice
-                    </button>
+                    </div>
                   );
                 }
                 return null;

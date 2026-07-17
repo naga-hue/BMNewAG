@@ -4,6 +4,7 @@ import { CheckCircle2, Search, Building2, Layers } from 'lucide-react';
 import MultiSelectFilter from '../MultiSelectFilter';
 import { Company, Staff, Placement, Expense, NominalCode } from '../../types';
 import { symbolMap, MONTHS, getBusinessDaysInMonth, getCellData, calculateCommissionForRecruiter } from './utils';
+import { FX_RATES } from '../../utils/currency';
 
 interface PayrollRegisterTableProps {
   companies: Company[];
@@ -61,6 +62,8 @@ export default function PayrollRegisterTable({
   const [employeePension, setEmployeePension] = useState('0.00');
   const [reimbursementsInput, setReimbursementsInput] = useState('0.00');
   const [bonusOverride, setBonusOverride] = useState('0.00');
+  const [bonusLocal, setBonusLocal] = useState('0.00');
+  const [reimbursementsLocal, setReimbursementsLocal] = useState('0.00');
 
   const allAvailableDepts = useMemo(() => {
     const depts: string[] = [];
@@ -281,6 +284,11 @@ export default function PayrollRegisterTable({
     setEmployeePension((cell.employeePension || 0).toFixed(2));
     setReimbursementsInput((cell.reimbursements || 0).toFixed(2));
     setBonusOverride((cell.bonus || 0).toFixed(2));
+    
+    const cur = staffMember.currency || 'GBP';
+    const rate = FX_RATES[cur] || 1.0;
+    setBonusLocal(((cell.bonus || 0) / rate).toFixed(2));
+    setReimbursementsLocal(((cell.reimbursements || 0) / rate).toFixed(2));
     
     const record = payrollRecords.find(r => r.staffId === staffMember.id && r.month === month);
     setLinkedExpenseId(record?.linkedExpenseId || '');
@@ -1087,35 +1095,113 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                 })()}
               </div>
 
-              <div className="form-group">
-                <label className="form-label" style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span>Bonus Component (£ GBP)</span>
-                  <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--text-secondary)' }}>Add discretionary, performance, or exit bonus elements</span>
-                </label>
-                <input 
-                  type="number"
-                  className="form-input"
-                  value={bonusOverride}
-                  onChange={(e) => setBonusOverride(e.target.value)}
-                  placeholder="0.00"
-                  style={{ width: '100%', padding: '10px', marginTop: '4px' }}
-                />
-              </div>
+              {(() => {
+                const cur = selectedCell?.staffMember?.currency || 'GBP';
+                const hasLocalCurrency = cur !== 'GBP';
+                const symbol = symbolMap[cur] || cur;
 
-              <div className="form-group">
-                <label className="form-label" style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span>Reimbursements & Allowances Component (£ GBP)</span>
-                  <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--text-secondary)' }}>Request or add approved business expense reimbursements</span>
-                </label>
-                <input 
-                  type="number"
-                  className="form-input"
-                  value={reimbursementsInput}
-                  onChange={(e) => setReimbursementsInput(e.target.value)}
-                  placeholder="0.00"
-                  style={{ width: '100%', padding: '10px', marginTop: '4px' }}
-                />
-              </div>
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: hasLocalCurrency ? '1fr 1fr' : '1fr', gap: '12px', marginTop: '12px' }}>
+                    <div className="form-group">
+                      <label className="form-label" style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span>Bonus Component (£ GBP)</span>
+                        <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--text-secondary)' }}>Add bonus element in GBP</span>
+                      </label>
+                      <input 
+                        type="number"
+                        className="form-input"
+                        value={bonusOverride}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setBonusOverride(val);
+                          if (hasLocalCurrency) {
+                            const rate = FX_RATES[cur] || 1.0;
+                            setBonusLocal((Number(val) / rate).toFixed(2));
+                          }
+                        }}
+                        placeholder="0.00"
+                        style={{ width: '100%', padding: '10px', marginTop: '4px' }}
+                      />
+                    </div>
+
+                    {hasLocalCurrency && (
+                      <div className="form-group">
+                        <label className="form-label" style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span>Bonus Component ({symbol} {cur})</span>
+                          <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--text-secondary)' }}>Convert local to GBP (Rate: 1 {symbol} = £{(FX_RATES[cur] || 1).toFixed(4)})</span>
+                        </label>
+                        <input 
+                          type="number"
+                          className="form-input"
+                          value={bonusLocal}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setBonusLocal(val);
+                            const rate = FX_RATES[cur] || 1.0;
+                            setBonusOverride((Number(val) * rate).toFixed(2));
+                          }}
+                          placeholder="0.00"
+                          style={{ width: '100%', padding: '10px', marginTop: '4px' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const cur = selectedCell?.staffMember?.currency || 'GBP';
+                const hasLocalCurrency = cur !== 'GBP';
+                const symbol = symbolMap[cur] || cur;
+
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: hasLocalCurrency ? '1fr 1fr' : '1fr', gap: '12px', marginTop: '12px' }}>
+                    <div className="form-group">
+                      <label className="form-label" style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span>Reimbursements & Allowances Component (£ GBP)</span>
+                        <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--text-secondary)' }}>Add reimbursement in GBP</span>
+                      </label>
+                      <input 
+                        type="number"
+                        className="form-input"
+                        value={reimbursementsInput}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setReimbursementsInput(val);
+                          if (hasLocalCurrency) {
+                            const rate = FX_RATES[cur] || 1.0;
+                            setReimbursementsLocal((Number(val) / rate).toFixed(2));
+                          }
+                        }}
+                        placeholder="0.00"
+                        style={{ width: '100%', padding: '10px', marginTop: '4px' }}
+                      />
+                    </div>
+
+                    {hasLocalCurrency && (
+                      <div className="form-group">
+                        <label className="form-label" style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span>Reimbursements ({symbol} {cur})</span>
+                          <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--text-secondary)' }}>Convert local to GBP (Rate: 1 {symbol} = £{(FX_RATES[cur] || 1).toFixed(4)})</span>
+                        </label>
+                        <input 
+                          type="number"
+                          className="form-input"
+                          value={reimbursementsLocal}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setReimbursementsLocal(val);
+                            const rate = FX_RATES[cur] || 1.0;
+                            setReimbursementsInput((Number(val) * rate).toFixed(2));
+                          }}
+                          placeholder="0.00"
+                          style={{ width: '100%', padding: '10px', marginTop: '4px' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
                 <div>

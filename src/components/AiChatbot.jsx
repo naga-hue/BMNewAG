@@ -111,6 +111,59 @@ export default function AiChatbot() {
     };
   };
 
+  // Helper to pre-calculate placement revenue and splits for a specific staff member
+  const getStaffRevenueSummary = (member) => {
+    let totalNet = 0;
+    let totalGross = 0;
+    const list = [];
+
+    placements.forEach(p => {
+      if (p.status === 'dns') return; // Skip DNS/Rebates items
+
+      let splitPercentage = 0;
+      let hasInvolvement = false;
+
+      if (p.splits && p.splits.length > 0) {
+        const splitObj = p.splits.find(sp => sp.staffId === member.id || (sp.name && sp.name.toLowerCase() === member.fullName.toLowerCase()));
+        if (splitObj) {
+          splitPercentage = splitObj.percentage || 100;
+          hasInvolvement = true;
+        }
+      } else {
+        if (p.recruiterId === member.id || (p.recruiterName && p.recruiterName.toLowerCase() === member.fullName.toLowerCase())) {
+          splitPercentage = 100;
+          hasInvolvement = true;
+        }
+      }
+
+      if (hasInvolvement) {
+        const netVal = p.netScoreValue || 0;
+        const grossVal = p.grossBillAmount || 0;
+        const netShare = (netVal * splitPercentage) / 100;
+        const grossShare = (grossVal * splitPercentage) / 100;
+
+        totalNet += netShare;
+        totalGross += grossShare;
+
+        list.push({
+          client: p.clientCompany,
+          candidate: p.candidateName,
+          totalPlacementNetScore: netVal,
+          splitPercentage: splitPercentage,
+          yourShareNetScore: Number(netShare.toFixed(2)),
+          status: p.clientPaymentStatus || p.paymentStatus || 'not-invoiced',
+          startDate: p.startDate || ''
+        });
+      }
+    });
+
+    return {
+      revenueNet: Number(totalNet.toFixed(2)),
+      revenueGross: Number(totalGross.toFixed(2)),
+      placementsList: list
+    };
+  };
+
   // Aggregate current business context
   const getContextSummary = () => {
     const todayStr = new Date().toISOString().split('T')[0];
@@ -118,6 +171,7 @@ export default function AiChatbot() {
     // 1. Active Staff
     const staffSummary = staff.map(s => {
       const expensesBreakdown = getStaffExpensesBreakdown(s);
+      const revenueBreakdown = getStaffRevenueSummary(s);
       return {
         name: s.fullName,
         role: s.jobTitle || 'Team Member',
@@ -129,7 +183,10 @@ export default function AiChatbot() {
         directExpenses: expensesBreakdown.directExpenses,
         indirectExpenses: expensesBreakdown.indirectExpenses,
         totalExpenses: expensesBreakdown.totalExpenses,
-        expensesTransactionsList: expensesBreakdown.transactions
+        expensesTransactionsList: expensesBreakdown.transactions,
+        revenueGeneratedNet: revenueBreakdown.revenueNet,
+        revenueGeneratedGross: revenueBreakdown.revenueGross,
+        placementsList: revenueBreakdown.placementsList
       };
     });
 

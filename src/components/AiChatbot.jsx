@@ -131,13 +131,22 @@ export default function AiChatbot() {
 
     // 6. Placements (Revenue, sales performance, and recruiter splits)
     const placementsSummary = placements.map(p => {
-      const splitsInfo = (p.splits || []).map(sp => {
-        const s = staff.find(member => member.id === sp.staffId);
-        return {
-          recruiterName: s?.fullName || 'Unknown',
-          percentage: sp.splitPercentage || 100
-        };
-      });
+      let splitsInfo = [];
+      if (p.splits && p.splits.length > 0) {
+        splitsInfo = p.splits.map(sp => {
+          const s = staff.find(member => member.id === sp.staffId);
+          return {
+            recruiterName: s?.fullName || sp.name || 'Unknown',
+            percentage: sp.percentage || 100
+          };
+        });
+      } else {
+        const s = staff.find(member => member.id === p.recruiterId);
+        splitsInfo = [{
+          recruiterName: s?.fullName || p.recruiterName || 'Unknown',
+          percentage: 100
+        }];
+      }
 
       return {
         client: p.clientCompany,

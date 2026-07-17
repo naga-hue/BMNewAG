@@ -3052,7 +3052,7 @@ export default function App() {
 
       {/* Super Admin AI Chatbot Widget */}
       {(currentUser?.id === 'super-admin' || currentUser?.permissions?.role === 'admin') && (
-        <AiChatbot />
+        <AiChatbot assetAssignments={assetAssignments} />
       )}
 
       {/* Micro-interaction Toasts list */}

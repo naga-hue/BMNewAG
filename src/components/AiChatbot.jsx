@@ -3,7 +3,7 @@ import { useBoundStore } from '../store/useBoundStore';
 import { FX_RATES, toGBP } from '../utils/currency';
 import { Sparkles, MessageSquare, X, Send, Bot, User, CornerDownLeft, Info, HelpCircle } from 'lucide-react';
 
-export default function AiChatbot() {
+export default function AiChatbot({ assetAssignments = [] }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
     {
@@ -164,6 +164,21 @@ export default function AiChatbot() {
     };
   };
 
+  // Helper to retrieve all vendor seat license and hardware asset assignments for a staff member
+  const getStaffLicenses = (member) => {
+    return assetAssignments
+      .filter(a => a.staffId === member.id)
+      .map(a => {
+        const contract = contracts.find(c => c.id === a.contractId);
+        return {
+          licenseName: contract?.name || a.assetName || a.name || 'Unknown License/Asset',
+          emailAlias: a.emailAlias || '',
+          notes: a.notes || '',
+          dateAssigned: a.dateAssigned || ''
+        };
+      });
+  };
+
   // Aggregate current business context
   const getContextSummary = () => {
     const todayStr = new Date().toISOString().split('T')[0];
@@ -186,7 +201,8 @@ export default function AiChatbot() {
         expensesTransactionsList: expensesBreakdown.transactions,
         revenueGeneratedNet: revenueBreakdown.revenueNet,
         revenueGeneratedGross: revenueBreakdown.revenueGross,
-        placementsList: revenueBreakdown.placementsList
+        placementsList: revenueBreakdown.placementsList,
+        assignedLicenses: getStaffLicenses(s)
       };
     });
 

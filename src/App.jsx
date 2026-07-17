@@ -31,7 +31,8 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
-  FileText
+  FileText,
+  Sparkles
 } from 'lucide-react';
 
 import { initialCompanies } from './mockData';
@@ -51,6 +52,7 @@ import StaffForm from './components/StaffForm';
 import StaffExitModal from './components/StaffExitModal';
 import ExitEmailTriggerModal from './components/ExitEmailTriggerModal';
 import BulkStaffImportModal from './components/BulkStaffImportModal';
+import AiRemindersModal from './components/AiRemindersModal';
 import { toGBP, formatGBP, fetchLiveFxRates } from './utils/currency';
 import { initialNominalCodes, initialExpenses } from './mockExpenses';
 
@@ -468,6 +470,7 @@ export default function App() {
     }
   };
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [isAiRemindersOpen, setIsAiRemindersOpen] = useState(false);
   const [selectedStaffIds, setSelectedStaffIds] = useState([]);
   const [bulkDeptSelect, setBulkDeptSelect] = useState('');
   const [customBulkDept, setCustomBulkDept] = useState('');
@@ -1953,6 +1956,13 @@ export default function App() {
                 </button>
                 <button 
                   className="btn-secondary" 
+                  onClick={() => setIsAiRemindersOpen(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '13px', backgroundColor: 'rgba(99, 102, 241, 0.15)', color: 'var(--primary)', border: '1px solid rgba(99, 102, 241, 0.3)' }}
+                >
+                  <Sparkles size={14} style={{ color: '#fbbf24' }} /> AI Reminders
+                </button>
+                <button 
+                  className="btn-secondary" 
                   onClick={() => setIsBulkImportOpen(true)}
                   style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '13px' }}
                 >
@@ -3025,6 +3035,15 @@ export default function App() {
         contracts={contracts}
         holidays={holidays}
         onSend={handleSendExitEmail}
+      />
+
+      {/* AI Birthday & Anniversary Reminders Modal */}
+      <AiRemindersModal 
+        isOpen={isAiRemindersOpen}
+        onClose={() => setIsAiRemindersOpen(false)}
+        staff={staff}
+        companies={companies}
+        onShowToast={handleShowToast}
       />
 
       {/* Micro-interaction Toasts list */}

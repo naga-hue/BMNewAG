@@ -1954,13 +1954,15 @@ export default function App() {
                 >
                   <Trash2 size={14} /> Clear Directory
                 </button>
-                <button 
-                  className="btn-secondary" 
-                  onClick={() => setIsAiRemindersOpen(true)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '13px', backgroundColor: 'rgba(99, 102, 241, 0.15)', color: 'var(--primary)', border: '1px solid rgba(99, 102, 241, 0.3)' }}
-                >
-                  <Sparkles size={14} style={{ color: '#fbbf24' }} /> AI Reminders
-                </button>
+                {(currentUser.permissions?.role === 'admin' || currentUser.permissions?.role === 'manager') && (
+                  <button 
+                    className="btn-secondary" 
+                    onClick={() => setIsAiRemindersOpen(true)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '13px', backgroundColor: 'rgba(99, 102, 241, 0.15)', color: 'var(--primary)', border: '1px solid rgba(99, 102, 241, 0.3)' }}
+                  >
+                    <Sparkles size={14} style={{ color: '#fbbf24' }} /> AI Reminders
+                  </button>
+                )}
                 <button 
                   className="btn-secondary" 
                   onClick={() => setIsBulkImportOpen(true)}

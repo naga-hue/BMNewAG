@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Sparkles, Cake, Gift, Briefcase, Mail, Key, Users, AlertCircle, CheckCircle2 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Sparkles, Cake, Gift, Briefcase, Mail, Users, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function AiRemindersModal({
   isOpen,
@@ -8,7 +8,6 @@ export default function AiRemindersModal({
   companies,
   onShowToast
 }) {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('bm-deepseek-api-key') || '');
   const [selectedStaffId, setSelectedStaffId] = useState('');
   const [reminderType, setReminderType] = useState('birthday');
   
@@ -23,13 +22,6 @@ export default function AiRemindersModal({
   const [generatedBody, setGeneratedBody] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
-
-  // Auto-save API Key
-  const handleApiKeyChange = (e) => {
-    const val = e.target.value;
-    setApiKey(val);
-    localStorage.setItem('bm-deepseek-api-key', val);
-  };
 
   // Find celebrations for the current month
   const activeCelebrations = useMemo(() => {
@@ -82,12 +74,8 @@ export default function AiRemindersModal({
     setGeneratedBody('');
   };
 
-  // Generate Message using DeepSeek API
+  // Generate Message using backend API endpoint
   const handleGenerateMessage = async () => {
-    if (!apiKey) {
-      onShowToast("Please enter a valid DeepSeek API Key to proceed.", "warning");
-      return;
-    }
     if (!selectedStaffId || !selectedStaffMember) {
       onShowToast("Please select an employee first.", "warning");
       return;
@@ -95,50 +83,28 @@ export default function AiRemindersModal({
 
     setLoading(true);
     try {
-      const companyName = selectedCompany?.name || 'Group Company';
-      const prompt = `Generate a ${reminderType === 'birthday' ? 'birthday greeting' : 'work anniversary celebration email'} for ${selectedStaffMember.fullName}.
-Job Title: ${selectedStaffMember.jobTitle || 'Team Member'}
-Company: ${companyName}
-${reminderType === 'anniversary' && selectedStaffMember.startDate ? `Joined on: ${selectedStaffMember.startDate}` : ''}
-
-Output the result strictly in JSON format with two keys: "subject" and "body". The body should be warm, professional, engaging, formatted with clean spacing, and signed off from the team. Keep the text clean, without any markdown formatting or HTML codes in the response JSON.`;
-
-      const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      const response = await fetch('/api/generate-greeting', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are an inspiring HR assistant for a premium corporate group. You draft warm and engaging birthday and work anniversary announcements for staff. You respond strictly in JSON format with keys "subject" and "body".'
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          response_format: { type: 'json_object' }
+          employeeName: selectedStaffMember.fullName,
+          jobTitle: selectedStaffMember.jobTitle || 'Team Member',
+          companyName: selectedCompany?.name || 'Group Company',
+          reminderType: reminderType,
+          startDate: selectedStaffMember.startDate || ''
         })
       });
 
-      if (!response.ok) {
-        throw new Error(`API returned status ${response.status}`);
-      }
-
       const resData = await response.json();
-      const contentText = resData.choices?.[0]?.message?.content;
-      if (!contentText) {
-        throw new Error("No response text returned from DeepSeek.");
+      if (!response.ok) {
+        throw new Error(resData.error || `API returned status ${response.status}`);
       }
 
-      const parsed = JSON.parse(contentText);
-      setGeneratedSubject(parsed.subject || '');
-      setGeneratedBody(parsed.body || '');
-      onShowToast("AI Email Template generated successfully!", "success");
+      setGeneratedSubject(resData.subject || '');
+      setGeneratedBody(resData.body || '');
+      onShowToast("AI 2-Liner announcement generated successfully!", "success");
     } catch (err) {
       console.error(err);
       onShowToast(`Failed to generate message: ${err.message}`, "warning");
@@ -248,7 +214,7 @@ Output the result strictly in JSON format with two keys: "subject" and "body". T
             <h2 className="wizard-title" style={{ color: '#fff', fontSize: '16px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Sparkles size={18} style={{ color: '#fbbf24' }} /> AI Birthday & Work Anniversary Reminders
             </h2>
-            <span style={{ fontSize: '11px', color: '#94a3b8' }}>Generate personalized staff celebration announcements using DeepSeek AI</span>
+            <span style={{ fontSize: '11px', color: '#94a3b8' }}>Generate concise 2-liner staff celebration announcements using DeepSeek AI Secrets</span>
           </div>
           <button type="button" className="btn-close" onClick={onClose} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px' }}>✕</button>
         </div>
@@ -256,21 +222,6 @@ Output the result strictly in JSON format with two keys: "subject" and "body". T
         {/* Content */}
         <div className="wizard-content" style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
           
-          {/* API Key Section */}
-          <div className="form-group" style={{ backgroundColor: 'rgba(251, 191, 36, 0.05)', border: '1px solid rgba(251, 191, 36, 0.15)', padding: '12px 16px', borderRadius: '6px' }}>
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
-              <Key size={14} style={{ color: '#fbbf24' }} /> Configure DeepSeek API Key
-            </label>
-            <input
-              type="password"
-              className="form-input"
-              value={apiKey}
-              onChange={handleApiKeyChange}
-              placeholder="sk-..."
-              style={{ width: '100%', marginTop: '6px', padding: '8px 12px', fontSize: '12px' }}
-            />
-          </div>
-
           {/* Celebrations this Month Scanner */}
           {activeCelebrations.length > 0 && (
             <div>
@@ -409,9 +360,9 @@ Output the result strictly in JSON format with two keys: "subject" and "body". T
                 disabled={loading || !selectedStaffId}
                 style={{ marginTop: '10px', padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
               >
-                {loading ? "Generating Template..." : (
+                {loading ? "Generating 2-Liner..." : (
                   <>
-                    <Sparkles size={16} /> Generate AI Greeting
+                    <Sparkles size={16} /> Generate AI 2-Liner
                   </>
                 )}
               </button>

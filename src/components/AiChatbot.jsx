@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useBoundStore } from '../store/useBoundStore';
-import { FX_RATES } from '../utils/currency';
+import { FX_RATES, toGBP } from '../utils/currency';
 import { Sparkles, MessageSquare, X, Send, Bot, User, CornerDownLeft, Info, HelpCircle } from 'lucide-react';
 
 export default function AiChatbot() {
@@ -38,20 +38,100 @@ export default function AiChatbot() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
+  // Helper to pre-calculate direct/indirect expenses allocated to a specific staff member
+  const getStaffExpensesBreakdown = (member) => {
+    let directTotal = 0;
+    let indirectTotal = 0;
+    const transactions = [];
+
+    // Filter active staff for apportionment sharing
+    const activeStaff = staff.filter(s => s.status !== 'exited');
+
+    expenses.forEach(exp => {
+      const gbpAmt = toGBP(exp.amount, exp.currency);
+      const targets = (Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean));
+
+      if (exp.allocationType === 'staff') {
+        if (targets.includes(member.id)) {
+          const share = gbpAmt / (targets.length || 1);
+          directTotal += share;
+          transactions.push({
+            date: exp.date,
+            payee: exp.payee,
+            type: 'Direct Staff Split',
+            nominalCode: exp.nominalCode || 'Unassigned',
+            shareAmount: Number(share.toFixed(2))
+          });
+        }
+      } else if (exp.allocationType === 'company') {
+        if (targets.includes(member.companyId)) {
+          const eligibleStaff = activeStaff.filter(s => targets.includes(s.companyId));
+          const share = gbpAmt / (eligibleStaff.length || 1);
+          indirectTotal += share;
+          transactions.push({
+            date: exp.date,
+            payee: exp.payee,
+            type: 'Company Apportionment',
+            nominalCode: exp.nominalCode || 'Unassigned',
+            shareAmount: Number(share.toFixed(2))
+          });
+        }
+      } else if (exp.allocationType === 'department') {
+        if (member.department && targets.includes(member.department)) {
+          const eligibleStaff = activeStaff.filter(s => s.department && targets.includes(s.department));
+          const share = gbpAmt / (eligibleStaff.length || 1);
+          indirectTotal += share;
+          transactions.push({
+            date: exp.date,
+            payee: exp.payee,
+            type: 'Department Apportionment',
+            nominalCode: exp.nominalCode || 'Unassigned',
+            shareAmount: Number(share.toFixed(2))
+          });
+        }
+      } else {
+        // Group-wide / Default
+        const share = gbpAmt / (activeStaff.length || 1);
+        indirectTotal += share;
+        transactions.push({
+          date: exp.date,
+          payee: exp.payee,
+          type: 'Group-wide Allocation',
+          nominalCode: exp.nominalCode || 'Unassigned',
+          shareAmount: Number(share.toFixed(2))
+        });
+      }
+    });
+
+    return {
+      directExpenses: Number(directTotal.toFixed(2)),
+      indirectExpenses: Number(indirectTotal.toFixed(2)),
+      totalExpenses: Number((directTotal + indirectTotal).toFixed(2)),
+      transactions
+    };
+  };
+
   // Aggregate current business context
   const getContextSummary = () => {
     const todayStr = new Date().toISOString().split('T')[0];
 
     // 1. Active Staff
-    const staffSummary = staff.map(s => ({
-      name: s.fullName,
-      role: s.jobTitle || 'Team Member',
-      dept: s.department,
-      company: companies.find(c => c.id === s.companyId)?.name || 'Unknown',
-      currency: s.currency || 'GBP',
-      salary: s.salary || 0,
-      salaryType: s.salaryType || 'salaried'
-    }));
+    const staffSummary = staff.map(s => {
+      const expensesBreakdown = getStaffExpensesBreakdown(s);
+      return {
+        name: s.fullName,
+        role: s.jobTitle || 'Team Member',
+        dept: s.department,
+        company: companies.find(c => c.id === s.companyId)?.name || 'Unknown',
+        currency: s.currency || 'GBP',
+        salary: s.salary || 0,
+        salaryType: s.salaryType || 'salaried',
+        directExpenses: expensesBreakdown.directExpenses,
+        indirectExpenses: expensesBreakdown.indirectExpenses,
+        totalExpenses: expensesBreakdown.totalExpenses,
+        expensesTransactionsList: expensesBreakdown.transactions
+      };
+    });
 
     // 2. Leaves Today
     const activeLeaves = leaveRequests

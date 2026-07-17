@@ -87,6 +87,40 @@ export default defineConfig(({ mode }) => {
                   res.end(JSON.stringify({ error: err.message }));
                 }
               });
+            } else if (req.url.startsWith('/api/ai-chat') && req.method === 'POST') {
+              let body = '';
+              req.on('data', chunk => { body += chunk; });
+              req.on('end', async () => {
+                try {
+                  const parsedBody = JSON.parse(body);
+                  const handler = (await import('./api/ai-chat.js')).default;
+                  
+                  const mockReq = {
+                    method: 'POST',
+                    body: parsedBody
+                  };
+                  const mockRes = {
+                    setHeader: (k, v) => {},
+                    status: (code) => ({
+                      json: (data) => {
+                        res.statusCode = code;
+                        res.setHeader('Content-Type', 'application/json');
+                        res.end(JSON.stringify(data));
+                      },
+                      end: () => {
+                        res.statusCode = code;
+                        res.end();
+                      }
+                    })
+                  };
+                  
+                  await handler(mockReq, mockRes);
+                } catch (err) {
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: err.message }));
+                }
+              });
             } else {
               next();
             }

@@ -53,6 +53,7 @@ import StaffExitModal from './components/StaffExitModal';
 import ExitEmailTriggerModal from './components/ExitEmailTriggerModal';
 import BulkStaffImportModal from './components/BulkStaffImportModal';
 import AiRemindersModal from './components/AiRemindersModal';
+import AiChatbot from './components/AiChatbot';
 import { toGBP, formatGBP, fetchLiveFxRates } from './utils/currency';
 import { initialNominalCodes, initialExpenses } from './mockExpenses';
 
@@ -3048,6 +3049,11 @@ export default function App() {
         companies={companies}
         onShowToast={handleShowToast}
       />
+
+      {/* Super Admin AI Chatbot Widget */}
+      {(currentUser?.id === 'super-admin' || currentUser?.permissions?.role === 'admin') && (
+        <AiChatbot />
+      )}
 
       {/* Micro-interaction Toasts list */}
       <div className="toast-container">

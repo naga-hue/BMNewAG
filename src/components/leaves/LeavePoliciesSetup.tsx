@@ -108,9 +108,38 @@ export default function LeavePoliciesSetup({
           <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Group Leave Policies</h2>
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Define leave frameworks and maps for each of the group entities.</p>
         </div>
-        <button className="btn-primary" onClick={() => setShowPolicyForm(prev => !prev)}>
-          <Plus size={16} /> Create Leave Policy
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button 
+            type="button"
+            className="btn-secondary" 
+            onClick={async () => {
+              const assignedStaff = staff.filter(s => s.leavePolicyId);
+              if (assignedStaff.length === 0) {
+                onShowToast("No active leave policy assignments found.", "info");
+                return;
+              }
+              const confirmed = window.confirm(
+                `Are you sure you want to clear the leave policy assignments for all ${assignedStaff.length} employees?\n\nThis will set all staff members' leave policies to 'None'.`
+              );
+              if (confirmed && onUpdateStaff) {
+                try {
+                  for (const s of assignedStaff) {
+                    await onUpdateStaff({ ...s, leavePolicyId: '' });
+                  }
+                  onShowToast("Successfully cleared all leave policy assignments.", "success");
+                } catch (err: any) {
+                  onShowToast(`Error clearing assignments: ${err.message}`, "warning");
+                }
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid var(--border-color)', color: 'var(--danger)' }}
+          >
+            Clear All Assignments
+          </button>
+          <button className="btn-primary" onClick={() => setShowPolicyForm(prev => !prev)}>
+            <Plus size={16} /> Create Leave Policy
+          </button>
+        </div>
       </div>
 
       {showPolicyForm && (

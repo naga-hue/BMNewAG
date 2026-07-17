@@ -212,6 +212,26 @@ export default function App() {
     }
   }, [companies, leavePolicies]);
 
+  // One-time clearance of all leave policy assignments on request
+  useEffect(() => {
+    if (staff.length > 0) {
+      const runOnce = localStorage.getItem('bm-cleared-assignments-run-once-v2');
+      if (!runOnce) {
+        const assigned = staff.filter(s => s.leavePolicyId);
+        if (assigned.length > 0) {
+          Promise.all(assigned.map(s => firebaseService.saveStaff({ ...s, leavePolicyId: '' }))).then(() => {
+            localStorage.setItem('bm-cleared-assignments-run-once-v2', 'true');
+            console.log("Successfully cleared all staff leave assignments on initialization.");
+          }).catch(err => {
+            console.error("Error clearing staff assignments:", err);
+          });
+        } else {
+          localStorage.setItem('bm-cleared-assignments-run-once-v2', 'true');
+        }
+      }
+    }
+  }, [staff]);
+
 
   // Fetch live exchange rates on mount and trigger a re-render when finished
   useEffect(() => {

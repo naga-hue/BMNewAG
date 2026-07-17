@@ -45,10 +45,12 @@ export default function AiChatbot() {
     // 1. Active Staff
     const staffSummary = staff.map(s => ({
       name: s.fullName,
-      role: s.jobTitle,
+      role: s.jobTitle || 'Team Member',
       dept: s.department,
       company: companies.find(c => c.id === s.companyId)?.name || 'Unknown',
-      currency: s.currency || 'GBP'
+      currency: s.currency || 'GBP',
+      salary: s.salary || 0,
+      salaryType: s.salaryType || 'salaried'
     }));
 
     // 2. Leaves Today
@@ -127,13 +129,35 @@ export default function AiChatbot() {
         nominalCode: e.nominalCode || 'Unassigned'
       }));
 
+    // 6. Placements (Revenue, sales performance, and recruiter splits)
+    const placementsSummary = placements.map(p => {
+      const splitsInfo = (p.splits || []).map(sp => {
+        const s = staff.find(member => member.id === sp.staffId);
+        return {
+          recruiterName: s?.fullName || 'Unknown',
+          percentage: sp.splitPercentage || 100
+        };
+      });
+
+      return {
+        client: p.clientCompany,
+        candidate: p.candidateName,
+        netScore: p.netScoreValue || 0,
+        grossAmount: p.grossBillAmount || 0,
+        status: p.clientPaymentStatus || p.paymentStatus || 'not-invoiced',
+        startDate: p.startDate || '',
+        splits: splitsInfo
+      };
+    });
+
     return {
       currentDate: todayStr,
       activeLeavesToday: activeLeaves,
       outstandingInvoices: outstandingInvoices,
       contracts: contractSummary,
       unreconciledExpenses: unreconciledExpenses,
-      staff: staffSummary
+      staff: staffSummary,
+      placements: placementsSummary
     };
   };
 

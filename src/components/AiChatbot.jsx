@@ -197,15 +197,124 @@ export default function AiChatbot() {
     }
   };
 
-  // Helper to convert simple Markdown bold and bullets to HTML safely
+  // Helper to convert Markdown (Headers, bullet lists, bold, italics, tables) into structured React elements
   const formatMsgText = (text) => {
-    let formatted = text
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/`(.*?)`/g, '<code style="background: rgba(0,0,0,0.2); padding: 2px 4px; borderRadius: 4px;">$1</code>')
-      .replace(/\n/g, '<br/>');
+    if (!text) return '';
 
-    return <span dangerouslySetInnerHTML={{ __html: formatted }} />;
+    const lines = text.split('\n');
+    const elements = [];
+    let inTable = false;
+    let tableRows = [];
+    let inList = false;
+    let listItems = [];
+
+    const flushTable = () => {
+      if (tableRows.length > 0) {
+        // Parse rows by splitting on |
+        const parsedRows = tableRows
+          .map(r => r.split('|').map(cell => cell.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1))
+          .filter(r => !r.every(cell => /^[-:\s]+$/.test(cell))); // Skip separating lines like |---|---|
+
+        if (parsedRows.length > 0) {
+          const header = parsedRows[0];
+          const body = parsedRows.slice(1);
+          
+          elements.push(
+            <div key={`table-${elements.length}`} style={{ overflowX: 'auto', margin: '10px 0', width: '100%' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', border: '1px solid var(--border-color)', minWidth: '320px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'rgba(99, 102, 241, 0.12)', borderBottom: '2px solid var(--border-color)' }}>
+                    {header.map((cell, idx) => (
+                      <th key={idx} style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 'bold', borderRight: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
+                        {parseInline(cell)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {body.map((row, rowIdx) => (
+                    <tr key={rowIdx} style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: rowIdx % 2 === 0 ? 'transparent' : 'rgba(255, 255, 255, 0.03)' }}>
+                      {row.map((cell, cellIdx) => (
+                        <td key={cellIdx} style={{ padding: '6px 8px', borderRight: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>
+                          {parseInline(cell)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+        tableRows = [];
+      }
+      inTable = false;
+    };
+
+    const flushList = () => {
+      if (listItems.length > 0) {
+        elements.push(
+          <ul key={`list-${elements.length}`} style={{ margin: '8px 0', paddingLeft: '20px', listStyleType: 'disc', color: 'inherit' }}>
+            {listItems.map((item, idx) => (
+              <li key={idx} style={{ marginBottom: '4px', color: 'inherit' }}>
+                {parseInline(item)}
+              </li>
+            ))}
+          </ul>
+        );
+        listItems = [];
+      }
+      inList = false;
+    };
+
+    // Helper to format inline bold, italics, code
+    const parseInline = (str) => {
+      let temp = str;
+      temp = temp.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      temp = temp.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      temp = temp.replace(/`(.*?)`/g, '<code style="background: rgba(0,0,0,0.15); padding: 2px 4px; borderRadius: 4px; font-family: monospace;">$1</code>');
+      return <span dangerouslySetInnerHTML={{ __html: temp }} />;
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      // Table Row Check
+      if (line.startsWith('|') && line.endsWith('|')) {
+        if (inList) flushList();
+        inTable = true;
+        tableRows.push(line);
+        continue;
+      } else if (inTable) {
+        flushTable();
+      }
+
+      // List Item Check
+      if (line.startsWith('- ') || line.startsWith('* ') || line.startsWith('• ')) {
+        if (inTable) flushTable();
+        inList = true;
+        listItems.push(line.substring(2));
+        continue;
+      } else if (inList) {
+        flushList();
+      }
+
+      // Headers
+      if (line.startsWith('### ')) {
+        elements.push(<h4 key={i} style={{ fontSize: '13px', fontWeight: 700, margin: '14px 0 6px 0', color: 'var(--primary-light)' }}>{parseInline(line.substring(4))}</h4>);
+      } else if (line.startsWith('## ')) {
+        elements.push(<h3 key={i} style={{ fontSize: '14px', fontWeight: 700, margin: '16px 0 8px 0', color: 'var(--primary-light)' }}>{parseInline(line.substring(3))}</h3>);
+      } else if (line.startsWith('# ')) {
+        elements.push(<h2 key={i} style={{ fontSize: '15px', fontWeight: 800, margin: '18px 0 10px 0', color: 'var(--primary-light)' }}>{parseInline(line.substring(2))}</h2>);
+      } else if (line !== '') {
+        elements.push(<p key={i} style={{ margin: '6px 0', lineHeight: 1.4 }}>{parseInline(line)}</p>);
+      }
+    }
+
+    if (inTable) flushTable();
+    if (inList) flushList();
+
+    return elements;
   };
 
   return (

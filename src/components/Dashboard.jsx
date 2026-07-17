@@ -239,6 +239,7 @@ export default function Dashboard({
   const celebrationsList = [];
 
   staff.forEach(s => {
+    if (s.status === 'exited') return;
     if (s.dateOfBirth) {
       const dob = new Date(s.dateOfBirth);
       if (dob.getMonth() === currentMonthIndex) {

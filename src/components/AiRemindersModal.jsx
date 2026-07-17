@@ -29,6 +29,7 @@ export default function AiRemindersModal({
     const list = [];
 
     staff.forEach(s => {
+      if (s.status === 'exited') return;
       // Birthdays this month
       if (s.dateOfBirth) {
         const dob = new Date(s.dateOfBirth);

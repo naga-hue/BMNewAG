@@ -13,6 +13,7 @@ export default function ExitEmailTriggerModal({
   commissionPolicies = [],
   placements = [],
   contracts = [],
+  holidays = [],
   onSend 
 }) {
   const [emailRecipient, setEmailRecipient] = useState('');
@@ -26,6 +27,99 @@ export default function ExitEmailTriggerModal({
   const fromGBP = (gbpAmt, targetCur) => {
     const targetRate = FX_RATES[targetCur] || 1.0;
     return targetRate > 0 ? gbpAmt / targetRate : gbpAmt;
+  };
+
+  // Get business days in a month
+  const getBusinessDaysInMonth = (monthKey, companyId) => {
+    const parts = monthKey.split('-');
+    if (parts.length < 2) return 22;
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    let count = 0;
+    try {
+      const days = new Date(year, month + 1, 0).getDate();
+      for (let d = 1; d <= days; d++) {
+        const dayOfWeek = new Date(year, month, d).getDay();
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+          const mm = String(month + 1).padStart(2, '0');
+          const dd = String(d).padStart(2, '0');
+          const dateString = `${year}-${mm}-${dd}`;
+          const isHoliday = holidays.some(h => h.companyId === companyId && h.date === dateString);
+          if (!isHoliday) count++;
+        }
+      }
+      return count || 22;
+    } catch {
+      return 22;
+    }
+  };
+
+  // Get proration details
+  const getProrationDetails = (member, monthKey) => {
+    const parts = monthKey.split('-');
+    if (parts.length < 2) return { factor: 1.0, activeDays: 22, totalDays: 22 };
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+
+    const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month, totalDaysInMonth);
+
+    // Parse staff start date
+    let activeStart = monthStart;
+    if (member.startDate) {
+      const startParts = member.startDate.split('-').map(Number);
+      if (startParts.length === 3) {
+        const startDateObj = new Date(startParts[0], startParts[1] - 1, startParts[2]);
+        if (startDateObj > monthEnd) return { factor: 0.0, activeDays: 0, totalDays: 22 };
+        if (startDateObj > monthStart) {
+          activeStart = startDateObj;
+        }
+      }
+    }
+
+    // Parse staff exit / cutoff date
+    let activeEnd = monthEnd;
+    const exitStr = member.salaryPaidUntilDate || member.exitDate || '';
+    if (exitStr) {
+      const exitParts = exitStr.split('-').map(Number);
+      if (exitParts.length === 3) {
+        const exitDateObj = new Date(exitParts[0], exitParts[1] - 1, exitParts[2]);
+        if (exitDateObj < monthStart) return { factor: 0.0, activeDays: 0, totalDays: 22 };
+        if (exitDateObj < monthEnd) {
+          activeEnd = exitDateObj;
+        }
+      }
+    }
+
+    // Count business days in month
+    let totalBusinessDays = 0;
+    let activeBusinessDays = 0;
+
+    for (let d = 1; d <= totalDaysInMonth; d++) {
+      const currentDate = new Date(year, month, d);
+      const dayOfWeek = currentDate.getDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+      const mm = String(month + 1).padStart(2, '0');
+      const dd = String(d).padStart(2, '0');
+      const dateString = `${year}-${mm}-${dd}`;
+      const isHoliday = holidays.some(h => h.companyId === member.companyId && h.date === dateString);
+
+      if (!isWeekend && !isHoliday) {
+        totalBusinessDays++;
+        if (currentDate >= activeStart && currentDate <= activeEnd) {
+          activeBusinessDays++;
+        }
+      }
+    }
+
+    if (totalBusinessDays === 0) return { factor: 1.0, activeDays: 22, totalDays: 22 };
+    return {
+      factor: activeBusinessDays / totalBusinessDays,
+      activeDays: activeBusinessDays,
+      totalDays: totalBusinessDays
+    };
   };
 
   // Monthly payout calculation helper (cash-received commission)
@@ -325,6 +419,13 @@ export default function ExitEmailTriggerModal({
       const withheldGBP = toGBP(monthlyCommission.withheld, policyCurrency);
       const withheldNative = fromGBP(withheldGBP, staffCurrency);
 
+      // Calculate pro-rata base salary for their final month (July 2026) using actual working days
+      const finalMonthStr = '2026-07';
+      const prorationDetails = getProrationDetails(staffMember, finalMonthStr);
+      const monthlyFullBase = staffMember.salary ? Number(staffMember.salary) / 12 : 0;
+      const proRataSalaryNative = monthlyFullBase * prorationDetails.factor;
+      const proRataSalaryGBP = toGBP(proRataSalaryNative, staffCurrency);
+
       // 8. Resolve Role Contacts for CC list / Recipients
       const hrContact = staff.find(s => s.id === company.hrContactId);
       const hrEmail = hrContact?.businessEmail || hrContact?.personalEmail || exitSettings.hrEmail || 'hr@humres.co.uk';
@@ -364,7 +465,8 @@ EMPLOYEE GENERAL INFORMATION
 
 FINANCIAL & COMPENSATION PROFILE
 --------------------------------------------------
-- Monthly Base Salary: ${staffMember.salary ? `${currencySymbol}${Math.round(Number(staffMember.salary) / 12).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / month (${currencySymbol}${Number(staffMember.salary).toLocaleString()} / year ${staffCurrency})` : 'Not specified'}
+- Monthly Base Salary (Full): ${staffMember.salary ? `${currencySymbol}${Math.round(monthlyFullBase).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / month (${currencySymbol}${Number(staffMember.salary).toLocaleString()} / year ${staffCurrency})` : 'Not specified'}
+- Pro-rata Salary Due for Final Month (${finalMonthStr}): ${staffMember.salary ? `${currencySymbol}${proRataSalaryNative.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (GBP £${proRataSalaryGBP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) [Worked ${prorationDetails.activeDays} / ${prorationDetails.totalDays} business days]` : 'N/A'}
 - Commission Scheme Mapped: ${commSchemeName}
 - Cumulative Billings (Current Year - 2026 Split): ${currencySymbol}${yearRevenueNative.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (GBP £${yearRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
 - Commission Due for Payment This Month (July 2026): ${currencySymbol}${totalPayoutNative.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (GBP £${totalPayoutGBP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})

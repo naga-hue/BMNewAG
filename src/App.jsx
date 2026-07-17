@@ -2968,6 +2968,7 @@ export default function App() {
         commissionPolicies={commissionPolicies}
         placements={placements}
         contracts={contracts}
+        holidays={holidays}
         onSend={handleSendExitEmail}
       />
 

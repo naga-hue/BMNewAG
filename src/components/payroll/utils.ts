@@ -65,6 +65,85 @@ export function getBusinessDaysInMonth(monthKey: string, companyId?: string, hol
   }
 }
 
+export function getProrationDetails(
+  staffMember: Staff,
+  monthKey: string,
+  holidays: any[] = []
+): { factor: number; activeDays: number; totalDays: number } {
+  const parts = monthKey.split('-');
+  if (parts.length < 2) return { factor: 1.0, activeDays: 22, totalDays: 22 };
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1;
+
+  const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthStart = new Date(year, month, 1);
+  const monthEnd = new Date(year, month, totalDaysInMonth);
+
+  // Parse staff start date
+  let activeStart = monthStart;
+  if (staffMember.startDate) {
+    const startParts = staffMember.startDate.split('-').map(Number);
+    if (startParts.length === 3) {
+      const startDateObj = new Date(startParts[0], startParts[1] - 1, startParts[2]);
+      if (startDateObj > monthEnd) return { factor: 0.0, activeDays: 0, totalDays: 22 };
+      if (startDateObj > monthStart) {
+        activeStart = startDateObj;
+      }
+    }
+  }
+
+  // Parse staff exit / cutoff date
+  let activeEnd = monthEnd;
+  const exitStr = staffMember.salaryPaidUntilDate || staffMember.exitDate || '';
+  if (exitStr) {
+    const exitParts = exitStr.split('-').map(Number);
+    if (exitParts.length === 3) {
+      const exitDateObj = new Date(exitParts[0], exitParts[1] - 1, exitParts[2]);
+      if (exitDateObj < monthStart) return { factor: 0.0, activeDays: 0, totalDays: 22 };
+      if (exitDateObj < monthEnd) {
+        activeEnd = exitDateObj;
+      }
+    }
+  }
+
+  // Count business days in month
+  let totalBusinessDays = 0;
+  let activeBusinessDays = 0;
+
+  for (let d = 1; d <= totalDaysInMonth; d++) {
+    const currentDate = new Date(year, month, d);
+    const dayOfWeek = currentDate.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+    const mm = String(month + 1).padStart(2, '0');
+    const dd = String(d).padStart(2, '0');
+    const dateString = `${year}-${mm}-${dd}`;
+    const isHoliday = holidays.some(h => h.companyId === staffMember.companyId && h.date === dateString);
+
+    if (!isWeekend && !isHoliday) {
+      totalBusinessDays++;
+      if (currentDate >= activeStart && currentDate <= activeEnd) {
+        activeBusinessDays++;
+      }
+    }
+  }
+
+  if (totalBusinessDays === 0) return { factor: 1.0, activeDays: 22, totalDays: 22 };
+  return {
+    factor: activeBusinessDays / totalBusinessDays,
+    activeDays: activeBusinessDays,
+    totalDays: totalBusinessDays
+  };
+}
+
+export function calculateProrationFactor(
+  staffMember: Staff,
+  monthKey: string,
+  holidays: any[] = []
+): number {
+  return getProrationDetails(staffMember, monthKey, holidays).factor;
+}
+
 export function calculateCashReceivedCommission(
   member: Staff,
   policy: any,
@@ -350,23 +429,23 @@ export function getCellData(
     'written'
   );
 
+  // Calculate proration based on actual working days in the month and actual days worked
+  const proration = calculateProrationFactor(staffMember, month, holidays);
+  baselineBasic = baselineBasic * proration;
+
   if (staffMember.status === 'exited') {
     const exitMonth = staffMember.exitDate ? staffMember.exitDate.substring(0, 7) : '';
+    if (exitMonth && month === exitMonth && staffMember.additionalExitPayment) {
+      baselineBasic += toGBP(Number(staffMember.additionalExitPayment) || 0, staffMember.currency || 'GBP');
+    }
+    // Ensure basic and commission are zero for months after exit
     const cutoffStr = staffMember.salaryPaidUntilDate || staffMember.exitDate || '';
     if (cutoffStr) {
       const cutoffMonth = cutoffStr.substring(0, 7);
       if (month > cutoffMonth) {
         baselineBasic = 0;
         baselineCommission = 0;
-      } else if (month === cutoffMonth) {
-        const [y, m, d] = cutoffStr.split('-').map(Number);
-        const daysInMonth = new Date(y, m, 0).getDate();
-        const proration = Math.min(1.0, Math.max(0.0, d / daysInMonth));
-        baselineBasic = baselineBasic * proration;
       }
-    }
-    if (exitMonth && month === exitMonth && staffMember.additionalExitPayment) {
-      baselineBasic += toGBP(Number(staffMember.additionalExitPayment) || 0, staffMember.currency || 'GBP');
     }
   }
 

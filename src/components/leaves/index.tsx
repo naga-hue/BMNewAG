@@ -68,6 +68,7 @@ export default function LeavesDashboard({
           companies={companies}
           staff={staff}
           leaveRequests={leaveRequests}
+          leavePolicies={leavePolicies}
           onSaveLeaveRequest={onSaveLeaveRequest}
           onUpdateLeaveRequestStatus={onUpdateLeaveRequestStatus}
           onShowToast={onShowToast}

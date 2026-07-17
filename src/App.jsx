@@ -177,6 +177,41 @@ export default function App() {
     };
   }, [initSubscriptions]);
 
+  // Seeding for Global Recruiters (FZE) leave policy
+  useEffect(() => {
+    if (companies.length > 0) {
+      const globalRecruitersCompany = companies.find(c => 
+        c.name.toLowerCase().includes('global recruiters')
+      );
+      if (globalRecruitersCompany) {
+        const policyExists = leavePolicies.some(p => 
+          p.name.toLowerCase().includes('global recruiters')
+        );
+        if (!policyExists) {
+          const newPolicy = {
+            id: 'policy-global-recruiters',
+            name: "Global Recruiters Annual Leave Policy",
+            companyId: globalRecruitersCompany.id,
+            annualAllowance: 20,
+            sickAllowance: 15,
+            description: `Global Recruiters (FZE) Annual Leave Policy Summary:
+• Holiday Year: 1 Jan to 31 Dec. Forfeited at year-end. No rollover.
+• Annual Leave: 20 working days base, +1 day per completed year of service, capped at 25 working days (max reached after 5 years).
+• January Restriction: January is a restricted no-leave period. Urgency exceptions require CEO written approval.
+• Consecutive Leave Limits: Max 2 consecutive weeks per quarter (includes Christmas/New Year holiday period).
+• Minimum Team Coverage: At least 50% of the contributor team must be active.
+• Approval: Must be requested in advance and approved before taking.`
+          };
+          firebaseService.saveLeavePolicy(newPolicy).then(() => {
+            console.log("Successfully seeded Global Recruiters (FZE) leave policy.");
+          }).catch(err => {
+            console.error("Error seeding leave policy:", err);
+          });
+        }
+      }
+    }
+  }, [companies, leavePolicies]);
+
 
   // Fetch live exchange rates on mount and trigger a re-render when finished
   useEffect(() => {

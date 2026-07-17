@@ -15,6 +15,7 @@ interface LeaveRequestsDeskProps {
   companies: Company[];
   staff: Staff[];
   leaveRequests: any[];
+  leavePolicies?: any[];
   onSaveLeaveRequest: (req: any) => Promise<any>;
   onUpdateLeaveRequestStatus?: (id: string, status: string) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
@@ -24,6 +25,7 @@ export default function LeaveRequestsDesk({
   companies,
   staff,
   leaveRequests,
+  leavePolicies = [],
   onSaveLeaveRequest,
   onUpdateLeaveRequestStatus,
   onShowToast
@@ -49,6 +51,34 @@ export default function LeaveRequestsDesk({
     try {
       for (let i = 0; i < selectedStaffIds.length; i++) {
         const sId = selectedStaffIds[i];
+        const staffMember = staff.find(s => s.id === sId);
+        
+        if (staffMember) {
+          const policy = leavePolicies.find(p => p.id === staffMember.leavePolicyId);
+          if (policy && policy.name.toLowerCase().includes('global recruiters')) {
+            // January Restriction Check
+            const startMonth = reqStartDate.split('-')[1];
+            const endMonth = reqEndDate.split('-')[1];
+            if ((startMonth === '01' || endMonth === '01') && reqType === 'annual') {
+              const confirmJan = window.confirm(
+                `⚠️ January is a restricted NO-LEAVE period for ${staffMember.fullName} under the Global Recruiters policy.\n\nDo you confirm that CEO written approval has been obtained for this exception?`
+              );
+              if (!confirmJan) return;
+            }
+
+            // Consecutive Weeks Limit Check (2 weeks = 10 working days)
+            if (Number(reqDays) > 10 && reqType === 'annual') {
+              const confirmConsec = window.confirm(
+                `⚠️ Maximum of 2 consecutive weeks (10 working days) is permitted at one time for ${staffMember.fullName} under the Global Recruiters policy.\n\nDo you confirm this exception is approved?`
+              );
+              if (!confirmConsec) return;
+            }
+
+            // Team Coverage Reminder
+            onShowToast(`Coverage Reminder: Ensure at least 50% of the team remains active for ${staffMember.fullName}'s leave.`, 'info');
+          }
+        }
+
         const newRequest = {
           id: `req-${Date.now()}-${i}`,
           staffId: sId,

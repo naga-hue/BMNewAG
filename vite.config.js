@@ -121,6 +121,39 @@ export default defineConfig(({ mode }) => {
                   res.end(JSON.stringify({ error: err.message }));
                 }
               });
+            } else if (req.url.startsWith('/api/cron-reminders')) {
+              try {
+                const urlObj = new URL(req.url, `http://${req.headers.host}`);
+                const query = {};
+                urlObj.searchParams.forEach((v, k) => { query[k] = v; });
+
+                const handler = (await import('./api/cron-reminders.js')).default;
+                const mockReq = {
+                  method: req.method,
+                  url: req.url,
+                  headers: req.headers,
+                  query: query
+                };
+                const mockRes = {
+                  setHeader: (k, v) => {},
+                  status: (code) => ({
+                    json: (data) => {
+                      res.statusCode = code;
+                      res.setHeader('Content-Type', 'application/json');
+                      res.end(JSON.stringify(data));
+                    },
+                    end: () => {
+                      res.statusCode = code;
+                      res.end();
+                    }
+                  })
+                };
+                await handler(mockReq, mockRes);
+              } catch (err) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
             } else {
               next();
             }

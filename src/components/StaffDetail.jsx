@@ -339,6 +339,25 @@ Yours sincerely,
   // Resolve manager details
   const reportingManager = staffList.find(s => s.id === staffMember.reportingManagerId);
   const policy = leavePolicies.find(p => p.id === staffMember.leavePolicyId);
+  const resolveAnnualAllowance = (member, pol) => {
+    if (!pol) return 0;
+    if (pol.name.toLowerCase().includes('global recruiters')) {
+      if (!member.startDate) return 20;
+      const start = new Date(member.startDate);
+      if (isNaN(start.getTime())) return 20;
+      
+      const today = new Date();
+      let years = today.getFullYear() - start.getFullYear();
+      const m = today.getMonth() - start.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < start.getDate())) {
+        years--;
+      }
+      const calculated = 20 + Math.max(0, years);
+      return Math.min(25, calculated);
+    }
+    return pol.annualAllowance || 0;
+  };
+  const allowedAnnualDays = resolveAnnualAllowance(staffMember, policy);
 
   // Resolve commission policy details
   const commPolicy = commissionPolicies.find(p => p.id === staffMember.commissionPolicyId);
@@ -1691,21 +1710,21 @@ Yours sincerely,
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Annual Leave</div>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '6px' }}>
                           <span style={{ fontSize: '24px', fontWeight: 700, color: 'var(--primary)' }}>
-                            {policy.annualAllowance - annualTaken}
+                            {allowedAnnualDays - annualTaken}
                           </span>
                           <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>days left</span>
                         </div>
                         
                         <div style={{ width: '100%', height: '4px', backgroundColor: 'var(--bg-secondary)', borderRadius: '2px', marginTop: '12px', overflow: 'hidden' }}>
                           <div style={{ 
-                            width: `${Math.min(100, (annualTaken / policy.annualAllowance) * 100)}%`, 
+                            width: `${Math.min(100, (annualTaken / allowedAnnualDays) * 100)}%`, 
                             height: '100%', 
                             backgroundColor: 'var(--primary)' 
                           }} />
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '6px' }}>
                           <span>{annualTaken} taken</span>
-                          <span>{policy.annualAllowance} allowed</span>
+                          <span>{allowedAnnualDays} allowed</span>
                         </div>
                       </div>
 

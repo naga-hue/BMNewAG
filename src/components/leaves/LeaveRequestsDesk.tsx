@@ -40,6 +40,20 @@ export default function LeaveRequestsDesk({
 
   const [requestSearch, setRequestSearch] = useState('');
   const [requestStatusFilter, setRequestStatusFilter] = useState('pending');
+  const [companyFilter, setCompanyFilter] = useState('all');
+  const [deptFilter, setDeptFilter] = useState('all');
+
+  const allDepts = React.useMemo(() => {
+    const depts: string[] = [];
+    staff.forEach(s => {
+      if (s.department && !depts.includes(s.department)) {
+        if (companyFilter === 'all' || s.companyId === companyFilter) {
+          depts.push(s.department);
+        }
+      }
+    });
+    return depts.sort();
+  }, [staff, companyFilter]);
 
   const handleRequestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,8 +153,10 @@ export default function LeaveRequestsDesk({
                           (req.notes && req.notes.toLowerCase().includes(requestSearch.toLowerCase()));
 
     const matchesStatus = requestStatusFilter === 'All' || req.status === requestStatusFilter;
+    const matchesCompany = companyFilter === 'all' || employee.companyId === companyFilter;
+    const matchesDept = deptFilter === 'all' || employee.department === deptFilter;
 
-    return matchesSearch && matchesStatus;
+    return matchesSearch && matchesStatus && matchesCompany && matchesDept;
   });
 
   return (
@@ -322,6 +338,31 @@ export default function LeaveRequestsDesk({
             <option value="pending">Pending Review</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
+          </select>
+
+          <select 
+            className="select-filter"
+            value={companyFilter}
+            onChange={(e) => {
+              setCompanyFilter(e.target.value);
+              setDeptFilter('all');
+            }}
+          >
+            <option value="all">All Companies</option>
+            {companies.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+
+          <select 
+            className="select-filter"
+            value={deptFilter}
+            onChange={(e) => setDeptFilter(e.target.value)}
+          >
+            <option value="all">All Departments</option>
+            {allDepts.map(dept => (
+              <option key={dept} value={dept}>{dept}</option>
+            ))}
           </select>
         </div>
       </div>

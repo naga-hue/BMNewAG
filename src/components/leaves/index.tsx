@@ -4,6 +4,7 @@ import LeaveRequestsDesk from './LeaveRequestsDesk';
 import LeavePoliciesSetup from './LeavePoliciesSetup';
 import HolidaysConfig from './HolidaysConfig';
 import AbsencesOverlapTimeline from './AbsencesOverlapTimeline';
+import TeamLeaveDashboard from './TeamLeaveDashboard';
 import './leaves.css';
 
 interface LeavesDashboardProps {
@@ -37,12 +38,13 @@ export default function LeavesDashboard({
   onUpdateStaff,
   onShowToast
 }: LeavesDashboardProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'requests' | 'policies' | 'holidays' | 'overlap'>('requests');
+  const [activeSubTab, setActiveSubTab] = useState<'dashboard' | 'requests' | 'policies' | 'holidays' | 'overlap'>('dashboard');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="leaves-tab-nav">
         {[
+          { key: 'dashboard', label: 'Team Dashboard & Balances' },
           { key: 'requests', label: 'Leave Requests Desk' },
           { key: 'overlap', label: 'Absences Timeline' },
           { key: 'policies', label: 'Leave Policies' },
@@ -63,6 +65,16 @@ export default function LeavesDashboard({
         ))}
       </div>
 
+      {activeSubTab === 'dashboard' && (
+        <TeamLeaveDashboard
+          companies={companies}
+          staff={staff}
+          leaveRequests={leaveRequests}
+          leavePolicies={leavePolicies}
+          onShowToast={onShowToast}
+        />
+      )}
+
       {activeSubTab === 'requests' && (
         <LeaveRequestsDesk
           companies={companies}
@@ -77,8 +89,10 @@ export default function LeavesDashboard({
 
       {activeSubTab === 'overlap' && (
         <AbsencesOverlapTimeline
+          companies={companies}
           staff={staff}
           leaveRequests={leaveRequests}
+          leavePolicies={leavePolicies}
           onShowToast={onShowToast}
         />
       )}

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useBoundStore } from '../store/useBoundStore';
 import { FX_RATES, toGBP } from '../utils/currency';
-import { Sparkles, MessageSquare, X, Send, Bot, User, CornerDownLeft, Info, HelpCircle } from 'lucide-react';
+import { Sparkles, MessageSquare, X, Send, Bot, User, CornerDownLeft, Info, HelpCircle, Mic, MicOff } from 'lucide-react';
 
 export default function AiChatbot({ assetAssignments = [] }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -14,8 +14,79 @@ export default function AiChatbot({ assetAssignments = [] }) {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
 
   const messagesEndRef = useRef(null);
+  const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const rec = new SpeechRecognition();
+      rec.continuous = false;
+      rec.interimResults = false;
+      rec.lang = 'en-US';
+
+      rec.onstart = () => {
+        setIsListening(true);
+      };
+
+      rec.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        if (transcript) {
+          setInputValue(prev => {
+            const separator = prev.trim() ? ' ' : '';
+            return prev + separator + transcript;
+          });
+        }
+      };
+
+      rec.onerror = (event) => {
+        console.error("Speech recognition error:", event.error);
+        if (event.error === 'not-allowed') {
+          setMessages(prev => [
+            ...prev,
+            {
+              id: 'voice-err-' + Date.now(),
+              role: 'assistant',
+              content: '⚠️ **Microphone access denied.** Please allow microphone permissions in your browser settings to use voice commands.'
+            }
+          ]);
+        }
+        setIsListening(false);
+      };
+
+      rec.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = rec;
+    }
+  }, []);
+
+  const handleToggleListening = () => {
+    if (!recognitionRef.current) {
+      setMessages(prev => [
+        ...prev,
+        {
+          id: 'voice-unsupported-' + Date.now(),
+          role: 'assistant',
+          content: '⚠️ **Voice commands unsupported.** Your current browser does not support the Web Speech API. Please try Chrome, Edge, or Safari.'
+        }
+      ]);
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      try {
+        recognitionRef.current.start();
+      } catch (err) {
+        console.error("Speech recognition start failed:", err);
+      }
+    }
+  };
 
   // Retrieve store states for context aggregation
   const staff = useBoundStore(state => state.staff);
@@ -767,6 +838,33 @@ export default function AiChatbot({ assetAssignments = [] }) {
                 outline: 'none'
               }}
             />
+            <style>{`
+              @keyframes pulseMic {
+                0% { transform: scale(1); opacity: 1; }
+                50% { transform: scale(1.1); opacity: 0.8; }
+                100% { transform: scale(1); opacity: 1; }
+              }
+            `}</style>
+            <button
+              type="button"
+              onClick={handleToggleListening}
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                backgroundColor: isListening ? '#ef4444' : 'var(--bg-secondary)',
+                color: isListening ? '#ffffff' : 'var(--text-secondary)',
+                border: isListening ? 'none' : '1px solid var(--border-color)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                animation: isListening ? 'pulseMic 1.5s infinite' : 'none'
+              }}
+              title={isListening ? "Listening... Click to stop" : "Start voice input"}
+            >
+              {isListening ? <MicOff size={14} /> : <Mic size={14} />}
+            </button>
             <button
               type="submit"
               disabled={loading || !inputValue.trim()}

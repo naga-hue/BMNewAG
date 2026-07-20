@@ -308,6 +308,8 @@ export default function AiChatbot({ assetAssignments = [] }) {
         currency: s.currency || 'GBP',
         salary: s.salary || 0,
         salaryType: s.salaryType || 'salaried',
+        startDate: s.startDate || '',
+        dateOfBirth: s.dateOfBirth || '',
         directExpenses: expensesBreakdown.directExpenses,
         indirectExpenses: expensesBreakdown.indirectExpenses,
         totalExpenses: expensesBreakdown.totalExpenses,

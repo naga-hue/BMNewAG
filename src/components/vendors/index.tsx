@@ -150,6 +150,7 @@ export default function VendorsDashboard({
           assetAssignments={assetAssignments}
           onSaveAssetAssignment={onSaveAssetAssignment}
           onDeleteAssetAssignment={onDeleteAssetAssignment}
+          onSaveContract={onSaveContract}
           onShowToast={onShowToast}
         />
       )}

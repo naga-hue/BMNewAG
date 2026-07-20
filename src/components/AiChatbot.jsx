@@ -99,6 +99,7 @@ export default function AiChatbot({ assetAssignments = [] }) {
   const placements = useBoundStore(state => state.placements);
   const contracts = useBoundStore(state => state.contracts || []);
   const expenses = useBoundStore(state => state.expenses || []);
+  const leavePolicies = useBoundStore(state => state.leavePolicies || []);
 
   // Quick suggestions list
   const suggestions = [
@@ -258,10 +259,41 @@ export default function AiChatbot({ assetAssignments = [] }) {
   const getContextSummary = () => {
     const todayStr = new Date().toISOString().split('T')[0];
 
+    const resolveAnnualAllowance = (member, pol) => {
+      if (!pol) return 20;
+      if (pol.name.toLowerCase().includes('global recruiters')) {
+        if (!member.startDate) return 20;
+        const start = new Date(member.startDate);
+        if (isNaN(start.getTime())) return 20;
+
+        const today = new Date();
+        let years = today.getFullYear() - start.getFullYear();
+        const m = today.getMonth() - start.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < start.getDate())) {
+          years--;
+        }
+        const calculated = 20 + Math.max(0, years);
+        return Math.min(25, calculated);
+      }
+      return pol.annualAllowance || 20;
+    };
+
     // 1. Active Staff
     const staffSummary = staff.map(s => {
       const expensesBreakdown = getStaffExpensesBreakdown(s);
       const revenueBreakdown = getStaffRevenueSummary(s);
+      
+      const policy = leavePolicies.find(p => p.id === s.leavePolicyId);
+      const approvedLeaves = leaveRequests.filter(r => r.staffId === s.id && r.status === 'approved');
+      
+      const annualAllowed = resolveAnnualAllowance(s, policy);
+      const annualTaken = approvedLeaves.filter(r => r.leaveType === 'annual').reduce((sum, r) => sum + r.totalDays, 0);
+      const annualRemaining = Math.max(0, annualAllowed - annualTaken);
+
+      const sickAllowed = policy ? policy.sickAllowance : 10;
+      const sickTaken = approvedLeaves.filter(r => r.leaveType === 'sick').reduce((sum, r) => sum + r.totalDays, 0);
+      const sickRemaining = Math.max(0, sickAllowed - sickTaken);
+
       return {
         name: s.fullName,
         role: s.jobTitle || 'Team Member',
@@ -277,7 +309,15 @@ export default function AiChatbot({ assetAssignments = [] }) {
         revenueGeneratedNet: revenueBreakdown.revenueNet,
         revenueGeneratedGross: revenueBreakdown.revenueGross,
         placementsList: revenueBreakdown.placementsList,
-        assignedLicenses: getStaffLicenses(s)
+        assignedLicenses: getStaffLicenses(s),
+        leavePolicyName: policy ? policy.name : 'None',
+        annualLeaveAllowed: annualAllowed,
+        annualLeaveTaken: annualTaken,
+        annualLeaveRemaining: annualRemaining,
+        sickLeaveAllowed: sickAllowed,
+        sickLeaveTaken: sickTaken,
+        sickLeaveRemaining: sickRemaining,
+        leaveRequestsHistory: approvedLeaves.map(r => ({ type: r.leaveType, start: r.startDate, end: r.endDate, days: r.totalDays }))
       };
     });
 

@@ -32,11 +32,20 @@ export default function AiChatbot({ assetAssignments = [] }) {
       };
 
       rec.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        if (transcript) {
+        let resultText = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          resultText += event.results[i][0].transcript;
+        }
+        if (resultText) {
           setInputValue(prev => {
-            const separator = prev.trim() ? ' ' : '';
-            return prev + separator + transcript;
+            const trimmedPrev = prev.trim();
+            const trimmedResult = resultText.trim();
+            // Prevent double-appending the same text segments
+            if (trimmedPrev.endsWith(trimmedResult)) {
+              return prev;
+            }
+            const separator = trimmedPrev ? ' ' : '';
+            return prev + separator + trimmedResult;
           });
         }
       };

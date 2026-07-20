@@ -100,6 +100,12 @@ export default function AiChatbot({ assetAssignments = [] }) {
   const contracts = useBoundStore(state => state.contracts || []);
   const expenses = useBoundStore(state => state.expenses || []);
   const leavePolicies = useBoundStore(state => state.leavePolicies || []);
+  const holidays = useBoundStore(state => state.holidays || []);
+  const vendors = useBoundStore(state => state.vendors || []);
+  const nominalCodes = useBoundStore(state => state.nominalCodes || []);
+  const payrollRecords = useBoundStore(state => state.payrollRecords || []);
+  const payrollPolicies = useBoundStore(state => state.payrollPolicies || []);
+  const reimbursementClaims = useBoundStore(state => state.reimbursementClaims || []);
 
   // Quick suggestions list
   const suggestions = [
@@ -427,6 +433,46 @@ export default function AiChatbot({ assetAssignments = [] }) {
       };
     });
 
+    // 7. Companies Registry
+    const companiesSummary = companies.map(c => ({
+      name: c.name,
+      country: c.country || 'UK',
+      currency: c.currency || 'GBP',
+      registrationNumber: c.registrationNumber || 'N/A',
+      vatNumber: c.vatNumber || 'N/A',
+      bankAccounts: (c.bankAccounts || []).map(acc => ({
+        bankName: acc.bankName,
+        accountName: acc.accountName,
+        accountNumber: acc.accountNumber,
+        sortCode: acc.sortCode,
+        balance: acc.balance,
+        currency: acc.currency
+      }))
+    }));
+
+    // 8. Vendors & SaaS Assets
+    const vendorsSummary = vendors.map(v => ({
+      name: v.name,
+      category: v.category || 'SaaS',
+      unitCost: v.unitCost || 0,
+      totalUnits: v.totalUnits || 0,
+      monthlyCost: v.monthlyCost || 0
+    }));
+
+    // 9. Nominal Codes
+    const nominalsSummary = nominalCodes.map(nc => ({
+      code: nc.code,
+      name: nc.name,
+      type: nc.type || 'direct'
+    }));
+
+    // 10. Public Holidays
+    const holidaysSummary = holidays.map(h => ({
+      name: h.name,
+      date: h.date,
+      companyId: h.companyId
+    }));
+
     return {
       currentDate: todayStr,
       activeLeavesToday: activeLeaves,
@@ -434,7 +480,15 @@ export default function AiChatbot({ assetAssignments = [] }) {
       contracts: contractSummary,
       unreconciledExpenses: unreconciledExpenses,
       staff: staffSummary,
-      placements: placementsSummary
+      placements: placementsSummary,
+      companies: companiesSummary,
+      leavePolicies: leavePolicies,
+      holidays: holidaysSummary,
+      nominalCodes: nominalsSummary,
+      vendors: vendorsSummary,
+      payrollRecords: payrollRecords,
+      payrollPolicies: payrollPolicies,
+      reimbursementClaims: reimbursementClaims
     };
   };
 

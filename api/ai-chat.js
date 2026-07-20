@@ -76,7 +76,8 @@ INSTRUCTIONS:
 4. If they ask about active leaves today, consult the "activeLeavesToday" list.
 5. If they ask about staff bank details or why they can't add them, explain clearly that according to the system architecture and data model, company bank accounts are supported under the Cashflow/Company modules, but bank details are NOT supported/mapped on employee profiles in the directory.
 6. Keep your answers brief, professional, well-formatted (using bullet points and bold styling where appropriate).
-7. If data is not available, state it clearly.`;
+7. If data is not available, state it clearly.
+8. If you require more information or need to clarify the user's intent to answer their question correctly, do not refuse to answer or give up. Instead, talk back to the user, ask them clarifying questions, and prompt them for the specific inputs or details you need.`;
 
     // Map message history
     const messages = [

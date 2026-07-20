@@ -18,6 +18,7 @@ export default function AiChatbot({ assetAssignments = [] }) {
 
   const messagesEndRef = useRef(null);
   const recognitionRef = useRef(null);
+  const startingTextRef = useRef('');
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -32,21 +33,14 @@ export default function AiChatbot({ assetAssignments = [] }) {
       };
 
       rec.onresult = (event) => {
-        let resultText = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          resultText += event.results[i][0].transcript;
+        let sessionTranscript = '';
+        for (let i = 0; i < event.results.length; ++i) {
+          sessionTranscript += event.results[i][0].transcript;
         }
-        if (resultText) {
-          setInputValue(prev => {
-            const trimmedPrev = prev.trim();
-            const trimmedResult = resultText.trim();
-            // Prevent double-appending the same text segments
-            if (trimmedPrev.endsWith(trimmedResult)) {
-              return prev;
-            }
-            const separator = trimmedPrev ? ' ' : '';
-            return prev + separator + trimmedResult;
-          });
+        if (sessionTranscript) {
+          const start = startingTextRef.current || '';
+          const separator = start.trim() ? ' ' : '';
+          setInputValue(start + separator + sessionTranscript);
         }
       };
 
@@ -89,6 +83,7 @@ export default function AiChatbot({ assetAssignments = [] }) {
     if (isListening) {
       recognitionRef.current.stop();
     } else {
+      startingTextRef.current = inputValue; // Save starting input box text
       try {
         recognitionRef.current.start();
       } catch (err) {

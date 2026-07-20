@@ -888,7 +888,7 @@ export default function App() {
       const staffMember = staff.find(s => s.id === request.staffId);
       const staffName = staffMember ? staffMember.fullName : `ID "${request.staffId}"`;
       await firebaseService.saveLeaveRequest(request);
-      logActivity("Leaves", isNew ? "CREATE" : "UPDATE", `${isNew ? 'Booked' : 'Modified'} leave request for ${staffName} (Type: ${request.type}, Days: ${request.days})`);
+      logActivity("Leaves", isNew ? "CREATE" : "UPDATE", `${isNew ? 'Booked' : 'Modified'} leave request for ${staffName} (Type: ${request.leaveType}, Days: ${request.totalDays})`);
     } catch (err) {
       console.error("Save request error:", err);
       handleShowToast(`Error saving request: ${err.message}`, 'warning');

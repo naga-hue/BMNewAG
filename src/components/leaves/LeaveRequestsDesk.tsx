@@ -135,7 +135,7 @@ export default function LeaveRequestsDesk({
     if (!employee) return false;
 
     const matchesSearch = employee.fullName.toLowerCase().includes(requestSearch.toLowerCase()) ||
-                          employee.jobTitle.toLowerCase().includes(requestSearch.toLowerCase()) ||
+                          (employee.jobTitle || '').toLowerCase().includes(requestSearch.toLowerCase()) ||
                           (req.notes && req.notes.toLowerCase().includes(requestSearch.toLowerCase()));
 
     const matchesStatus = requestStatusFilter === 'All' || req.status === requestStatusFilter;

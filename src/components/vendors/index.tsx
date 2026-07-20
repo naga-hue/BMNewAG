@@ -10,6 +10,7 @@ import ContractRegisterModal from './ContractRegisterModal';
 import BatchAllocateSeatsModal from './BatchAllocateSeatsModal';
 import ReconcileCellModal from './ReconcileCellModal';
 import HardwareAssetsRegister from './HardwareAssetsRegister';
+import UnifiedAssetsManager from './UnifiedAssetsManager';
 import '../vendors.css';
 
 export interface VendorsDashboardProps {
@@ -45,7 +46,7 @@ export default function VendorsDashboard({
   onDeleteAssetAssignment = async () => {},
   onShowToast
 }: VendorsDashboardProps) {
-  const [activeSubTab, setActiveSubTab] = useState('vendors');
+  const [activeSubTab, setActiveSubTab] = useState('unified');
   
   // Modals state
   const [selectedVendorProfileId, setSelectedVendorProfileId] = useState<string | null>(null);
@@ -95,6 +96,13 @@ export default function VendorsDashboard({
         <div style={{ display: 'flex', gap: '8px' }}>
           <button 
             type="button" 
+            className={`tab-btn ${activeSubTab === 'unified' ? 'active' : ''}`}
+            onClick={() => setActiveSubTab('unified')}
+          >
+            💻 Unified Assets & Licenses
+          </button>
+          <button 
+            type="button" 
             className={`tab-btn ${activeSubTab === 'vendors' ? 'active' : ''}`}
             onClick={() => setActiveSubTab('vendors')}
           >
@@ -133,6 +141,19 @@ export default function VendorsDashboard({
       </div>
 
       {/* Main Content Render */}
+      {activeSubTab === 'unified' && (
+        <UnifiedAssetsManager
+          companies={companies}
+          staff={staff}
+          vendors={vendors}
+          contracts={contracts}
+          assetAssignments={assetAssignments}
+          onSaveAssetAssignment={onSaveAssetAssignment}
+          onDeleteAssetAssignment={onDeleteAssetAssignment}
+          onShowToast={onShowToast}
+        />
+      )}
+
       {activeSubTab === 'vendors' && (
         selectedVendorProfileId ? (
           <VendorProfileView

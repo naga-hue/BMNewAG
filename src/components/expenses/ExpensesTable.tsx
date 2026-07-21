@@ -331,12 +331,13 @@ export default function ExpensesTable({
             ...original,
             recipientType: type,
             recipientId: id,
-            payee: mappedName || original.payee
+            payee: mappedName || original.payee,
+            ...(type === 'staff' ? { allocationType: 'staff', allocationTarget: [id] } : {})
           });
           count++;
         }
       }
-      onShowToast(`Bulk updated Payee mapping for ${count} transactions.`, "success");
+      onShowToast(`Bulk updated Payee/Recipient mapping for ${count} transactions.`, "success");
       setSelectedExpenseIds([]);
     } catch (err: any) {
       onShowToast(`Error bulk updating payee: ${err.message}`, "warning");
@@ -459,6 +460,51 @@ export default function ExpensesTable({
     link.click();
     document.body.removeChild(link);
     onShowToast("Expenses ledger exported to CSV successfully.", "success");
+  };
+
+  const handleAutoMapPayeesAndVendors = async () => {
+    let mappedCount = 0;
+    for (const exp of expenses) {
+      const payeeStr = (exp.payee || '').toLowerCase();
+      
+      // Match registered Staff member
+      let matchedStaff = staff.find(s => s.fullName && payeeStr.includes(s.fullName.toLowerCase()));
+      if (!matchedStaff) {
+        matchedStaff = staff.find(s => {
+          if (!s.fullName) return false;
+          const parts = s.fullName.split(' ');
+          return parts.some(p => p.length > 3 && payeeStr.includes(p.toLowerCase()));
+        });
+      }
+
+      // Match registered Vendor asset
+      let matchedVendor = vendors.find(v => v.name && payeeStr.includes(v.name.toLowerCase()));
+
+      if (matchedStaff) {
+        await saveExpense({
+          ...exp,
+          recipientType: 'staff',
+          recipientId: matchedStaff.id,
+          payee: matchedStaff.fullName,
+          allocationType: 'staff',
+          allocationTarget: [matchedStaff.id]
+        });
+        mappedCount++;
+      } else if (matchedVendor) {
+        await saveExpense({
+          ...exp,
+          recipientType: 'vendor',
+          recipientId: matchedVendor.id,
+          payee: matchedVendor.name
+        });
+        mappedCount++;
+      }
+    }
+    if (mappedCount > 0) {
+      onShowToast(`⚡ Successfully auto-mapped ${mappedCount} expense records to registered Vendors and Staff profiles!`, 'success');
+    } else {
+      onShowToast(`All transactions are already mapped or no matching vendor/staff names were detected.`, 'info');
+    }
   };
 
   const [allocationSearch, setAllocationSearchLocal] = useState('');
@@ -648,6 +694,16 @@ export default function ExpensesTable({
             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px' }}
           >
             📥 Export CSV
+          </button>
+
+          <button 
+            type="button" 
+            className="btn-secondary" 
+            onClick={handleAutoMapPayeesAndVendors}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', color: 'var(--primary)', fontWeight: 600, borderColor: 'var(--primary)' }}
+            title="Automatically scan transaction payees and map them to registered Vendors & Staff Salary profiles"
+          >
+            ⚡ Smart Auto-Map Vendors & Staff
           </button>
         </div>
       </div>
@@ -933,17 +989,27 @@ export default function ExpensesTable({
                             onShowToast("Payee mapping cleared.", "success");
                           } else {
                             const [type, id] = val.split(':');
-                            const mappedName = type === 'vendor' 
-                              ? vendors.find(v => v.id === id)?.name 
-                              : staff.find(s => s.id === id)?.fullName;
-                            
-                            saveExpense({
-                              ...exp,
-                              recipientType: type,
-                              recipientId: id,
-                              payee: mappedName || exp.payee
-                            });
-                            onShowToast("Payee mapping updated.", "success");
+                            if (type === 'staff') {
+                              const matchedStaff = staff.find(s => s.id === id);
+                              saveExpense({
+                                ...exp,
+                                recipientType: 'staff',
+                                recipientId: id,
+                                payee: matchedStaff ? matchedStaff.fullName : exp.payee,
+                                allocationType: 'staff',
+                                allocationTarget: [id]
+                              });
+                              onShowToast(`Mapped transaction to Staff Salary: ${matchedStaff?.fullName}`, "success");
+                            } else if (type === 'vendor') {
+                              const matchedVendor = vendors.find(v => v.id === id);
+                              saveExpense({
+                                ...exp,
+                                recipientType: 'vendor',
+                                recipientId: id,
+                                payee: matchedVendor ? matchedVendor.name : exp.payee
+                              });
+                              onShowToast(`Mapped transaction to Vendor Asset: ${matchedVendor?.name}`, "success");
+                            }
                           }
                         }}
                         className="select-filter"

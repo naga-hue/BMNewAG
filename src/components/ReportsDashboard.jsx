@@ -77,6 +77,7 @@ export default function ReportsDashboard({
   payrollRecords = [],
   payrollPolicies = [],
   leaveRequests = [],
+  leavePolicies = [],
   holidays = [],
   nominalCodes = [],
   vendors = [],

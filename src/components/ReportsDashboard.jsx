@@ -772,7 +772,16 @@ export default function ReportsDashboard({
             cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
           }
 
-          const gbpCost = toGBP(cost, contract.currency || 'GBP');
+          let gbpCost = toGBP(cost, contract.currency || 'GBP');
+
+          // Department filtering & staff-weighted cost apportionment
+          if (!deptFilter.includes('all')) {
+            const compActiveStaff = groupActiveStaff.filter(s => s.companyId === contract.companyId);
+            const deptActiveStaff = compActiveStaff.filter(s => deptFilter.includes(s.department));
+            if (deptActiveStaff.length === 0) return;
+            gbpCost = gbpCost * (deptActiveStaff.length / (compActiveStaff.length || 1));
+          }
+
           if (contract.nominalCode) {
             const matchedKey = Object.keys(breakdown).find(k => k.startsWith(contract.nominalCode) || k === contract.nominalCode);
             if (matchedKey) {
@@ -2885,7 +2894,16 @@ export default function ReportsDashboard({
                   } else if (contract.costInterval === 'one-time' && startM === mKey) {
                     cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
                   }
-                  const gbpCost = toGBP(cost, contract.currency || 'GBP');
+                  let gbpCost = toGBP(cost, contract.currency || 'GBP');
+
+                  // Department filtering & staff-weighted cost apportionment
+                  if (!deptFilter.includes('all')) {
+                    const compActiveStaff = staff.filter(s => s.companyId === contract.companyId && getDaysWorkedInMonth(s.startDate, s.exitDate, mKey) >= 10);
+                    const deptActiveStaff = compActiveStaff.filter(s => isDeptMatch(s.department));
+                    if (deptActiveStaff.length === 0) return;
+                    gbpCost = gbpCost * (deptActiveStaff.length / (compActiveStaff.length || 1));
+                  }
+
                   const nameLower = contract.name.toLowerCase();
 
                   let assignedNominal = contract.nominalCode;

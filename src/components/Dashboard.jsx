@@ -630,7 +630,7 @@ export default function Dashboard({
             />
           </div>
           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-            ⚡ Goal Gradient Momentum: You are {Math.min(100, Math.round((monthlyRevenue.reduce((a, b) => a + b, 0) / 1200000) * 100))}% of the way to achieving your annual target!
+            🎯 Annual Target: You are {Math.min(100, Math.round((monthlyRevenue.reduce((a, b) => a + b, 0) / 1200000) * 100))}% toward achieving your annual target!
           </span>
         </div>
 

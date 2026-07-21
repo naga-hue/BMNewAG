@@ -1154,9 +1154,20 @@ export default function ReportsDashboard({
                     </tr>
 
                     <tr style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                      <td>Staff Count in Apportionment</td>
+                      <td 
+                        onClick={() => setDrilldownState({ categoryKey: 'staffCount', label: 'Staff Count in Apportionment', amount: rowData.reduce((acc, r) => acc + r.headcount, 0), monthKey: null })} 
+                        style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--primary)' }}
+                        title="Click to view all staff members included in apportionment"
+                      >
+                        Staff Count in Apportionment 🔍
+                      </td>
                       {rowData.map((row, idx) => (
-                        <td key={idx} style={{ textAlign: 'right' }}>
+                        <td 
+                          key={idx} 
+                          onClick={() => setDrilldownState({ categoryKey: 'staffCount', label: 'Staff Count in Apportionment', amount: row.headcount, monthKey: monthsList[idx] })}
+                          style={{ textAlign: 'right', cursor: 'pointer', fontWeight: 700, color: 'var(--primary)', textDecoration: 'underline' }}
+                          title={`Click to view ${row.headcount} active staff members for ${monthsList[idx]}`}
+                        >
                           {row.headcount} active
                         </td>
                       ))}
@@ -2786,6 +2797,31 @@ export default function ReportsDashboard({
             return results;
           }
 
+          if (categoryKey === 'staffCount') {
+            const results = [];
+            const mList = monthKey ? [monthKey] : monthsList;
+            mList.forEach(m => {
+              (staff || []).forEach(s => {
+                if (!isCompanyMatch(s.companyId) || !isDeptMatch(s.department)) return;
+                const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, m);
+                if (daysWorked >= 10) {
+                  results.push({
+                    id: s.id,
+                    staffName: s.fullName,
+                    jobTitle: s.jobTitle || 'Recruiter / Staff',
+                    department: s.department,
+                    companyName: companies.find(c => c.id === s.companyId)?.name || 'Group',
+                    startDate: s.startDate || '—',
+                    monthKey: m,
+                    daysWorked,
+                    status: s.employmentStatus || 'active'
+                  });
+                }
+              });
+            });
+            return results;
+          }
+
           if (categoryKey === 'overheadsExpenses' || categoryKey === 'nominal' || categoryKey === 'totalOverheads') {
             return (expenses || []).filter(e => {
               if (e.status === 'dns' || e.status === 'cancelled') return false;
@@ -2976,6 +3012,17 @@ export default function ReportsDashboard({
                           <th style={{ textAlign: 'right' }}>Monthly Base Salary</th>
                         </>
                       )}
+                      {drilldownState.categoryKey === 'staffCount' && (
+                        <>
+                          <th>Staff Member</th>
+                          <th>Job Title</th>
+                          <th>Department / Division</th>
+                          <th>Company Entity</th>
+                          <th>Month</th>
+                          <th>Start Date</th>
+                          <th style={{ textAlign: 'right' }}>Active Status</th>
+                        </>
+                      )}
                       {(drilldownState.categoryKey === 'overheadsExpenses' || drilldownState.categoryKey === 'nominal' || drilldownState.categoryKey === 'totalOverheads') && (
                         <>
                           <th>Date</th>
@@ -3035,6 +3082,25 @@ export default function ReportsDashboard({
                               <td>{item.monthKey}</td>
                               <td style={{ textAlign: 'right', fontWeight: 700 }}>
                                 {formatGBP(item.amount)}
+                              </td>
+                            </tr>
+                          );
+                        }
+                        if (drilldownState.categoryKey === 'staffCount') {
+                          return (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>👤 {item.staffName}</td>
+                              <td>{item.jobTitle}</td>
+                              <td>
+                                <span style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)', fontWeight: 600, fontSize: '11px' }}>
+                                  {item.department}
+                                </span>
+                              </td>
+                              <td>{item.companyName}</td>
+                              <td>{item.monthKey}</td>
+                              <td>{item.startDate}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
+                                ✓ Active ({item.daysWorked} days)
                               </td>
                             </tr>
                           );

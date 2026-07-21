@@ -2709,6 +2709,16 @@ export default function ReportsDashboard({
 
       {/* Interactive P&L Itemization & Transaction Drilldown Modal */}
       {drilldownState && (() => {
+        const isCompanyMatch = (companyId) => {
+          if (companyFilter.includes('all')) return true;
+          return companyFilter.includes(companyId);
+        };
+
+        const isDeptMatch = (deptName) => {
+          if (deptFilter.includes('all')) return true;
+          return deptFilter.includes(deptName);
+        };
+
         const getDrilldownItems = () => {
           const { categoryKey, monthKey, nominalCode } = drilldownState;
           if (!categoryKey) return [];
@@ -2722,13 +2732,20 @@ export default function ReportsDashboard({
                 return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
               })();
               if (monthKey && pMonth !== monthKey) return false;
-              return true;
+
+              const recIds = p.splits?.map(s => s.staffId).filter(Boolean) || [p.recruiterId];
+              const recs = staff.filter(s => recIds.includes(s.id));
+              const compMatches = recs.length > 0 ? recs.some(s => isCompanyMatch(s.companyId)) : true;
+              const deptMatches = recs.length > 0 ? recs.some(s => isDeptMatch(s.department)) : true;
+
+              return compMatches && deptMatches;
             });
           }
 
           if (categoryKey === 'commissions') {
             const results = [];
             (staff || []).forEach(s => {
+              if (!isCompanyMatch(s.companyId) || !isDeptMatch(s.department)) return;
               const mList = monthKey ? [monthKey] : monthsList;
               mList.forEach(m => {
                 const commVal = calculateCommissionForRecruiter(s.id, m);
@@ -2750,6 +2767,7 @@ export default function ReportsDashboard({
             const results = [];
             (staff || []).forEach(s => {
               if (s.employmentStatus === 'exited') return;
+              if (!isCompanyMatch(s.companyId) || !isDeptMatch(s.department)) return;
               const mList = monthKey ? [monthKey] : monthsList;
               mList.forEach(m => {
                 const salData = getStaffPayrollForMonth(s, m);
@@ -2774,6 +2792,21 @@ export default function ReportsDashboard({
               const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
               if (monthKey && eMonth !== monthKey) return false;
               if (nominalCode && e.nominalCode !== nominalCode && !e.nominalCode?.startsWith(nominalCode)) return false;
+
+              if (e.allocationType === 'staff' || e.recipientType === 'staff') {
+                const targetStaffIds = Array.isArray(e.allocationTarget) ? e.allocationTarget : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
+                const matchedStaff = staff.filter(s => targetStaffIds.includes(s.id));
+                const hasDeptMatch = matchedStaff.some(s => isDeptMatch(s.department));
+                const hasCompMatch = matchedStaff.some(s => isCompanyMatch(s.companyId));
+                if (!hasDeptMatch || !hasCompMatch) return false;
+              } else if (e.allocationType === 'department') {
+                const targetDepts = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget].filter(Boolean);
+                if (!deptFilter.includes('all') && !targetDepts.some(d => deptFilter.includes(d))) return false;
+              } else if (e.allocationType === 'company') {
+                const targetComps = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget].filter(Boolean);
+                if (!companyFilter.includes('all') && !targetComps.some(c => companyFilter.includes(c))) return false;
+              }
+
               return true;
             });
           }
@@ -2800,6 +2833,11 @@ export default function ReportsDashboard({
                   </h3>
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
                     Period: <strong>{drilldownState.monthKey || 'YTD Full Period'}</strong> • Total Value: <strong style={{ color: 'var(--primary)' }}>{formatGBP(drilldownState.amount)}</strong>
+                    {!deptFilter.includes('all') && (
+                      <span style={{ marginLeft: '8px', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(59, 130, 246, 0.15)', color: 'var(--primary)', fontWeight: 700 }}>
+                        Filtered by Division: {deptFilter.join(', ')}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <button type="button" onClick={() => setDrilldownState(null)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '18px', fontWeight: 700 }}>✕</button>
@@ -2829,16 +2867,16 @@ export default function ReportsDashboard({
                   const amt = toGBP(exp.amount || 0, exp.currency || 'GBP');
                   if (exp.recipientType === 'staff' && exp.recipientId) {
                     const sObj = staff.find(s => s.id === exp.recipientId);
-                    const sName = sObj ? sObj.fullName : 'Staff Member';
-                    staffTargetMap[sName] = (staffTargetMap[sName] || 0) + amt;
+                    if (sObj && isDeptMatch(sObj.department) && isCompanyMatch(sObj.companyId)) {
+                      staffTargetMap[sObj.fullName] = (staffTargetMap[sObj.fullName] || 0) + amt;
+                    }
                   } else if (exp.allocationType === 'staff') {
                     const ids = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : (exp.selectedStaffIds || []);
-                    if (ids.length > 0) {
+                    const matchingStaff = staff.filter(s => ids.includes(s.id) && isDeptMatch(s.department) && isCompanyMatch(s.companyId));
+                    if (matchingStaff.length > 0) {
                       const perStaff = amt / ids.length;
-                      ids.forEach(id => {
-                        const sObj = staff.find(s => s.id === id);
-                        const sName = sObj ? sObj.fullName : 'Staff Seat';
-                        staffTargetMap[sName] = (staffTargetMap[sName] || 0) + perStaff;
+                      matchingStaff.forEach(sObj => {
+                        staffTargetMap[sObj.fullName] = (staffTargetMap[sObj.fullName] || 0) + perStaff;
                       });
                     }
                   } else if (exp.allocationType === 'company') {
@@ -2846,8 +2884,9 @@ export default function ReportsDashboard({
                     const perComp = ids.length > 0 ? amt / ids.length : amt;
                     ids.forEach(id => {
                       const cObj = companies.find(c => c.id === id);
-                      const cName = cObj ? cObj.name : 'Company Overhead';
-                      companyTargetMap[cName] = (companyTargetMap[cName] || 0) + perComp;
+                      if (cObj && isCompanyMatch(cObj.id)) {
+                        companyTargetMap[cObj.name] = (companyTargetMap[cObj.name] || 0) + perComp;
+                      }
                     });
                   } else {
                     companyTargetMap['Group Corporate Overhead'] = (companyTargetMap['Group Corporate Overhead'] || 0) + amt;
@@ -2864,7 +2903,7 @@ export default function ReportsDashboard({
                       {staffEntries.length > 0 && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(59, 130, 246, 0.1)', padding: '4px 8px', borderRadius: '6px', color: 'var(--primary)' }}>
                           <strong>👥 {staffEntries.length} Staff Seat Users:</strong>
-                          <span>{staffEntries.slice(0, 4).map(([name, val]) => `${name} (£${Math.round(val)})`).join(', ')}{staffEntries.length > 4 ? ` +${staffEntries.length - 4} more` : ''}</span>
+                          <span>{staffEntries.slice(0, 5).map(([name, val]) => `${name} (£${Math.round(val)})`).join(', ')}{staffEntries.length > 5 ? ` +${staffEntries.length - 5} more` : ''}</span>
                         </div>
                       )}
                       {companyEntries.length > 0 && (

@@ -193,6 +193,8 @@ export default function VendorsDashboard({
           <VendorDirectory 
             vendors={vendors}
             contracts={contracts}
+            nominalCodes={nominalCodes}
+            onSaveVendor={onSaveVendor}
             onEditVendor={handleEditVendor}
             onDeleteVendor={onDeleteVendor}
             onShowToast={onShowToast}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Plus, Edit3, Trash2 } from 'lucide-react';
 import { Vendor } from '../../types';
 import { getCategoryStyles } from './shared';
@@ -6,6 +6,8 @@ import { getCategoryStyles } from './shared';
 interface VendorDirectoryProps {
   vendors: Vendor[];
   contracts: any[];
+  nominalCodes?: any[];
+  onSaveVendor?: (vendor: Vendor) => Promise<any>;
   onEditVendor: (vendor: Vendor) => void;
   onDeleteVendor?: (id: string) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
@@ -16,12 +18,30 @@ interface VendorDirectoryProps {
 export default function VendorDirectory({
   vendors,
   contracts,
+  nominalCodes = [],
+  onSaveVendor,
   onEditVendor,
   onDeleteVendor,
   onShowToast,
   onSelectProfileId,
   onAddNewVendorClick
 }: VendorDirectoryProps) {
+  const activeNominalCodes = useMemo(() => {
+    return (nominalCodes || []).map((c: any) => {
+      if (typeof c === 'string') {
+        const parts = c.split(' - ');
+        return { id: parts[0] || c, code: c };
+      }
+      if (c && typeof c === 'object') {
+        return {
+          id: c.id || '',
+          code: c.code || ''
+        };
+      }
+      return null;
+    }).filter((c): c is { id: string; code: string } => c !== null && !!c.code);
+  }, [nominalCodes]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       
@@ -43,6 +63,7 @@ export default function VendorDirectory({
             <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '2px solid var(--border-color)' }}>
               <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Vendor Name</th>
               <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Category</th>
+              <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', minWidth: '220px' }}>Default Nominal Code</th>
               <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Contact Email</th>
               <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'left', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)' }}>Phone Number</th>
               <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', textAlign: 'center', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: 'var(--text-primary)', width: '120px' }}>Active Contracts</th>
@@ -82,6 +103,41 @@ export default function VendorDirectory({
                     }}>
                       {catStyles.indicator} {v.category}
                     </span>
+                  </td>
+                  <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px' }} onClick={(e) => e.stopPropagation()}>
+                    <select
+                      className="select-filter"
+                      value={v.nominalCode || ''}
+                      onChange={async (e) => {
+                        const newCode = e.target.value;
+                        if (onSaveVendor) {
+                          try {
+                            await onSaveVendor({ ...v, nominalCode: newCode });
+                            onShowToast(`Updated default nominal code for "${v.name}" to ${newCode || 'Unassigned'}`, 'success');
+                          } catch (err: any) {
+                            onShowToast(`Failed to update nominal code: ${err.message}`, 'error');
+                          }
+                        }
+                      }}
+                      style={{
+                        fontSize: '11px',
+                        padding: '4px 6px',
+                        borderRadius: '4px',
+                        border: v.nominalCode ? '1px solid var(--border-color)' : '1px dashed #f59e0b',
+                        backgroundColor: v.nominalCode ? 'var(--bg-card)' : 'rgba(245, 158, 11, 0.08)',
+                        color: v.nominalCode ? 'var(--text-primary)' : '#f59e0b',
+                        width: '100%',
+                        maxWidth: '220px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="">⚠️ -- Select Default Nominal Code --</option>
+                      {activeNominalCodes.map(nc => (
+                        <option key={nc.id} value={nc.code}>
+                          {nc.code}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                   <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', color: 'var(--text-secondary)' }}>
                     {v.contactEmail ? <a href={`mailto:${v.contactEmail}`} onClick={(e) => e.stopPropagation()} style={{ color: 'var(--primary)' }}>{v.contactEmail}</a> : '—'}

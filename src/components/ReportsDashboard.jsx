@@ -2832,7 +2832,7 @@ export default function ReportsDashboard({
           }
 
           if (categoryKey === 'overheadsExpenses' || categoryKey === 'nominal' || categoryKey === 'totalOverheads') {
-            return (expenses || []).filter(e => {
+            const actualItems = (expenses || []).filter(e => {
               if (e.status === 'dns' || e.status === 'cancelled') return false;
               const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
               if (monthKey && eMonth !== monthKey) return false;
@@ -2859,6 +2859,176 @@ export default function ReportsDashboard({
 
               return true;
             });
+
+            if (actualItems.length > 0) {
+              return actualItems;
+            }
+
+            // Unbilled Projection Items for 7001, 7002, 7003, 7004 & future nominal cells
+            const projectedItems = [];
+            const targetMonths = monthKey ? [monthKey] : monthsList.filter(m => m >= '2026-07');
+
+            targetMonths.forEach(mKey => {
+              // 1. Vendor Contracts Projections (7001, 7002 or explicit nominalCode)
+              contracts.forEach(contract => {
+                if (!contract.startDate || !contract.endDate) return;
+                const startM = contract.startDate.substring(0, 7);
+                const endM = contract.endDate.substring(0, 7);
+                if (mKey >= startM && mKey <= endM) {
+                  if (!isCompanyMatch(contract.companyId)) return;
+
+                  let cost = 0;
+                  if (contract.costInterval === 'monthly') {
+                    cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
+                  } else if (contract.costInterval === 'annual') {
+                    cost = (Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1)) / 12;
+                  } else if (contract.costInterval === 'one-time' && startM === mKey) {
+                    cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
+                  }
+                  const gbpCost = toGBP(cost, contract.currency || 'GBP');
+                  const nameLower = contract.name.toLowerCase();
+
+                  let assignedNominal = contract.nominalCode;
+                  if (!assignedNominal) {
+                    if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
+                      assignedNominal = "7001 - Office Rentals & Leasing";
+                    } else {
+                      assignedNominal = "7002 - Software Licenses & SaaS";
+                    }
+                  }
+
+                  if (nominalCode && !assignedNominal.startsWith(nominalCode) && assignedNominal !== nominalCode) {
+                    return;
+                  }
+
+                  const vendorObj = vendors.find(v => v.id === contract.vendorId);
+                  projectedItems.push({
+                    id: `proj-contract-${contract.id}-${mKey}`,
+                    date: `${mKey}-01`,
+                    plMonth: mKey,
+                    payee: vendorObj ? `${vendorObj.name} (${contract.name})` : contract.name,
+                    linkedContractId: contract.id,
+                    nominalCode: assignedNominal,
+                    allocationType: 'company',
+                    allocationTarget: [contract.companyId],
+                    amount: gbpCost,
+                    currency: 'GBP',
+                    isProjection: true
+                  });
+                }
+              });
+
+              // 2. Staff Payroll Taxes & Pension Projections (7003)
+              if (!nominalCode || nominalCode.startsWith('7003') || nominalCode === '7003 - Staff Payroll & Wages') {
+                staff.forEach(s => {
+                  const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, mKey);
+                  if (daysWorked < 10) return;
+                  if (!isCompanyMatch(s.companyId) || !isDeptMatch(s.department)) return;
+
+                  const isContractor = s.employmentStatus === 'contractor' || s.employmentStatus === 'freelance';
+                  if (!isContractor) {
+                    let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
+                    let proration = 1.0;
+                    if (s.startDate && s.startDate.substring(0, 7) === mKey) {
+                      const [y, m, d] = s.startDate.split('-').map(Number);
+                      const daysInMonth = new Date(y, m, 0).getDate();
+                      proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
+                      basicGBP = basicGBP * proration;
+                    }
+
+                    let empNi = 0;
+                    let empPension = 0;
+                    const comm = calculateCommissionForRecruiter(s.id, mKey);
+                    const gross = basicGBP + comm;
+                    const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId) || DEFAULT_PAYROLL_POLICY;
+
+                    if (policy.employerNiSlabs && policy.employerNiSlabs.length > 0) {
+                      empNi = calculateSlabCost(gross, policy.employerNiSlabs);
+                    } else if (policy.employerNiRate > 0) {
+                      const thresholdGBP = toGBP(Number(policy.employerNiThreshold || 0), 'GBP');
+                      const taxableNiAmount = Math.max(0, gross - thresholdGBP);
+                      empNi = (taxableNiAmount * Number(policy.employerNiRate)) / 100;
+                    }
+                    if (policy.employerPensionRate > 0) {
+                      empPension = (gross * Number(policy.employerPensionRate)) / 100;
+                    }
+                    empNi = empNi * proration;
+                    empPension = empPension * proration;
+
+                    const totalTaxes = empNi + empPension;
+                    if (totalTaxes > 0) {
+                      projectedItems.push({
+                        id: `proj-7003-${s.id}-${mKey}`,
+                        date: `${mKey}-01`,
+                        plMonth: mKey,
+                        payee: `Employer NI & Pension (${s.fullName})`,
+                        nominalCode: '7003 - Staff Payroll & Wages',
+                        recipientType: 'staff',
+                        recipientId: s.id,
+                        amount: totalTaxes,
+                        currency: 'GBP',
+                        isProjection: true
+                      });
+                    }
+                  }
+                });
+              }
+
+              // 3. Freelancers & Subcontractors Projections (7004)
+              if (!nominalCode || nominalCode.startsWith('7004') || nominalCode === '7004 - Freelancers & Subcontractors') {
+                staff.forEach(s => {
+                  const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, mKey);
+                  if (daysWorked < 10) return;
+                  if (!isCompanyMatch(s.companyId) || !isDeptMatch(s.department)) return;
+
+                  const isContractor = s.employmentStatus === 'contractor' || s.employmentStatus === 'freelance';
+                  if (isContractor) {
+                    const [yearNum, monthNum] = mKey.split('-').map(Number);
+                    const totalDaysInMonth = new Date(yearNum, monthNum, 0).getDate();
+                    let totalBusinessDays = 0;
+                    for (let day = 1; day <= totalDaysInMonth; day++) {
+                      const dayOfWeek = new Date(Date.UTC(yearNum, monthNum - 1, day)).getUTCDay();
+                      if (dayOfWeek !== 0 && dayOfWeek !== 6) totalBusinessDays++;
+                    }
+                    const attendanceDays = daysWorked || totalBusinessDays;
+                    const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId) || DEFAULT_PAYROLL_POLICY;
+                    let dailyRate = 0;
+                    if (s.salary && Number(s.salary) > 0) {
+                      dailyRate = (Number(s.salary) / 12) / totalBusinessDays;
+                    } else if (s.attendanceRate && Number(s.attendanceRate) > 0) {
+                      dailyRate = Number(s.attendanceRate);
+                    } else {
+                      dailyRate = Number(policy.dailyRateDefault || 0);
+                    }
+
+                    let val = toGBP(dailyRate * attendanceDays, s.currency || 'GBP');
+                    if (s.startDate && s.startDate.substring(0, 7) === mKey) {
+                      const [y, m, d] = s.startDate.split('-').map(Number);
+                      const daysInMonth = new Date(y, m, 0).getDate();
+                      const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
+                      val = val * proration;
+                    }
+
+                    if (val > 0) {
+                      projectedItems.push({
+                        id: `proj-7004-${s.id}-${mKey}`,
+                        date: `${mKey}-01`,
+                        plMonth: mKey,
+                        payee: `Contractor Rate (${s.fullName})`,
+                        nominalCode: '7004 - Freelancers & Subcontractors',
+                        recipientType: 'staff',
+                        recipientId: s.id,
+                        amount: val,
+                        currency: 'GBP',
+                        isProjection: true
+                      });
+                    }
+                  }
+                });
+              }
+            });
+
+            return projectedItems;
           }
 
           return [];

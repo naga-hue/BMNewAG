@@ -119,34 +119,34 @@ export default function ReconcileCellModal({
               <span style={{ fontSize: '18px', fontWeight: 800 }}>🔗</span>
             </div>
             <div>
-              <h2 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#fff' }}>
+              <h2 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
                 Reconcile Vendor Payment
               </h2>
-              <span style={{ fontSize: '11px', color: '#94a3b8' }}>Link contract matrix cell to bank/ledger expense</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Link contract matrix cell to bank/ledger expense</span>
             </div>
           </div>
-          <button type="button" className="btn-close" onClick={onClose} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px' }}>
+          <button type="button" className="btn-close" onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '16px' }}>
             ✕
           </button>
         </div>
 
         <div className="wizard-body" style={{ padding: '16px', overflowY: 'auto' }}>
-          <div style={{ padding: '12px', backgroundColor: 'rgba(255, 255, 255, 0.02)', borderRadius: '8px', marginBottom: '16px', border: '1px solid var(--border-color)' }}>
+          <div style={{ padding: '12px', backgroundColor: 'var(--bg-secondary)', borderRadius: '8px', marginBottom: '16px', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Contract:</span>
-              <span style={{ fontWeight: 600, color: '#fff' }}>{contract.name}</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Contract:</span>
+              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{contract.name}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Vendor Partner:</span>
-              <span style={{ fontWeight: 600, color: '#fff' }}>{vendorName}</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Vendor Partner:</span>
+              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{vendorName}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Target Month:</span>
-              <span style={{ fontWeight: 600, color: '#fff' }}>{displayMonth}</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Target Month:</span>
+              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{displayMonth}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Projected Budget:</span>
-              <span style={{ fontWeight: 600, color: 'var(--primary)', fontFamily: 'monospace' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>Projected Budget:</span>
+              <span style={{ fontWeight: 700, color: 'var(--primary)', fontFamily: 'monospace' }}>
                 {symbolMap[forecastCurrency] || '£'}{Math.round(projectedAmount).toLocaleString()}
               </span>
             </div>
@@ -154,47 +154,47 @@ export default function ReconcileCellModal({
 
           {currentLinkedExp ? (
             <div style={{ marginTop: '12px' }}>
-              <div style={{ padding: '12px', backgroundColor: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '8px', marginBottom: '16px' }}>
+              <div style={{ padding: '12px', backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '8px', marginBottom: '16px' }}>
                 <h4 style={{ margin: '0 0 8px 0', color: 'var(--success)', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span>✅</span> Currently Reconciled & Paid
                 </h4>
                 <div style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Bank Date:</span>
-                    <span style={{ color: '#fff' }}>{currentLinkedExp.date}</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>Bank Date:</span>
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{currentLinkedExp.date}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Payee Description:</span>
-                    <span style={{ color: '#fff', fontWeight: 600 }}>{currentLinkedExp.payee}</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>Payee Description:</span>
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{currentLinkedExp.payee}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Actual Paid Amount:</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>Actual Paid Amount:</span>
                     <span style={{ color: 'var(--success)', fontWeight: 700, fontFamily: 'monospace' }}>
                       £{Number(currentLinkedExp.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                   {currentLinkedExp.notes && (
-                    <div style={{ marginTop: '4px', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '6px' }}>
-                      <span style={{ color: 'var(--text-muted)', display: 'block' }}>Notes:</span>
-                      <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>{currentLinkedExp.notes}</span>
+                    <div style={{ marginTop: '4px', borderTop: '1px dashed var(--border-color)', paddingTop: '6px' }}>
+                      <span style={{ color: 'var(--text-secondary)', display: 'block' }}>Notes:</span>
+                      <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>{currentLinkedExp.notes}</span>
                     </div>
                   )}
                 </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
-                <button type="button" className="btn-secondary" onClick={handleUnlink} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)' }}>
+                <button type="button" className="btn-secondary" onClick={handleUnlink} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--danger)', borderColor: 'var(--danger)' }}>
                   Unlink Payment Transaction
                 </button>
               </div>
             </div>
           ) : (
             <div>
-              <h3 style={{ fontSize: '12px', fontWeight: 700, margin: '0 0 10px 0', color: '#fff' }}>
+              <h3 style={{ fontSize: '12px', fontWeight: 700, margin: '0 0 10px 0', color: 'var(--text-primary)' }}>
                 Select bank statement transaction to reconcile:
               </h3>
               {candidates.length === 0 ? (
-                <div style={{ padding: '20px', border: '1px dashed var(--border-color)', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+                <div style={{ padding: '20px', border: '1px dashed var(--border-color)', borderRadius: '8px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '12px' }}>
                   No unlinked expense transactions found for {displayMonth}.
                   Please upload or log a transaction in the Ledger/Expenses tab first.
                 </div>
@@ -204,7 +204,7 @@ export default function ReconcileCellModal({
                     className="select-filter"
                     value={selectedExpenseId}
                     onChange={(e) => setSelectedExpenseId(e.target.value)}
-                    style={{ width: '100%', padding: '10px' }}
+                    style={{ width: '100%', padding: '10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
                   >
                     <option value="">-- Choose Transaction --</option>
                     {candidates.map(e => {
@@ -216,7 +216,7 @@ export default function ReconcileCellModal({
                       );
                     })}
                   </select>
-                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '4px', display: 'block' }}>
                     ⭐ indicates matching payee name suggested for this vendor.
                   </span>
                 </div>

@@ -366,6 +366,10 @@ export default function ForecastMatrix({
                             const linkedExp = (expenses || []).find(e => {
                               if (e.status === 'dns' || e.status === 'cancelled') return false;
                               if (e.linkedVendorCellId === `${c.id}_${monthKey}`) return true;
+                              
+                              // If vendor has multiple contracts, require exact contract cell link
+                              if (vendorContracts.length > 1) return false;
+
                               const expMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
                               if (expMonth !== monthKey) return false;
                               return (e.recipientType === 'vendor' && (e.recipientId === c.vendorId || e.recipientId === matchedVendor?.id)) ||

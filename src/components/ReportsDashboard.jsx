@@ -719,8 +719,15 @@ export default function ReportsDashboard({
 
         const matchedKey = Object.keys(breakdown).find(k => k.startsWith(targetCode) || k === targetCode);
         
-        // If an actual bank payment was already reconciled for this nominal category in monthKey, skip contract projection to avoid double counting
-        if (reconciledContractIds.has(contract.id) || (matchedKey && breakdown[matchedKey] > 0)) return;
+        // If an actual bank payment was already reconciled for this specific contract or vendor in monthKey, skip contract projection so actual reconciled value prevails
+        const isContractReconciledInMonth = (expenses || []).some(e => {
+          if (e.status === 'dns' || e.status === 'cancelled') return false;
+          const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+          if (eMonth !== monthKey) return false;
+          return e.linkedContractId === contract.id || (contract.vendorId && e.vendorId === contract.vendorId);
+        });
+
+        if (isContractReconciledInMonth || reconciledContractIds.has(contract.id)) return;
 
         let cost = 0;
         if (contract.costInterval === 'monthly') {
@@ -729,8 +736,10 @@ export default function ReportsDashboard({
           cost = (Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1)) / 3;
         } else if (contract.costInterval === 'annual') {
           cost = (Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1)) / 12;
-        } else if (contract.costInterval === 'one-time' && startM === monthKey) {
-          cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
+        } else if (contract.costInterval === 'one-time' || contract.costInterval === 'one_time') {
+          if (startM === monthKey) {
+            cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
+          }
         }
 
         if (cost <= 0) return;

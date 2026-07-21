@@ -2886,13 +2886,33 @@ export default function ReportsDashboard({
                     }
                   } else if (exp.allocationType === 'company') {
                     const ids = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-                    const perComp = ids.length > 0 ? amt / ids.length : amt;
-                    ids.forEach(id => {
-                      const cObj = companies.find(c => c.id === id);
-                      if (cObj && isCompanyMatch(cObj.id)) {
-                        companyTargetMap[cObj.name] = (companyTargetMap[cObj.name] || 0) + perComp;
+                    if (ids.length > 0) {
+                      if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+                        ids.forEach(id => {
+                          const percent = parseInt(exp.manualAllocationShares[id] || 0, 10);
+                          const compShare = amt * (percent / 100);
+                          const cObj = companies.find(c => c.id === id);
+                          if (cObj && isCompanyMatch(cObj.id) && compShare > 0) {
+                            companyTargetMap[cObj.name] = (companyTargetMap[cObj.name] || 0) + compShare;
+                          }
+                        });
+                      } else {
+                        // Automatic Staff-Weighted Apportionment
+                        const targetStaff = staff.filter(s => ids.includes(s.companyId));
+                        const totalHead = targetStaff.length || 1;
+
+                        ids.forEach(id => {
+                          const compStaff = targetStaff.filter(s => s.companyId === id);
+                          const compHead = compStaff.length;
+                          const compShare = (compHead / totalHead) * amt;
+                          const cObj = companies.find(c => c.id === id);
+
+                          if (cObj && isCompanyMatch(cObj.id) && compHead > 0) {
+                            companyTargetMap[`${cObj.name} (${compHead} staff)`] = (companyTargetMap[`${cObj.name} (${compHead} staff)`] || 0) + compShare;
+                          }
+                        });
                       }
-                    });
+                    }
                   } else {
                     companyTargetMap['Group Corporate Overhead'] = (companyTargetMap['Group Corporate Overhead'] || 0) + amt;
                   }

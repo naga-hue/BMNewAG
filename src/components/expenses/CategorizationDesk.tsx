@@ -129,6 +129,34 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
     }
   };
 
+  // Retroactively auto-link contracts & compensation categories to all existing records
+  useEffect(() => {
+    if (expenses.length > 0 && (vendors.length > 0 || staff.length > 0)) {
+      expenses.forEach(exp => {
+        if (exp.recipientType === 'vendor' && exp.recipientId && !exp.linkedContractId) {
+          const vContracts = contracts.filter(c => c.vendorId === exp.recipientId);
+          if (vContracts.length > 0) {
+            const matchedContract = vContracts[0];
+            const assignedStaffIds = assetAssignments.filter(a => a.contractId === matchedContract.id).map(a => a.staffId).filter(Boolean);
+            saveExpense({
+              ...exp,
+              linkedContractId: matchedContract.id,
+              allocationType: assignedStaffIds.length > 0 ? 'staff' : (exp.allocationType || 'company'),
+              allocationTarget: assignedStaffIds.length > 0 ? assignedStaffIds : exp.allocationTarget
+            });
+          }
+        } else if (exp.recipientType === 'staff' && exp.recipientId && !exp.compensationCategory) {
+          saveExpense({
+            ...exp,
+            compensationCategory: 'salary',
+            allocationType: 'staff',
+            allocationTarget: [exp.recipientId]
+          });
+        }
+      });
+    }
+  }, [expenses.length, vendors.length, contracts.length]);
+
   const handleUpdateRow = async (expense: any, field: string, val: any) => {
     let updated = { ...expense, [field]: val };
 

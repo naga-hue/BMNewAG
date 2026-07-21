@@ -5,6 +5,7 @@ import { Vendor } from '../../types';
 interface VendorRegisterModalProps {
   vendor: Vendor | null;
   onClose: () => void;
+  nominalCodes?: any[];
   onSaveVendor: (vendor: any) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
 }
@@ -12,6 +13,7 @@ interface VendorRegisterModalProps {
 export default function VendorRegisterModal({
   vendor,
   onClose,
+  nominalCodes = [],
   onSaveVendor,
   onShowToast
 }: VendorRegisterModalProps) {
@@ -21,6 +23,7 @@ export default function VendorRegisterModal({
   const [vendorEmail, setVendorEmail] = useState('');
   const [vendorPhone, setVendorPhone] = useState('');
   const [vendorDesc, setVendorDesc] = useState('');
+  const [nominalCode, setNominalCode] = useState('');
 
   useEffect(() => {
     if (vendor) {
@@ -28,6 +31,7 @@ export default function VendorRegisterModal({
       setVendorEmail(vendor.email || '');
       setVendorPhone(vendor.phone || '');
       setVendorDesc(vendor.notes || '');
+      setNominalCode(vendor.nominalCode || '');
 
       const isPreset = ['Software License', 'Office Rental', 'Telecom', 'AI Service', 'Other'].includes(vendor.category || '');
       if (isPreset) {
@@ -42,6 +46,7 @@ export default function VendorRegisterModal({
       setVendorEmail('');
       setVendorPhone('');
       setVendorDesc('');
+      setNominalCode('');
       setPresetCategory('Software License');
       setVendorCategory('Software License');
     }
@@ -64,7 +69,8 @@ export default function VendorRegisterModal({
       category: vendorCategory.trim(),
       email: vendorEmail.trim(),
       phone: vendorPhone.trim(),
-      notes: vendorDesc.trim()
+      notes: vendorDesc.trim(),
+      nominalCode: nominalCode || ''
     };
 
     try {
@@ -145,6 +151,23 @@ export default function VendorRegisterModal({
                   />
                 </div>
               )}
+            </div>
+
+            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+              <label className="form-label">Default Expense Nominal Code</label>
+              <select 
+                className="select-filter"
+                value={nominalCode}
+                onChange={(e) => setNominalCode(e.target.value)}
+                style={{ width: '100%', padding: '10px' }}
+              >
+                <option value="">-- Select Default Nominal Code --</option>
+                {(nominalCodes || []).map((nc: any) => (
+                  <option key={nc.id || nc.code} value={nc.code}>
+                    {nc.code} {nc.name ? `- ${nc.name}` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

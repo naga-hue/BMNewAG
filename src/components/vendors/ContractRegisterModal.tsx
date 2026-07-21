@@ -219,7 +219,16 @@ export default function ContractRegisterModal({
               <select 
                 className="select-filter"
                 value={contractVendorId}
-                onChange={(e) => setContractVendorId(e.target.value)}
+                onChange={(e) => {
+                  const vId = e.target.value;
+                  setContractVendorId(vId);
+                  if (vId) {
+                    const vObj = vendors.find(v => v.id === vId);
+                    if (vObj && vObj.nominalCode && !nominalCode) {
+                      setNominalCode(vObj.nominalCode);
+                    }
+                  }
+                }}
                 style={{ width: '100%', padding: '10px' }}
                 required
               >

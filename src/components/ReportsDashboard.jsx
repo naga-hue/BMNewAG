@@ -560,18 +560,6 @@ export default function ReportsDashboard({
       breakdown[nc.code] = 0;
     });
 
-    const defaultCodes = [
-      "7001 - Office Rentals & Leasing",
-      "7002 - Software Licenses & SaaS",
-      "7003 - Staff Payroll & Wages",
-      "7004 - Freelancers & Subcontractors"
-    ];
-    defaultCodes.forEach(code => {
-      if (breakdown[code] === undefined) {
-        breakdown[code] = 0;
-      }
-    });
-
     const activeStaff = staff.filter(s => {
       const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
       if (daysWorked < 10) return false;
@@ -816,20 +804,25 @@ export default function ReportsDashboard({
 
           if (gbpCost <= 0) return;
 
-          if (contract.nominalCode) {
-            const matchedKey = Object.keys(breakdown).find(k => k.startsWith(contract.nominalCode) || k === contract.nominalCode);
-            if (matchedKey) {
-              breakdown[matchedKey] += gbpCost;
-            } else {
-              breakdown[contract.nominalCode] = (breakdown[contract.nominalCode] || 0) + gbpCost;
-            }
-          } else {
+          const vendorObj = vendors.find(v => v.id === contract.vendorId);
+          let assignedNominal = contract.nominalCode || vendorObj?.nominalCode;
+
+          if (!assignedNominal) {
             const nameLower = contract.name.toLowerCase();
             if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
-              breakdown["7001 - Office Rentals & Leasing"] += gbpCost;
+              const rentMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('rent') || nc.code.toLowerCase().includes('rates') || nc.code.startsWith('700'));
+              assignedNominal = rentMatch ? rentMatch.code : (nominalCodes[0]?.code || 'Unassigned');
             } else {
-              breakdown["7002 - Software Licenses & SaaS"] += gbpCost;
+              const swMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'));
+              assignedNominal = swMatch ? swMatch.code : (nominalCodes[0]?.code || 'Unassigned');
             }
+          }
+
+          const matchedKey = Object.keys(breakdown).find(k => k.startsWith(assignedNominal) || k === assignedNominal);
+          if (matchedKey) {
+            breakdown[matchedKey] += gbpCost;
+          } else if (assignedNominal) {
+            breakdown[assignedNominal] = (breakdown[assignedNominal] || 0) + gbpCost;
           }
         }
       });
@@ -2976,12 +2969,16 @@ export default function ReportsDashboard({
 
                   const nameLower = contract.name.toLowerCase();
 
-                  let assignedNominal = contract.nominalCode;
+                  const vendorObj = vendors.find(v => v.id === contract.vendorId);
+                  let assignedNominal = contract.nominalCode || vendorObj?.nominalCode;
                   if (!assignedNominal) {
+                    const nameLower = contract.name.toLowerCase();
                     if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
-                      assignedNominal = "7001 - Office Rentals & Leasing";
+                      const rentMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('rent') || nc.code.toLowerCase().includes('rates') || nc.code.startsWith('700'));
+                      assignedNominal = rentMatch ? rentMatch.code : (nominalCodes[0]?.code || 'Unassigned');
                     } else {
-                      assignedNominal = "7002 - Software Licenses & SaaS";
+                      const swMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'));
+                      assignedNominal = swMatch ? swMatch.code : (nominalCodes[0]?.code || 'Unassigned');
                     }
                   }
 
@@ -2989,7 +2986,6 @@ export default function ReportsDashboard({
                     return;
                   }
 
-                  const vendorObj = vendors.find(v => v.id === contract.vendorId);
                   let payeeLabel = vendorObj ? `${vendorObj.name} (${contract.name})` : contract.name;
                   if (recipientStaffNames.length > 0) {
                     payeeLabel += ` [${recipientStaffNames.length} Seats: ${recipientStaffNames.join(', ')}]`;

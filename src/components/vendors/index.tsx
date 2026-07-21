@@ -268,6 +268,7 @@ export default function VendorsDashboard({
             setShowVendorForm(false);
             setEditingVendor(null);
           }}
+          nominalCodes={nominalCodes}
           onSaveVendor={onSaveVendor}
           onShowToast={onShowToast}
         />

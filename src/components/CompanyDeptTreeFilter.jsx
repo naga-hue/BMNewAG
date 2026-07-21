@@ -96,6 +96,10 @@ export default function CompanyDeptTreeFilter({
     onChange({ companyIds: ['all'], departments: ['all'] });
   };
 
+  const handleUnselectAll = () => {
+    onChange({ companyIds: [], departments: [] });
+  };
+
   const handleReset = () => {
     onChange({ companyIds: ['all'], departments: ['all'] });
   };
@@ -260,6 +264,22 @@ export default function CompanyDeptTreeFilter({
                   }}
                 >
                   Select All
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUnselectAll}
+                  style={{
+                    padding: '3px 8px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                    color: '#ef4444',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Unselect All
                 </button>
                 <button
                   type="button"

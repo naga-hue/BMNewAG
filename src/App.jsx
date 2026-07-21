@@ -54,6 +54,7 @@ import ExitEmailTriggerModal from './components/ExitEmailTriggerModal';
 import BulkStaffImportModal from './components/BulkStaffImportModal';
 import AiRemindersModal from './components/AiRemindersModal';
 import AiChatbot from './components/AiChatbot';
+import GlobalQuickSearchModal from './components/GlobalQuickSearchModal';
 import { toGBP, formatGBP, fetchLiveFxRates } from './utils/currency';
 import { initialNominalCodes, initialExpenses } from './mockExpenses';
 
@@ -118,6 +119,19 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('whats_important');
   const [letterTemplates, setLetterTemplates] = useState([]);
   const [fxRatesVersion, setFxRatesVersion] = useState(0);
+  const [isQuickSearchOpen, setIsQuickSearchOpen] = useState(false);
+
+  // Global Cmd+K / Ctrl+K keyboard shortcut listener for Quick Search
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsQuickSearchOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const initSubscriptions = useBoundStore(state => state.initSubscriptions);
 
@@ -1884,6 +1898,34 @@ export default function App() {
           </div>
           
           <div className="header-actions">
+            {/* Quick Search Trigger Button */}
+            <button
+              type="button"
+              onClick={() => setIsQuickSearchOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                backgroundColor: 'var(--bg-secondary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                marginRight: '8px',
+                transition: 'all 0.15s ease'
+              }}
+              title="Quick Search Records (Cmd + K)"
+            >
+              <Search size={14} style={{ color: 'var(--primary)' }} />
+              <span>Search...</span>
+              <span style={{ fontSize: '10px', fontWeight: 700, backgroundColor: 'var(--bg-card)', padding: '2px 5px', borderRadius: '4px', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                ⌘K
+              </span>
+            </button>
+
             {/* Live GMT/SAST/IST Office Clocks Widget */}
             <div style={{ display: 'flex', gap: '8px', marginRight: '16px', alignItems: 'center' }}>
               {formatTimeForZone(currentTime, 'Europe/London', 'UK (London)')}
@@ -3051,6 +3093,21 @@ export default function App() {
         staff={staff}
         companies={companies}
         onShowToast={handleShowToast}
+      />
+
+      {/* Global Quick Search Modal (Cmd + K) */}
+      <GlobalQuickSearchModal 
+        isOpen={isQuickSearchOpen}
+        onClose={() => setIsQuickSearchOpen(false)}
+        staff={staff}
+        companies={companies}
+        placements={placements}
+        contracts={contracts}
+        vendors={vendors}
+        expenses={expenses}
+        setActiveTab={setActiveTab}
+        setSelectedCompany={setSelectedCompany}
+        setSelectedStaff={setSelectedStaff}
       />
 
       {/* Super Admin AI Chatbot Widget */}

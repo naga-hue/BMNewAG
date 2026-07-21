@@ -283,20 +283,23 @@ export default function App() {
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        padding: '4px 10px',
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
+        justifyContent: 'center',
+        padding: '2px 8px',
+        backgroundColor: 'var(--bg-secondary)',
+        border: '1px solid var(--border-color)',
         borderRadius: '6px',
-        minWidth: '95px',
-        lineHeight: 1.2
+        minWidth: '85px',
+        height: '38px',
+        lineHeight: 1.1,
+        flexShrink: 0
       }}>
-        <span style={{ fontSize: '8px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        <span style={{ fontSize: '8px', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           {label}
         </span>
-        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', margin: '2px 0' }}>
+        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', margin: '1px 0' }}>
           {timeStr}
         </span>
-        <span style={{ fontSize: '8px', color: 'var(--text-muted)' }}>
+        <span style={{ fontSize: '7.5px', color: 'var(--text-muted)' }}>
           {dateStr}
         </span>
       </div>

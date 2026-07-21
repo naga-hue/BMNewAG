@@ -721,31 +721,63 @@ export default function Dashboard({
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', backgroundColor: 'rgba(0,0,0,0.1)', padding: '10px 14px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+        {/* Company Legend Filter Pills */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', backgroundColor: 'var(--bg-secondary)', padding: '12px 16px', borderRadius: '8px', border: '1px solid var(--border-color)', alignItems: 'center' }}>
+          <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginRight: '4px' }}>Filter View:</span>
+          
+          <label style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '6px', 
+            fontSize: '11.5px', 
+            cursor: 'pointer', 
+            color: 'var(--text-primary)',
+            backgroundColor: chartCompanyFilters['consolidated'] !== false ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-card)',
+            border: `1px solid ${chartCompanyFilters['consolidated'] !== false ? 'var(--primary)' : 'var(--border-color)'}`,
+            padding: '5px 12px',
+            borderRadius: '20px',
+            transition: 'all 0.2s ease-in-out'
+          }}>
             <input 
               type="checkbox" 
               checked={chartCompanyFilters['consolidated'] !== false}
               onChange={(e) => setChartCompanyFilters(prev => ({ ...prev, consolidated: e.target.checked }))}
+              style={{ cursor: 'pointer', accentColor: 'var(--primary)' }}
             />
-            <span style={{ fontWeight: 600, color: 'var(--primary)' }}>■ Consolidated Total</span>
+            <span style={{ fontWeight: 700, color: 'var(--primary)' }}>Consolidated Total</span>
           </label>
+
           {companies.map((c, idx) => {
             const color = companyColors[idx % companyColors.length];
+            const isChecked = !!chartCompanyFilters[c.id];
             return (
-              <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+              <label key={c.id} style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '6px', 
+                fontSize: '11px', 
+                cursor: 'pointer', 
+                color: 'var(--text-primary)',
+                backgroundColor: isChecked ? `${color}20` : 'var(--bg-card)',
+                border: `1px solid ${isChecked ? color : 'var(--border-color)'}`,
+                padding: '4px 10px',
+                borderRadius: '20px',
+                transition: 'all 0.2s ease-in-out'
+              }}>
                 <input 
                   type="checkbox" 
-                  checked={!!chartCompanyFilters[c.id]}
+                  checked={isChecked}
                   onChange={(e) => setChartCompanyFilters(prev => ({ ...prev, [c.id]: e.target.checked }))}
+                  style={{ cursor: 'pointer', accentColor: color }}
                 />
-                <span style={{ fontWeight: 600, color }}>■ {c.name}</span>
+                <span style={{ fontWeight: 600, color }}>{c.name}</span>
               </label>
             );
           })}
         </div>
 
-        <div style={{ position: 'relative', width: '100%', overflowX: 'auto', backgroundColor: 'rgba(0,0,0,0.1)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+        {/* SVG Trend Chart Canvas */}
+        <div style={{ position: 'relative', width: '100%', overflowX: 'auto', backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '12px' }}>
           <svg viewBox={`0 0 ${chartData.width} ${chartData.height}`} style={{ width: '100%', height: 'auto', minWidth: '700px' }}>
             <defs>
               <linearGradient id="dashboardAreaGrad" x1="0" y1="0" x2="0" y2="1">

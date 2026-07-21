@@ -977,6 +977,7 @@ export default function ExpensesTable({
                 allocationLabel = `Staff: ${ids.length} recruiters`;
               }
 
+              const matchedPl = placements.find(p => p.id === exp.linkedPlacementId);
               const isUnmappedRow = !exp.recipientType || exp.recipientType === 'other' || !exp.nominalCode;
 
               return (

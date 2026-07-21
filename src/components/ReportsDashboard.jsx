@@ -734,14 +734,18 @@ export default function ReportsDashboard({
             }
           });
 
-          // Resolve nominal code for contract
+          // Resolve nominal code for contract package
           let targetCode = contract.nominalCode;
           if (!targetCode) {
             const nameLower = (contract.name || '').toLowerCase();
-            if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
+            if (nameLower.includes('rent') || nameLower.includes('office lease')) {
               targetCode = '10 - Rent';
             } else if (nameLower.includes('linkedin')) {
               targetCode = '17 - Linkedin';
+            } else if (nameLower.includes('house') || nameLower.includes('accommodation')) {
+              targetCode = '19 - House';
+            } else if (nameLower.includes('itai') || nameLower.includes('back office') || nameLower.includes('consulting') || nameLower.includes('support')) {
+              targetCode = '16 - Consulting';
             } else if (nameLower.includes('freelance')) {
               targetCode = '1 - Freelancer';
             } else {
@@ -755,58 +759,6 @@ export default function ReportsDashboard({
           }
         }
       });
-
-      // 3. For any nominal code with 0 in future unbilled month, project from most recent historical actual month
-      Object.keys(breakdown).forEach(code => {
-        if (breakdown[code] === 0) {
-          const pastExpenses = expenses.filter(e => e.plMonth < monthKey && e.nominalCode && (code.startsWith(e.nominalCode) || code === e.nominalCode));
-          if (pastExpenses.length > 0) {
-            const pastMonths = Array.from(new Set(pastExpenses.map(e => e.plMonth))).sort();
-            const latestMonth = pastMonths[pastMonths.length - 1];
-            const latestExpenses = pastExpenses.filter(e => e.plMonth === latestMonth);
-
-          let allocatedGbp = 0;
-          latestExpenses.forEach(exp => {
-            const gbpAmt = toGBP(exp.amount, exp.currency);
-
-            if (exp.allocationType === 'company') {
-              const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-              if (targets.length > 0) {
-                const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.companyId));
-                const totalHead = eligibleStaff.length || 1;
-                const perStaffShare = gbpAmt / totalHead;
-                eligibleStaff.forEach(s => {
-                  if (activeStaffIds.includes(s.id)) {
-                    allocatedGbp += perStaffShare;
-                  }
-                });
-              }
-            } else if (exp.allocationType === 'department') {
-              const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-              if (targets.length > 0) {
-                const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.department));
-                const totalHead = eligibleStaff.length || 1;
-                const perStaffShare = gbpAmt / totalHead;
-                eligibleStaff.forEach(s => {
-                  if (activeStaffIds.includes(s.id)) {
-                    allocatedGbp += perStaffShare;
-                  }
-                });
-              }
-            } else {
-              const groupHead = groupActiveStaff.length || 1;
-              groupActiveStaff.forEach(s => {
-                if (activeStaffIds.includes(s.id)) {
-                  allocatedGbp += gbpAmt / groupHead;
-                }
-              });
-            }
-          });
-
-          breakdown[code] = allocatedGbp;
-        }
-      }
-    });
     }
 
     return breakdown;

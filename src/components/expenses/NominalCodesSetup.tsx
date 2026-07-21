@@ -22,6 +22,7 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
   const [newNominalType, setNewNominalType] = useState('indirect'); // direct, indirect
   const [bulkInput, setBulkInput] = useState('');
   const [selectedNominalIds, setSelectedNominalIds] = useState<string[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
   // Normalize nominal codes to handle any legacy string arrays gracefully
   const activeNominalCodes = useMemo(() => {
     return (nominalCodes || []).map((c: any) => {

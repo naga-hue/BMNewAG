@@ -137,6 +137,66 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
     }
   };
 
+  const [remapTargets, setRemapTargets] = useState<{ [oldCode: string]: string }>({});
+
+  // Summary of distinct nominal codes currently found in database records that do not match active master codes
+  const dbNominalSummary = useMemo(() => {
+    const summaryMap: { [code: string]: { expensesCount: number; vendorsCount: number; contractsCount: number } } = {};
+
+    (expenses || []).forEach(e => {
+      if (e && e.nominalCode) {
+        if (!summaryMap[e.nominalCode]) {
+          summaryMap[e.nominalCode] = { expensesCount: 0, vendorsCount: 0, contractsCount: 0 };
+        }
+        summaryMap[e.nominalCode].expensesCount++;
+      }
+    });
+
+    (vendors || []).forEach(v => {
+      if (v && v.nominalCode) {
+        if (!summaryMap[v.nominalCode]) {
+          summaryMap[v.nominalCode] = { expensesCount: 0, vendorsCount: 0, contractsCount: 0 };
+        }
+        summaryMap[v.nominalCode].vendorsCount++;
+      }
+    });
+
+    (contracts || []).forEach(cnt => {
+      if (cnt && cnt.nominalCode) {
+        if (!summaryMap[cnt.nominalCode]) {
+          summaryMap[cnt.nominalCode] = { expensesCount: 0, vendorsCount: 0, contractsCount: 0 };
+        }
+        summaryMap[cnt.nominalCode].contractsCount++;
+      }
+    });
+
+    const activeCodesSet = new Set(activeNominalCodes.map(c => c.code));
+
+    const historicalItems: { code: string; expensesCount: number; vendorsCount: number; contractsCount: number }[] = [];
+    Object.keys(summaryMap).forEach(code => {
+      if (!activeCodesSet.has(code)) {
+        const counts = summaryMap[code];
+        historicalItems.push({
+          code,
+          ...counts
+        });
+      }
+    });
+
+    return historicalItems.sort((a, b) => (b.expensesCount + b.vendorsCount) - (a.expensesCount + a.vendorsCount));
+  }, [expenses, vendors, contracts, activeNominalCodes]);
+
+  const handleRemapSingleOldCode = async (oldCodeStr: string) => {
+    const targetNewCode = remapTargets[oldCodeStr];
+    if (!targetNewCode) {
+      onShowToast("Please select a target active nominal code first.", "warning");
+      return;
+    }
+
+    const oldId = oldCodeStr.split(' - ')[0] || oldCodeStr;
+    await cascadeSyncExistingRecords(oldId, oldCodeStr, targetNewCode);
+  };
+
   const handleSaveEdit = async (c: { id: string; code: string; type: string }) => {
     const newId = editIdInput.trim();
     const newName = editNameInput.trim();
@@ -604,6 +664,81 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Database Historical Nominal Code Re-mapping Workspace */}
+      <div style={{ maxWidth: '750px', marginTop: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <div>
+            <h3 style={{ fontSize: '14px', fontWeight: 600, margin: 0, color: '#f59e0b' }}>
+              ⚠️ Historical Database Nominal Codes Re-mapping ({dbNominalSummary.length})
+            </h3>
+            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
+              These nominal code strings currently exist in your database records but do not match active master nominal codes.
+            </p>
+          </div>
+        </div>
+
+        {dbNominalSummary.length > 0 ? (
+          <div className="table-container">
+            <table className="entity-table dense" style={{ fontSize: '12px' }}>
+              <thead>
+                <tr>
+                  <th>Old / Historical Code in Database</th>
+                  <th style={{ width: '160px' }}>Affected Records</th>
+                  <th style={{ width: '250px' }}>Re-map to Active Nominal Code</th>
+                  <th style={{ textAlign: 'right', width: '100px' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dbNominalSummary.map(item => (
+                  <tr key={item.code}>
+                    <td style={{ fontWeight: 700, fontFamily: 'monospace', color: '#f59e0b' }}>
+                      {item.code}
+                    </td>
+                    <td>
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                        {item.expensesCount} expenses, {item.vendorsCount} vendors, {item.contractsCount} contracts
+                      </span>
+                    </td>
+                    <td>
+                      <select
+                        className="select-filter"
+                        value={remapTargets[item.code] || ''}
+                        onChange={(e) => setRemapTargets(prev => ({ ...prev, [item.code]: e.target.value }))}
+                        style={{ width: '100%', padding: '4px 8px', fontSize: '11px' }}
+                      >
+                        <option value="">-- Select Active Target Code --</option>
+                        {activeNominalCodes.map(nc => (
+                          <option key={nc.id} value={nc.code}>
+                            {nc.code}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          disabled={!remapTargets[item.code] || isSyncing}
+                          onClick={() => handleRemapSingleOldCode(item.code)}
+                          style={{ fontSize: '11px', padding: '4px 10px' }}
+                        >
+                          Re-map All
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div style={{ padding: '12px', backgroundColor: 'rgba(16, 185, 129, 0.08)', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.2)', fontSize: '12px', color: 'var(--success)' }}>
+            ✓ All historical database expenses, vendors, and contracts are 100% aligned with your active master nominal codes!
+          </div>
+        )}
       </div>
 
     </div>

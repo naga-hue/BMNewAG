@@ -145,6 +145,43 @@ export default function ExpensesTable({
     }).filter((c): c is { id: string; code: string; type: string } => c !== null && !!c.code);
   }, [nominalCodes]);
 
+  // Collect all nominal code strings currently present in the database expenses
+  const databaseNominalOptions = useMemo(() => {
+    const dbCodesSet = new Set<string>();
+    (expenses || []).forEach(e => {
+      if (e && e.nominalCode) {
+        dbCodesSet.add(e.nominalCode);
+      }
+    });
+
+    const activeCodesSet = new Set(activeNominalCodes.map(c => c.code));
+
+    const activeList = activeNominalCodes.map(c => ({
+      value: c.code,
+      label: c.code,
+      isActive: true
+    }));
+
+    const historicalList: { value: string; label: string; isActive: boolean }[] = [];
+    dbCodesSet.forEach(code => {
+      if (!activeCodesSet.has(code)) {
+        const matchingActive = activeNominalCodes.find(ac => ac.id === code || code.startsWith(ac.id + ' - ') || code.startsWith(ac.id + ' '));
+        if (!matchingActive) {
+          historicalList.push({
+            value: code,
+            label: `⚠️ ${code} (Historical / Database)`,
+            isActive: false
+          });
+        }
+      }
+    });
+
+    return {
+      activeList,
+      historicalList: historicalList.sort((a, b) => a.label.localeCompare(b.label))
+    };
+  }, [expenses, activeNominalCodes]);
+
   const allAvailableDepts = useMemo(() => {
     const depts: string[] = [];
     companies.forEach(c => {
@@ -173,7 +210,14 @@ export default function ExpensesTable({
         if (!isUnmapped) return false;
       }
 
-      if (nominalFilter !== 'all' && expNominal !== nominalFilter) return false;
+      if (nominalFilter !== 'all') {
+        if (!expNominal) return false;
+        const matchesExact = expNominal === nominalFilter;
+        const matchesPrefix = expNominal.startsWith(nominalFilter + ' - ') || expNominal.startsWith(nominalFilter + ' ');
+        const matchesReverse = nominalFilter.startsWith(expNominal + ' - ');
+        if (!matchesExact && !matchesPrefix && !matchesReverse) return false;
+      }
+
       if (plMonthFilter !== 'all' && expPlMonth !== plMonthFilter) return false;
       if (bankAccountFilter !== 'all' && exp.bankAccountId !== bankAccountFilter) return false;
 
@@ -570,9 +614,18 @@ export default function ExpensesTable({
             onChange={(e) => setNominalFilter(e.target.value)}
           >
             <option value="all">All Nominal Codes</option>
-            {activeNominalCodes.map(c => (
-              <option key={c.id} value={c.code}>{c.code}</option>
-            ))}
+            <optgroup label="Active Master Nominal Codes">
+              {databaseNominalOptions.activeList.map(c => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </optgroup>
+            {databaseNominalOptions.historicalList.length > 0 && (
+              <optgroup label="⚠️ Historical / Database Nominal Codes">
+                {databaseNominalOptions.historicalList.map(c => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
 
           <select 

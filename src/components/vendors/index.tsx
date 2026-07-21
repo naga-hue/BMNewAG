@@ -9,8 +9,8 @@ import VendorRegisterModal from './VendorRegisterModal';
 import ContractRegisterModal from './ContractRegisterModal';
 import BatchAllocateSeatsModal from './BatchAllocateSeatsModal';
 import ReconcileCellModal from './ReconcileCellModal';
-import HardwareAssetsRegister from './HardwareAssetsRegister';
 import UnifiedAssetsManager from './UnifiedAssetsManager';
+import CategorizationDesk from '../expenses/CategorizationDesk';
 import '../vendors.css';
 
 export interface VendorsDashboardProps {
@@ -136,11 +136,26 @@ export default function VendorsDashboard({
           >
             🔌 Hardware Inventory
           </button>
+          <button 
+            type="button" 
+            className={`tab-btn ${activeSubTab === 'categorization' ? 'active' : ''}`}
+            onClick={() => setActiveSubTab('categorization')}
+            style={{
+              fontWeight: (expenses || []).some(e => (!e.recipientType || e.recipientType === 'other' || !e.nominalCode) && e.status !== 'dns' && e.status !== 'cancelled') ? 700 : undefined,
+              color: (expenses || []).some(e => (!e.recipientType || e.recipientType === 'other' || !e.nominalCode) && e.status !== 'dns' && e.status !== 'cancelled') && activeSubTab !== 'categorization' ? 'var(--warning)' : undefined
+            }}
+          >
+            ⚡ Categorization Desk
+          </button>
         </div>
 
       </div>
 
       {/* Main Content Render */}
+      {activeSubTab === 'categorization' && (
+        <CategorizationDesk onShowToast={onShowToast} />
+      )}
+
       {activeSubTab === 'unified' && (
         <UnifiedAssetsManager
           companies={companies}

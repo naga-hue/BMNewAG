@@ -365,18 +365,29 @@ export default function ForecastMatrix({
 
                             const linkedExp = (expenses || []).find(e => {
                               if (e.status === 'dns' || e.status === 'cancelled') return false;
-                              if (e.linkedVendorCellId === `${c.id}_${monthKey}`) return true;
                               
-                              // If vendor has multiple contracts, require exact contract cell link
-                              if (vendorContracts.length > 1) return false;
+                              if (e.linkedVendorCellId === `${c.id}_${monthKey}`) return true;
 
-                              const expMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
-                              if (expMonth !== monthKey) return false;
-                              return (e.recipientType === 'vendor' && (e.recipientId === c.vendorId || e.recipientId === matchedVendor?.id)) ||
-                                     (e.payee && matchedVendor && e.payee.toLowerCase().includes(matchedVendor.name.toLowerCase()));
+                              if (e.contractSplits && e.contractSplits[c.id] !== undefined) {
+                                const expMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+                                if (expMonth === monthKey) return true;
+                              }
+
+                              if (vendorContracts.length === 1) {
+                                const expMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+                                if (expMonth !== monthKey) return false;
+                                return (e.recipientType === 'vendor' && (e.recipientId === c.vendorId || e.recipientId === matchedVendor?.id)) ||
+                                       (e.payee && matchedVendor && e.payee.toLowerCase().includes(matchedVendor.name.toLowerCase()));
+                              }
+
+                              return false;
                             });
 
-                            const actualVal = linkedExp ? toGBP(linkedExp.amount, linkedExp.currency || 'GBP') : null;
+                            const actualVal = linkedExp ? (
+                              linkedExp.contractSplits && linkedExp.contractSplits[c.id] !== undefined
+                                ? linkedExp.contractSplits[c.id]
+                                : toGBP(linkedExp.amount, linkedExp.currency || 'GBP')
+                            ) : null;
 
                             return (
                               <td 

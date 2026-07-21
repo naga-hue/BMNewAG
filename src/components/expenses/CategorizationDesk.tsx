@@ -214,13 +214,37 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
         return;
       }
 
-      updated.linkedContractId = val;
-      const contractObj = contracts.find(c => c.id === val);
-      if (contractObj) {
-        const assignedStaffIds = assetAssignments.filter(a => a.contractId === val).map(a => a.staffId).filter(Boolean);
+      if (val === 'split_all_contracts') {
+        const vContracts = contracts.filter(c => c.vendorId === expense.recipientId);
+        const totalProjected = vContracts.reduce((sum, c) => sum + (toGBP(c.unitCost, c.currency) * (c.quantityPurchased || 1)), 0) || 1;
+        const expAmount = toGBP(expense.amount, expense.currency || 'GBP');
+        const splits: Record<string, number> = {};
+
+        vContracts.forEach(c => {
+          const cProj = toGBP(c.unitCost, c.currency) * (c.quantityPurchased || 1);
+          const cShare = (cProj / totalProjected) * expAmount;
+          splits[c.id] = Math.round(cShare * 100) / 100;
+        });
+
+        updated.linkedContractId = 'split_all';
+        updated.contractSplits = splits;
+
+        const allContractIds = vContracts.map(c => c.id);
+        const assignedStaffIds = assetAssignments.filter(a => allContractIds.includes(a.contractId)).map(a => a.staffId).filter(Boolean);
         if (assignedStaffIds.length > 0) {
           updated.allocationType = 'staff';
           updated.allocationTarget = assignedStaffIds;
+        }
+      } else {
+        updated.linkedContractId = val;
+        updated.contractSplits = null;
+        const contractObj = contracts.find(c => c.id === val);
+        if (contractObj) {
+          const assignedStaffIds = assetAssignments.filter(a => a.contractId === val).map(a => a.staffId).filter(Boolean);
+          if (assignedStaffIds.length > 0) {
+            updated.allocationType = 'staff';
+            updated.allocationTarget = assignedStaffIds;
+          }
         }
       }
     }
@@ -495,6 +519,11 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
                           style={{ width: '100%', padding: '6px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
                         >
                           <option value="">-- General Vendor Payment --</option>
+                          {vendorContracts.length > 1 && (
+                            <option value="split_all_contracts" style={{ color: 'var(--success)', fontWeight: 'bold' }}>
+                              ⚡ Split Pro-Rata Across All {vendorContracts.length} Contracts
+                            </option>
+                          )}
                           {vendorContracts.map(c => (
                             <option key={c.id} value={c.id}>💻 {c.name} ({c.quantityPurchased || 0} seats)</option>
                           ))}

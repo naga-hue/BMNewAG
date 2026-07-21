@@ -1926,6 +1926,36 @@ export default function App() {
               </span>
             </button>
 
+            {/* Unmapped Expenses Top Header Shortcut */}
+            {(() => {
+              const unmappedHeaderCount = (expenses || []).filter(e => (!e.recipientType || e.recipientType === 'other' || !e.nominalCode) && e.status !== 'dns' && e.status !== 'cancelled').length;
+              if (unmappedHeaderCount === 0) return null;
+              return (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('expenses')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                    border: '1px solid rgba(245, 158, 11, 0.4)',
+                    borderRadius: '8px',
+                    color: 'var(--warning)',
+                    cursor: 'pointer',
+                    marginRight: '12px',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Click to categorize unmapped expense transactions"
+                >
+                  ⚠️ Unmapped ({unmappedHeaderCount})
+                </button>
+              );
+            })()}
+
             {/* Live GMT/SAST/IST Office Clocks Widget */}
             <div style={{ display: 'flex', gap: '8px', marginRight: '16px', alignItems: 'center' }}>
               {formatTimeForZone(currentTime, 'Europe/London', 'UK (London)')}

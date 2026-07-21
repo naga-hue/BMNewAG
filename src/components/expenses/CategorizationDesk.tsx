@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useBoundStore } from '../../store/useBoundStore';
 import { toGBP } from '../../utils/currency';
-import { Check, Sparkles, Filter, AlertTriangle, ArrowRight, ShieldAlert } from 'lucide-react';
-import MultiSelectFilter from '../MultiSelectFilter';
+import { Check, Sparkles, Filter, AlertTriangle, ArrowRight, ShieldAlert, Plus, Layers, UserCheck } from 'lucide-react';
+import { firebaseService } from '../../services/firebase';
 
 interface CategorizationDeskProps {
   onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
@@ -24,8 +24,18 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'unmapped_recipient' | 'unmapped_nominal'>('all');
-  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Quick Contract Registration Modal state
+  const [showQuickContractModal, setShowQuickContractModal] = useState(false);
+  const [quickContractRowId, setQuickContractRowId] = useState<string | null>(null);
+  const [quickVendorId, setQuickVendorId] = useState('');
+  const [quickVendorName, setQuickVendorName] = useState('');
+  const [newContractName, setNewContractName] = useState('');
+  const [newContractSeats, setNewContractSeats] = useState(50);
+  const [newContractUnitCost, setNewContractUnitCost] = useState(10);
+  const [newContractCurrency, setNewContractCurrency] = useState('GBP');
+  const [newContractCompanyId, setNewContractCompanyId] = useState('');
 
   // Filter unmapped and uncategorized expenses
   const unmappedExpenses = useMemo(() => {
@@ -73,12 +83,14 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
           recipientType: 'staff',
           recipientId: matchedStaff.id,
           payee: matchedStaff.fullName,
+          compensationCategory: 'salary',
           allocationType: 'staff',
           allocationTarget: [matchedStaff.id]
         });
         mapped++;
       } else if (matchedVendor) {
         const vContracts = contracts.filter(c => c.vendorId === matchedVendor.id || (c.vendorName && c.vendorName.toLowerCase() === matchedVendor.name.toLowerCase()));
+        const matchedContract = vContracts[0];
         const vContractIds = vContracts.map(c => c.id);
         const assignedStaffIds = assetAssignments.filter(a => vContractIds.includes(a.contractId)).map(a => a.staffId).filter(Boolean);
 
@@ -100,6 +112,7 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
           ...exp,
           recipientType: 'vendor',
           recipientId: matchedVendor.id,
+          linkedContractId: matchedContract?.id || '',
           payee: matchedVendor.name,
           allocationType: allocType,
           allocationTarget: allocTarget
@@ -123,6 +136,7 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
       if (val === 'other') {
         updated.recipientType = 'other';
         updated.recipientId = '';
+        updated.linkedContractId = '';
       } else {
         const [type, id] = val.split(':');
         updated.recipientType = type;
@@ -132,6 +146,7 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
           const sObj = staff.find(s => s.id === id);
           if (sObj) {
             updated.payee = sObj.fullName;
+            updated.compensationCategory = updated.compensationCategory || 'salary';
             updated.allocationType = 'staff';
             updated.allocationTarget = [id];
           }
@@ -140,6 +155,9 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
           if (vObj) {
             updated.payee = vObj.name;
             const vContracts = contracts.filter(c => c.vendorId === id || (c.vendorName && c.vendorName.toLowerCase() === vObj.name.toLowerCase()));
+            const firstContract = vContracts[0];
+            updated.linkedContractId = firstContract?.id || '';
+
             const vContractIds = vContracts.map(c => c.id);
             const assignedStaffIds = assetAssignments.filter(a => vContractIds.includes(a.contractId)).map(a => a.staffId).filter(Boolean);
 
@@ -156,10 +174,75 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
           }
         }
       }
+    } else if (field === 'linkedContractId') {
+      if (val === 'register_new_contract') {
+        const vObj = vendors.find(v => v.id === expense.recipientId);
+        setQuickVendorId(expense.recipientId || '');
+        setQuickVendorName(vObj?.name || expense.payee || 'Vendor');
+        setQuickContractRowId(expense.id);
+        setNewContractName(`${vObj?.name || 'Vendor'} License Package`);
+        setNewContractCompanyId(companies[0]?.id || '');
+        setShowQuickContractModal(true);
+        return;
+      }
+
+      updated.linkedContractId = val;
+      const contractObj = contracts.find(c => c.id === val);
+      if (contractObj) {
+        const assignedStaffIds = assetAssignments.filter(a => a.contractId === val).map(a => a.staffId).filter(Boolean);
+        if (assignedStaffIds.length > 0) {
+          updated.allocationType = 'staff';
+          updated.allocationTarget = assignedStaffIds;
+        }
+      }
     }
 
     await saveExpense(updated);
     onShowToast(`Updated categorisation for ${updated.payee}`, 'success');
+  };
+
+  const handleCreateNewContractModalSave = async () => {
+    if (!newContractName.trim()) {
+      onShowToast('Please enter a contract package name.', 'error');
+      return;
+    }
+
+    const newContractId = `contract-${Date.now()}`;
+    const newContract = {
+      id: newContractId,
+      vendorId: quickVendorId,
+      vendorName: quickVendorName,
+      name: newContractName,
+      quantityPurchased: Number(newContractSeats) || 1,
+      unitCost: Number(newContractUnitCost) || 0,
+      currency: newContractCurrency || 'GBP',
+      billingFrequency: 'Monthly',
+      startDate: `${new Date().getFullYear()}-01-01`,
+      endDate: `${new Date().getFullYear()}-12-31`,
+      splits: [
+        { targetId: newContractCompanyId || (companies[0]?.id || ''), percentage: 100, type: 'company' }
+      ]
+    };
+
+    try {
+      await firebaseService.saveContract(newContract);
+      onShowToast(`Created new contract "${newContractName}" (${newContractSeats} seats) successfully!`, 'success');
+
+      if (quickContractRowId) {
+        const targetExp = expenses.find(e => e.id === quickContractRowId);
+        if (targetExp) {
+          await saveExpense({
+            ...targetExp,
+            recipientType: 'vendor',
+            recipientId: quickVendorId,
+            linkedContractId: newContractId
+          });
+        }
+      }
+      setShowQuickContractModal(false);
+    } catch (err: any) {
+      onShowToast(`Error saving contract: ${err.message}`, 'error');
+    }
   };
 
   return (
@@ -267,23 +350,24 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
         <table className="entity-table dense" style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '2px solid var(--border-color)' }}>
-              <th style={{ padding: '10px', textAlign: 'left', minWidth: '100px' }}>Date</th>
-              <th style={{ padding: '10px', textAlign: 'left', minWidth: '220px' }}>Bank Statement Payee</th>
-              <th style={{ padding: '10px', textAlign: 'right', minWidth: '110px' }}>Amount</th>
-              <th style={{ padding: '10px', textAlign: 'left', minWidth: '120px' }}>P&L Month</th>
-              <th style={{ padding: '10px', textAlign: 'left', minWidth: '200px' }}>Mapped Vendor / Staff</th>
-              <th style={{ padding: '10px', textAlign: 'left', minWidth: '160px' }}>Nominal Category</th>
-              <th style={{ padding: '10px', textAlign: 'left', minWidth: '180px' }}>Cost Allocation</th>
+              <th style={{ padding: '10px', textAlign: 'left', minWidth: '90px' }}>Date</th>
+              <th style={{ padding: '10px', textAlign: 'left', minWidth: '200px' }}>Bank Statement Payee</th>
+              <th style={{ padding: '10px', textAlign: 'right', minWidth: '100px' }}>Amount</th>
+              <th style={{ padding: '10px', textAlign: 'left', minWidth: '110px' }}>P&L Month</th>
+              <th style={{ padding: '10px', textAlign: 'left', minWidth: '180px' }}>Mapped Vendor / Staff</th>
+              <th style={{ padding: '10px', textAlign: 'left', minWidth: '180px' }}>Contract / Compensation Type</th>
+              <th style={{ padding: '10px', textAlign: 'left', minWidth: '150px' }}>Nominal Category</th>
+              <th style={{ padding: '10px', textAlign: 'left', minWidth: '220px' }}>Apportionment & Unused Capacity</th>
             </tr>
           </thead>
           <tbody>
             {unmappedExpenses.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                <td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                     <Check size={32} color="var(--success)" />
                     <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>No Unmapped Expenses Found!</span>
-                    <span style={{ fontSize: '12px' }}>All transactions in your ledger are mapped to vendors, staff, and nominal categories.</span>
+                    <span style={{ fontSize: '12px' }}>All transactions in your ledger are mapped to vendors, contracts, staff, and nominal categories.</span>
                   </div>
                 </td>
               </tr>
@@ -291,8 +375,16 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
               unmappedExpenses.map(exp => {
                 const isRecipientUnmapped = !exp.recipientType || exp.recipientType === 'other';
                 const isNominalUnmapped = !exp.nominalCode;
-
                 const recipientVal = exp.recipientType !== 'other' ? `${exp.recipientType}:${exp.recipientId}` : 'other';
+
+                const vendorContracts = exp.recipientType === 'vendor' ? contracts.filter(c => c.vendorId === exp.recipientId) : [];
+                const currentContract = contracts.find(c => c.id === exp.linkedContractId);
+
+                // Unused seats & staff seats calculation
+                let totalSeats = currentContract?.quantityPurchased || 0;
+                let assignedStaff = currentContract ? assetAssignments.filter(a => a.contractId === currentContract.id) : [];
+                let assignedCount = assignedStaff.length;
+                let unusedCount = Math.max(0, totalSeats - assignedCount);
 
                 return (
                   <tr 
@@ -366,6 +458,38 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
                       </select>
                     </td>
 
+                    {/* Contract / Compensation Type */}
+                    <td style={{ padding: '8px 10px' }}>
+                      {exp.recipientType === 'vendor' ? (
+                        <select
+                          value={exp.linkedContractId || ''}
+                          onChange={(e) => handleUpdateRow(exp, 'linkedContractId', e.target.value)}
+                          style={{ width: '100%', padding: '6px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                        >
+                          <option value="">-- General Vendor Payment --</option>
+                          {vendorContracts.map(c => (
+                            <option key={c.id} value={c.id}>💻 {c.name} ({c.quantityPurchased || 0} seats)</option>
+                          ))}
+                          <option value="register_new_contract" style={{ color: 'var(--primary)', fontWeight: 'bold' }}>
+                            ➕ Register New Contract Package...
+                          </option>
+                        </select>
+                      ) : exp.recipientType === 'staff' ? (
+                        <select
+                          value={exp.compensationCategory || 'salary'}
+                          onChange={(e) => handleUpdateRow(exp, 'compensationCategory', e.target.value)}
+                          style={{ width: '100%', padding: '6px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                        >
+                          <option value="salary">💰 Monthly Basic Salary</option>
+                          <option value="commission">📈 Sales Commission</option>
+                          <option value="reimbursement">🧾 Expense Reimbursement</option>
+                          <option value="bonus">🎁 Performance Bonus</option>
+                        </select>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Select Recipient first</span>
+                      )}
+                    </td>
+
                     {/* Nominal Code */}
                     <td style={{ padding: '8px 10px' }}>
                       <select 
@@ -389,19 +513,32 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
                       </select>
                     </td>
 
-                    {/* Allocation Status */}
+                    {/* Apportionment Breakdown Card */}
                     <td style={{ padding: '8px 10px' }}>
-                      {exp.allocationType === 'staff' ? (
-                        <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)', fontWeight: 600 }}>
-                          👥 {Array.isArray(exp.allocationTarget) ? `${exp.allocationTarget.length} Users` : 'Staff'}
-                        </span>
+                      {exp.recipientType === 'staff' ? (
+                        <div style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '4px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)', fontWeight: 600 }}>
+                          👤 Direct Staff Compensation
+                        </div>
+                      ) : currentContract ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--success)', fontWeight: 700 }}>
+                            <UserCheck size={12} />
+                            <span>{assignedCount} Staff Seats Assigned</span>
+                          </div>
+                          {unusedCount > 0 && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--warning)', fontWeight: 600 }}>
+                              <Layers size={12} />
+                              <span>{unusedCount} Unused Seats → Corporate Overhead</span>
+                            </div>
+                          )}
+                        </div>
                       ) : exp.allocationType === 'company' ? (
                         <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', fontWeight: 600 }}>
-                          🏢 Company Split
+                          🏢 Company Share
                         </span>
                       ) : (
                         <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px', backgroundColor: 'rgba(148, 163, 184, 0.1)', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                          🌐 Global Overhead
+                          🌐 Corporate Overhead
                         </span>
                       )}
                     </td>
@@ -412,6 +549,81 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
           </tbody>
         </table>
       </div>
+
+      {/* Quick Contract Creation Drawer/Modal */}
+      {showQuickContractModal && (
+        <div className="form-wizard-overlay" onClick={() => setShowQuickContractModal(false)} style={{ zIndex: 1100 }}>
+          <div className="form-wizard-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px', padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Plus size={18} color="var(--primary)" />
+                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Register New Contract Package
+                </h3>
+              </div>
+              <button type="button" onClick={() => setShowQuickContractModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '16px' }}>✕</button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Vendor Partner</label>
+                <input type="text" value={quickVendorName} disabled style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }} />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Contract Package Name *</label>
+                <input 
+                  type="text" 
+                  value={newContractName} 
+                  onChange={(e) => setNewContractName(e.target.value)} 
+                  placeholder="e.g. Microsoft Business Basic" 
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }} 
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Total Licenses / Seats *</label>
+                  <input 
+                    type="number" 
+                    value={newContractSeats} 
+                    onChange={(e) => setNewContractSeats(Number(e.target.value))} 
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }} 
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Unit Cost / Seat *</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    value={newContractUnitCost} 
+                    onChange={(e) => setNewContractUnitCost(Number(e.target.value))} 
+                    style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }} 
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Primary Billed Company *</label>
+                <select 
+                  value={newContractCompanyId} 
+                  onChange={(e) => setNewContractCompanyId(e.target.value)} 
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                >
+                  {companies.map(c => (
+                    <option key={c.id} value={c.id}>🏢 {c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px', borderTop: '1px solid var(--border-color)', paddingTop: '14px' }}>
+              <button type="button" className="btn-secondary" onClick={() => setShowQuickContractModal(false)}>Cancel</button>
+              <button type="button" className="btn-primary" onClick={handleCreateNewContractModalSave}>Save & Link Contract</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

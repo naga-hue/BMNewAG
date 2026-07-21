@@ -851,14 +851,16 @@ export default function ReportsDashboard({
     const safeSalaries = Number(salaries) || 0;
     const safeOverheadsExpenses = Number(overheadsExpenses) || 0;
 
-    const grossProfit = safeRevenue - safeCommissions;
-    const totalOverheads = safeSalaries + safeOverheadsExpenses;
+    const grossProfit = safeRevenue;
+    const totalDirectStaffCost = safeSalaries + safeCommissions;
+    const totalOverheads = totalDirectStaffCost + safeOverheadsExpenses;
     const netProfit = grossProfit - totalOverheads;
 
     return {
       revenue,
       salaries,
       commissions,
+      totalDirectStaffCost,
       overheadsExpenses,
       grossProfit,
       totalOverheads,
@@ -1068,17 +1070,6 @@ export default function ReportsDashboard({
                       <td colSpan={monthsList.length + 1} />
                     </tr>
                     {renderRow('Net Placements Fee Billings', 'revenue', false, true, 'var(--success)')}
-                    
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }} />
-                    
-                    <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
-                      <td>Direct cost (Recruiter Commissions)</td>
-                      <td colSpan={monthsList.length + 1} />
-                    </tr>
-                    {renderRow('Accrued Recruiter Commissions', 'commissions', false, true, 'var(--danger)')}
-
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }} />
-
                     {renderRow('Gross Profit Margin', 'grossProfit', true, false, 'var(--accent)')}
 
                     <tr style={{ borderBottom: '1px dashed var(--border-color)', height: '8px' }} />
@@ -1088,6 +1079,9 @@ export default function ReportsDashboard({
                       <td colSpan={monthsList.length + 1} />
                     </tr>
                     {renderRow('Base Wages & Salaries', 'salaries', false, true)}
+                    {renderRow('Accrued Recruiter Commissions', 'commissions', false, true, 'var(--danger)')}
+                    {renderRow('Total Direct Staff & Employee Costs', 'totalDirectStaffCost', true, true, 'var(--primary)')}
+
                     {/* Apportioned Overheads & SaaS (Expandable) */}
                     <tr style={{ fontWeight: 400 }}>
                       <td style={{ paddingLeft: '24px', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setExpandedExpenses(!expandedExpenses)}>
@@ -1116,13 +1110,18 @@ export default function ReportsDashboard({
                       </td>
                     </tr>
 
-                    {/* Sub-rows for each operational nominal code category when expanded */}
+                    {/* Sub-rows for each operational nominal code category when expanded (Sorted 1 to N / Alphabetical) */}
                     {expandedExpenses && (() => {
                       const codeKeys = Array.from(new Set(
                         rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
                       ))
                       .filter(code => !code.startsWith('18 - Salary') && !code.startsWith('1 - Freelancer'))
-                      .sort();
+                      .sort((a, b) => {
+                        const numA = parseInt(a.split('-')[0] || 0, 10);
+                        const numB = parseInt(b.split('-')[0] || 0, 10);
+                        if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
+                        return a.localeCompare(b);
+                      });
 
                       return codeKeys.map(code => {
                         const ytdSum = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);

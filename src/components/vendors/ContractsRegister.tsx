@@ -24,10 +24,10 @@ interface ContractsRegisterProps {
   onSaveAssetAssignment: (assignment: any) => Promise<any>;
   onDeleteAssetAssignment: (id: string) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
-  handleEditContract: (contract: any) => void;
+  handleEditContract?: (contract: any) => void;
+  onEditContract?: (contract: any) => void;
   onRegisterContractClick: () => void;
   onBatchAllocateSeatsClick?: (contract: any) => void;
-  onEditContract?: (contract: any) => void;
 }
 
 export default function ContractsRegister({
@@ -43,8 +43,10 @@ export default function ContractsRegister({
   onDeleteAssetAssignment,
   onShowToast,
   handleEditContract,
+  onEditContract,
   onRegisterContractClick
 }: ContractsRegisterProps) {
+  const triggerEditContract = onEditContract || handleEditContract;
   const [expandedContractId, setExpandedContractId] = useState<string | null>(null);
   const [expandedSplitsContractId, setExpandedSplitsContractId] = useState<string | null>(null);
   const [uploadContractId, setUploadContractId] = useState<string | null>(null);
@@ -207,7 +209,7 @@ export default function ContractsRegister({
               return (
                 <React.Fragment key={contract.id}>
                   <tr 
-                    onClick={() => handleEditContract(contract)}
+                    onClick={() => triggerEditContract && triggerEditContract(contract)}
                     className="table-row-hover"
                     style={{ 
                       cursor: 'pointer',
@@ -398,7 +400,7 @@ export default function ContractsRegister({
                           <button className="btn-icon" onClick={() => setUploadContractId(contract.id)} title="Attach Invoice Document" style={{ padding: '4px', borderRadius: '4px' }}>
                             <Plus size={11} />
                           </button>
-                          <button className="btn-icon" onClick={() => handleEditContract(contract)} title="Edit Contract" style={{ padding: '4px', borderRadius: '4px' }}>
+                          <button className="btn-icon" onClick={() => triggerEditContract && triggerEditContract(contract)} title="Edit Contract" style={{ padding: '4px', borderRadius: '4px' }}>
                             <Edit3 size={11} />
                           </button>
                           {onDeleteContract && (

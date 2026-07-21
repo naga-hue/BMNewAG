@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import MultiSelectFilter from './MultiSelectFilter';
 import CompanyDeptTreeFilter from './CompanyDeptTreeFilter';
+import { toGBP, FX_RATES } from '../utils/currency';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -8,19 +9,11 @@ import {
   Building2, 
   Award, 
   Percent, 
-  Info,
-  Globe,
-  PieChart,
-  Coins
+  Info, 
+  Globe, 
+  PieChart, 
+  Coins 
 } from 'lucide-react';
-
-const FX_RATES = {
-  GBP: 1.0,
-  USD: 0.79,
-  AED: 0.21,
-  INR: 0.0094,
-  ZAR: 0.043
-};
 
 const formatGBP = (val) => {
   return '£' + Math.round(val).toLocaleString();
@@ -141,11 +134,7 @@ export default function ReportsDashboard({
 
   const monthsList = generateMonthsRange(startMonth, endMonth);
 
-  // Exchange rate converter helper
-  const toGBP = (amount, cur = 'GBP') => {
-    const rate = FX_RATES[cur] || 1.0;
-    return (Number(amount) || 0) * rate;
-  };
+
 
   // Helper to calculate recruiter commission payout
   const calculateCashReceivedCommission = (member, policy, monthStr, staffList, companiesList, placementsList, basis = 'written') => {

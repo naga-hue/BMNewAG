@@ -83,7 +83,7 @@ export default function AiChatbot({ assetAssignments = [] }) {
     if (isListening) {
       recognitionRef.current.stop();
     } else {
-      startingTextRef.current = inputValue; // Save starting input box text
+      startingTextRef.current = inputQuery;
       try {
         recognitionRef.current.start();
       } catch (err) {
@@ -93,19 +93,19 @@ export default function AiChatbot({ assetAssignments = [] }) {
   };
 
   // Retrieve store states for context aggregation
-  const staff = useBoundStore(state => state.staff);
-  const companies = useBoundStore(state => state.companies);
-  const leaveRequests = useBoundStore(state => state.leaveRequests);
-  const placements = useBoundStore(state => state.placements);
-  const contracts = useBoundStore(state => state.contracts || []);
-  const expenses = useBoundStore(state => state.expenses || []);
-  const leavePolicies = useBoundStore(state => state.leavePolicies || []);
-  const holidays = useBoundStore(state => state.holidays || []);
-  const vendors = useBoundStore(state => state.vendors || []);
-  const nominalCodes = useBoundStore(state => state.nominalCodes || []);
-  const payrollRecords = useBoundStore(state => state.payrollRecords || []);
-  const payrollPolicies = useBoundStore(state => state.payrollPolicies || []);
-  const reimbursementClaims = useBoundStore(state => state.reimbursementClaims || []);
+  const staff = useBoundStore(state => state.staff) || EMPTY_ARRAY;
+  const companies = useBoundStore(state => state.companies) || EMPTY_ARRAY;
+  const leaveRequests = useBoundStore(state => state.leaveRequests) || EMPTY_ARRAY;
+  const placements = useBoundStore(state => state.placements) || EMPTY_ARRAY;
+  const contracts = useBoundStore(state => state.contracts) || EMPTY_ARRAY;
+  const expenses = useBoundStore(state => state.expenses) || EMPTY_ARRAY;
+  const leavePolicies = useBoundStore(state => state.leavePolicies) || EMPTY_ARRAY;
+  const holidays = useBoundStore(state => state.holidays) || EMPTY_ARRAY;
+  const vendors = useBoundStore(state => state.vendors) || EMPTY_ARRAY;
+  const nominalCodes = useBoundStore(state => state.nominalCodes) || EMPTY_ARRAY;
+  const payrollRecords = useBoundStore(state => state.payrollRecords) || EMPTY_ARRAY;
+  const payrollPolicies = useBoundStore(state => state.payrollPolicies) || EMPTY_ARRAY;
+  const reimbursementClaims = useBoundStore(state => state.reimbursementClaims) || EMPTY_ARRAY;
 
   // Quick suggestions list (Smart Defaults)
   const suggestions = [

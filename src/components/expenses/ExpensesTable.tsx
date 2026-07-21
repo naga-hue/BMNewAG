@@ -22,6 +22,8 @@ interface ExpensesTableProps {
   onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
 }
 
+const EMPTY_ARRAY: any[] = [];
+
 export default function ExpensesTable({
   handleEditExpense,
   setLinkingPayrollExpId: _setLinkingPayrollExpId,
@@ -43,8 +45,8 @@ export default function ExpensesTable({
   const vendors = useBoundStore(state => state.vendors);
   const placements = useBoundStore(state => state.placements);
   const nominalCodes = useBoundStore(state => state.nominalCodes);
-  const contracts = useBoundStore(state => state.contracts || []);
-  const assetAssignments = useBoundStore(state => state.assetAssignments || []);
+  const contracts = useBoundStore(state => state.contracts) || EMPTY_ARRAY;
+  const assetAssignments = useBoundStore(state => state.assetAssignments) || EMPTY_ARRAY;
 
   const updateExpense = useBoundStore(state => state.updateExpense);
   const saveExpense = updateExpense;

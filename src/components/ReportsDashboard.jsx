@@ -840,9 +840,11 @@ export default function ReportsDashboard({
       commissions += pay.commissions;
     });
 
-    // 5. Operating expenses + shared overhead apportionments
+    // 5. Operating expenses + shared overhead apportionments (excluding salary/freelancer codes to prevent double-counting with Base Wages & Salaries)
     const nominalBreakdown = getNominalBreakdownForMonth(monthKey);
-    const overheadsExpenses = Object.values(nominalBreakdown).reduce((sum, v) => sum + v, 0);
+    const overheadsExpenses = Object.entries(nominalBreakdown)
+      .filter(([code]) => !code.startsWith('18 - Salary') && !code.startsWith('1 - Freelancer'))
+      .reduce((sum, [, v]) => sum + v, 0);
 
     const safeRevenue = Number(revenue) || 0;
     const safeCommissions = Number(commissions) || 0;
@@ -1114,11 +1116,13 @@ export default function ReportsDashboard({
                       </td>
                     </tr>
 
-                    {/* Sub-rows for each nominal code category when expanded */}
+                    {/* Sub-rows for each operational nominal code category when expanded */}
                     {expandedExpenses && (() => {
                       const codeKeys = Array.from(new Set(
                         rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
-                      )).sort();
+                      ))
+                      .filter(code => !code.startsWith('18 - Salary') && !code.startsWith('1 - Freelancer'))
+                      .sort();
 
                       return codeKeys.map(code => {
                         const ytdSum = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
@@ -2332,7 +2336,9 @@ export default function ReportsDashboard({
               });
 
               const nominalBreakdown = getNominalBreakdownForMonth(m, indiaCompanyId);
-              const overheadsExpenses = Object.values(nominalBreakdown).reduce((sum, v) => sum + v, 0);
+              const overheadsExpenses = Object.entries(nominalBreakdown)
+                .filter(([code]) => !code.startsWith('18 - Salary') && !code.startsWith('1 - Freelancer'))
+                .reduce((sum, [, v]) => sum + v, 0);
 
               const grossProfit = revenue - commissions;
               const totalOverheads = salaries + overheadsExpenses;

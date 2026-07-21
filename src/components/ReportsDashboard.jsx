@@ -691,72 +691,79 @@ export default function ReportsDashboard({
       }
     });
 
-    // 2. Process Vendor Contract Package Projections from Vendors & Assets module for un-reconciled months
-    (contracts || []).forEach(contract => {
-      if (!contract.startDate || !contract.endDate) return;
-      const startM = contract.startDate.substring(0, 7);
-      const endM = contract.endDate.substring(0, 7);
+    // Find the latest historical month containing actual bank reconciled expenses
+    const maxReconciledMonth = (expenses || []).reduce((max, e) => {
+      const m = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+      return m && m > max ? m : max;
+    }, '2026-06');
 
-      if (monthKey >= startM && monthKey <= endM) {
-        // If an actual bank payment was already reconciled for this contract package in monthKey, skip projection to avoid double counting
-        if (reconciledContractIds.has(contract.id)) return;
+    // 2. Process Vendor Contract Package Projections ONLY for future/unbilled months (monthKey > maxReconciledMonth)
+    if (monthKey > maxReconciledMonth) {
+      (contracts || []).forEach(contract => {
+        if (!contract.startDate || !contract.endDate) return;
+        const startM = contract.startDate.substring(0, 7);
+        const endM = contract.endDate.substring(0, 7);
 
-        let cost = 0;
-        if (contract.costInterval === 'monthly') {
-          cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
-        } else if (contract.costInterval === 'quarterly' || (contract.name || '').toLowerCase().includes('linkedin')) {
-          cost = (Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1)) / 3;
-        } else if (contract.costInterval === 'annual') {
-          cost = (Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1)) / 12;
-        } else if (contract.costInterval === 'one-time' && startM === monthKey) {
-          cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
-        }
+        if (monthKey >= startM && monthKey <= endM) {
+          // If an actual bank payment was already reconciled for this contract package in monthKey, skip projection to avoid double counting
+          if (reconciledContractIds.has(contract.id)) return;
 
-        if (cost <= 0) return;
-        const gbpCost = toGBP(cost, contract.currency || 'GBP');
-        let allocatedGbp = 0;
-
-        const targetComps = contract.companyId ? [contract.companyId] : activeCompanyIds;
-        const eligibleStaff = groupActiveStaff.filter(s => targetComps.includes(s.companyId));
-        const totalHead = eligibleStaff.length || 1;
-        const perStaffShare = gbpCost / totalHead;
-
-        eligibleStaff.forEach(s => {
-          if (activeStaffIds.includes(s.id)) {
-            allocatedGbp += perStaffShare;
+          let cost = 0;
+          if (contract.costInterval === 'monthly') {
+            cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
+          } else if (contract.costInterval === 'quarterly' || (contract.name || '').toLowerCase().includes('linkedin')) {
+            cost = (Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1)) / 3;
+          } else if (contract.costInterval === 'annual') {
+            cost = (Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1)) / 12;
+          } else if (contract.costInterval === 'one-time' && startM === monthKey) {
+            cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
           }
-        });
 
-        // Resolve nominal code for contract
-        let targetCode = contract.nominalCode;
-        if (!targetCode) {
-          const nameLower = (contract.name || '').toLowerCase();
-          if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
-            targetCode = '10 - Rent';
-          } else if (nameLower.includes('linkedin')) {
-            targetCode = '17 - Linkedin';
-          } else if (nameLower.includes('freelance')) {
-            targetCode = '1 - Freelancer';
-          } else {
-            targetCode = '15 - Recruitment Tool Expenses';
+          if (cost <= 0) return;
+          const gbpCost = toGBP(cost, contract.currency || 'GBP');
+          let allocatedGbp = 0;
+
+          const targetComps = contract.companyId ? [contract.companyId] : activeCompanyIds;
+          const eligibleStaff = groupActiveStaff.filter(s => targetComps.includes(s.companyId));
+          const totalHead = eligibleStaff.length || 1;
+          const perStaffShare = gbpCost / totalHead;
+
+          eligibleStaff.forEach(s => {
+            if (activeStaffIds.includes(s.id)) {
+              allocatedGbp += perStaffShare;
+            }
+          });
+
+          // Resolve nominal code for contract
+          let targetCode = contract.nominalCode;
+          if (!targetCode) {
+            const nameLower = (contract.name || '').toLowerCase();
+            if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
+              targetCode = '10 - Rent';
+            } else if (nameLower.includes('linkedin')) {
+              targetCode = '17 - Linkedin';
+            } else if (nameLower.includes('freelance')) {
+              targetCode = '1 - Freelancer';
+            } else {
+              targetCode = '15 - Recruitment Tool Expenses';
+            }
+          }
+
+          const matchedKey = Object.keys(breakdown).find(k => k.startsWith(targetCode) || k === targetCode);
+          if (matchedKey) {
+            breakdown[matchedKey] += allocatedGbp;
           }
         }
+      });
 
-        const matchedKey = Object.keys(breakdown).find(k => k.startsWith(targetCode) || k === targetCode);
-        if (matchedKey) {
-          breakdown[matchedKey] += allocatedGbp;
-        }
-      }
-    });
-
-    // 3. For any nominal code with 0 in monthKey (future/unbilled month), project from most recent historical actual month
-    Object.keys(breakdown).forEach(code => {
-      if (breakdown[code] === 0) {
-        const pastExpenses = expenses.filter(e => e.plMonth < monthKey && e.nominalCode && (code.startsWith(e.nominalCode) || code === e.nominalCode));
-        if (pastExpenses.length > 0) {
-          const pastMonths = Array.from(new Set(pastExpenses.map(e => e.plMonth))).sort();
-          const latestMonth = pastMonths[pastMonths.length - 1];
-          const latestExpenses = pastExpenses.filter(e => e.plMonth === latestMonth);
+      // 3. For any nominal code with 0 in future unbilled month, project from most recent historical actual month
+      Object.keys(breakdown).forEach(code => {
+        if (breakdown[code] === 0) {
+          const pastExpenses = expenses.filter(e => e.plMonth < monthKey && e.nominalCode && (code.startsWith(e.nominalCode) || code === e.nominalCode));
+          if (pastExpenses.length > 0) {
+            const pastMonths = Array.from(new Set(pastExpenses.map(e => e.plMonth))).sort();
+            const latestMonth = pastMonths[pastMonths.length - 1];
+            const latestExpenses = pastExpenses.filter(e => e.plMonth === latestMonth);
 
           let allocatedGbp = 0;
           latestExpenses.forEach(exp => {
@@ -800,6 +807,7 @@ export default function ReportsDashboard({
         }
       }
     });
+    }
 
     return breakdown;
   };

@@ -542,12 +542,26 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
                   </div>
                   <div className="detail-item">
                     <span className="detail-label">Consolidation Status</span>
-                    <span className="detail-value" style={{ 
-                      fontWeight: 600, 
-                      color: company.includeInConsolidation !== false ? 'var(--success)' : 'var(--warning)' 
-                    }}>
-                      {company.includeInConsolidation !== false ? 'Included in Group Reports' : 'Excluded from Group Reports'}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
+                      <span className="detail-value" style={{ 
+                        fontWeight: 600, 
+                        color: company.includeInConsolidation !== false ? 'var(--success)' : 'var(--warning)' 
+                      }}>
+                        {company.includeInConsolidation !== false ? 'Included in Group Reports' : 'Excluded from Group Reports'}
+                      </span>
+                      <button 
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '3px 10px', fontSize: '11px', fontWeight: 600, borderRadius: '4px', cursor: 'pointer' }}
+                        onClick={async () => {
+                          const updated = { ...company, includeInConsolidation: company.includeInConsolidation === false ? true : false };
+                          await onUpdateCompany(updated);
+                          onShowToast(company.includeInConsolidation === false ? `Included ${company.name} in Group Reports` : `Excluded ${company.name} from Group Reports`, 'info');
+                        }}
+                      >
+                        {company.includeInConsolidation !== false ? '🚫 Mark as Excluded' : '✅ Mark as Included'}
+                      </button>
+                    </div>
                   </div>
                 </div>
                 {company.notes && (

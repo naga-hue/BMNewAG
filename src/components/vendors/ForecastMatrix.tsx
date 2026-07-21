@@ -38,6 +38,16 @@ export default function ForecastMatrix({
 
   const activeCurrencySymbol = symbolMap[forecastCurrency] || '£';
 
+  const activeCompanyIds = useMemo(() => {
+    if (forecastCompanyFilter === 'all') {
+      return companies.filter(c => c.includeInConsolidation !== false).map(c => c.id);
+    }
+    if (forecastCompanyFilter === 'gross') {
+      return companies.map(c => c.id);
+    }
+    return [forecastCompanyFilter];
+  }, [forecastCompanyFilter, companies]);
+
   const forecastMonths = [
     { label: 'Jan', year: 2026, monthIndex: 0 },
     { label: 'Feb', year: 2026, monthIndex: 1 },
@@ -87,7 +97,7 @@ export default function ForecastMatrix({
       if (forecastCurrency !== 'GBP') {
         actualTarget = actualGBP / (FX_RATES[forecastCurrency] || 1.0);
       }
-      if (forecastCompanyFilter !== 'all') {
+      if (forecastCompanyFilter !== 'all' && forecastCompanyFilter !== 'gross') {
         const share = getContractCompanyShare(c, staff, companies, forecastCompanyFilter, year, monthIndex);
         return actualTarget * share;
       }
@@ -140,9 +150,40 @@ export default function ForecastMatrix({
       const taxFactor = 1 + (Number(c.taxRate || 0) / 100);
       const fullCost = monthlyTotal * taxFactor;
 
-      if (forecastCompanyFilter !== 'all') {
+      // Evaluate seat assignments if present
+      const assignedSeats = (assetAssignments || []).filter(a => a.contractId === c.id);
+      if (assignedSeats.length > 0) {
+        const totalSeats = c.quantityPurchased || 1;
+        const costPerSeat = fullCost / totalSeats;
+
+        let matchingAssignedCount = 0;
+        assignedSeats.forEach(a => {
+          const member = staff.find(s => s.id === a.staffId);
+          if (member && activeCompanyIds.includes(member.companyId)) {
+            matchingAssignedCount++;
+          }
+        });
+        const assignedCost = matchingAssignedCount * costPerSeat;
+
+        const unusedCount = Math.max(0, totalSeats - assignedSeats.length);
+        let unusedCost = 0;
+        if (unusedCount > 0 && activeCompanyIds.includes(c.companyId)) {
+          unusedCost = unusedCount * costPerSeat;
+        }
+
+        return assignedCost + unusedCost;
+      }
+
+      if (forecastCompanyFilter !== 'all' && forecastCompanyFilter !== 'gross') {
         const share = getContractCompanyShare(c, staff, companies, forecastCompanyFilter, year, monthIndex);
         return fullCost * share;
+      }
+
+      if (forecastCompanyFilter === 'all') {
+        if (!activeCompanyIds.includes(c.companyId)) {
+          const share = getContractCompanyShare(c, staff, companies, forecastCompanyFilter, year, monthIndex);
+          return fullCost * share;
+        }
       }
 
       return fullCost;
@@ -259,7 +300,8 @@ export default function ForecastMatrix({
               value={forecastCompanyFilter}
               onChange={(e) => setForecastCompanyFilter(e.target.value)}
             >
-              <option value="all">🏢 All Group Companies</option>
+              <option value="all">🏢 All Group Companies (Consolidated)</option>
+              <option value="gross">🌐 All Entities (Gross Vendor Spend)</option>
               {companies.map(c => (
                 <option key={c.id} value={c.id}>🏢 {c.name}</option>
               ))}

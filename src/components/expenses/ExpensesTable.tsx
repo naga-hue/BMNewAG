@@ -63,6 +63,11 @@ export default function ExpensesTable({
   const [staffFilter, setStaffFilter] = useState('all');
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
+  const [onlyUnmappedFilter, setOnlyUnmappedFilter] = useState(false);
+
+  const unmappedExpensesCount = useMemo(() => {
+    return (expenses || []).filter(e => (!e.recipientType || e.recipientType === 'other' || !e.nominalCode) && e.status !== 'dns' && e.status !== 'cancelled').length;
+  }, [expenses]);
 
   // Column Visibility
   const [showColPicker, setShowColPicker] = useState(false);
@@ -162,6 +167,11 @@ export default function ExpensesTable({
       if (!exp) return false;
       const expNominal = exp.nominalCode || '';
       const expPlMonth = exp.plMonth || '';
+
+      if (onlyUnmappedFilter) {
+        const isUnmapped = !exp.recipientType || exp.recipientType === 'other' || !exp.nominalCode;
+        if (!isUnmapped) return false;
+      }
 
       if (nominalFilter !== 'all' && expNominal !== nominalFilter) return false;
       if (plMonthFilter !== 'all' && expPlMonth !== plMonthFilter) return false;
@@ -710,6 +720,28 @@ export default function ExpensesTable({
 
           <button 
             type="button" 
+            onClick={() => setOnlyUnmappedFilter(!onlyUnmappedFilter)}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px', 
+              padding: '8px 12px', 
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              backgroundColor: onlyUnmappedFilter ? 'var(--warning)' : 'rgba(245, 158, 11, 0.12)',
+              color: onlyUnmappedFilter ? '#fff' : 'var(--warning)',
+              border: '1px solid rgba(245, 158, 11, 0.4)',
+              transition: 'all 0.2s'
+            }}
+            title="Filter expenses ledger to only show unmapped payees or missing nominal categories"
+          >
+            ⚠️ Unmapped ({unmappedExpensesCount})
+          </button>
+
+          <button 
+            type="button" 
             className="btn-secondary" 
             onClick={handleExportExpenses}
             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px' }}
@@ -945,10 +977,15 @@ export default function ExpensesTable({
                 allocationLabel = `Staff: ${ids.length} recruiters`;
               }
 
-              const matchedPl = placements.find(p => p.id === exp.linkedPlacementId);
+              const isUnmappedRow = !exp.recipientType || exp.recipientType === 'other' || !exp.nominalCode;
 
               return (
-                <tr key={exp.id}>
+                <tr 
+                  key={exp.id}
+                  style={{
+                    backgroundColor: isUnmappedRow ? 'rgba(245, 158, 11, 0.08)' : undefined
+                  }}
+                >
                   {visibleCols.select && (
                     <td style={{ textAlign: 'center' }}>
                       <input 

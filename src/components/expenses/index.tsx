@@ -8,6 +8,7 @@ import RecipientPaymentsMatrix from './RecipientPaymentsMatrix';
 import NominalCodesSetup from './NominalCodesSetup';
 import ExpenseClaimForm from './ExpenseClaimForm';
 import ReimbursementsDesk from './ReimbursementsDesk';
+import CategorizationDesk from './CategorizationDesk';
 import './expenses.css';
 
 interface ExpensesDashboardProps {
@@ -287,6 +288,10 @@ export default function ExpensesDashboard({ onShowToast }: ExpensesDashboardProp
     }
   };
 
+  const unmappedCount = useMemo(() => {
+    return (expenses || []).filter(e => (!e.recipientType || e.recipientType === 'other' || !e.nominalCode) && e.status !== 'dns' && e.status !== 'cancelled').length;
+  }, [expenses]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
@@ -294,6 +299,7 @@ export default function ExpensesDashboard({ onShowToast }: ExpensesDashboardProp
       <div className="expenses-tab-nav">
         {[
           { key: 'ledger', label: 'Expenses Ledger Log' },
+          { key: 'categorization', label: `⚡ Categorization Desk ${unmappedCount > 0 ? `(${unmappedCount})` : ''}` },
           { key: 'statement', label: 'Bank Statement Import & Categorizer' },
           { key: 'reimbursements', label: 'Reimbursement Claims Workflow' },
           { key: 'matrix', label: 'YTD Expenses Allocation Matrix' },
@@ -308,6 +314,10 @@ export default function ExpensesDashboard({ onShowToast }: ExpensesDashboardProp
               setEditingExpenseId(null);
             }}
             className={`expenses-tab-btn ${activeSubTab === t.key ? 'active' : ''}`}
+            style={{
+              fontWeight: t.key === 'categorization' && unmappedCount > 0 ? 700 : undefined,
+              color: t.key === 'categorization' && unmappedCount > 0 && activeSubTab !== 'categorization' ? 'var(--warning)' : undefined
+            }}
           >
             {t.label}
           </button>
@@ -332,6 +342,10 @@ export default function ExpensesDashboard({ onShowToast }: ExpensesDashboardProp
       />
 
       {/* Main Tab Routing */}
+      {activeSubTab === 'categorization' && (
+        <CategorizationDesk onShowToast={onShowToast} />
+      )}
+
       {activeSubTab === 'ledger' && (
         <ExpensesTable
           handleEditExpense={handleEditExpense}

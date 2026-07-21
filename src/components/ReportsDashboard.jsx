@@ -675,9 +675,12 @@ export default function ReportsDashboard({
 
         const matchedKey = Object.keys(breakdown).find(k => k.startsWith(exp.nominalCode) || k === exp.nominalCode);
         if (matchedKey) {
-          breakdown[matchedKey] += allocatedGbp;
+          breakdown[matchedKey] = (breakdown[matchedKey] || 0) + allocatedGbp;
         } else {
-          breakdown["7002 - Software Licenses & SaaS"] += allocatedGbp;
+          const defaultSoftwareNominal = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'))?.code || nominalCodes[0]?.code;
+          if (defaultSoftwareNominal) {
+            breakdown[defaultSoftwareNominal] = (breakdown[defaultSoftwareNominal] || 0) + allocatedGbp;
+          }
         }
       });
     } else {
@@ -711,7 +714,11 @@ export default function ReportsDashboard({
               const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
               val = val * proration;
             }
-            breakdown["7004 - Freelancers & Subcontractors"] += val;
+
+            const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code || nominalCodes[0]?.code;
+            if (contractorNominal) {
+              breakdown[contractorNominal] = (breakdown[contractorNominal] || 0) + val;
+            }
           } else {
             let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
             let proration = 1.0;
@@ -740,7 +747,11 @@ export default function ReportsDashboard({
 
             empNi = empNi * proration;
             empPension = empPension * proration;
-            breakdown["7003 - Staff Payroll & Wages"] += (empNi + empPension);
+
+            const taxNominal = nominalCodes.find(nc => nc.id === '501' || nc.code?.includes('501') || nc.code?.toLowerCase().includes('paye') || nc.code?.toLowerCase().includes('tax') || nc.code?.toLowerCase().includes('ni') || nc.code?.toLowerCase().includes('pension'))?.code || nominalCodes[0]?.code;
+            if (taxNominal) {
+              breakdown[taxNominal] = (breakdown[taxNominal] || 0) + (empNi + empPension);
+            }
           }
         }
       });

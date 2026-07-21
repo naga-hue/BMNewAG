@@ -80,6 +80,7 @@ export default function ReportsDashboard({
   nominalCodes = [],
   vendors = [],
   contracts = [],
+  assetAssignments = [],
   onShowToast
 }) {
   const [activeTab, setActiveTab] = useState('consolidated'); // consolidated, divisional, departmental, forecast, ratios, leagues
@@ -761,26 +762,59 @@ export default function ReportsDashboard({
         const endM = contract.endDate.substring(0, 7);
 
         if (monthKey >= startM && monthKey <= endM) {
-          if (!activeCompanyIds.includes(contract.companyId)) return;
-
-          let cost = 0;
-          if (contract.costInterval === 'monthly') {
-            cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
-          } else if (contract.costInterval === 'annual') {
-            cost = (Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1)) / 12;
-          } else if (contract.costInterval === 'one-time' && startM === monthKey) {
-            cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
+          const totalSeats = contract.quantityPurchased || 1;
+          let unitMonthlyCost = Number(contract.unitCost || 0);
+          if (contract.costInterval === 'annual') {
+            unitMonthlyCost = unitMonthlyCost / 12;
+          } else if (contract.costInterval === 'one-time' && startM !== monthKey) {
+            unitMonthlyCost = 0;
           }
 
-          let gbpCost = toGBP(cost, contract.currency || 'GBP');
+          const assignedSeats = assetAssignments.filter(a => a.contractId === contract.id);
+          let gbpCost = 0;
 
-          // Department filtering & staff-weighted cost apportionment
-          if (!deptFilter.includes('all')) {
-            const compActiveStaff = groupActiveStaff.filter(s => s.companyId === contract.companyId);
-            const deptActiveStaff = compActiveStaff.filter(s => deptFilter.includes(s.department));
-            if (deptActiveStaff.length === 0) return;
-            gbpCost = gbpCost * (deptActiveStaff.length / (compActiveStaff.length || 1));
+          if (assignedSeats.length > 0) {
+            const costPerSeat = unitMonthlyCost;
+            let matchingAssignedCount = 0;
+            assignedSeats.forEach(a => {
+              const member = staff.find(s => s.id === a.staffId);
+              if (member) {
+                const isComp = activeCompanyIds.includes(member.companyId);
+                const isDept = deptFilter.includes('all') || deptFilter.includes(member.department);
+                if (isComp && isDept) {
+                  matchingAssignedCount++;
+                }
+              }
+            });
+            let assignedCost = matchingAssignedCount * costPerSeat;
+
+            const unusedCount = Math.max(0, totalSeats - assignedSeats.length);
+            let unusedCost = 0;
+            if (unusedCount > 0 && activeCompanyIds.includes(contract.companyId)) {
+              let unusedBase = unusedCount * costPerSeat;
+              if (!deptFilter.includes('all')) {
+                const compActiveStaff = groupActiveStaff.filter(s => s.companyId === contract.companyId);
+                const deptActiveStaff = compActiveStaff.filter(s => deptFilter.includes(s.department));
+                unusedBase = unusedBase * (deptActiveStaff.length / (compActiveStaff.length || 1));
+              }
+              unusedCost = unusedBase;
+            }
+
+            gbpCost = toGBP(assignedCost + unusedCost, contract.currency || 'GBP');
+          } else {
+            if (!activeCompanyIds.includes(contract.companyId)) return;
+            let cost = unitMonthlyCost * totalSeats;
+            gbpCost = toGBP(cost, contract.currency || 'GBP');
+
+            if (!deptFilter.includes('all')) {
+              const compActiveStaff = groupActiveStaff.filter(s => s.companyId === contract.companyId);
+              const deptActiveStaff = compActiveStaff.filter(s => deptFilter.includes(s.department));
+              if (deptActiveStaff.length === 0) return;
+              gbpCost = gbpCost * (deptActiveStaff.length / (compActiveStaff.length || 1));
+            }
           }
+
+          if (gbpCost <= 0) return;
 
           if (contract.nominalCode) {
             const matchedKey = Object.keys(breakdown).find(k => k.startsWith(contract.nominalCode) || k === contract.nominalCode);
@@ -2884,25 +2918,61 @@ export default function ReportsDashboard({
                 const startM = contract.startDate.substring(0, 7);
                 const endM = contract.endDate.substring(0, 7);
                 if (mKey >= startM && mKey <= endM) {
-                  if (!isCompanyMatch(contract.companyId)) return;
-
-                  let cost = 0;
-                  if (contract.costInterval === 'monthly') {
-                    cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
-                  } else if (contract.costInterval === 'annual') {
-                    cost = (Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1)) / 12;
-                  } else if (contract.costInterval === 'one-time' && startM === mKey) {
-                    cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
+                  const totalSeats = contract.quantityPurchased || 1;
+                  let unitMonthlyCost = Number(contract.unitCost || 0);
+                  if (contract.costInterval === 'annual') {
+                    unitMonthlyCost = unitMonthlyCost / 12;
+                  } else if (contract.costInterval === 'one-time' && startM !== mKey) {
+                    unitMonthlyCost = 0;
                   }
-                  let gbpCost = toGBP(cost, contract.currency || 'GBP');
 
-                  // Department filtering & staff-weighted cost apportionment
-                  if (!deptFilter.includes('all')) {
-                    const compActiveStaff = staff.filter(s => s.companyId === contract.companyId && getDaysWorkedInMonth(s.startDate, s.exitDate, mKey) >= 10);
-                    const deptActiveStaff = compActiveStaff.filter(s => isDeptMatch(s.department));
-                    if (deptActiveStaff.length === 0) return;
-                    gbpCost = gbpCost * (deptActiveStaff.length / (compActiveStaff.length || 1));
+                  const assignedSeats = assetAssignments.filter(a => a.contractId === contract.id);
+                  let gbpCost = 0;
+                  let recipientStaffNames = [];
+
+                  if (assignedSeats.length > 0) {
+                    const costPerSeat = unitMonthlyCost;
+                    let matchingAssignedCount = 0;
+                    assignedSeats.forEach(a => {
+                      const member = staff.find(s => s.id === a.staffId);
+                      if (member) {
+                        const isComp = isCompanyMatch(member.companyId);
+                        const isDept = isDeptMatch(member.department);
+                        if (isComp && isDept) {
+                          matchingAssignedCount++;
+                          recipientStaffNames.push(member.fullName);
+                        }
+                      }
+                    });
+                    let assignedCost = matchingAssignedCount * costPerSeat;
+
+                    const unusedCount = Math.max(0, totalSeats - assignedSeats.length);
+                    let unusedCost = 0;
+                    if (unusedCount > 0 && isCompanyMatch(contract.companyId)) {
+                      let unusedBase = unusedCount * costPerSeat;
+                      if (!deptFilter.includes('all')) {
+                        const compActiveStaff = staff.filter(s => s.companyId === contract.companyId && getDaysWorkedInMonth(s.startDate, s.exitDate, mKey) >= 10);
+                        const deptActiveStaff = compActiveStaff.filter(s => isDeptMatch(s.department));
+                        unusedBase = unusedBase * (deptActiveStaff.length / (compActiveStaff.length || 1));
+                      }
+                      unusedCost = unusedBase;
+                    }
+
+                    gbpCost = toGBP(assignedCost + unusedCost, contract.currency || 'GBP');
+                  } else {
+                    if (!isCompanyMatch(contract.companyId)) return;
+                    let cost = unitMonthlyCost * totalSeats;
+                    gbpCost = toGBP(cost, contract.currency || 'GBP');
+
+                    if (!deptFilter.includes('all')) {
+                      const compActiveStaff = staff.filter(s => s.companyId === contract.companyId && getDaysWorkedInMonth(s.startDate, s.exitDate, mKey) >= 10);
+                      const deptActiveStaff = compActiveStaff.filter(s => isDeptMatch(s.department));
+                      if (deptActiveStaff.length === 0) return;
+                      gbpCost = gbpCost * (deptActiveStaff.length / (compActiveStaff.length || 1));
+                    }
                   }
+
+                  if (gbpCost <= 0) return;
 
                   const nameLower = contract.name.toLowerCase();
 
@@ -2920,15 +2990,20 @@ export default function ReportsDashboard({
                   }
 
                   const vendorObj = vendors.find(v => v.id === contract.vendorId);
+                  let payeeLabel = vendorObj ? `${vendorObj.name} (${contract.name})` : contract.name;
+                  if (recipientStaffNames.length > 0) {
+                    payeeLabel += ` [${recipientStaffNames.length} Seats: ${recipientStaffNames.join(', ')}]`;
+                  }
+
                   projectedItems.push({
                     id: `proj-contract-${contract.id}-${mKey}`,
                     date: `${mKey}-01`,
                     plMonth: mKey,
-                    payee: vendorObj ? `${vendorObj.name} (${contract.name})` : contract.name,
+                    payee: payeeLabel,
                     linkedContractId: contract.id,
                     nominalCode: assignedNominal,
-                    allocationType: 'company',
-                    allocationTarget: [contract.companyId],
+                    allocationType: recipientStaffNames.length > 0 ? 'staff' : 'company',
+                    allocationTarget: recipientStaffNames.length > 0 ? assignedSeats.map(a => a.staffId) : [contract.companyId],
                     amount: gbpCost,
                     currency: 'GBP',
                     isProjection: true

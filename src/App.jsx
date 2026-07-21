@@ -2996,6 +2996,7 @@ export default function App() {
               nominalCodes={nominalCodes}
               vendors={vendors}
               contracts={contracts}
+              assetAssignments={assetAssignments}
               onShowToast={handleShowToast}
             />
           )}

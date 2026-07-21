@@ -2820,6 +2820,64 @@ export default function ReportsDashboard({
                 </span>
               </div>
 
+              {/* Recipient Allocation Breakdown Bar ("For Whom The Sum Is") */}
+              {(drilldownState.categoryKey === 'overheadsExpenses' || drilldownState.categoryKey === 'nominal' || drilldownState.categoryKey === 'totalOverheads') && (() => {
+                const staffTargetMap = {};
+                const companyTargetMap = {};
+
+                filteredItems.forEach(exp => {
+                  const amt = toGBP(exp.amount || 0, exp.currency || 'GBP');
+                  if (exp.recipientType === 'staff' && exp.recipientId) {
+                    const sObj = staff.find(s => s.id === exp.recipientId);
+                    const sName = sObj ? sObj.fullName : 'Staff Member';
+                    staffTargetMap[sName] = (staffTargetMap[sName] || 0) + amt;
+                  } else if (exp.allocationType === 'staff') {
+                    const ids = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : (exp.selectedStaffIds || []);
+                    if (ids.length > 0) {
+                      const perStaff = amt / ids.length;
+                      ids.forEach(id => {
+                        const sObj = staff.find(s => s.id === id);
+                        const sName = sObj ? sObj.fullName : 'Staff Seat';
+                        staffTargetMap[sName] = (staffTargetMap[sName] || 0) + perStaff;
+                      });
+                    }
+                  } else if (exp.allocationType === 'company') {
+                    const ids = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+                    const perComp = ids.length > 0 ? amt / ids.length : amt;
+                    ids.forEach(id => {
+                      const cObj = companies.find(c => c.id === id);
+                      const cName = cObj ? cObj.name : 'Company Overhead';
+                      companyTargetMap[cName] = (companyTargetMap[cName] || 0) + perComp;
+                    });
+                  } else {
+                    companyTargetMap['Group Corporate Overhead'] = (companyTargetMap['Group Corporate Overhead'] || 0) + amt;
+                  }
+                });
+
+                const staffEntries = Object.entries(staffTargetMap);
+                const companyEntries = Object.entries(companyTargetMap);
+
+                return (
+                  <div style={{ padding: '10px 14px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>💡 Cost Allocation Summary (For Whom This Sum Is Incurred):</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                      {staffEntries.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(59, 130, 246, 0.1)', padding: '4px 8px', borderRadius: '6px', color: 'var(--primary)' }}>
+                          <strong>👥 {staffEntries.length} Staff Seat Users:</strong>
+                          <span>{staffEntries.slice(0, 4).map(([name, val]) => `${name} (£${Math.round(val)})`).join(', ')}{staffEntries.length > 4 ? ` +${staffEntries.length - 4} more` : ''}</span>
+                        </div>
+                      )}
+                      {companyEntries.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '4px 8px', borderRadius: '6px', color: 'var(--success)' }}>
+                          <strong>🏢 Entity Overheads:</strong>
+                          <span>{companyEntries.map(([name, val]) => `${name} (£${Math.round(val)})`).join(', ')}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Table Body */}
               <div style={{ overflowY: 'auto', flex: 1, border: '1px solid var(--border-color)', borderRadius: '8px' }}>
                 <table className="entity-table dense" style={{ width: '100%' }}>
@@ -2861,7 +2919,7 @@ export default function ReportsDashboard({
                           <th>Payee / Vendor</th>
                           <th>Linked Contract</th>
                           <th>Nominal Code</th>
-                          <th>Allocation Target</th>
+                          <th>Allocated To (For Whom)</th>
                           <th style={{ textAlign: 'right' }}>Amount (Gross)</th>
                         </>
                       )}
@@ -2917,6 +2975,22 @@ export default function ReportsDashboard({
                             </tr>
                           );
                         }
+
+                        // Overheads & Nominal Codes allocation string calculation
+                        let targetStr = '🌐 Group Corporate Overhead';
+                        if (item.recipientType === 'staff' && item.recipientId) {
+                          const sObj = staff.find(s => s.id === item.recipientId);
+                          targetStr = `👤 Direct Staff: ${sObj?.fullName || 'Staff Member'}`;
+                        } else if (item.allocationType === 'staff') {
+                          const ids = Array.isArray(item.allocationTarget) ? item.allocationTarget : (item.selectedStaffIds || []);
+                          const names = ids.map(id => staff.find(s => s.id === id)?.fullName).filter(Boolean);
+                          targetStr = names.length > 0 ? `💻 ${names.length} Staff Seats: ${names.join(', ')}` : '💻 Staff Seats';
+                        } else if (item.allocationType === 'company') {
+                          const ids = Array.isArray(item.allocationTarget) ? item.allocationTarget : [item.allocationTarget].filter(Boolean);
+                          const names = ids.map(id => companies.find(c => c.id === id)?.name).filter(Boolean);
+                          targetStr = names.length > 0 ? `🏢 Entity Overhead: ${names.join(', ')}` : '🏢 Entity Overhead';
+                        }
+
                         return (
                           <tr key={item.id || idx}>
                             <td>{item.date}</td>
@@ -2924,7 +2998,7 @@ export default function ReportsDashboard({
                             <td style={{ fontWeight: 600 }}>{item.payee}</td>
                             <td>{contracts.find(c => c.id === item.linkedContractId)?.name || 'General Vendor'}</td>
                             <td>{item.nominalCode}</td>
-                            <td>{Array.isArray(item.allocationTarget) ? item.allocationTarget.join(', ') : item.allocationTarget || 'Group Overhead'}</td>
+                            <td style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 600 }}>{targetStr}</td>
                             <td style={{ textAlign: 'right', fontWeight: 700 }}>
                               {formatGBP(toGBP(item.amount || 0, item.currency || 'GBP'))}
                             </td>

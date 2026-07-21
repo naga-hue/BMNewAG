@@ -18,6 +18,8 @@ import {
   Sliders
 } from 'lucide-react';
 
+import { toGBP } from '../utils/currency';
+
 const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
 
 export default function Dashboard({ 
@@ -39,15 +41,41 @@ export default function Dashboard({
   
   const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const companyColors = ['#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
+
+  // Helper to extract numeric placement fee normalized to GBP
+  const getPlacementGBPValue = (p) => {
+    const raw = Number(p.netScoreValue || p.grossFee || p.grossBillAmount || p.feeAmount || p.totalInvoiceAmount || 0);
+    return toGBP(raw, p.currency || 'GBP');
+  };
+
+  // Helper to extract placement month (0-11) and year cleanly without timezone shifts
+  const getPlacementMonthAndYear = (p) => {
+    const dateStr = p.startDate || p.scoredDate || p.clientPaidDate || p.invoiceTriggerCustomDate;
+    if (!dateStr) return null;
+    const cleanStr = String(dateStr).split('T')[0];
+    const parts = cleanStr.split('-');
+    if (parts.length >= 2) {
+      const year = parseInt(parts[0], 10);
+      const monthIdx = parseInt(parts[1], 10) - 1;
+      if (!isNaN(year) && !isNaN(monthIdx) && monthIdx >= 0 && monthIdx < 12) {
+        return { year, monthIdx };
+      }
+    }
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      return { year: d.getFullYear(), monthIdx: d.getMonth() };
+    }
+    return null;
+  };
   
   const monthlyRevenue = useMemo(() => {
     const monthlySum = Array(12).fill(0);
     placements.forEach(p => {
-      if (p.status !== 'dns' && p.startDate) {
-        const dateObj = new Date(p.startDate);
-        if (!isNaN(dateObj.getTime()) && dateObj.getFullYear() === 2026) {
-          const monthIndex = dateObj.getMonth();
-          monthlySum[monthIndex] += Number(p.grossBillAmount || 0);
+      if (p.status !== 'dns' && p.status !== 'cancelled') {
+        const info = getPlacementMonthAndYear(p);
+        if (info && info.year === 2026) {
+          const val = getPlacementGBPValue(p);
+          monthlySum[info.monthIdx] += val;
         }
       }
     });
@@ -68,19 +96,55 @@ export default function Dashboard({
       res[c.id] = Array(12).fill(0);
     });
 
+    const defaultCompanyId = companies[0]?.id;
+
     placements.forEach(p => {
-      if (p.status !== 'dns' && p.startDate && p.companyId) {
-        const dateObj = new Date(p.startDate);
-        if (!isNaN(dateObj.getTime()) && dateObj.getFullYear() === 2026) {
-          const monthIndex = dateObj.getMonth();
-          if (res[p.companyId]) {
-            res[p.companyId][monthIndex] += Number(p.grossBillAmount || 0);
+      if (p.status !== 'dns' && p.status !== 'cancelled') {
+        const info = getPlacementMonthAndYear(p);
+        if (info && info.year === 2026) {
+          const val = getPlacementGBPValue(p);
+          
+          // Allocate by recruiter splits if available
+          if (Array.isArray(p.splits) && p.splits.length > 0) {
+            let splitSumPercentage = 0;
+            p.splits.forEach(sp => {
+              const matchedStaff = staff.find(s => s.id === sp.staffId);
+              const targetCompId = matchedStaff?.companyId || p.companyId || defaultCompanyId;
+              if (targetCompId && res[targetCompId]) {
+                const shareVal = (val * (Number(sp.percentage) || 0)) / 100;
+                res[targetCompId][info.monthIdx] += shareVal;
+                splitSumPercentage += Number(sp.percentage) || 0;
+              }
+            });
+            // Remainder if splits sum to less than 100%
+            if (splitSumPercentage < 100) {
+              const remRatio = (100 - splitSumPercentage) / 100;
+              const directCompId = p.companyId || defaultCompanyId;
+              if (directCompId && res[directCompId]) {
+                res[directCompId][info.monthIdx] += val * remRatio;
+              }
+            }
+          } else {
+            // Direct company matching by ID or Client Company Name
+            let matchedCompId = p.companyId || p.employerId;
+            if (!matchedCompId && p.clientCompany) {
+              const matchedComp = companies.find(c => 
+                c.id === p.clientCompany || 
+                c.name.toLowerCase() === String(p.clientCompany).toLowerCase()
+              );
+              if (matchedComp) matchedCompId = matchedComp.id;
+            }
+            if (!matchedCompId) matchedCompId = defaultCompanyId;
+
+            if (matchedCompId && res[matchedCompId]) {
+              res[matchedCompId][info.monthIdx] += val;
+            }
           }
         }
       }
     });
     return res;
-  }, [placements, companies]);
+  }, [placements, companies, staff]);
 
   const chartData = useMemo(() => {
     const width = 800;
@@ -96,11 +160,7 @@ export default function Dashboard({
     const lines = [];
 
     // Consolidated Total
-    const consSum = Array(12).fill(0);
-    companies.forEach(c => {
-      const revs = companyMonthlyRevenues[c.id] || [];
-      revs.forEach((r, i) => { consSum[i] += r; });
-    });
+    const consSum = monthlyRevenue;
 
     const consPoints = consSum.map((val, idx) => {
       const x = paddingLeft + (idx / 11) * chartWidth;

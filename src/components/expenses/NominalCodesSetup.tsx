@@ -22,7 +22,23 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
   const [newNominalType, setNewNominalType] = useState('indirect'); // direct, indirect
   const [bulkInput, setBulkInput] = useState('');
   const [selectedNominalIds, setSelectedNominalIds] = useState<string[]>([]);
-  const [isSyncing, setIsSyncing] = useState(false);
+  // Normalize nominal codes to handle any legacy string arrays gracefully
+  const activeNominalCodes = useMemo(() => {
+    return (nominalCodes || []).map((c: any) => {
+      if (typeof c === 'string') {
+        const parts = c.split(' - ');
+        return { id: parts[0] || c, code: c, type: 'indirect' };
+      }
+      if (c && typeof c === 'object') {
+        return {
+          id: c.id || '',
+          code: c.code || '',
+          type: c.type || 'indirect'
+        };
+      }
+      return null;
+    }).filter((c): c is { id: string; code: string; type: string } => c !== null && !!c.code);
+  }, [nominalCodes]);
 
   // Inline edit state for renumbering / updating nominal codes
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -234,24 +250,6 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
       onShowToast(`Error saving Nominal Code: ${err.message}`, "warning");
     }
   };
-
-  // Normalize nominal codes to handle any legacy string arrays gracefully
-  const activeNominalCodes = useMemo(() => {
-    return (nominalCodes || []).map((c: any) => {
-      if (typeof c === 'string') {
-        const parts = c.split(' - ');
-        return { id: parts[0] || c, code: c, type: 'indirect' };
-      }
-      if (c && typeof c === 'object') {
-        return {
-          id: c.id || '',
-          code: c.code || '',
-          type: c.type || 'indirect'
-        };
-      }
-      return null;
-    }).filter((c): c is { id: string; code: string; type: string } => c !== null && !!c.code);
-  }, [nominalCodes]);
 
   const handleNominalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

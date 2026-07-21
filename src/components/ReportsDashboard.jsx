@@ -2806,8 +2806,7 @@ export default function ReportsDashboard({
       {/* Interactive P&L Itemization & Transaction Drilldown Modal */}
       {drilldownState && (() => {
         const isCompanyMatch = (companyId) => {
-          if (companyFilter.includes('all')) return true;
-          return companyFilter.includes(companyId);
+          return activeCompanyIds.includes(companyId);
         };
 
         const isDeptMatch = (deptName) => {

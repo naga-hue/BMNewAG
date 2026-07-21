@@ -90,6 +90,8 @@ export default function ReportsDashboard({
   const [startMonth, setStartMonth] = useState('2026-01');
   const [endMonth, setEndMonth] = useState('2026-12');
   const [expandedExpenses, setExpandedExpenses] = useState(false);
+  const [drilldownState, setDrilldownState] = useState(null);
+  const [drilldownSearch, setDrilldownSearch] = useState('');
   const [selectedRecruiterPlacements, setSelectedRecruiterPlacements] = useState(null); // { recruiterName, placements: [...] }
   const [expandedExitedRatios, setExpandedExitedRatios] = useState(false);
   const [expandedExitedLeaguesBillings, setExpandedExitedLeaguesLeaguesBillings] = useState(false);
@@ -982,17 +984,52 @@ export default function ReportsDashboard({
               {(() => {
                 const rowData = monthsList.map(m => getFilteredMonthlyData(m));
 
+                const handleCellClick = (label, categoryKey, monthKey, amount, nominalCode = null) => {
+                  setDrilldownState({
+                    title: `${label} ${monthKey ? `(${new Date(monthKey + '-02').toLocaleDateString(undefined, { month: 'short', year: 'numeric' })})` : '(YTD Period Total)'}`,
+                    label,
+                    categoryKey,
+                    monthKey,
+                    nominalCode,
+                    amount
+                  });
+                };
+
                 const renderRow = (label, key, isBold = false, isSub = false, color = 'var(--text-primary)') => {
                   const ytdSum = rowData.reduce((acc, row) => acc + (row[key] || 0), 0);
                   return (
                     <tr style={{ fontWeight: isBold ? 700 : 400 }}>
-                      <td style={{ paddingLeft: isSub ? '24px' : '12px', color }}>{label}</td>
-                      {rowData.map((row, idx) => (
-                        <td key={idx} style={{ textAlign: 'right', color }}>
-                          {formatGBP(row[key] || 0)}
-                        </td>
-                      ))}
-                      <td style={{ textAlign: 'right', fontWeight: 700, color, backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                      <td 
+                        style={{ paddingLeft: isSub ? '24px' : '12px', color, cursor: 'pointer', textDecoration: 'underline decoration-dotted' }}
+                        onClick={() => handleCellClick(label, key, null, ytdSum)}
+                        title={`Click to view itemized ${label} records for full period`}
+                      >
+                        {label} 🔍
+                      </td>
+                      {rowData.map((row, idx) => {
+                        const monthKey = monthsList[idx];
+                        const val = row[key] || 0;
+                        return (
+                          <td 
+                            key={idx} 
+                            style={{ 
+                              textAlign: 'right', 
+                              color, 
+                              cursor: val !== 0 ? 'pointer' : 'default',
+                              fontWeight: val !== 0 ? 600 : 400
+                            }}
+                            onClick={() => val !== 0 && handleCellClick(label, key, monthKey, val)}
+                            title={val !== 0 ? `Click to drilldown into ${label} for ${monthKey}` : undefined}
+                          >
+                            {formatGBP(val)}
+                          </td>
+                        );
+                      })}
+                      <td 
+                        style={{ textAlign: 'right', fontWeight: 700, color, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer' }}
+                        onClick={() => handleCellClick(label, key, null, ytdSum)}
+                        title="Click to view total period itemized transactions"
+                      >
                         {formatGBP(ytdSum)}
                       </td>
                     </tr>
@@ -1030,14 +1067,26 @@ export default function ReportsDashboard({
                     <tr style={{ fontWeight: 400 }}>
                       <td style={{ paddingLeft: '24px', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setExpandedExpenses(!expandedExpenses)}>
                         <span style={{ fontSize: '10px', color: 'var(--accent)' }}>{expandedExpenses ? '▼' : '▶'}</span>
-                        <span>Apportioned Overheads & SaaS</span>
+                        <span style={{ fontWeight: 600 }}>Apportioned Overheads & SaaS</span>
                       </td>
-                      {rowData.map((row, idx) => (
-                        <td key={idx} style={{ textAlign: 'right' }}>
-                          {formatGBP(row.overheadsExpenses || 0)}
-                        </td>
-                      ))}
-                      <td style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                      {rowData.map((row, idx) => {
+                        const monthKey = monthsList[idx];
+                        const val = row.overheadsExpenses || 0;
+                        return (
+                          <td 
+                            key={idx} 
+                            style={{ textAlign: 'right', cursor: val > 0 ? 'pointer' : 'default' }}
+                            onClick={() => val > 0 && handleCellClick('Apportioned Overheads & SaaS', 'overheadsExpenses', monthKey, val)}
+                            title={val > 0 ? `Click to view all overhead expenses for ${monthKey}` : undefined}
+                          >
+                            {formatGBP(val)}
+                          </td>
+                        );
+                      })}
+                      <td 
+                        style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer' }}
+                        onClick={() => handleCellClick('Apportioned Overheads & SaaS', 'overheadsExpenses', null, rowData.reduce((acc, row) => acc + (row.overheadsExpenses || 0), 0))}
+                      >
                         {formatGBP(rowData.reduce((acc, row) => acc + (row.overheadsExpenses || 0), 0))}
                       </td>
                     </tr>
@@ -1052,18 +1101,36 @@ export default function ReportsDashboard({
                         const ytdSum = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
                         return (
                           <tr key={code} style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                            <td style={{ paddingLeft: '48px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>↳</span> {code}
+                            <td 
+                              style={{ paddingLeft: '48px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                              onClick={() => handleCellClick(`Nominal Cost: ${code}`, 'nominal', null, ytdSum, code)}
+                              title={`Click to view all itemized ${code} transactions for full period`}
+                            >
+                              <span style={{ color: 'var(--text-muted)' }}>↳</span> {code} 🔍
                             </td>
                             {rowData.map((row, idx) => {
+                              const monthKey = monthsList[idx];
                               const val = row.nominalBreakdown?.[code] || 0;
                               return (
-                                <td key={idx} style={{ textAlign: 'right', opacity: val > 0 ? 0.9 : 0.4 }}>
+                                <td 
+                                  key={idx} 
+                                  style={{ 
+                                    textAlign: 'right', 
+                                    opacity: val > 0 ? 0.9 : 0.4, 
+                                    cursor: val > 0 ? 'pointer' : 'default',
+                                    fontWeight: val > 0 ? 600 : 400
+                                  }}
+                                  onClick={() => val > 0 && handleCellClick(`Nominal Cost: ${code}`, 'nominal', monthKey, val, code)}
+                                  title={val > 0 ? `Click to view ${code} transactions for ${monthKey}` : undefined}
+                                >
                                   {val > 0 ? formatGBP(val) : '—'}
                                 </td>
                               );
                             })}
-                            <td style={{ textAlign: 'right', fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)', opacity: ytdSum > 0 ? 0.9 : 0.4 }}>
+                            <td 
+                              style={{ textAlign: 'right', fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)', opacity: ytdSum > 0 ? 0.9 : 0.4, cursor: ytdSum > 0 ? 'pointer' : 'default' }}
+                              onClick={() => ytdSum > 0 && handleCellClick(`Nominal Cost: ${code}`, 'nominal', null, ytdSum, code)}
+                            >
                               {formatGBP(ytdSum)}
                             </td>
                           </tr>
@@ -2639,6 +2706,244 @@ export default function ReportsDashboard({
           </div>
         </div>
       )}
+
+      {/* Interactive P&L Itemization & Transaction Drilldown Modal */}
+      {drilldownState && (() => {
+        const getDrilldownItems = () => {
+          const { categoryKey, monthKey, nominalCode } = drilldownState;
+          if (!categoryKey) return [];
+
+          if (categoryKey === 'revenue') {
+            return (placements || []).filter(p => {
+              if (!p.startDate || p.status === 'dns') return false;
+              const pMonth = p.commissionPaidMonth ? p.commissionPaidMonth : (() => {
+                const d = new Date(p.startDate);
+                d.setMonth(d.getMonth() + 1);
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+              })();
+              if (monthKey && pMonth !== monthKey) return false;
+              return true;
+            });
+          }
+
+          if (categoryKey === 'commissions') {
+            const results = [];
+            (staff || []).forEach(s => {
+              const mList = monthKey ? [monthKey] : monthsList;
+              mList.forEach(m => {
+                const commVal = calculateCommissionForRecruiter(s.id, m);
+                if (commVal > 0) {
+                  results.push({
+                    recruiterName: s.fullName,
+                    department: s.department,
+                    monthKey: m,
+                    commVal,
+                    policy: commissionPolicies.find(p => p.id === s.commissionPolicyId)?.name || 'Standard Plan'
+                  });
+                }
+              });
+            });
+            return results;
+          }
+
+          if (categoryKey === 'salaries') {
+            const results = [];
+            (staff || []).forEach(s => {
+              if (s.employmentStatus === 'exited') return;
+              const mList = monthKey ? [monthKey] : monthsList;
+              mList.forEach(m => {
+                const salData = getStaffPayrollForMonth(s, m);
+                if (salData.salaries > 0) {
+                  results.push({
+                    staffName: s.fullName,
+                    jobTitle: s.jobTitle,
+                    department: s.department,
+                    companyName: companies.find(c => c.id === s.companyId)?.name || 'Group',
+                    monthKey: m,
+                    amount: salData.salaries
+                  });
+                }
+              });
+            });
+            return results;
+          }
+
+          if (categoryKey === 'overheadsExpenses' || categoryKey === 'nominal' || categoryKey === 'totalOverheads') {
+            return (expenses || []).filter(e => {
+              if (e.status === 'dns' || e.status === 'cancelled') return false;
+              const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+              if (monthKey && eMonth !== monthKey) return false;
+              if (nominalCode && e.nominalCode !== nominalCode && !e.nominalCode?.startsWith(nominalCode)) return false;
+              return true;
+            });
+          }
+
+          return [];
+        };
+
+        const rawItems = getDrilldownItems();
+        const q = drilldownSearch.toLowerCase().trim();
+        const filteredItems = rawItems.filter(item => {
+          if (!q) return true;
+          return JSON.stringify(item).toLowerCase().includes(q);
+        });
+
+        return (
+          <div className="form-wizard-overlay" onClick={() => setDrilldownState(null)} style={{ zIndex: 1200 }}>
+            <div className="form-wizard-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '960px', width: '90%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', gap: '16px', padding: '24px' }}>
+              
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    🔍 P&L Line Itemization: {drilldownState.label}
+                  </h3>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    Period: <strong>{drilldownState.monthKey || 'YTD Full Period'}</strong> • Total Value: <strong style={{ color: 'var(--primary)' }}>{formatGBP(drilldownState.amount)}</strong>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setDrilldownState(null)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '18px', fontWeight: 700 }}>✕</button>
+              </div>
+
+              {/* Toolbar */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                <input 
+                  type="text" 
+                  placeholder="Filter by payee, recruiter, client, or role..." 
+                  value={drilldownSearch} 
+                  onChange={(e) => setDrilldownSearch(e.target.value)} 
+                  className="search-input" 
+                  style={{ width: '100%', maxWidth: '380px' }}
+                />
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  Showing {filteredItems.length} of {rawItems.length} contributing records
+                </span>
+              </div>
+
+              {/* Table Body */}
+              <div style={{ overflowY: 'auto', flex: 1, border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                <table className="entity-table dense" style={{ width: '100%' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                      {drilldownState.categoryKey === 'revenue' && (
+                        <>
+                          <th>Placement ID</th>
+                          <th>Candidate</th>
+                          <th>Client / Company</th>
+                          <th>Job Role</th>
+                          <th>Start Date</th>
+                          <th style={{ textAlign: 'right' }}>Net Fee (GBP)</th>
+                        </>
+                      )}
+                      {drilldownState.categoryKey === 'commissions' && (
+                        <>
+                          <th>Recruiter Name</th>
+                          <th>Department</th>
+                          <th>Month</th>
+                          <th>Commission Tier Policy</th>
+                          <th style={{ textAlign: 'right' }}>Accrued Commission</th>
+                        </>
+                      )}
+                      {drilldownState.categoryKey === 'salaries' && (
+                        <>
+                          <th>Staff Member</th>
+                          <th>Job Title</th>
+                          <th>Department</th>
+                          <th>Primary Company</th>
+                          <th>Month</th>
+                          <th style={{ textAlign: 'right' }}>Monthly Base Salary</th>
+                        </>
+                      )}
+                      {(drilldownState.categoryKey === 'overheadsExpenses' || drilldownState.categoryKey === 'nominal' || drilldownState.categoryKey === 'totalOverheads') && (
+                        <>
+                          <th>Date</th>
+                          <th>P&L Month</th>
+                          <th>Payee / Vendor</th>
+                          <th>Linked Contract</th>
+                          <th>Nominal Code</th>
+                          <th>Allocation Target</th>
+                          <th style={{ textAlign: 'right' }}>Amount (Gross)</th>
+                        </>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredItems.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)' }}>
+                          No matching itemized records found for this period.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredItems.map((item, idx) => {
+                        if (drilldownState.categoryKey === 'revenue') {
+                          return (
+                            <tr key={item.id || idx}>
+                              <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{item.placementId || item.id}</td>
+                              <td>{item.candidateName}</td>
+                              <td>{item.clientName}</td>
+                              <td>{item.jobTitle}</td>
+                              <td>{item.startDate}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
+                                {formatGBP(toGBP(item.netScoreValue || 0, item.currency || 'GBP'))}
+                              </td>
+                            </tr>
+                          );
+                        }
+                        if (drilldownState.categoryKey === 'commissions') {
+                          return (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: 600 }}>{item.recruiterName}</td>
+                              <td>{item.department}</td>
+                              <td>{item.monthKey}</td>
+                              <td>{item.policy}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>
+                                {formatGBP(item.commVal)}
+                              </td>
+                            </tr>
+                          );
+                        }
+                        if (drilldownState.categoryKey === 'salaries') {
+                          return (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: 600 }}>{item.staffName}</td>
+                              <td>{item.jobTitle}</td>
+                              <td>{item.department}</td>
+                              <td>{item.companyName}</td>
+                              <td>{item.monthKey}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                                {formatGBP(item.amount)}
+                              </td>
+                            </tr>
+                          );
+                        }
+                        return (
+                          <tr key={item.id || idx}>
+                            <td>{item.date}</td>
+                            <td>{item.plMonth}</td>
+                            <td style={{ fontWeight: 600 }}>{item.payee}</td>
+                            <td>{contracts.find(c => c.id === item.linkedContractId)?.name || 'General Vendor'}</td>
+                            <td>{item.nominalCode}</td>
+                            <td>{Array.isArray(item.allocationTarget) ? item.allocationTarget.join(', ') : item.allocationTarget || 'Group Overhead'}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                              {formatGBP(toGBP(item.amount || 0, item.currency || 'GBP'))}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Footer */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setDrilldownState(null)}>Close</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

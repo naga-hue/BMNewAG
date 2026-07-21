@@ -193,6 +193,7 @@ export default function VendorsDashboard({
           companies={companies}
           staff={staff}
           assetAssignments={assetAssignments}
+          expenses={expenses}
           onEditContract={handleEditContract}
           onDeleteContract={onDeleteContract}
           onSaveContract={onSaveContract}

@@ -18,6 +18,7 @@ interface ContractsRegisterProps {
   companies: Company[];
   staff: Staff[];
   assetAssignments: any[];
+  expenses?: any[];
   onSaveContract: (contract: any) => Promise<any>;
   onDeleteContract?: (id: string) => Promise<any>;
   onSaveAssetAssignment: (assignment: any) => Promise<any>;
@@ -25,6 +26,8 @@ interface ContractsRegisterProps {
   onShowToast: (msg: string, type?: string) => void;
   handleEditContract: (contract: any) => void;
   onRegisterContractClick: () => void;
+  onBatchAllocateSeatsClick?: (contract: any) => void;
+  onEditContract?: (contract: any) => void;
 }
 
 export default function ContractsRegister({
@@ -33,6 +36,7 @@ export default function ContractsRegister({
   companies,
   staff,
   assetAssignments,
+  expenses = [],
   onSaveContract,
   onDeleteContract,
   onSaveAssetAssignment,
@@ -298,8 +302,43 @@ export default function ContractsRegister({
                         );
                       })()}
                     </td>
-                    <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)', fontWeight: 700 }}>
-                      £{monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
+                      {(() => {
+                        const matchedV = vendors.find(v => v.name === contract.vendorName || v.id === contract.vendorId);
+                        const actualPaid = (expenses || []).reduce((sum, exp) => {
+                          const isMatch = (exp.recipientType === 'vendor' && (exp.recipientId === matchedV?.id || exp.recipientId === contract.vendorId)) ||
+                                          (exp.payee && matchedV && exp.payee.toLowerCase().includes(matchedV.name.toLowerCase()));
+                          if (isMatch && exp.status !== 'dns' && exp.status !== 'cancelled') {
+                            return sum + toGBP(exp.amount, exp.currency || 'GBP');
+                          }
+                          return sum;
+                        }, 0);
+
+                        const diff = actualPaid - monthlyCostEquivalent;
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                            <div style={{ color: 'var(--success)', fontWeight: 700 }}>
+                              Proj: £{monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <div style={{ fontSize: '10px', color: actualPaid > 0 ? 'var(--primary)' : 'var(--text-muted)', fontWeight: 600 }}>
+                              Actual Paid: £{actualPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            {actualPaid > 0 && (
+                              <span style={{ 
+                                fontSize: '9px', 
+                                padding: '1px 5px', 
+                                borderRadius: '3px',
+                                fontWeight: 700,
+                                backgroundColor: diff <= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                color: diff <= 0 ? 'var(--success)' : 'var(--danger)'
+                              }}>
+                                {diff <= 0 ? `-${toGBP(Math.abs(diff), 'GBP').toLocaleString()} Under` : `+${toGBP(diff, 'GBP').toLocaleString()} Over`}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }}>
                       <span style={{ 

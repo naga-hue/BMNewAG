@@ -43,6 +43,8 @@ export default function ExpensesTable({
   const vendors = useBoundStore(state => state.vendors);
   const placements = useBoundStore(state => state.placements);
   const nominalCodes = useBoundStore(state => state.nominalCodes);
+  const contracts = useBoundStore(state => state.contracts || []);
+  const assetAssignments = useBoundStore(state => state.assetAssignments || []);
 
   const updateExpense = useBoundStore(state => state.updateExpense);
   const saveExpense = updateExpense;
@@ -1481,46 +1483,136 @@ export default function ExpensesTable({
 
               <div>
                 <div onClick={() => setExpandedSectionsLocal(prev => ({ ...prev, staff: !prev.staff }))} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>
-                  <span>👥 Recruiters {allocatingType === 'staff' && `(${allocatingStaffIds.length} selected)`}</span>
+                  <span>👥 Staff / Users Seats {allocatingType === 'staff' && `(${allocatingStaffIds.length} selected)`}</span>
                 </div>
                 {expandedSections.staff && (
-                  <div style={{ display: 'flex', flexDirection: 'column', padding: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: '150px', overflowY: 'auto' }}>
-                    {staff.filter(s => s.fullName.toLowerCase().includes(allocationSearch.toLowerCase())).map(s => {
-                      const isChecked = allocatingType === 'staff' && allocatingStaffIds.includes(s.id);
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderTop: 'none', borderRadius: '0 0 8px 8px' }}>
+                    
+                    {/* Load Seat Users from Vendor Contract Button */}
+                    {(() => {
+                      const currentExp = expenses.find(e => e.id === allocatingRowId);
+                      const vendorObj = currentExp ? vendors.find(v => v.id === currentExp.recipientId || (currentExp.payee && currentExp.payee.toLowerCase().includes(v.name.toLowerCase()))) : null;
+                      if (!vendorObj) return null;
+
                       return (
-                        <label key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px', fontSize: '12px', margin: 0 }}>
-                          <span>{s.fullName}</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            {isChecked && allocatingMode === 'manual' && (
-                              <input 
-                                type="number" 
-                                value={allocatingManualShares[s.id] || ''} 
-                                onChange={(e) => {
-                                  const val = Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0));
-                                  setAllocatingManualSharesLocal(prev => ({ ...prev, [s.id]: val }));
-                                }} 
-                                style={{ width: '45px', textAlign: 'right', fontSize: '11px' }} 
-                              />
-                            )}
-                            <input 
-                              type="checkbox" 
-                              checked={isChecked} 
-                              onChange={(e) => {
-                                let current = allocatingType === 'staff' ? [...allocatingStaffIds] : [];
-                                if (e.target.checked) {
-                                  current.push(s.id);
-                                } else {
-                                  current = current.filter(id => id !== s.id);
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Find assigned staff IDs for this vendor
+                            const vendorContracts = contracts.filter(c => c.vendorId === vendorObj.id || (c.vendorName && c.vendorName.toLowerCase().includes(vendorObj.name.toLowerCase())));
+                            const vContractIds = vendorContracts.map(c => c.id);
+                            
+                            const assignedStaffIds = assetAssignments
+                              .filter(a => vContractIds.includes(a.contractId))
+                              .map(a => a.staffId)
+                              .filter(Boolean);
+
+                            // Also check contract splits for user targets
+                            vendorContracts.forEach(c => {
+                              (c.splits || []).forEach((sp: any) => {
+                                if (sp.type === 'user' && sp.targetId && !assignedStaffIds.includes(sp.targetId)) {
+                                  assignedStaffIds.push(sp.targetId);
                                 }
-                                setAllocatingTypeLocal('staff');
-                                setAllocatingStaffIdsLocal(current);
-                                setAllocatingTargetLocal([]);
-                              }} 
-                            />
-                          </div>
-                        </label>
+                              });
+                            });
+
+                            if (assignedStaffIds.length > 0) {
+                              setAllocatingTypeLocal('staff');
+                              setAllocatingStaffIdsLocal(assignedStaffIds);
+                              setAllocatingTargetLocal([]);
+                              onShowToast(`⚡ Auto-loaded ${assignedStaffIds.length} seat users from Vendor Asset (${vendorObj.name})!`, "success");
+                            } else {
+                              onShowToast(`No assigned seat users found for Vendor "${vendorObj.name}" in Vendor Management.`, "info");
+                            }
+                          }}
+                          style={{
+                            padding: '6px 10px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            borderRadius: '6px',
+                            border: '1px solid var(--primary)',
+                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                            color: 'var(--primary)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            width: '100%'
+                          }}
+                        >
+                          ⚡ Load Seat Users from Vendor Asset ({vendorObj.name})
+                        </button>
                       );
-                    })}
+                    })()}
+
+                    {/* Per-User Cost Apportionment Real-Time Summary */}
+                    {allocatingType === 'staff' && allocatingStaffIds.length > 0 && (() => {
+                      const currentExp = expenses.find(e => e.id === allocatingRowId);
+                      const amount = currentExp ? toGBP(currentExp.amount, currentExp.currency || 'GBP') : 0;
+                      const perUserCost = amount > 0 ? (amount / allocatingStaffIds.length) : 0;
+                      const userPct = (100 / allocatingStaffIds.length).toFixed(1);
+
+                      return (
+                        <div style={{
+                          padding: '8px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: 'var(--bg-card)',
+                          border: '1px solid var(--border-color)',
+                          fontSize: '11px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px'
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, color: 'var(--primary)' }}>
+                            <span>Per-User Seat Cost:</span>
+                            <span>£{perUserCost.toFixed(2)} / user ({userPct}%)</span>
+                          </div>
+                          <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                            Total Expense (£{amount.toLocaleString()}) split across {allocatingStaffIds.length} assigned staff users.
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    <div style={{ maxHeight: '130px', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                      {staff.filter(s => s.fullName.toLowerCase().includes(allocationSearch.toLowerCase())).map(s => {
+                        const isChecked = allocatingType === 'staff' && allocatingStaffIds.includes(s.id);
+                        return (
+                          <label key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px', fontSize: '12px', margin: 0 }}>
+                            <span>{s.fullName} <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>({s.department || 'Staff'})</span></span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {isChecked && allocatingMode === 'manual' && (
+                                <input 
+                                  type="number" 
+                                  value={allocatingManualShares[s.id] || ''} 
+                                  onChange={(e) => {
+                                    const val = Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0));
+                                    setAllocatingManualSharesLocal(prev => ({ ...prev, [s.id]: val }));
+                                  }} 
+                                  style={{ width: '45px', textAlign: 'right', fontSize: '11px' }} 
+                                />
+                              )}
+                              <input 
+                                type="checkbox" 
+                                checked={isChecked} 
+                                onChange={(e) => {
+                                  let current = allocatingType === 'staff' ? [...allocatingStaffIds] : [];
+                                  if (e.target.checked) {
+                                    current.push(s.id);
+                                  } else {
+                                    current = current.filter(id => id !== s.id);
+                                  }
+                                  setAllocatingTypeLocal('staff');
+                                  setAllocatingStaffIdsLocal(current);
+                                  setAllocatingTargetLocal([]);
+                                }} 
+                              />
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>

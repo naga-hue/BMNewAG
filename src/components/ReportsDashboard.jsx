@@ -2805,6 +2805,11 @@ export default function ReportsDashboard({
               } else if (e.allocationType === 'company') {
                 const targetComps = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget].filter(Boolean);
                 if (!companyFilter.includes('all') && !targetComps.some(c => companyFilter.includes(c))) return false;
+
+                if (!deptFilter.includes('all')) {
+                  const hasDeptStaff = staff.some(s => targetComps.includes(s.companyId) && deptFilter.includes(s.department));
+                  if (!hasDeptStaff) return false;
+                }
               }
 
               return true;

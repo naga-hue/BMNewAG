@@ -1198,6 +1198,27 @@ export default function ReportsDashboard({
                       </td>
                     </tr>
 
+                    {/* Cumulative Carry-Forward P&L Row */}
+                    {(() => {
+                      let cumulativePnl = 0;
+                      return (
+                        <tr style={{ fontWeight: 800, backgroundColor: 'rgba(59, 130, 246, 0.07)', fontSize: '13px', borderTop: '1px dashed rgba(59, 130, 246, 0.3)' }}>
+                          <td style={{ color: '#38bdf8' }}>📈 Cumulative Carry-Forward P&L</td>
+                          {rowData.map((row, idx) => {
+                            cumulativePnl += row.netProfit;
+                            return (
+                              <td key={idx} style={{ textAlign: 'right', color: cumulativePnl >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 800 }}>
+                                {formatGBP(cumulativePnl)}
+                              </td>
+                            );
+                          })}
+                          <td style={{ textAlign: 'right', fontWeight: 800, color: cumulativePnl >= 0 ? 'var(--success)' : 'var(--danger)', backgroundColor: 'rgba(255,255,255,0.04)' }}>
+                            {formatGBP(cumulativePnl)}
+                          </td>
+                        </tr>
+                      );
+                    })()}
+
                     <tr style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
                       <td 
                         onClick={() => setDrilldownState({ categoryKey: 'staffCount', label: 'Staff Count in Apportionment', amount: rowData.reduce((acc, r) => acc + r.headcount, 0), monthKey: null })} 
@@ -1914,6 +1935,22 @@ export default function ReportsDashboard({
                         </td>
                       ))}
                     </tr>
+                    {(() => {
+                      let cumVal = 0;
+                      return (
+                        <tr style={{ fontWeight: 800, backgroundColor: 'rgba(59, 130, 246, 0.07)', fontSize: '13px', borderTop: '1px dashed rgba(59, 130, 246, 0.3)' }}>
+                          <td style={{ color: '#38bdf8' }}>📈 Cumulative Carry-Forward P&L</td>
+                          {periodMetrics.map((met, idx) => {
+                            cumVal += met.netProfit;
+                            return (
+                              <td key={idx} style={{ textAlign: 'right', color: cumVal >= 0 ? 'var(--success)' : 'var(--danger)', fontFamily: 'monospace', fontWeight: 800 }}>
+                                {formatGBP(cumVal)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })()}
                   </>
                 );
               })()}

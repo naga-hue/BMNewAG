@@ -10,7 +10,12 @@ import {
   Info,
   CalendarDays,
   CalendarCheck,
-  Receipt
+  Receipt,
+  Sparkles,
+  Target,
+  TrendingUp,
+  Zap,
+  Sliders
 } from 'lucide-react';
 
 const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
@@ -586,8 +591,68 @@ export default function Dashboard({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
+      {/* Behavioral UX: Goal Gradient & Contrast Effect Banner */}
+      <div 
+        style={{ 
+          backgroundColor: 'var(--bg-card)', 
+          border: '1px solid var(--border-color)', 
+          borderRadius: '12px', 
+          padding: '16px 20px',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: '16px',
+          alignItems: 'center'
+        }}
+      >
+        {/* Goal Gradient Effect: Progress toward Placement Revenue Target */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Target size={14} style={{ color: 'var(--primary)' }} /> Annual Revenue Goal Progress
+            </span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--primary)' }}>
+              £{monthlyRevenue.reduce((a, b) => a + b, 0).toLocaleString()} / £1,200,000 ({Math.min(100, Math.round((monthlyRevenue.reduce((a, b) => a + b, 0) / 1200000) * 100))}%)
+            </span>
+          </div>
+
+          {/* Goal Gradient Progress Bar */}
+          <div style={{ width: '100%', height: '8px', backgroundColor: 'var(--bg-secondary)', borderRadius: '4px', overflow: 'hidden' }}>
+            <div 
+              style={{ 
+                width: `${Math.min(100, (monthlyRevenue.reduce((a, b) => a + b, 0) / 1200000) * 100)}%`, 
+                height: '100%', 
+                background: 'linear-gradient(90deg, var(--primary) 0%, var(--success) 100%)',
+                borderRadius: '4px',
+                transition: 'width 0.5s ease-out'
+              }} 
+            />
+          </div>
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+            ⚡ Goal Gradient Momentum: You are {Math.min(100, Math.round((monthlyRevenue.reduce((a, b) => a + b, 0) / 1200000) * 100))}% of the way to achieving your annual target!
+          </span>
+        </div>
+
+        {/* Contrast Effect & Reciprocity: Current vs Optimized framing */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(99, 102, 241, 0.04)', border: '1px solid rgba(99, 102, 241, 0.15)', padding: '10px 14px', borderRadius: '8px' }}>
+          <div>
+            <div style={{ fontSize: '10.5px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', fontWeight: 700 }}>
+              Contrast Framing & Optimization
+            </div>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+              Current Overhead Risk: <span style={{ color: '#ef4444' }}>High</span> ➔ Optimized: <span style={{ color: 'var(--success)' }}>Peak Zero-Waste</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <span style={{ fontSize: '10px', fontWeight: 700, backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+              1-Click Optimization Enabled
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Metrics Row */}
       <div className="metrics-grid">
         

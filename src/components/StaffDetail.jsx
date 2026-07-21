@@ -1072,6 +1072,56 @@ Yours sincerely,
           {/* TAB 1: Profile Info */}
           {activeTab === 'profile' && (
             <>
+              {/* Goal Gradient Effect: Profile Completeness Meter */}
+              {(() => {
+                const fields = [
+                  { name: 'Business Email', ok: !!staffMember.businessEmail },
+                  { name: 'Personal Email', ok: !!staffMember.personalEmail },
+                  { name: 'Date of Birth', ok: !!staffMember.dateOfBirth },
+                  { name: 'Residential Address', ok: !!staffMember.address },
+                  { name: 'Employment Documents', ok: (staffMember.documents || []).length > 0 },
+                  { name: 'Leave Policy Assigned', ok: !!staffMember.leavePolicyId }
+                ];
+                const completedCount = fields.filter(f => f.ok).length;
+                const percent = Math.round((completedCount / fields.length) * 100);
+                const missingField = fields.find(f => !f.ok);
+
+                return (
+                  <div className="detail-section" style={{ backgroundColor: 'rgba(99, 102, 241, 0.04)', borderColor: 'rgba(99, 102, 241, 0.15)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        🎯 Profile Completeness & Onboarding Momentum
+                      </span>
+                      <span style={{ fontSize: '12px', fontWeight: 800, color: percent === 100 ? 'var(--success)' : 'var(--primary)' }}>
+                        {percent}% Complete
+                      </span>
+                    </div>
+
+                    <div style={{ width: '100%', height: '8px', backgroundColor: 'var(--bg-secondary)', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div 
+                        style={{ 
+                          width: `${percent}%`, 
+                          height: '100%', 
+                          background: percent === 100 ? 'var(--success)' : 'linear-gradient(90deg, #6366f1 0%, #a855f7 100%)',
+                          borderRadius: '4px',
+                          transition: 'width 0.4s ease-out'
+                        }} 
+                      />
+                    </div>
+
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '8px' }}>
+                      {percent === 100 ? (
+                        <span style={{ color: 'var(--success)', fontWeight: 600 }}>✅ Profile is 100% complete and fully compliant!</span>
+                      ) : (
+                        <span>
+                          ⚡ <strong>Goal Gradient Momentum:</strong> Add <strong>{missingField?.name}</strong> to reach 100% completion milestone.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Job details Card */}
               <div className="detail-section">
                 <div className="section-title">

@@ -54,6 +54,7 @@ import ExitEmailTriggerModal from './components/ExitEmailTriggerModal';
 import BulkStaffImportModal from './components/BulkStaffImportModal';
 import AiRemindersModal from './components/AiRemindersModal';
 import AiChatbot from './components/AiChatbot';
+import PsychologicalMomentumBar from './components/PsychologicalMomentumBar';
 import { toGBP, formatGBP, fetchLiveFxRates } from './utils/currency';
 import { initialNominalCodes, initialExpenses } from './mockExpenses';
 
@@ -1986,6 +1987,16 @@ export default function App() {
 
         {/* Content canvas */}
         <div className="content-wrapper">
+          <PsychologicalMomentumBar 
+            placements={scopedPlacements}
+            expenses={expenses}
+            contracts={contracts}
+            assetAssignments={assetAssignments}
+            leaveRequests={scopedLeaves}
+            staff={scopedStaff}
+            setActiveTab={setActiveTab}
+          />
+
           <Suspense fallback={
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '300px', fontSize: '14px', color: 'var(--text-secondary)' }}>
               ⏳ Loading Dashboard View...

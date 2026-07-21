@@ -605,20 +605,51 @@ export default function WhatsImportantDashboard({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '40px' }}>
       
-      {/* Top Banner introducing the view */}
+      {/* Top Banner introducing the view with Loss Aversion Urgency Framing */}
       <div style={{
-        background: 'linear-gradient(135deg, var(--bg-secondary) 0%, rgba(99, 102, 241, 0.05) 100%)',
+        background: 'linear-gradient(135deg, var(--bg-secondary) 0%, rgba(99, 102, 241, 0.08) 100%)',
         border: '1px solid var(--border-color)',
+        borderLeft: '5px solid var(--primary)',
         padding: '20px 24px',
         borderRadius: '12px',
-        boxShadow: '0 4px 20px -2px rgba(0,0,0,0.15)'
+        boxShadow: '0 4px 20px -2px rgba(0,0,0,0.15)',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '16px'
       }}>
-        <h2 style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 4px 0', color: 'var(--text-primary)' }}>
-          Welcome back, Paul
-        </h2>
-        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
-          Here is your centralized company dashboard overview for {getDaysCountLabel()}.
-        </p>
+        <div>
+          <h2 style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 4px 0', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            Welcome back, Naga
+            <span style={{ fontSize: '11px', fontWeight: 700, backgroundColor: 'rgba(99, 102, 241, 0.12)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '12px' }}>
+              Super Admin Overview
+            </span>
+          </h2>
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
+            Centralized operational dashboard overview for <strong>{getDaysCountLabel()}</strong>.
+          </p>
+        </div>
+
+        {/* Contrast Effect: High-Priority Risk Counter */}
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', padding: '8px 14px', borderRadius: '8px', textAlign: 'center' }}>
+            <div style={{ fontSize: '16px', fontWeight: 800, color: '#ef4444' }}>
+              {criticalAlertIds.length}
+            </div>
+            <div style={{ fontSize: '10px', fontWeight: 700, color: '#ef4444', textTransform: 'uppercase' }}>
+              Loss Risks / Overdue
+            </div>
+          </div>
+          <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '8px 14px', borderRadius: '8px', textAlign: 'center' }}>
+            <div style={{ fontSize: '16px', fontWeight: 800, color: '#10b981' }}>
+              {filteredAlerts.length - criticalAlertIds.length}
+            </div>
+            <div style={{ fontSize: '10px', fontWeight: 700, color: '#10b981', textTransform: 'uppercase' }}>
+              Optimized Actions
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Control bar: Tabs & Search Filter */}

@@ -107,12 +107,12 @@ export default function AiChatbot({ assetAssignments = [] }) {
   const payrollPolicies = useBoundStore(state => state.payrollPolicies || []);
   const reimbursementClaims = useBoundStore(state => state.reimbursementClaims || []);
 
-  // Quick suggestions list
+  // Quick suggestions list (Smart Defaults)
   const suggestions = [
-    "Who is on leave today?",
-    "Show outstanding payments",
-    "Which contracts are outstanding?",
-    "Show unreconciled expenses"
+    "⚡ Who is on leave today?",
+    "💰 Show overdue client payments",
+    "💻 List unused SaaS license seats",
+    "📊 How's my day looking like?"
   ];
 
   // Auto-scroll to bottom of chat

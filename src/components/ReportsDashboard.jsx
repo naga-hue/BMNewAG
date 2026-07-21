@@ -1167,7 +1167,7 @@ export default function ReportsDashboard({
                       <td>Overheads & Staff Expenses</td>
                       <td colSpan={monthsList.length + 1} />
                     </tr>
-                    {renderRow('Base Wages & Salaries', 'salaries', false, true)}
+                    {renderRow('1002 - Salary', 'salaries', false, true)}
                     {/* Apportioned Overheads & SaaS (Expandable) */}
                     <tr style={{ fontWeight: 400 }}>
                       <td style={{ paddingLeft: '24px', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setExpandedExpenses(!expandedExpenses)}>
@@ -2525,7 +2525,7 @@ export default function ReportsDashboard({
                       <td>Overheads & Staff Expenses (INR)</td>
                       <td colSpan={monthsList.length + 1} />
                     </tr>
-                    {renderIndiaRow('Base Wages & Salaries', 'salaries', false, true)}
+                    {renderIndiaRow('1002 - Salary', 'salaries', false, true)}
                     {renderIndiaRow('Apportioned Overheads & SaaS', 'overheadsExpenses', false, true)}
                     {renderIndiaRow('Total Indirect Overheads', 'totalOverheads', true, true, 'var(--text-secondary)')}
 

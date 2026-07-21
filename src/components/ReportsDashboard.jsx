@@ -2130,11 +2130,13 @@ export default function ReportsDashboard({
                 const renderRecRow = (rec) => {
                   const employer = companies.find(c => c.id === rec.companyId);
                   
-                  // Period Billings (within selected start and end months range)
+                  const currentMonthKey = new Date().toISOString().substring(0, 7);
+
+                  // Period Billings (within selected start and end months range, up to current month)
                   const periodPlacements = placements.filter(p => {
                     if (!p.startDate || p.status === 'dns') return false;
                     const startMonthKey = p.startDate.substring(0, 7);
-                    if (startMonthKey < startMonth || startMonthKey > endMonth) return false;
+                    if (startMonthKey < startMonth || startMonthKey > endMonth || startMonthKey > currentMonthKey) return false;
                     return p.splits?.some(s => s.staffId === rec.id);
                   });
 
@@ -2144,10 +2146,11 @@ export default function ReportsDashboard({
                     return sum + toGBP(share, 'GBP');
                   }, 0);
 
-                  // Calculate actual wages & commissions paid during selected period
+                  // Calculate actual wages & commissions paid during selected period (up to current month)
                   let wagesPaid = 0;
                   let commissionsPaid = 0;
-                  monthsList.forEach(m => {
+                  const activeMonthsList = monthsList.filter(m => m <= currentMonthKey);
+                  activeMonthsList.forEach(m => {
                     const pay = getStaffPayrollForMonth(rec, m);
                     
                     // Apportionment check matching P&L

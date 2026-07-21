@@ -3195,6 +3195,10 @@ export default function ReportsDashboard({
                   });
                 });
               } else {
+                const groupActiveStaff = staff.filter(st => {
+                  const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
+                  return daysWorked >= 10;
+                });
                 groupActiveStaff.forEach(s => {
                   const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
                   if (!policy) return;
@@ -3614,6 +3618,198 @@ export default function ReportsDashboard({
                   }
                 });
               }
+
+              // 4. Staff Payroll/Freelance/Consulting Projections (1001, 1002, 1003, 1004)
+              const groupActiveStaff = staff.filter(st => {
+                const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
+                return daysWorked >= 10;
+              });
+
+              staff.forEach(s => {
+                const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, mKey);
+                if (daysWorked < 10) return;
+
+                const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+                if (!policy) return;
+
+                let staffCost = 0;
+                if (policy.type === 'freelance') {
+                  const totalBusinessDays = getBusinessDaysInMonth(mKey, s);
+                  
+                  const year = mKey.substring(0, 4);
+                  const yearLeaves = leaveRequests.filter(req => 
+                    req.staffId === s.id && 
+                    req.status === 'approved' && 
+                    req.startDate && 
+                    req.startDate.substring(0, 4) === year
+                  );
+                  const sortedLeaves = [...yearLeaves].sort((a, b) => a.startDate.localeCompare(b.startDate));
+                  const lp = leavePolicies.find(p => p.id === s.leavePolicyId);
+                  
+                  let annualAllowed = 20;
+                  if (lp) {
+                    if (lp.name?.toLowerCase().includes('global recruiters')) {
+                      if (s.startDate) {
+                        const start = new Date(s.startDate);
+                        if (!isNaN(start.getTime())) {
+                          const today = new Date();
+                          let years = today.getFullYear() - start.getFullYear();
+                          const mNum = today.getMonth() - start.getMonth();
+                          if (mNum < 0 || (mNum === 0 && today.getDate() < start.getDate())) {
+                            years--;
+                          }
+                          const calculated = 20 + Math.max(0, years);
+                          annualAllowed = Math.min(25, calculated);
+                        }
+                      }
+                    } else {
+                      annualAllowed = lp.annualAllowance || 20;
+                    }
+                  }
+                  const sickAllowed = lp ? (lp.sickAllowance ?? 10) : 10;
+
+                  let annualUsed = 0;
+                  let sickUsed = 0;
+                  let unpaidDaysInTargetMonth = 0;
+
+                  sortedLeaves.forEach(req => {
+                    const reqMonth = req.startDate.substring(0, 7);
+                    const reqDays = Number(req.totalDays) || 0;
+                    let unpaidDaysForThisRequest = 0;
+
+                    if (req.leaveType === 'unpaid') {
+                      unpaidDaysForThisRequest = reqDays;
+                    } else if (req.leaveType === 'annual') {
+                      const newTotal = annualUsed + reqDays;
+                      if (newTotal > annualAllowed) {
+                        const unpaidPart = Math.max(0, newTotal - annualAllowed);
+                        unpaidDaysForThisRequest = Math.min(reqDays, unpaidPart);
+                        annualUsed = annualAllowed;
+                      } else {
+                        annualUsed = newTotal;
+                      }
+                    } else if (req.leaveType === 'sick') {
+                      const newTotal = sickUsed + reqDays;
+                      if (newTotal > sickAllowed) {
+                        const unpaidPart = Math.max(0, newTotal - sickAllowed);
+                        unpaidDaysForThisRequest = Math.min(reqDays, unpaidPart);
+                        sickUsed = sickAllowed;
+                      } else {
+                        sickUsed = newTotal;
+                      }
+                    }
+
+                    if (reqMonth === mKey) {
+                      unpaidDaysInTargetMonth += unpaidDaysForThisRequest;
+                    }
+                  });
+
+                  const attendanceDays = Math.max(0, totalBusinessDays - unpaidDaysInTargetMonth);
+
+                  let dailyRate = 0;
+                  if (s.salary && Number(s.salary) > 0) {
+                    dailyRate = (Number(s.salary) / 12) / totalBusinessDays;
+                  } else if (s.attendanceRate && Number(s.attendanceRate) > 0) {
+                    dailyRate = Number(s.attendanceRate);
+                  } else {
+                    dailyRate = Number(policy.dailyRateDefault || 0);
+                  }
+
+                  let val = toGBP(dailyRate * attendanceDays, s.currency || 'GBP');
+                  if (s.startDate && s.startDate.substring(0, 7) === mKey) {
+                    const [y, mNum, d] = s.startDate.split('-').map(Number);
+                    const daysInMonth = new Date(y, mNum, 0).getDate();
+                    const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
+                    val = val * proration;
+                  }
+                  staffCost = val;
+                } else {
+                  let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
+                  let proration = 1.0;
+                  if (s.startDate && s.startDate.substring(0, 7) === mKey) {
+                    const [y, mNum, d] = s.startDate.split('-').map(Number);
+                    const daysInMonth = new Date(y, mNum, 0).getDate();
+                    proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
+                    basicGBP = basicGBP * proration;
+                  }
+                  staffCost = basicGBP;
+                }
+
+                let routedNominal = policy.nominalCode;
+                if (!routedNominal) {
+                  if (policy.type === 'freelance') {
+                    const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code;
+                    routedNominal = contractorNominal || '1001 - Freelancer Payments';
+                  } else {
+                    const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code;
+                    routedNominal = salaryNominal || '1002 - Salary';
+                  }
+                }
+
+                // Apply company & department matches
+                if (routedNominal.startsWith('1004') || routedNominal.toLowerCase().includes('shared')) {
+                  const otherStaff = groupActiveStaff.filter(os => {
+                    const comp = companies.find(c => c.id === os.companyId);
+                    return comp && comp.includeInConsolidation !== false && os.companyId !== s.companyId;
+                  });
+
+                  if (otherStaff.length > 0) {
+                    const perStaffShare = staffCost / otherStaff.length;
+                    otherStaff.forEach(os => {
+                      if (isCompanyMatch(os.companyId) && isDeptMatch(os.department)) {
+                        if (!nominalCode || routedNominal === nominalCode || routedNominal.startsWith(nominalCode)) {
+                          projectedItems.push({
+                            id: `proj-staff-${s.id}-${mKey}-${os.companyId}`,
+                            date: `${mKey}-01`,
+                            plMonth: mKey,
+                            payee: `${s.fullName} (Shared Cost Share via ${os.fullName})`,
+                            nominalCode: routedNominal,
+                            recipientType: 'staff',
+                            recipientId: s.id,
+                            amount: perStaffShare,
+                            currency: 'GBP',
+                            isProjection: true
+                          });
+                        }
+                      }
+                    });
+                  } else {
+                    if (isCompanyMatch(s.companyId) && isDeptMatch(s.department)) {
+                      if (!nominalCode || routedNominal === nominalCode || routedNominal.startsWith(nominalCode)) {
+                        projectedItems.push({
+                          id: `proj-staff-${s.id}-${mKey}`,
+                          date: `${mKey}-01`,
+                          plMonth: mKey,
+                          payee: `${s.fullName} (Shared Cost - Direct)`,
+                          nominalCode: routedNominal,
+                          recipientType: 'staff',
+                          recipientId: s.id,
+                          amount: staffCost,
+                          currency: 'GBP',
+                          isProjection: true
+                        });
+                      }
+                    }
+                  }
+                } else {
+                  if (isCompanyMatch(s.companyId) && isDeptMatch(s.department)) {
+                    if (!nominalCode || routedNominal === nominalCode || routedNominal.startsWith(nominalCode)) {
+                      projectedItems.push({
+                        id: `proj-staff-${s.id}-${mKey}`,
+                        date: `${mKey}-01`,
+                        plMonth: mKey,
+                        payee: s.fullName,
+                        nominalCode: routedNominal,
+                        recipientType: 'staff',
+                        recipientId: s.id,
+                        amount: staffCost,
+                        currency: 'GBP',
+                        isProjection: true
+                      });
+                    }
+                  }
+                }
+              });
             });
 
             return projectedItems;

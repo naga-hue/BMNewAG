@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useBoundStore } from '../../store/useBoundStore';
 import { toGBP } from '../../utils/currency';
 import { Check, Sparkles, Filter, AlertTriangle, ArrowRight, ShieldAlert, Plus, Layers, UserCheck } from 'lucide-react';

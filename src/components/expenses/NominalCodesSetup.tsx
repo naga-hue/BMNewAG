@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Trash2, PlusCircle } from 'lucide-react';
+import { Trash2, PlusCircle, Edit3, Check, X } from 'lucide-react';
 import { useBoundStore } from '../../store/useBoundStore';
 
 interface NominalCodesSetupProps {
@@ -17,6 +17,55 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
   const [newNominalType, setNewNominalType] = useState('indirect'); // direct, indirect
   const [bulkInput, setBulkInput] = useState('');
   const [selectedNominalIds, setSelectedNominalIds] = useState<string[]>([]);
+
+  // Inline edit state for renumbering / updating nominal codes
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editIdInput, setEditIdInput] = useState('');
+  const [editNameInput, setEditNameInput] = useState('');
+  const [editTypeInput, setEditTypeInput] = useState('indirect');
+
+  const startEdit = (c: { id: string; code: string; type: string }) => {
+    setEditingId(c.id);
+    setEditIdInput(c.id);
+    const parts = c.code.split(' - ');
+    const label = parts.length > 1 ? parts.slice(1).join(' - ') : c.code;
+    setEditNameInput(label);
+    setEditTypeInput(c.type || 'indirect');
+  };
+
+  const handleSaveEdit = async (c: { id: string; code: string; type: string }) => {
+    const newId = editIdInput.trim();
+    const newName = editNameInput.trim();
+    if (!newId || !newName) {
+      onShowToast("Nominal Code ID and Description Label cannot be empty.", "warning");
+      return;
+    }
+
+    const newCodeStr = `${newId} - ${newName}`;
+
+    if (newId !== c.id) {
+      const duplicate = activeNominalCodes.some(item => item.id === newId);
+      if (duplicate) {
+        onShowToast(`Nominal Code ID "${newId}" already exists. Please choose a unique ID.`, "warning");
+        return;
+      }
+    }
+
+    try {
+      if (newId !== c.id) {
+        await deleteNominalCode(c.id);
+      }
+      await saveNominalCode({
+        id: newId,
+        code: newCodeStr,
+        type: editTypeInput
+      });
+      onShowToast(`Updated Nominal Code to: ${newCodeStr}`, "success");
+      setEditingId(null);
+    } catch (err: any) {
+      onShowToast(`Error saving Nominal Code: ${err.message}`, "warning");
+    }
+  };
 
   // Normalize nominal codes to handle any legacy string arrays gracefully
   const activeNominalCodes = useMemo(() => {
@@ -304,52 +353,128 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
               </tr>
             </thead>
             <tbody>
-              {activeNominalCodes.map(c => (
-                <tr key={c.id}>
-                  <td style={{ textAlign: 'center' }}>
-                    <input 
-                      type="checkbox"
-                      checked={selectedNominalIds.includes(c.id)}
-                      onChange={() => {
-                        setSelectedNominalIds(prev => 
-                          prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id]
-                        );
-                      }}
-                    />
-                  </td>
-                  <td style={{ fontWeight: 700, fontFamily: 'monospace' }}>{c.id}</td>
-                  <td>{c.code}</td>
-                  <td>
-                    <span style={{ 
-                      display: 'inline-block',
-                      fontSize: '9px',
-                      fontWeight: 700,
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      backgroundColor: c.type === 'direct' ? 'rgba(99, 102, 241, 0.12)' : 'rgba(107, 114, 128, 0.12)',
-                      color: c.type === 'direct' ? 'var(--primary)' : 'var(--text-secondary)'
-                    }}>
-                      {c.type === 'direct' ? 'DIRECT COST' : 'INDIRECT COST'}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                      <button 
-                        className="btn-icon delete" 
-                        onClick={() => {
-                          if (window.confirm(`Are you sure you want to delete Nominal Code "${c.code}"?`)) {
-                            deleteNominalCode(c.id);
-                            onShowToast(`Deleted Nominal category: ${c.code}`, "info");
-                          }
+              {activeNominalCodes.map(c => {
+                const isEditing = editingId === c.id;
+                return (
+                  <tr key={c.id} style={isEditing ? { backgroundColor: 'rgba(99, 102, 241, 0.08)' } : undefined}>
+                    <td style={{ textAlign: 'center' }}>
+                      <input 
+                        type="checkbox"
+                        checked={selectedNominalIds.includes(c.id)}
+                        onChange={() => {
+                          setSelectedNominalIds(prev => 
+                            prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id]
+                          );
                         }}
-                        title="Delete nominal code"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                      />
+                    </td>
+                    
+                    {isEditing ? (
+                      <>
+                        <td>
+                          <input 
+                            type="text" 
+                            className="form-input"
+                            value={editIdInput}
+                            onChange={(e) => setEditIdInput(e.target.value)}
+                            placeholder="e.g. 7000"
+                            style={{ width: '90px', padding: '4px 8px', fontFamily: 'monospace', fontWeight: 700, fontSize: '12px' }}
+                            title="Edit / Renumber Nominal Code ID"
+                          />
+                        </td>
+                        <td>
+                          <input 
+                            type="text" 
+                            className="form-input"
+                            value={editNameInput}
+                            onChange={(e) => setEditNameInput(e.target.value)}
+                            placeholder="Description Name"
+                            style={{ width: '100%', padding: '4px 8px', fontSize: '12px' }}
+                          />
+                        </td>
+                        <td>
+                          <select
+                            className="select-filter"
+                            value={editTypeInput}
+                            onChange={(e) => setEditTypeInput(e.target.value)}
+                            style={{ padding: '4px 8px', fontSize: '11px', width: '100%' }}
+                          >
+                            <option value="indirect">INDIRECT COST</option>
+                            <option value="direct">DIRECT COST</option>
+                          </select>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+                            <button 
+                              type="button"
+                              className="btn-icon" 
+                              onClick={() => handleSaveEdit(c)}
+                              title="Save Changes"
+                              style={{ color: 'var(--success)', padding: '4px' }}
+                            >
+                              <Check size={14} />
+                            </button>
+                            <button 
+                              type="button"
+                              className="btn-icon" 
+                              onClick={() => setEditingId(null)}
+                              title="Cancel Edit"
+                              style={{ color: 'var(--text-muted)', padding: '4px' }}
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td style={{ fontWeight: 700, fontFamily: 'monospace' }}>{c.id}</td>
+                        <td>{c.code}</td>
+                        <td>
+                          <span style={{ 
+                            display: 'inline-block',
+                            fontSize: '9px',
+                            fontWeight: 700,
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            backgroundColor: c.type === 'direct' ? 'rgba(99, 102, 241, 0.12)' : 'rgba(107, 114, 128, 0.12)',
+                            color: c.type === 'direct' ? 'var(--primary)' : 'var(--text-secondary)'
+                          }}>
+                            {c.type === 'direct' ? 'DIRECT COST' : 'INDIRECT COST'}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+                            <button 
+                              type="button"
+                              className="btn-icon" 
+                              onClick={() => startEdit(c)}
+                              title="Edit & Renumber nominal code"
+                              style={{ padding: '4px' }}
+                            >
+                              <Edit3 size={12} />
+                            </button>
+                            <button 
+                              type="button"
+                              className="btn-icon delete" 
+                              onClick={() => {
+                                if (window.confirm(`Are you sure you want to delete Nominal Code "${c.code}"?`)) {
+                                  deleteNominalCode(c.id);
+                                  onShowToast(`Deleted Nominal category: ${c.code}`, "info");
+                                }
+                              }}
+                              title="Delete nominal code"
+                              style={{ padding: '4px' }}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
               {activeNominalCodes.length === 0 && (
                 <tr>
                   <td colSpan={5} style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>

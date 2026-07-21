@@ -1096,6 +1096,75 @@ export default function ExpensesTable({
                           ))}
                         </optgroup>
                       </select>
+
+                      {exp.recipientType === 'vendor' && exp.recipientId && (() => {
+                        const vendorContracts = contracts.filter(c => c.vendorId === exp.recipientId);
+                        if (vendorContracts.length === 0) return null;
+
+                        return (
+                          <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <select
+                              value={exp.linkedContractId || (exp.contractSplits ? 'split_all' : '')}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === 'split_all') {
+                                  const totalProjected = vendorContracts.reduce((sum, c) => sum + (toGBP(c.unitCost, c.currency) * (c.quantityPurchased || 1)), 0) || 1;
+                                  const expAmount = toGBP(exp.amount, exp.currency || 'GBP');
+                                  const splits: Record<string, number> = {};
+                                  vendorContracts.forEach(c => {
+                                    const cProj = toGBP(c.unitCost, c.currency) * (c.quantityPurchased || 1);
+                                    splits[c.id] = Math.round(((cProj / totalProjected) * expAmount) * 100) / 100;
+                                  });
+                                  const allContractIds = vendorContracts.map(c => c.id);
+                                  const assignedStaffIds = assetAssignments.filter(a => allContractIds.includes(a.contractId)).map(a => a.staffId).filter(Boolean);
+                                  saveExpense({
+                                    ...exp,
+                                    linkedContractId: 'split_all',
+                                    contractSplits: splits,
+                                    allocationType: assignedStaffIds.length > 0 ? 'staff' : exp.allocationType,
+                                    allocationTarget: assignedStaffIds.length > 0 ? assignedStaffIds : exp.allocationTarget
+                                  });
+                                  onShowToast(`⚡ Auto-split payment pro-rata across all ${vendorContracts.length} contracts!`, "success");
+                                } else {
+                                  const selectedC = vendorContracts.find(c => c.id === val);
+                                  const assignedStaffIds = assetAssignments.filter(a => a.contractId === val).map(a => a.staffId).filter(Boolean);
+                                  saveExpense({
+                                    ...exp,
+                                    linkedContractId: val,
+                                    contractSplits: null,
+                                    allocationType: assignedStaffIds.length > 0 ? 'staff' : exp.allocationType,
+                                    allocationTarget: assignedStaffIds.length > 0 ? assignedStaffIds : exp.allocationTarget
+                                  });
+                                  onShowToast(`Linked transaction to contract: ${selectedC?.name || 'General Vendor'}`, "success");
+                                }
+                              }}
+                              style={{
+                                padding: '2px 4px',
+                                fontSize: '10px',
+                                borderRadius: '4px',
+                                border: '1px solid var(--border-color)',
+                                backgroundColor: 'var(--bg-secondary)',
+                                color: exp.linkedContractId ? 'var(--primary)' : 'var(--text-secondary)',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                width: '100%'
+                              }}
+                            >
+                              <option value="">-- Choose Contract Package --</option>
+                              {vendorContracts.length > 1 && (
+                                <option value="split_all" style={{ color: 'var(--success)', fontWeight: 'bold' }}>
+                                  ⚡ Split Across All {vendorContracts.length} Contracts
+                                </option>
+                              )}
+                              {vendorContracts.map(c => (
+                                <option key={c.id} value={c.id}>
+                                  💻 {c.name} ({c.quantityPurchased || 0} seats)
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })()}
                     </td>
                   )}
                   {visibleCols.bank && (

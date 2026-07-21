@@ -361,7 +361,19 @@ export default function ForecastMatrix({
                             const val = getContractCostForMonth(c, m.year, m.monthIndex);
                             rowSum += val;
                             const monthKey = `${m.year}-${String(m.monthIndex + 1).padStart(2, '0')}`;
-                            const linkedExp = expenses?.find(e => e.linkedVendorCellId === `${c.id}_${monthKey}`);
+                            const matchedVendor = vendors.find(v => v.id === c.vendorId || (v.name && c.vendorName && v.name.toLowerCase() === c.vendorName.toLowerCase()));
+
+                            const linkedExp = (expenses || []).find(e => {
+                              if (e.status === 'dns' || e.status === 'cancelled') return false;
+                              if (e.linkedVendorCellId === `${c.id}_${monthKey}`) return true;
+                              const expMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+                              if (expMonth !== monthKey) return false;
+                              return (e.recipientType === 'vendor' && (e.recipientId === c.vendorId || e.recipientId === matchedVendor?.id)) ||
+                                     (e.payee && matchedVendor && e.payee.toLowerCase().includes(matchedVendor.name.toLowerCase()));
+                            });
+
+                            const actualVal = linkedExp ? toGBP(linkedExp.amount, linkedExp.currency || 'GBP') : null;
+
                             return (
                               <td 
                                 key={idx} 
@@ -370,16 +382,16 @@ export default function ForecastMatrix({
                                   textAlign: 'right', 
                                   fontFamily: 'monospace', 
                                   cursor: 'pointer',
-                                  backgroundColor: linkedExp ? 'rgba(16, 185, 129, 0.08)' : 'transparent',
+                                  backgroundColor: linkedExp ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
                                   color: linkedExp ? 'var(--success)' : 'var(--text-muted)',
                                   transition: 'all 0.15s',
                                   padding: '6px 10px'
                                 }}
-                                title={linkedExp ? `Reconciled & Paid\nActual: £${Math.round(linkedExp.amount).toLocaleString()} on ${linkedExp.date}\nPayee: ${linkedExp.payee}\nClick to unlink/change` : `Projected Cost: £${Math.round(val).toLocaleString()}\nClick to reconcile with bank payment`}
+                                title={linkedExp ? `✅ Reconciled & Paid from Bank Statement\nPlanned: £${Math.round(val).toLocaleString()}\nActual Paid: £${Math.round(actualVal || 0).toLocaleString()} on ${linkedExp.date}\nPayee: ${linkedExp.payee}\nClick to review/reconcile` : `Planned Forecast: £${Math.round(val).toLocaleString()}\nStatus: Pending Bank Statement Payment\nClick to reconcile`}
                               >
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                                  {linkedExp && <span style={{ fontSize: '9px', fontWeight: 800 }}>🔗</span>}
-                                  <span>{val > 0 ? Math.round(val).toLocaleString() : '-'}</span>
+                                  {linkedExp && <span style={{ fontSize: '9px', fontWeight: 800 }}>✓</span>}
+                                  <span>{linkedExp ? Math.round(actualVal || 0).toLocaleString() : (val > 0 ? Math.round(val).toLocaleString() : '-')}</span>
                                 </div>
                               </td>
                             );

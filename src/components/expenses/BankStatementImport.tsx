@@ -28,12 +28,16 @@ interface CategorizedRow {
   manualAllocationShares?: Record<string, number>;
 }
 
+const EMPTY_ARRAY: any[] = [];
+
 export default function BankStatementImport({ onShowToast }: BankStatementImportProps) {
-  const companies = useBoundStore(state => state.companies);
-  const staff = useBoundStore(state => state.staff);
-  const vendors = useBoundStore(state => state.vendors);
-  const placements = useBoundStore(state => state.placements);
-  const nominalCodes = useBoundStore(state => state.nominalCodes);
+  const companies = useBoundStore(state => state.companies) || EMPTY_ARRAY;
+  const staff = useBoundStore(state => state.staff) || EMPTY_ARRAY;
+  const vendors = useBoundStore(state => state.vendors) || EMPTY_ARRAY;
+  const placements = useBoundStore(state => state.placements) || EMPTY_ARRAY;
+  const nominalCodes = useBoundStore(state => state.nominalCodes) || EMPTY_ARRAY;
+  const contracts = useBoundStore(state => state.contracts) || EMPTY_ARRAY;
+  const assetAssignments = useBoundStore(state => state.assetAssignments) || EMPTY_ARRAY;
 
   const updateExpense = useBoundStore(state => state.updateExpense);
   const saveExpense = updateExpense;
@@ -822,6 +826,39 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                             const [type, id] = val.split(':');
                             handleUpdateCategorizedRow(row.id, 'recipientType', type);
                             handleUpdateCategorizedRow(row.id, 'recipientId', id);
+
+                            if (type === 'vendor') {
+                              const vendorObj = vendors.find(v => v.id === id);
+                              const vContracts = contracts.filter(c => c.vendorId === id || (c.vendorName && vendorObj && c.vendorName.toLowerCase().includes(vendorObj.name.toLowerCase())));
+                              const vContractIds = vContracts.map(c => c.id);
+
+                              // Auto-populate seat assigned staff users
+                              const assignedStaffIds = assetAssignments
+                                .filter(a => vContractIds.includes(a.contractId))
+                                .map(a => a.staffId)
+                                .filter(Boolean);
+
+                              if (assignedStaffIds.length > 0) {
+                                handleUpdateCategorizedRow(row.id, 'allocationType', 'staff');
+                                handleUpdateCategorizedRow(row.id, 'selectedStaffIds', assignedStaffIds);
+                                handleUpdateCategorizedRow(row.id, 'allocationTarget', '');
+                                onShowToast(`🔌 Auto-populated ${assignedStaffIds.length} seat users from Vendor Asset (${vendorObj?.name})!`, "success");
+                              } else if (vContracts.length > 0 && Array.isArray(vContracts[0].splits)) {
+                                const compTargets = vContracts[0].splits.filter((sp: any) => sp.type === 'company').map((sp: any) => sp.targetId);
+                                if (compTargets.length > 0) {
+                                  handleUpdateCategorizedRow(row.id, 'allocationType', 'company');
+                                  handleUpdateCategorizedRow(row.id, 'allocationTarget', compTargets);
+                                  handleUpdateCategorizedRow(row.id, 'selectedStaffIds', []);
+                                  onShowToast(`🔌 Auto-populated company cost splits from Vendor Asset (${vendorObj?.name})!`, "success");
+                                }
+                              }
+                            } else if (type === 'staff') {
+                              const staffMember = staff.find(s => s.id === id);
+                              handleUpdateCategorizedRow(row.id, 'allocationType', 'staff');
+                              handleUpdateCategorizedRow(row.id, 'selectedStaffIds', [id]);
+                              handleUpdateCategorizedRow(row.id, 'allocationTarget', '');
+                              onShowToast(`👤 Auto-allocated salary/payroll cost to ${staffMember?.fullName}`, "success");
+                            }
                           }
                         }}
                         disabled={row.committed}

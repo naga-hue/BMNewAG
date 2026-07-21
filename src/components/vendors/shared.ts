@@ -62,6 +62,7 @@ export interface VendorsDashboardProps {
   contracts: any[];
   assetAssignments: any[];
   expenses: Expense[];
+  nominalCodes?: any[];
   onSaveExpense: (exp: Expense) => Promise<any>;
   onSaveVendor: (v: Vendor) => Promise<any>;
   onDeleteVendor?: (id: string) => Promise<any>;

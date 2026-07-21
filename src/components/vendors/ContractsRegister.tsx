@@ -216,7 +216,14 @@ export default function ContractsRegister({
                     }}
                   >
                     <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {contract.name}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <span>{contract.name}</span>
+                        {contract.nominalCode && (
+                          <span style={{ fontSize: '10px', color: '#38bdf8', fontWeight: 700 }}>
+                            🏷️ {contract.nominalCode}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', color: 'var(--text-secondary)' }}>
                       {matchedVendor ? matchedVendor.name : '—'}

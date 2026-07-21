@@ -773,11 +773,20 @@ export default function ReportsDashboard({
           }
 
           const gbpCost = toGBP(cost, contract.currency || 'GBP');
-          const nameLower = contract.name.toLowerCase();
-          if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
-            breakdown["7001 - Office Rentals & Leasing"] += gbpCost;
+          if (contract.nominalCode) {
+            const matchedKey = Object.keys(breakdown).find(k => k.startsWith(contract.nominalCode) || k === contract.nominalCode);
+            if (matchedKey) {
+              breakdown[matchedKey] += gbpCost;
+            } else {
+              breakdown[contract.nominalCode] = (breakdown[contract.nominalCode] || 0) + gbpCost;
+            }
           } else {
-            breakdown["7002 - Software Licenses & SaaS"] += gbpCost;
+            const nameLower = contract.name.toLowerCase();
+            if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
+              breakdown["7001 - Office Rentals & Leasing"] += gbpCost;
+            } else {
+              breakdown["7002 - Software Licenses & SaaS"] += gbpCost;
+            }
           }
         }
       });

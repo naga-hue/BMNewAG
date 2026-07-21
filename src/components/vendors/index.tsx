@@ -37,6 +37,7 @@ export default function VendorsDashboard({
   contracts = [],
   assetAssignments = [],
   expenses = [],
+  nominalCodes = [],
   onSaveExpense,
   onSaveVendor,
   onDeleteVendor = async () => {},
@@ -281,6 +282,7 @@ export default function VendorsDashboard({
           vendors={vendors}
           companies={companies}
           staff={staff}
+          nominalCodes={nominalCodes}
           onSaveContract={onSaveContract}
           onShowToast={onShowToast}
         />

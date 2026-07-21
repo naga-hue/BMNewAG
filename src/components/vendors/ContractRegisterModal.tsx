@@ -9,6 +9,7 @@ interface ContractRegisterModalProps {
   vendors: Vendor[];
   companies: Company[];
   staff: Staff[];
+  nominalCodes?: any[];
   onSaveContract: (contract: any) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
 }
@@ -19,12 +20,14 @@ export default function ContractRegisterModal({
   vendors,
   companies,
   staff,
+  nominalCodes = [],
   onSaveContract,
   onShowToast
 }: ContractRegisterModalProps) {
   const [contractName, setContractName] = useState('');
   const [contractVendorId, setContractVendorId] = useState('');
   const [contractCompanyId, setContractCompanyId] = useState('');
+  const [nominalCode, setNominalCode] = useState('');
   const [costInterval, setCostInterval] = useState('monthly');
   const [contractCurrency, setContractCurrency] = useState('GBP');
   const [unitCost, setUnitCost] = useState('');
@@ -44,6 +47,7 @@ export default function ContractRegisterModal({
       setContractName(contract.name || '');
       setContractVendorId(contract.vendorId || '');
       setContractCompanyId(contract.companyId || '');
+      setNominalCode(contract.nominalCode || '');
       setCostInterval(contract.costInterval || 'monthly');
       setContractCurrency(contract.currency || 'GBP');
       setUnitCost(String(contract.unitCost || ''));
@@ -61,6 +65,7 @@ export default function ContractRegisterModal({
       setContractName('');
       setContractVendorId('');
       setContractCompanyId('');
+      setNominalCode('');
       setCostInterval('monthly');
       setContractCurrency('GBP');
       setUnitCost('');
@@ -145,6 +150,7 @@ export default function ContractRegisterModal({
       name: contractName.trim(),
       vendorId: contractVendorId,
       companyId: contractCompanyId,
+      nominalCode: nominalCode || '',
       costInterval,
       currency: contractCurrency,
       unitCost: parseFloat(unitCost) || 0,
@@ -226,7 +232,7 @@ export default function ContractRegisterModal({
           </div>
 
           <div className="form-group-row" style={{ marginBottom: 0 }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
+            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
               <label className="form-label">Billing Entity (Company) <span>*</span></label>
               <select 
                 className="select-filter"
@@ -241,6 +247,24 @@ export default function ContractRegisterModal({
                 ))}
               </select>
             </div>
+
+            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+              <label className="form-label">P&L Nominal Code Mapping</label>
+              <select 
+                className="select-filter"
+                value={nominalCode}
+                onChange={(e) => setNominalCode(e.target.value)}
+                style={{ width: '100%', padding: '10px' }}
+              >
+                <option value="">-- Auto-detect / Category Default --</option>
+                {(nominalCodes || []).map((nc: any) => (
+                  <option key={nc.id || nc.code} value={nc.code}>
+                    {nc.code} {nc.name ? `- ${nc.name}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
             <div className="form-group-row" style={{ flex: 1, gap: '10px', marginBottom: 0 }}>
               <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
@@ -272,7 +296,6 @@ export default function ContractRegisterModal({
                 </select>
               </div>
             </div>
-          </div>
 
           <div className="form-group-row" style={{ marginBottom: 0 }}>
             <div className="form-group" style={{ marginBottom: 0 }}>

@@ -879,7 +879,10 @@ export default function ReportsDashboard({
     activeStaff.forEach(s => {
       const pay = getStaffPayrollForMonth(s, monthKey);
       if (monthKey > '2026-06') {
-        salaries += pay.salaries;
+        const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+        if (!policy || policy.type !== 'freelance') {
+          salaries += pay.salaries;
+        }
         commissions += pay.commissions;
       }
     });
@@ -2369,7 +2372,10 @@ export default function ReportsDashboard({
               activeStaff.forEach(s => {
                 const pay = getStaffPayrollForMonth(s, m);
                 if (m > '2026-06') {
-                  salaries += pay.salaries;
+                  const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+                  if (!policy || policy.type !== 'freelance') {
+                    salaries += pay.salaries;
+                  }
                   commissions += pay.commissions;
                 }
               });
@@ -2863,6 +2869,9 @@ export default function ReportsDashboard({
             (staff || []).forEach(s => {
               if (s.employmentStatus === 'exited') return;
               if (!isCompanyMatch(s.companyId) || !isDeptMatch(s.department)) return;
+              const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+              if (policy && policy.type === 'freelance') return; // Exclude freelancers
+
               const mList = monthKey ? [monthKey] : monthsList;
               mList.forEach(m => {
                 const salData = getStaffPayrollForMonth(s, m);

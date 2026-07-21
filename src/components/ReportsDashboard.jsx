@@ -555,20 +555,8 @@ export default function ReportsDashboard({
 
   const getNominalBreakdownForMonth = (monthKey, overrideCompanyId = null) => {
     const breakdown = {};
-    nominalCodes.forEach(nc => {
-      breakdown[nc.code] = 0;
-    });
-
-    const defaultCodes = [
-      "7001 - Office Rentals & Leasing",
-      "7002 - Software Licenses & SaaS",
-      "7003 - Staff Payroll & Wages",
-      "7004 - Freelancers & Subcontractors"
-    ];
-    defaultCodes.forEach(code => {
-      if (breakdown[code] === undefined) {
-        breakdown[code] = 0;
-      }
+    (nominalCodes || []).forEach(nc => {
+      if (nc.code) breakdown[nc.code] = 0;
     });
 
     const activeStaff = staff.filter(s => {
@@ -1152,6 +1140,29 @@ export default function ReportsDashboard({
                         {formatGBP(rowData.reduce((acc, r) => acc + r.netProfit, 0))}
                       </td>
                     </tr>
+
+                    {/* Cumulative Carry-Forward YTD Net Profit (YTD Running Total) */}
+                    {(() => {
+                      let runningYtd = 0;
+                      const runningYtdList = rowData.map(r => {
+                        runningYtd += r.netProfit;
+                        return runningYtd;
+                      });
+
+                      return (
+                        <tr style={{ fontWeight: 700, backgroundColor: 'rgba(59, 130, 246, 0.08)', fontSize: '12px', borderTop: '1px solid var(--border-color)' }}>
+                          <td style={{ color: 'var(--primary)' }}>📈 Cumulative Carry-Forward YTD Net Profit</td>
+                          {runningYtdList.map((ytdVal, idx) => (
+                            <td key={idx} style={{ textAlign: 'right', color: ytdVal >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 700 }}>
+                              {formatGBP(ytdVal)}
+                            </td>
+                          ))}
+                          <td style={{ textAlign: 'right', fontWeight: 800, color: runningYtd >= 0 ? 'var(--success)' : 'var(--danger)', backgroundColor: 'rgba(59, 130, 246, 0.15)' }}>
+                            {formatGBP(runningYtd)}
+                          </td>
+                        </tr>
+                      );
+                    })()}
 
                     <tr style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
                       <td 

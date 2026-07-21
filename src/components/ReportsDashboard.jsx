@@ -22,7 +22,9 @@ const FX_RATES = {
 };
 
 const formatGBP = (val) => {
-  return '£' + Math.round(val).toLocaleString();
+  const num = Number(val);
+  if (isNaN(num) || !isFinite(num)) return '£0';
+  return '£' + Math.round(num).toLocaleString();
 };
 
 const getDaysWorkedInMonth = (startDateStr, exitDateStr, monthKey) => {
@@ -819,9 +821,14 @@ export default function ReportsDashboard({
     const nominalBreakdown = getNominalBreakdownForMonth(monthKey);
     const overheadsExpenses = Object.values(nominalBreakdown).reduce((sum, v) => sum + v, 0);
 
-    const grossProfit = revenue - commissions;
-    const totalOverheads = salaries + overheadsExpenses;
-    const netProfit = revenue - commissions - totalOverheads;
+    const safeRevenue = Number(revenue) || 0;
+    const safeCommissions = Number(commissions) || 0;
+    const safeSalaries = Number(salaries) || 0;
+    const safeOverheadsExpenses = Number(overheadsExpenses) || 0;
+
+    const grossProfit = safeRevenue - safeCommissions;
+    const totalOverheads = safeSalaries + safeOverheadsExpenses;
+    const netProfit = grossProfit - totalOverheads;
 
     return {
       revenue,

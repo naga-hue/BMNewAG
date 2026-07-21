@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import MultiSelectFilter from './MultiSelectFilter';
+import CompanyDeptTreeFilter from './CompanyDeptTreeFilter';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -921,25 +922,16 @@ export default function ReportsDashboard({
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Company Entity:</span>
-            <MultiSelectFilter
-              options={companyOptions}
-              selectedValues={companyFilter}
-              onChange={(vals) => {
-                setCompanyFilter(vals);
-                setDeptFilter(['all']); // reset division
+            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Entity / Department:</span>
+            <CompanyDeptTreeFilter
+              companies={companies}
+              staff={staff}
+              selectedCompanyIds={companyFilter}
+              selectedDepartments={deptFilter}
+              onChange={({ companyIds, departments }) => {
+                setCompanyFilter(companyIds);
+                setDeptFilter(departments);
               }}
-              placeholder="Select Companies"
-            />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Division / Department:</span>
-            <MultiSelectFilter
-              options={departmentOptionsList}
-              selectedValues={deptFilter}
-              onChange={(vals) => setDeptFilter(vals)}
-              placeholder="Select Departments"
             />
           </div>
 

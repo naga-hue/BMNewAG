@@ -31,11 +31,18 @@ export default function CompanyDeptTreeFilter({
       // Collect unique departments for this company from c.departments & staff array
       const deptSet = new Set();
       if (Array.isArray(c.departments)) {
-        c.departments.forEach(d => d && deptSet.add(d));
+        c.departments.forEach(d => {
+          if (!d) return;
+          const name = typeof d === 'object' ? d.name : d;
+          if (name && typeof name === 'string') deptSet.add(name);
+        });
       }
       staff.forEach(s => {
         if (s.companyId === c.id && s.department) {
-          deptSet.add(s.department);
+          const name = typeof s.department === 'object' ? s.department.name : s.department;
+          if (name && typeof name === 'string') {
+            deptSet.add(name);
+          }
         }
       });
 
@@ -440,7 +447,7 @@ export default function CompanyDeptTreeFilter({
                               style={{ cursor: 'pointer' }}
                             />
                             <span style={{ color: deptSel ? 'var(--primary)' : 'var(--text-secondary)' }}>
-                              📁 {dept}
+                              📁 {typeof dept === 'object' ? (dept.name || String(dept)) : String(dept)}
                             </span>
                           </div>
                         );

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { Briefcase } from 'lucide-react';
-import { Staff } from '../../types';
+import { Staff, NominalCode } from '../../types';
 
 interface PayrollAdjustmentsFormProps {
   staff: Staff[];
   payrollPolicies: any[];
+  nominalCodes?: NominalCode[];
   onSavePayrollPolicy: (policy: any) => Promise<any>;
   onDeletePayrollPolicy: (id: string) => Promise<any>;
   onUpdateStaff: (s: Staff) => Promise<any>;
@@ -14,6 +15,7 @@ interface PayrollAdjustmentsFormProps {
 export default function PayrollAdjustmentsForm({
   staff,
   payrollPolicies,
+  nominalCodes = [],
   onSavePayrollPolicy,
   onDeletePayrollPolicy,
   onUpdateStaff,
@@ -22,6 +24,7 @@ export default function PayrollAdjustmentsForm({
   // Policy Form fields
   const [policyName, setPolicyName] = useState('');
   const [policyPaymentDay, setPolicyPaymentDay] = useState('25');
+  const [policyNominalCode, setPolicyNominalCode] = useState('');
   const [policyType, setPolicyType] = useState('ft_uk'); // ft_uk, freelance, custom
   const [employerNiRate, setEmployerNiRate] = useState('13.8');
   const [employerNiThreshold, setEmployerNiThreshold] = useState('758');
@@ -98,6 +101,7 @@ export default function PayrollAdjustmentsForm({
       id: editingPolicyId || `policy-${Date.now()}`,
       name: policyName.trim(),
       type: policyType,
+      nominalCode: policyNominalCode,
       employerNiRate: policyType === 'freelance' ? 0 : Number(employerNiRate) || 0,
       employerNiThreshold: policyType === 'freelance' ? 0 : Number(employerNiThreshold) || 0,
       employerPensionRate: policyType === 'freelance' ? 0 : Number(employerPensionRate) || 0,
@@ -121,6 +125,7 @@ export default function PayrollAdjustmentsForm({
       // Reset Form fields
       setPolicyName('');
       setPolicyType('ft_uk');
+      setPolicyNominalCode('');
       setEmployerNiRate('13.8');
       setEmployerNiThreshold('758');
       setEmployerPensionRate('3.0');
@@ -157,6 +162,7 @@ export default function PayrollAdjustmentsForm({
     setEditingPolicyId(policy.id);
     setPolicyName(policy.name || '');
     setPolicyType(policy.type || 'ft_uk');
+    setPolicyNominalCode(policy.nominalCode || '');
     setEmployerNiRate(String(policy.employerNiRate ?? '13.8'));
     setEmployerNiThreshold(String(policy.employerNiThreshold ?? '758'));
     setEmployerPensionRate(String(policy.employerPensionRate ?? '3.0'));
@@ -233,6 +239,22 @@ export default function PayrollAdjustmentsForm({
             <option value="ft_uk">FT UK Employee (PAYE, NIC, Pension, Student Loan)</option>
             <option value="freelance">Freelance Contractor (Daily Rate, Attendance-based)</option>
             <option value="custom">Custom Formula (Global / Multi-rate)</option>
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Linked Nominal Code <span>*</span></label>
+          <select 
+            className="select-filter"
+            value={policyNominalCode}
+            onChange={(e) => setPolicyNominalCode(e.target.value)}
+            style={{ width: '100%', padding: '10px' }}
+            required
+          >
+            <option value="">-- Choose Nominal Code --</option>
+            {nominalCodes.map(nc => (
+              <option key={nc.code} value={nc.code}>{nc.code}</option>
+            ))}
           </select>
         </div>
 
@@ -439,6 +461,7 @@ export default function PayrollAdjustmentsForm({
                 <tr>
                   <th>Template Name</th>
                   <th>Structure</th>
+                  <th>Nominal Mapping</th>
                   <th>Summary Rates</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
@@ -454,6 +477,16 @@ export default function PayrollAdjustmentsForm({
                         color: p.type === 'ft_uk' ? 'var(--primary)' : p.type === 'freelance' ? 'var(--warning)' : 'var(--text-secondary)'
                       }}>
                         {p.type === 'ft_uk' ? 'FT UK' : p.type === 'freelance' ? 'Freelance' : 'Custom'}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{ 
+                        fontSize: '10px', fontWeight: 600, padding: '2px 6px', borderRadius: '4px',
+                        backgroundColor: 'rgba(99, 102, 241, 0.05)',
+                        color: 'var(--primary)',
+                        fontFamily: 'monospace'
+                      }}>
+                        {p.nominalCode || 'Not Mapped'}
                       </span>
                     </td>
                     <td>

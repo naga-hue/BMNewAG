@@ -684,9 +684,10 @@ export default function ReportsDashboard({
         }
       });
     } else {
-      activeStaff.forEach(s => {
+      groupActiveStaff.forEach(s => {
         const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
         if (policy) {
+          let staffCost = 0;
           if (policy.type === 'freelance') {
             const totalBusinessDays = getBusinessDaysInMonth(monthKey, s);
             const approvedLeaves = leaveRequests.filter(req => 
@@ -714,11 +715,7 @@ export default function ReportsDashboard({
               const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
               val = val * proration;
             }
-
-            const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code || nominalCodes[0]?.code;
-            if (contractorNominal) {
-              breakdown[contractorNominal] = (breakdown[contractorNominal] || 0) + val;
-            }
+            staffCost = val;
           } else {
             let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
             let proration = 1.0;
@@ -728,7 +725,9 @@ export default function ReportsDashboard({
               proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
               basicGBP = basicGBP * proration;
             }
+            staffCost = basicGBP;
 
+            // Employer NI/Pension tax accumulation
             let empNi = 0;
             let empPension = 0;
             const comm = calculateCommissionForRecruiter(s.id, monthKey);
@@ -750,7 +749,57 @@ export default function ReportsDashboard({
 
             const taxNominal = nominalCodes.find(nc => nc.id === '501' || nc.code?.includes('501') || nc.code?.toLowerCase().includes('paye') || nc.code?.toLowerCase().includes('tax') || nc.code?.toLowerCase().includes('ni') || nc.code?.toLowerCase().includes('pension'))?.code || nominalCodes[0]?.code;
             if (taxNominal) {
-              breakdown[taxNominal] = (breakdown[taxNominal] || 0) + (empNi + empPension);
+              // Only add tax/pension overhead if staff member matches active filters
+              const isComp = activeCompanyIds.includes(s.companyId);
+              const isDept = deptFilter.includes('all') || deptFilter.includes(s.department);
+              if (isComp && isDept) {
+                breakdown[taxNominal] = (breakdown[taxNominal] || 0) + (empNi + empPension);
+              }
+            }
+          }
+
+          // Dynamic nominal routing
+          let targetNominal = policy.nominalCode;
+          if (!targetNominal) {
+            if (policy.type === 'freelance') {
+              const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code;
+              targetNominal = contractorNominal || '1001 - Freelancer Payments';
+            } else {
+              const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code;
+              targetNominal = salaryNominal || '1002 - Salary';
+            }
+          }
+
+          const matchedKey = Object.keys(breakdown).find(k => k.startsWith(targetNominal) || k === targetNominal) || targetNominal;
+
+          // Apportionment check for 1004 - SA-Shared costs
+          if (targetNominal.includes('1004')) {
+            const otherStaff = groupActiveStaff.filter(os => {
+              const comp = companies.find(c => c.id === os.companyId);
+              return comp && comp.includeInConsolidation !== false && os.companyId !== s.companyId;
+            });
+            if (otherStaff.length > 0) {
+              const perStaffShare = staffCost / otherStaff.length;
+              otherStaff.forEach(os => {
+                const isComp = activeCompanyIds.includes(os.companyId);
+                const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
+                if (isComp && isDept) {
+                  breakdown[matchedKey] = (breakdown[matchedKey] || 0) + perStaffShare;
+                }
+              });
+            } else {
+              const isComp = activeCompanyIds.includes(s.companyId);
+              const isDept = deptFilter.includes('all') || deptFilter.includes(s.department);
+              if (isComp && isDept) {
+                breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCost;
+              }
+            }
+          } else {
+            // Standard direct routing
+            const isComp = activeCompanyIds.includes(s.companyId);
+            const isDept = deptFilter.includes('all') || deptFilter.includes(s.department);
+            if (isComp && isDept) {
+              breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCost;
             }
           }
         }
@@ -877,19 +926,24 @@ export default function ReportsDashboard({
     let salaries = 0;
     let commissions = 0;
     activeStaff.forEach(s => {
-      const pay = getStaffPayrollForMonth(s, monthKey);
       if (monthKey > '2026-06') {
-        const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
-        if (!policy || policy.type !== 'freelance') {
-          salaries += pay.salaries;
-        }
-        commissions += pay.commissions;
+        commissions += calculateCommissionForRecruiter(s.id, monthKey);
       }
     });
 
     // 5. Operating expenses + shared overhead apportionments
     const nominalBreakdown = getNominalBreakdownForMonth(monthKey);
-    const overheadsExpenses = Object.values(nominalBreakdown).reduce((sum, v) => sum + v, 0);
+    
+    // Find the 1002 - Salary key
+    const salaryKey = Object.keys(nominalBreakdown).find(k => k.startsWith('1002') || k.toLowerCase().includes('salary'));
+    if (salaryKey) {
+      salaries = nominalBreakdown[salaryKey] || 0;
+    }
+
+    const overheadsExpenses = Object.entries(nominalBreakdown).reduce((sum, [k, v]) => {
+      if (k === salaryKey) return sum;
+      return sum + v;
+    }, 0);
 
     const grossProfit = revenue - commissions;
     const totalOverheads = salaries + overheadsExpenses;
@@ -1146,7 +1200,7 @@ export default function ReportsDashboard({
                     {expandedExpenses && (() => {
                       const codeKeys = Array.from(new Set(
                         rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
-                      )).sort();
+                      )).filter(code => !code.startsWith('1002')).sort();
 
                       return codeKeys.map(code => {
                         const ytdSum = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
@@ -2370,18 +2424,22 @@ export default function ReportsDashboard({
               let salaries = 0;
               let commissions = 0;
               activeStaff.forEach(s => {
-                const pay = getStaffPayrollForMonth(s, m);
                 if (m > '2026-06') {
-                  const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
-                  if (!policy || policy.type !== 'freelance') {
-                    salaries += pay.salaries;
-                  }
-                  commissions += pay.commissions;
+                  commissions += calculateCommissionForRecruiter(s.id, m);
                 }
               });
 
               const nominalBreakdown = getNominalBreakdownForMonth(m, indiaCompanyId);
-              const overheadsExpenses = Object.values(nominalBreakdown).reduce((sum, v) => sum + v, 0);
+              
+              const salaryKey = Object.keys(nominalBreakdown).find(k => k.startsWith('1002') || k.toLowerCase().includes('salary'));
+              if (salaryKey) {
+                salaries = nominalBreakdown[salaryKey] || 0;
+              }
+
+              const overheadsExpenses = Object.entries(nominalBreakdown).reduce((sum, [k, v]) => {
+                if (k === salaryKey) return sum;
+                return sum + v;
+              }, 0);
 
               const grossProfit = revenue - commissions;
               const totalOverheads = salaries + overheadsExpenses;
@@ -2866,26 +2924,112 @@ export default function ReportsDashboard({
 
           if (categoryKey === 'salaries') {
             const results = [];
-            (staff || []).forEach(s => {
-              if (s.employmentStatus === 'exited') return;
-              if (!isCompanyMatch(s.companyId) || !isDeptMatch(s.department)) return;
-              const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
-              if (policy && policy.type === 'freelance') return; // Exclude freelancers
-
-              const mList = monthKey ? [monthKey] : monthsList;
-              mList.forEach(m => {
-                const salData = getStaffPayrollForMonth(s, m);
-                if (salData.salaries > 0) {
+            const targetNominal = '1002 - Salary';
+            const mList = monthKey ? [monthKey] : monthsList;
+            
+            mList.forEach(m => {
+              if (m < '2026-07') {
+                const actualItems = (expenses || []).filter(e => {
+                  if (e.status === 'dns' || e.status === 'cancelled') return false;
+                  const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+                  if (eMonth !== m) return false;
+                  const cleanN1 = targetNominal.split(' - ')[0]?.trim();
+                  const cleanN2 = e.nominalCode?.split(' - ')[0]?.trim() || '';
+                  if (cleanN1 !== cleanN2) return false;
+                  
+                  if (e.allocationType === 'staff' || e.recipientType === 'staff') {
+                    const targetStaffIds = Array.isArray(e.allocationTarget) ? e.allocationTarget : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
+                    const matchedStaff = staff.filter(s => targetStaffIds.includes(s.id));
+                    const hasDeptMatch = matchedStaff.some(s => isDeptMatch(s.department));
+                    const hasCompMatch = matchedStaff.some(s => isCompanyMatch(s.companyId));
+                    if (!hasDeptMatch || !hasCompMatch) return false;
+                  }
+                  return true;
+                });
+                
+                actualItems.forEach(e => {
                   results.push({
-                    staffName: s.fullName,
-                    jobTitle: s.jobTitle,
-                    department: s.department,
-                    companyName: companies.find(c => c.id === s.companyId)?.name || 'Group',
+                    staffName: e.payee || 'Salary transaction',
+                    jobTitle: 'Imported Expense',
+                    department: 'General',
+                    companyName: 'Group',
                     monthKey: m,
-                    amount: salData.salaries
+                    amount: e.amount
                   });
-                }
-              });
+                });
+              } else {
+                groupActiveStaff.forEach(s => {
+                  const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+                  if (!policy) return;
+                  
+                  let staffCost = 0;
+                  if (policy.type === 'freelance') {
+                    const totalBusinessDays = getBusinessDaysInMonth(m, s);
+                    const approvedLeaves = leaveRequests.filter(req => 
+                      req.staffId === s.id && 
+                      req.status === 'approved' && 
+                      req.startDate && 
+                      req.startDate.substring(0, 7) === m
+                    );
+                    const leaveDays = approvedLeaves.reduce((sum, req) => sum + (Number(req.totalDays) || 0), 0);
+                    const attendanceDays = Math.max(0, totalBusinessDays - leaveDays);
+
+                    let dailyRate = 0;
+                    if (s.salary && Number(s.salary) > 0) {
+                      dailyRate = (Number(s.salary) / 12) / totalBusinessDays;
+                    } else if (s.attendanceRate && Number(s.attendanceRate) > 0) {
+                      dailyRate = Number(s.attendanceRate);
+                    } else {
+                      dailyRate = Number(policy.dailyRateDefault || 0);
+                    }
+
+                    let val = toGBP(dailyRate * attendanceDays, s.currency || 'GBP');
+                    if (s.startDate && s.startDate.substring(0, 7) === m) {
+                      const [y, mNum, d] = s.startDate.split('-').map(Number);
+                      const daysInMonth = new Date(y, mNum, 0).getDate();
+                      const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
+                      val = val * proration;
+                    }
+                    staffCost = val;
+                  } else {
+                    let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
+                    let proration = 1.0;
+                    if (s.startDate && s.startDate.substring(0, 7) === m) {
+                      const [y, mNum, d] = s.startDate.split('-').map(Number);
+                      const daysInMonth = new Date(y, mNum, 0).getDate();
+                      proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
+                      basicGBP = basicGBP * proration;
+                    }
+                    staffCost = basicGBP;
+                  }
+
+                  let routedNominal = policy.nominalCode;
+                  if (!routedNominal) {
+                    if (policy.type === 'freelance') {
+                      const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code;
+                      routedNominal = contractorNominal || '1001 - Freelancer Payments';
+                    } else {
+                      const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code;
+                      routedNominal = salaryNominal || '1002 - Salary';
+                    }
+                  }
+
+                  if (routedNominal.startsWith('1002') && staffCost > 0) {
+                    const isComp = isCompanyMatch(s.companyId);
+                    const isDept = isDeptMatch(s.department);
+                    if (isComp && isDept) {
+                      results.push({
+                        staffName: s.fullName,
+                        jobTitle: s.jobTitle || 'Staff',
+                        department: s.department,
+                        companyName: companies.find(c => c.id === s.companyId)?.name || 'Group',
+                        monthKey: m,
+                        amount: staffCost
+                      });
+                    }
+                  }
+                });
+              }
             });
             return results;
           }

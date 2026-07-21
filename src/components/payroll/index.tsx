@@ -126,6 +126,7 @@ export default function PayrollDashboard({
         <PayrollAdjustmentsForm
           staff={staff}
           payrollPolicies={payrollPolicies}
+          nominalCodes={nominalCodes}
           onSavePayrollPolicy={onSavePayrollPolicy}
           onDeletePayrollPolicy={onDeletePayrollPolicy}
           onUpdateStaff={onUpdateStaff}

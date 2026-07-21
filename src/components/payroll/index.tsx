@@ -13,6 +13,7 @@ interface PayrollDashboardProps {
   payrollRecords?: any[];
   payrollPolicies?: any[];
   leaveRequests?: any[];
+  leavePolicies?: any[];
   holidays?: any[];
   expenses?: Expense[];
   nominalCodes?: NominalCode[];
@@ -33,6 +34,7 @@ export default function PayrollDashboard({
   payrollRecords = [],
   payrollPolicies = [],
   leaveRequests = [],
+  leavePolicies = [],
   holidays = [],
   expenses = [],
   nominalCodes = [],
@@ -112,6 +114,7 @@ export default function PayrollDashboard({
           payrollRecords={payrollRecords}
           payrollPolicies={payrollPolicies}
           leaveRequests={leaveRequests}
+          leavePolicies={leavePolicies}
           holidays={holidays}
           expenses={expenses}
           nominalCodes={nominalCodes}

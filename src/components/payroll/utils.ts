@@ -1,5 +1,6 @@
 import { Company, Staff, Placement } from '../../types';
 import { toGBP } from '../../utils/currency';
+import { useBoundStore } from '../../store/useBoundStore';
 
 export const symbolMap: Record<string, string> = { 
   GBP: '£', 
@@ -460,14 +461,77 @@ export function getCellData(
   if (policy) {
     if (policy.type === 'freelance') {
       const totalBusinessDays = getBusinessDaysInMonth(month, staffMember.companyId, holidays);
-      const approvedLeaves = leaveRequests.filter(req => 
+      
+      const year = month.substring(0, 4);
+      const leavePolicies = useBoundStore.getState().leavePolicies || [];
+      const yearLeaves = leaveRequests.filter(req => 
         req.staffId === staffMember.id && 
         req.status === 'approved' && 
         req.startDate && 
-        req.startDate.substring(0, 7) === month
+        req.startDate.substring(0, 4) === year
       );
-      const leaveDays = approvedLeaves.reduce((sum, req) => sum + (Number(req.totalDays) || 0), 0);
-      const attendanceDays = Math.max(0, totalBusinessDays - leaveDays);
+      const sortedLeaves = [...yearLeaves].sort((a, b) => a.startDate.localeCompare(b.startDate));
+      const lp = leavePolicies.find((p: any) => p.id === staffMember.leavePolicyId);
+      
+      let annualAllowed = 20;
+      if (lp) {
+        if (lp.name?.toLowerCase().includes('global recruiters')) {
+          if (staffMember.startDate) {
+            const start = new Date(staffMember.startDate);
+            if (!isNaN(start.getTime())) {
+              const today = new Date();
+              let years = today.getFullYear() - start.getFullYear();
+              const m = today.getMonth() - start.getMonth();
+              if (m < 0 || (m === 0 && today.getDate() < start.getDate())) {
+                years--;
+              }
+              const calculated = 20 + Math.max(0, years);
+              annualAllowed = Math.min(25, calculated);
+            }
+          }
+        } else {
+          annualAllowed = lp.annualAllowance || 20;
+        }
+      }
+      const sickAllowed = lp ? (lp.sickAllowance ?? 10) : 10;
+
+      let annualUsed = 0;
+      let sickUsed = 0;
+      let unpaidDaysInTargetMonth = 0;
+
+      sortedLeaves.forEach(req => {
+        const reqMonth = req.startDate.substring(0, 7);
+        const reqDays = Number(req.totalDays) || 0;
+        let unpaidDaysForThisRequest = 0;
+
+        if (req.leaveType === 'unpaid') {
+          unpaidDaysForThisRequest = reqDays;
+        } else if (req.leaveType === 'annual') {
+          const newTotal = annualUsed + reqDays;
+          if (newTotal > annualAllowed) {
+            const unpaidPart = Math.max(0, newTotal - annualAllowed);
+            unpaidDaysForThisRequest = Math.min(reqDays, unpaidPart);
+            annualUsed = annualAllowed;
+          } else {
+            annualUsed = newTotal;
+          }
+        } else if (req.leaveType === 'sick') {
+          const newTotal = sickUsed + reqDays;
+          if (newTotal > sickAllowed) {
+            const unpaidPart = Math.max(0, newTotal - sickAllowed);
+            unpaidDaysForThisRequest = Math.min(reqDays, unpaidPart);
+            sickUsed = sickAllowed;
+          } else {
+            sickUsed = newTotal;
+          }
+        }
+
+        if (reqMonth === month) {
+          unpaidDaysInTargetMonth += unpaidDaysForThisRequest;
+        }
+      });
+
+      const attendanceDays = Math.max(0, totalBusinessDays - unpaidDaysInTargetMonth);
 
       let dailyRate = 0;
       if (staffMember.salary && Number(staffMember.salary) > 0) {

@@ -2877,6 +2877,7 @@ export default function App() {
               payrollRecords={payrollRecords}
               payrollPolicies={payrollPolicies}
               leaveRequests={scopedLeaves}
+              leavePolicies={leavePolicies}
               holidays={holidays}
               expenses={expenses}
               nominalCodes={nominalCodes}

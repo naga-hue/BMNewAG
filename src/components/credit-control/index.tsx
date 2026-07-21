@@ -1112,21 +1112,21 @@ export default function CreditControlDashboard({
           bottom: '24px',
           left: '50%',
           transform: 'translateX(-50%)',
-          backgroundColor: '#1e293b',
+          backgroundColor: 'var(--bg-secondary)',
           border: '2px solid var(--primary)',
           borderRadius: '12px',
           padding: '12px 24px',
           display: 'flex',
           alignItems: 'center',
           gap: '24px',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.4)',
+          boxShadow: 'var(--shadow-xl)',
           zIndex: 9999,
           borderLeftWidth: '8px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderRight: '1px solid var(--border-color)', paddingRight: '16px' }}>
             <span style={{ fontSize: '18px' }}>📊</span>
             <div>
-              <strong style={{ display: 'block', fontSize: '13px', color: '#fff' }}>{selectedSums.count} Rows Selected</strong>
+              <strong style={{ display: 'block', fontSize: '13px', color: 'var(--text-primary)' }}>{selectedSums.count} Rows Selected</strong>
               <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Excel-style Aggregates</span>
             </div>
           </div>
@@ -1134,13 +1134,13 @@ export default function CreditControlDashboard({
             {activeSubTab === 'direct' ? (
               <div>
                 <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '9px', textTransform: 'uppercase' }}>Gross/Invoice Total:</span>
-                <strong style={{ fontSize: '13px', color: '#fff' }}>£{selectedSums.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>£{selectedSums.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
               </div>
             ) : (
               <>
                 <div>
                   <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '9px', textTransform: 'uppercase' }}>Net Fee Total:</span>
-                  <strong style={{ fontSize: '13px', color: '#fff' }}>£{selectedSums.net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                  <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>£{selectedSums.net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                 </div>
                 <div>
                   <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '9px', textTransform: 'uppercase' }}>Humres Friday (97.04%):</span>

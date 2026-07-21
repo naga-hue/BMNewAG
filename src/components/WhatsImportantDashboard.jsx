@@ -1095,7 +1095,7 @@ export default function WhatsImportantDashboard({
         <div className="form-wizard-overlay" onClick={() => setShowDismissedDrawer(false)}>
           <div className="form-wizard-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '550px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
             <div className="wizard-header">
-              <h2 className="wizard-title" style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>🔄 Dismissed Alerts History Log</h2>
+              <h2 className="wizard-title" style={{ color: 'var(--text-primary)', fontSize: '15px', fontWeight: 700 }}>🔄 Dismissed Alerts History Log</h2>
               <button type="button" className="btn-close" onClick={() => setShowDismissedDrawer(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>✕</button>
             </div>
 

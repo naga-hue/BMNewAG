@@ -555,7 +555,7 @@ export default function InvoiceDetailDrawer({
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">Total Amount ({symbol})</label>
-                <div className="form-input" style={{ backgroundColor: 'var(--bg-secondary)', color: '#fff', border: '1px solid var(--border-color)', padding: '10px 12px', borderRadius: 'var(--radius-sm)', fontWeight: 'bold' }}>
+                <div className="form-input" style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', padding: '10px 12px', borderRadius: 'var(--radius-sm)', fontWeight: 'bold' }}>
                   {symbol}{(Number(editGrossAmount || 0) + (editVatAmount !== '' ? Number(editVatAmount || 0) : Math.round(Number(editGrossAmount || 0) * 0.20 * 100) / 100)).toLocaleString()}
                 </div>
               </div>
@@ -714,7 +714,7 @@ export default function InvoiceDetailDrawer({
                     <span>🧑‍💼 {note.user}</span>
                     <span>📅 {new Date(note.date).toLocaleString()}</span>
                   </div>
-                  <div style={{ color: '#fff', lineHeight: 1.4 }}>{note.content}</div>
+                  <div style={{ color: 'var(--text-primary)', lineHeight: 1.4 }}>{note.content}</div>
                 </div>
               ))}
               {(selectedInvoice.chaseHistory || []).length === 0 && (

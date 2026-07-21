@@ -205,7 +205,7 @@ export default function CreditControlKPIs({
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             {dashboardStats.disputedList.map(inv => (
               <div key={inv.id} style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px', fontSize: '11.5px', cursor: 'pointer' }} onClick={() => handleOpenDetail(inv)}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, color: '#fff', marginBottom: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
                   <span>{inv.clientCompany}</span>
                   <span style={{ color: '#f97316' }}>£{inv.balanceOutstanding.toLocaleString()}</span>
                 </div>

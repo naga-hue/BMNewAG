@@ -933,23 +933,10 @@ export default function ReportsDashboard({
 
     // 5. Operating expenses + shared overhead apportionments
     const nominalBreakdown = getNominalBreakdownForMonth(monthKey);
-    
-    const staffPrefixes = ['1001', '1002', '1003', '1004'];
-    
-    // Sum all staff-related nominals
-    Object.entries(nominalBreakdown).forEach(([k, v]) => {
-      if (staffPrefixes.some(pref => k.startsWith(pref))) {
-        salaries += v;
-      }
-    });
-
-    const overheadsExpenses = Object.entries(nominalBreakdown).reduce((sum, [k, v]) => {
-      if (staffPrefixes.some(pref => k.startsWith(pref))) return sum;
-      return sum + v;
-    }, 0);
+    const overheadsExpenses = Object.values(nominalBreakdown).reduce((sum, v) => sum + v, 0);
 
     const grossProfit = revenue - commissions;
-    const totalOverheads = salaries + overheadsExpenses;
+    const totalOverheads = overheadsExpenses;
     const netProfit = revenue - commissions - totalOverheads;
 
     return {
@@ -1170,7 +1157,7 @@ export default function ReportsDashboard({
                       <td>Overheads & Staff Expenses</td>
                       <td colSpan={monthsList.length + 1} />
                     </tr>
-                    {renderRow('Base Wages & Salaries', 'salaries', false, true)}
+
                     {/* Apportioned Overheads & SaaS (Expandable) */}
                     <tr style={{ fontWeight: 400 }}>
                       <td style={{ paddingLeft: '24px', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setExpandedExpenses(!expandedExpenses)}>
@@ -2433,23 +2420,10 @@ export default function ReportsDashboard({
               });
 
               const nominalBreakdown = getNominalBreakdownForMonth(m, indiaCompanyId);
-              
-              const staffPrefixes = ['1001', '1002', '1003', '1004'];
-              
-              // Sum all staff-related nominals
-              Object.entries(nominalBreakdown).forEach(([k, v]) => {
-                if (staffPrefixes.some(pref => k.startsWith(pref))) {
-                  salaries += v;
-                }
-              });
-
-              const overheadsExpenses = Object.entries(nominalBreakdown).reduce((sum, [k, v]) => {
-                if (staffPrefixes.some(pref => k.startsWith(pref))) return sum;
-                return sum + v;
-              }, 0);
+              const overheadsExpenses = Object.values(nominalBreakdown).reduce((sum, v) => sum + v, 0);
 
               const grossProfit = revenue - commissions;
-              const totalOverheads = salaries + overheadsExpenses;
+              const totalOverheads = overheadsExpenses;
               const netProfit = revenue - commissions - totalOverheads;
 
               return {
@@ -2532,7 +2506,6 @@ export default function ReportsDashboard({
                       <td>Overheads & Staff Expenses (INR)</td>
                       <td colSpan={monthsList.length + 1} />
                     </tr>
-                    {renderIndiaRow('Base Wages & Salaries', 'salaries', false, true)}
                     {renderIndiaRow('Apportioned Overheads & SaaS', 'overheadsExpenses', false, true)}
                     {renderIndiaRow('Total Indirect Overheads', 'totalOverheads', true, true, 'var(--text-secondary)')}
 

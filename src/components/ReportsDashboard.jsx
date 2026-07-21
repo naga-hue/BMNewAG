@@ -124,6 +124,7 @@ export default function ReportsDashboard({
   const activeCompanyIds = activeCompaniesForPL.map(c => c.id);
   const [expandedExitedLeaguesPlacements, setExpandedExitedLeaguesLeaguesPlacements] = useState(false);
   const [expandedExitedOverheads, setExpandedExitedOverheads] = useState(false);
+  const [expandedRecruiterCommission, setExpandedRecruiterCommission] = useState(null);
 
   // Generate months range dynamically
   const generateMonthsRange = (start, end) => {
@@ -703,6 +704,8 @@ export default function ReportsDashboard({
         let cost = 0;
         if (contract.costInterval === 'monthly') {
           cost = Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1);
+        } else if (contract.costInterval === 'quarterly' || (contract.name || '').toLowerCase().includes('linkedin')) {
+          cost = (Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1)) / 3;
         } else if (contract.costInterval === 'annual') {
           cost = (Number(contract.unitCost || 0) * Number(contract.quantityPurchased || 1)) / 12;
         } else if (contract.costInterval === 'one-time' && startM === monthKey) {
@@ -831,10 +834,15 @@ export default function ReportsDashboard({
       return sum + cellSum;
     }, 0);
 
-    // 3. Salaries & 4. Commissions
+    // 3. Salaries & 4. Commissions (Excluding India/Back-office service entities)
     let salaries = 0;
     let commissions = 0;
     activeStaff.forEach(s => {
+      const comp = companies.find(c => c.id === s.companyId);
+      const nameLower = (comp?.name || '').toLowerCase();
+      const isExcludedComp = comp && (comp.includeInConsolidation === false || comp.country === 'India' || comp.isServiceFirm === true || nameLower.includes('talentedge') || nameLower.includes('talentverse') || nameLower.includes('talent-h'));
+      if (isExcludedComp) return;
+
       const pay = getStaffPayrollForMonth(s, monthKey);
       salaries += pay.salaries;
       commissions += pay.commissions;
@@ -2781,7 +2789,7 @@ export default function ReportsDashboard({
           const { categoryKey, monthKey, nominalCode } = drilldownState;
           if (!categoryKey) return [];
 
-          if (categoryKey === 'revenue') {
+          if (categoryKey === 'revenue' || categoryKey === 'grossProfit') {
             return (placements || []).filter(p => {
               if (!p.startDate || p.status === 'dns') return false;
               const pMonth = p.commissionPaidMonth ? p.commissionPaidMonth : (() => {
@@ -2809,6 +2817,7 @@ export default function ReportsDashboard({
                 const commVal = calculateCommissionForRecruiter(s.id, m);
                 if (commVal > 0) {
                   results.push({
+                    recruiterId: s.id,
                     recruiterName: s.fullName,
                     department: s.department,
                     monthKey: m,
@@ -3114,16 +3123,73 @@ export default function ReportsDashboard({
                           );
                         }
                         if (drilldownState.categoryKey === 'commissions') {
+                          const recruiterDeals = (placements || []).filter(p => {
+                            if (!p.startDate || p.status === 'dns') return false;
+                            const pMonth = p.startDate.substring(0, 7);
+                            const pCommMonth = p.commissionPaidMonth || pMonth;
+                            if (pCommMonth !== item.monthKey && pMonth !== item.monthKey) return false;
+                            return p.splits?.some(s => s.staffId === item.recruiterId) || p.recruiterId === item.recruiterId;
+                          });
+
+                          const isExpanded = expandedRecruiterCommission === `${item.recruiterId}-${item.monthKey}`;
+
                           return (
-                            <tr key={idx}>
-                              <td style={{ fontWeight: 600 }}>{item.recruiterName}</td>
-                              <td>{item.department}</td>
-                              <td>{item.monthKey}</td>
-                              <td>{item.policy}</td>
-                              <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>
-                                {formatGBP(item.commVal)}
-                              </td>
-                            </tr>
+                            <React.Fragment key={idx}>
+                              <tr 
+                                style={{ cursor: 'pointer', backgroundColor: isExpanded ? 'rgba(59, 130, 246, 0.05)' : undefined }}
+                                onClick={() => setExpandedRecruiterCommission(isExpanded ? null : `${item.recruiterId}-${item.monthKey}`)}
+                                title="Click to view itemized placement deals for this commission"
+                              >
+                                <td style={{ fontWeight: 600, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span>{isExpanded ? '▼' : '▶'}</span>
+                                  {item.recruiterName} 🔍
+                                </td>
+                                <td>{item.department}</td>
+                                <td>{item.monthKey}</td>
+                                <td>{item.policy}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>
+                                  {formatGBP(item.commVal)}
+                                </td>
+                              </tr>
+                              {isExpanded && (
+                                <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
+                                  <td colSpan={5} style={{ padding: '12px 16px' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '6px', color: 'var(--primary)' }}>
+                                      📋 Itemized Placements & Commission Breakdown for {item.recruiterName} ({item.monthKey}):
+                                    </div>
+                                    <table className="entity-table dense" style={{ width: '100%', fontSize: '11px' }}>
+                                      <thead>
+                                        <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                                          <th>Placement Ref / Candidate</th>
+                                          <th>Client Company</th>
+                                          <th>Start Date</th>
+                                          <th style={{ textAlign: 'right' }}>Net Fee (GBP)</th>
+                                          <th style={{ textAlign: 'right' }}>Split %</th>
+                                          <th style={{ textAlign: 'right' }}>Commission Contribution</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {recruiterDeals.map(p => {
+                                          const split = p.splits?.find(s => s.staffId === item.recruiterId);
+                                          const pct = split ? split.percentage : 100;
+                                          const netFee = (p.netScoreValue * pct) / 100;
+                                          return (
+                                            <tr key={p.id}>
+                                              <td style={{ fontWeight: 600 }}>{p.candidateName || p.id} ({p.jobTitle || 'Role'})</td>
+                                              <td>{p.clientName}</td>
+                                              <td>{p.startDate}</td>
+                                              <td style={{ textAlign: 'right' }}>{formatGBP(toGBP(p.netScoreValue || 0, p.currency || 'GBP'))}</td>
+                                              <td style={{ textAlign: 'right', fontWeight: 600 }}>{pct}%</td>
+                                              <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--danger)' }}>{formatGBP(toGBP(netFee * 0.15, 'GBP'))}</td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
                           );
                         }
                         if (drilldownState.categoryKey === 'salaries') {

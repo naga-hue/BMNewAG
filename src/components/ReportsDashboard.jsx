@@ -106,10 +106,18 @@ export default function ReportsDashboard({
     "HR": 100,
     "Admin": 100
   });
-  // Companies included based on consolidation preference
+  // Companies included based on consolidation preference (excluding non-revenue back-office service entities like TalentEdge Intelligence & TalentVerse AI)
   const activeCompaniesForPL = companies.filter(c => {
+    const nameLower = (c.name || '').toLowerCase();
+    const isServiceEntity = c.includeInConsolidation === false || 
+                            c.isServiceFirm === true || 
+                            nameLower.includes('talentedge') || 
+                            nameLower.includes('talentverse');
+
+    if (isServiceEntity) return false;
+
     if (companyFilter.includes('all')) {
-      return c.includeInConsolidation !== false;
+      return true;
     }
     return companyFilter.includes(c.id);
   });
@@ -870,7 +878,12 @@ export default function ReportsDashboard({
 
   const companyOptions = [
     { value: 'all', label: 'All Companies (Consolidated)' },
-    ...companies.map(c => ({ value: c.id, label: c.name }))
+    ...companies
+      .filter(c => {
+        const nameLower = (c.name || '').toLowerCase();
+        return c.includeInConsolidation !== false && !nameLower.includes('talentedge') && !nameLower.includes('talentverse');
+      })
+      .map(c => ({ value: c.id, label: c.name }))
   ];
 
   const departmentOptionsList = [

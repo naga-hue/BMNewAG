@@ -934,14 +934,17 @@ export default function ReportsDashboard({
     // 5. Operating expenses + shared overhead apportionments
     const nominalBreakdown = getNominalBreakdownForMonth(monthKey);
     
-    // Find the 1002 - Salary key
-    const salaryKey = Object.keys(nominalBreakdown).find(k => k.startsWith('1002') || k.toLowerCase().includes('salary'));
-    if (salaryKey) {
-      salaries = nominalBreakdown[salaryKey] || 0;
-    }
+    const staffPrefixes = ['1001', '1002', '1003', '1004'];
+    
+    // Sum all staff-related nominals
+    Object.entries(nominalBreakdown).forEach(([k, v]) => {
+      if (staffPrefixes.some(pref => k.startsWith(pref))) {
+        salaries += v;
+      }
+    });
 
     const overheadsExpenses = Object.entries(nominalBreakdown).reduce((sum, [k, v]) => {
-      if (k === salaryKey) return sum;
+      if (staffPrefixes.some(pref => k.startsWith(pref))) return sum;
       return sum + v;
     }, 0);
 
@@ -1167,7 +1170,7 @@ export default function ReportsDashboard({
                       <td>Overheads & Staff Expenses</td>
                       <td colSpan={monthsList.length + 1} />
                     </tr>
-                    {renderRow('1002 - Salary', 'salaries', false, true)}
+                    {renderRow('Base Wages & Salaries', 'salaries', false, true)}
                     {/* Apportioned Overheads & SaaS (Expandable) */}
                     <tr style={{ fontWeight: 400 }}>
                       <td style={{ paddingLeft: '24px', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setExpandedExpenses(!expandedExpenses)}>
@@ -1200,7 +1203,7 @@ export default function ReportsDashboard({
                     {expandedExpenses && (() => {
                       const codeKeys = Array.from(new Set(
                         rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
-                      )).filter(code => !code.startsWith('1002')).sort();
+                      )).sort();
 
                       return codeKeys.map(code => {
                         const ytdSum = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
@@ -2431,13 +2434,17 @@ export default function ReportsDashboard({
 
               const nominalBreakdown = getNominalBreakdownForMonth(m, indiaCompanyId);
               
-              const salaryKey = Object.keys(nominalBreakdown).find(k => k.startsWith('1002') || k.toLowerCase().includes('salary'));
-              if (salaryKey) {
-                salaries = nominalBreakdown[salaryKey] || 0;
-              }
+              const staffPrefixes = ['1001', '1002', '1003', '1004'];
+              
+              // Sum all staff-related nominals
+              Object.entries(nominalBreakdown).forEach(([k, v]) => {
+                if (staffPrefixes.some(pref => k.startsWith(pref))) {
+                  salaries += v;
+                }
+              });
 
               const overheadsExpenses = Object.entries(nominalBreakdown).reduce((sum, [k, v]) => {
-                if (k === salaryKey) return sum;
+                if (staffPrefixes.some(pref => k.startsWith(pref))) return sum;
                 return sum + v;
               }, 0);
 
@@ -2525,7 +2532,7 @@ export default function ReportsDashboard({
                       <td>Overheads & Staff Expenses (INR)</td>
                       <td colSpan={monthsList.length + 1} />
                     </tr>
-                    {renderIndiaRow('1002 - Salary', 'salaries', false, true)}
+                    {renderIndiaRow('Base Wages & Salaries', 'salaries', false, true)}
                     {renderIndiaRow('Apportioned Overheads & SaaS', 'overheadsExpenses', false, true)}
                     {renderIndiaRow('Total Indirect Overheads', 'totalOverheads', true, true, 'var(--text-secondary)')}
 
@@ -2924,7 +2931,7 @@ export default function ReportsDashboard({
 
           if (categoryKey === 'salaries') {
             const results = [];
-            const targetNominal = '1002 - Salary';
+            const staffPrefixes = ['1001', '1002', '1003', '1004'];
             const mList = monthKey ? [monthKey] : monthsList;
             
             mList.forEach(m => {
@@ -2933,9 +2940,9 @@ export default function ReportsDashboard({
                   if (e.status === 'dns' || e.status === 'cancelled') return false;
                   const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
                   if (eMonth !== m) return false;
-                  const cleanN1 = targetNominal.split(' - ')[0]?.trim();
-                  const cleanN2 = e.nominalCode?.split(' - ')[0]?.trim() || '';
-                  if (cleanN1 !== cleanN2) return false;
+                  const cleanCode = e.nominalCode?.split(' - ')[0]?.trim() || '';
+                  const isStaff = staffPrefixes.includes(cleanCode);
+                  if (!isStaff) return false;
                   
                   if (e.allocationType === 'staff' || e.recipientType === 'staff') {
                     const targetStaffIds = Array.isArray(e.allocationTarget) ? e.allocationTarget : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
@@ -2950,7 +2957,7 @@ export default function ReportsDashboard({
                 actualItems.forEach(e => {
                   results.push({
                     staffName: e.payee || 'Salary transaction',
-                    jobTitle: 'Imported Expense',
+                    jobTitle: e.nominalCode || 'Imported Expense',
                     department: 'General',
                     companyName: 'Group',
                     monthKey: m,
@@ -3014,13 +3021,14 @@ export default function ReportsDashboard({
                     }
                   }
 
-                  if (routedNominal.startsWith('1002') && staffCost > 0) {
+                  const isStaff = staffPrefixes.some(pref => routedNominal.startsWith(pref));
+                  if (isStaff && staffCost > 0) {
                     const isComp = isCompanyMatch(s.companyId);
                     const isDept = isDeptMatch(s.department);
                     if (isComp && isDept) {
                       results.push({
                         staffName: s.fullName,
-                        jobTitle: s.jobTitle || 'Staff',
+                        jobTitle: routedNominal,
                         department: s.department,
                         companyName: companies.find(c => c.id === s.companyId)?.name || 'Group',
                         monthKey: m,

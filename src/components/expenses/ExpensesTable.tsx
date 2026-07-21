@@ -106,6 +106,23 @@ export default function ExpensesTable({
     };
   }, [showHighRiskModal, highRiskTimer]);
 
+  // Retroactively auto-map all existing unmapped expenses on mount
+  useEffect(() => {
+    if (expenses.length > 0 && (vendors.length > 0 || staff.length > 0)) {
+      const unmapped = expenses.filter(exp => {
+        if (exp.recipientType && exp.recipientType !== 'other') return false;
+        const payeeStr = (exp.payee || '').toLowerCase();
+        const mStaff = staff.some(s => s.fullName && payeeStr.includes(s.fullName.toLowerCase()));
+        const mVendor = vendors.some(v => v.name && payeeStr.includes(v.name.toLowerCase()));
+        return mStaff || mVendor;
+      });
+
+      if (unmapped.length > 0) {
+        handleAutoMapPayeesAndVendors();
+      }
+    }
+  }, [expenses.length, vendors.length, staff.length]);
+
   const activeNominalCodes = useMemo(() => {
     return (nominalCodes || []).map((c: any) => {
       if (typeof c === 'string') {

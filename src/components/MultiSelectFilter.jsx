@@ -96,6 +96,7 @@ export default function MultiSelectFilter({
         width: '100%', 
         maxWidth: '240px',
         display: 'inline-block',
+        zIndex: isOpen ? 1000 : 1,
         ...style 
       }}
     >

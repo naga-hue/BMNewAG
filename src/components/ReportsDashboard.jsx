@@ -872,7 +872,7 @@ export default function ReportsDashboard({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       
       {/* Dynamic Global Filters Toolbar */}
-      <div className="table-container" style={{ padding: '16px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+      <div style={{ padding: '16px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'visible', position: 'relative', zIndex: 100 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

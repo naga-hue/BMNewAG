@@ -2911,7 +2911,14 @@ export default function ReportsDashboard({
               if (e.status === 'dns' || e.status === 'cancelled') return false;
               const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
               if (monthKey && eMonth !== monthKey) return false;
-              if (nominalCode && e.nominalCode !== nominalCode && !e.nominalCode?.startsWith(nominalCode)) return false;
+              if (nominalCode) {
+                const cleanN1 = nominalCode.split(' - ')[0]?.trim() || nominalCode;
+                const cleanN2 = e.nominalCode?.split(' - ')[0]?.trim() || e.nominalCode || '';
+                const matchExact = e.nominalCode === nominalCode;
+                const matchId = cleanN1 === cleanN2;
+                const matchPrefix = e.nominalCode?.startsWith(nominalCode) || nominalCode.startsWith(e.nominalCode);
+                if (!matchExact && !matchId && !matchPrefix) return false;
+              }
 
               if (e.allocationType === 'staff' || e.recipientType === 'staff') {
                 const targetStaffIds = Array.isArray(e.allocationTarget) ? e.allocationTarget : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);

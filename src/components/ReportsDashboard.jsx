@@ -2905,15 +2905,22 @@ export default function ReportsDashboard({
                 const companyTargetMap = {};
 
                 filteredItems.forEach(exp => {
+                  const mKey = exp.plMonth || drilldownState.monthKey || '2026-01';
                   const amt = toGBP(exp.amount || 0, exp.currency || 'GBP');
+                  
+                  const activeStaffInMonth = staff.filter(s => {
+                    const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, mKey);
+                    return daysWorked >= 10;
+                  });
+
                   if (exp.recipientType === 'staff' && exp.recipientId) {
-                    const sObj = staff.find(s => s.id === exp.recipientId);
+                    const sObj = activeStaffInMonth.find(s => s.id === exp.recipientId);
                     if (sObj && isDeptMatch(sObj.department) && isCompanyMatch(sObj.companyId)) {
                       staffTargetMap[sObj.fullName] = (staffTargetMap[sObj.fullName] || 0) + amt;
                     }
                   } else if (exp.allocationType === 'staff') {
                     const ids = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : (exp.selectedStaffIds || []);
-                    const matchingStaff = staff.filter(s => ids.includes(s.id) && isDeptMatch(s.department) && isCompanyMatch(s.companyId));
+                    const matchingStaff = activeStaffInMonth.filter(s => ids.includes(s.id) && isDeptMatch(s.department) && isCompanyMatch(s.companyId));
                     if (matchingStaff.length > 0) {
                       const perStaff = amt / ids.length;
                       matchingStaff.forEach(sObj => {
@@ -2933,8 +2940,8 @@ export default function ReportsDashboard({
                           }
                         });
                       } else {
-                        // Automatic Staff-Weighted Apportionment
-                        const targetStaff = staff.filter(s => ids.includes(s.companyId));
+                        // Automatic Staff-Weighted Apportionment based on THAT month's active staff!
+                        const targetStaff = activeStaffInMonth.filter(s => ids.includes(s.companyId));
                         const totalHead = targetStaff.length || 1;
 
                         ids.forEach(id => {

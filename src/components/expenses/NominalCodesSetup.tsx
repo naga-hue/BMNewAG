@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Trash2, PlusCircle, Edit3, Check, X } from 'lucide-react';
+import { Trash2, PlusCircle, Edit3, Check, X, RefreshCw } from 'lucide-react';
 import { useBoundStore } from '../../store/useBoundStore';
+import { firebaseService } from '../../services/firebase';
 
 interface NominalCodesSetupProps {
   onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
@@ -8,6 +9,10 @@ interface NominalCodesSetupProps {
 
 export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProps) {
   const nominalCodes = useBoundStore(state => state.nominalCodes);
+  const expenses = useBoundStore(state => state.expenses) || [];
+  const vendors = useBoundStore(state => state.vendors) || [];
+  const contracts = useBoundStore(state => state.contracts) || [];
+
   const saveNominalCode = useBoundStore(state => state.saveNominalCode);
   const deleteNominalCode = useBoundStore(state => state.deleteNominalCode);
 
@@ -17,6 +22,7 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
   const [newNominalType, setNewNominalType] = useState('indirect'); // direct, indirect
   const [bulkInput, setBulkInput] = useState('');
   const [selectedNominalIds, setSelectedNominalIds] = useState<string[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Inline edit state for renumbering / updating nominal codes
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -31,6 +37,104 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
     const label = parts.length > 1 ? parts.slice(1).join(' - ') : c.code;
     setEditNameInput(label);
     setEditTypeInput(c.type || 'indirect');
+  };
+
+  const cascadeSyncExistingRecords = async (oldId?: string, oldCode?: string, newCodeStr?: string) => {
+    setIsSyncing(true);
+    let updatedExpensesCount = 0;
+    let updatedVendorsCount = 0;
+    let updatedContractsCount = 0;
+
+    try {
+      // 1. Process Expenses
+      for (const exp of expenses) {
+        if (!exp.nominalCode) continue;
+        let replacement = null;
+
+        if (oldId && newCodeStr) {
+          if (exp.nominalCode === oldId || exp.nominalCode === oldCode || exp.nominalCode.startsWith(oldId + ' - ') || exp.nominalCode.startsWith(oldId + ' ')) {
+            replacement = newCodeStr;
+          }
+        } else {
+          const matched = activeNominalCodes.find(nc => 
+            nc.id === exp.nominalCode || 
+            exp.nominalCode.startsWith(nc.id + ' - ') || 
+            exp.nominalCode.startsWith(nc.id + ' ')
+          );
+          if (matched && matched.code !== exp.nominalCode) {
+            replacement = matched.code;
+          }
+        }
+
+        if (replacement && replacement !== exp.nominalCode) {
+          await firebaseService.saveExpense({ ...exp, nominalCode: replacement });
+          updatedExpensesCount++;
+        }
+      }
+
+      // 2. Process Vendors
+      for (const v of vendors) {
+        if (!v.nominalCode) continue;
+        let replacement = null;
+
+        if (oldId && newCodeStr) {
+          if (v.nominalCode === oldId || v.nominalCode === oldCode || v.nominalCode.startsWith(oldId + ' - ') || v.nominalCode.startsWith(oldId + ' ')) {
+            replacement = newCodeStr;
+          }
+        } else {
+          const matched = activeNominalCodes.find(nc => 
+            nc.id === v.nominalCode || 
+            v.nominalCode.startsWith(nc.id + ' - ') || 
+            v.nominalCode.startsWith(nc.id + ' ')
+          );
+          if (matched && matched.code !== v.nominalCode) {
+            replacement = matched.code;
+          }
+        }
+
+        if (replacement && replacement !== v.nominalCode) {
+          await firebaseService.saveVendor({ ...v, nominalCode: replacement });
+          updatedVendorsCount++;
+        }
+      }
+
+      // 3. Process Contracts
+      for (const cnt of contracts) {
+        if (!cnt.nominalCode) continue;
+        let replacement = null;
+
+        if (oldId && newCodeStr) {
+          if (cnt.nominalCode === oldId || cnt.nominalCode === oldCode || cnt.nominalCode.startsWith(oldId + ' - ') || cnt.nominalCode.startsWith(oldId + ' ')) {
+            replacement = newCodeStr;
+          }
+        } else {
+          const matched = activeNominalCodes.find(nc => 
+            nc.id === cnt.nominalCode || 
+            cnt.nominalCode.startsWith(nc.id + ' - ') || 
+            cnt.nominalCode.startsWith(nc.id + ' ')
+          );
+          if (matched && matched.code !== cnt.nominalCode) {
+            replacement = matched.code;
+          }
+        }
+
+        if (replacement && replacement !== cnt.nominalCode) {
+          await firebaseService.saveContract({ ...cnt, nominalCode: replacement });
+          updatedContractsCount++;
+        }
+      }
+
+      const totalUpdates = updatedExpensesCount + updatedVendorsCount + updatedContractsCount;
+      if (totalUpdates > 0) {
+        onShowToast(`Synced ${totalUpdates} records to updated Nominal Codes! (Expenses: ${updatedExpensesCount}, Vendors: ${updatedVendorsCount}, Contracts: ${updatedContractsCount})`, "success");
+      } else if (!oldId) {
+        onShowToast("All existing expenses, vendors, and contracts are already aligned with active nominal codes.", "info");
+      }
+    } catch (err: any) {
+      onShowToast(`Error syncing records: ${err.message}`, "warning");
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleSaveEdit = async (c: { id: string; code: string; type: string }) => {
@@ -60,6 +164,10 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
         code: newCodeStr,
         type: editTypeInput
       });
+
+      // Cascade update to all existing expenses, vendors, and contracts in Firebase
+      await cascadeSyncExistingRecords(c.id, c.code, newCodeStr);
+
       onShowToast(`Updated Nominal Code to: ${newCodeStr}`, "success");
       setEditingId(null);
     } catch (err: any) {
@@ -217,6 +325,17 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
         </div>
         
         <div style={{ display: 'flex', gap: '8px' }}>
+          <button 
+            type="button" 
+            className="btn-secondary"
+            onClick={() => cascadeSyncExistingRecords()}
+            disabled={isSyncing}
+            style={{ fontSize: '12px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+            title="Scan & update all existing historical bank expenses, vendors, and contract packages in Firebase to match active nominal codes"
+          >
+            <RefreshCw size={12} style={isSyncing ? { animation: 'spin 1s linear infinite' } : undefined} />
+            {isSyncing ? 'Syncing Records...' : '⚡ Sync & Re-link Records'}
+          </button>
           <button 
             type="button" 
             className={nominalMode === 'single' ? 'btn-primary' : 'btn-secondary'}

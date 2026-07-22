@@ -61,6 +61,7 @@ export default function ExpensesTable({
   const [companyFilter, setCompanyFilter] = useState<string[]>(['all']);
   const [deptFilter, setDeptFilter] = useState<string[]>(['all']);
   const [staffFilter, setStaffFilter] = useState('all');
+  const [reconciliationFilter, setReconciliationFilter] = useState('all');
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
   const [onlyUnmappedFilter, setOnlyUnmappedFilter] = useState(false);
@@ -85,6 +86,40 @@ export default function ExpensesTable({
     receipt: true,
     actions: true
   });
+
+  // Column Widths for resizing
+  const [colWidths, setColWidths] = useState<Record<string, number>>({
+    date: 100,
+    plMonth: 110,
+    payee: 160,
+    bank: 160,
+    nominal: 140,
+    allocation: 150,
+    reconciliation: 150,
+    tax: 80,
+    amount: 110,
+    receipt: 90
+  });
+
+  const handleMouseDown = (e: React.MouseEvent, colKey: string) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = colWidths[colKey] || 150;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const newWidth = Math.max(50, startWidth + deltaX);
+      setColWidths(prev => ({ ...prev, [colKey]: newWidth }));
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
 
   // Sorting State
   const [sortBy, setSortBy] = useState('date');
@@ -246,6 +281,20 @@ export default function ExpensesTable({
         if (exp.recipientId !== vendorFilter) return false;
       }
 
+      // Reconciliation Status Filter
+      if (reconciliationFilter !== 'all') {
+        const isPayroll = !!exp.linkedPayrollCellId;
+        const isVendor = !!exp.linkedVendorCellId;
+        const isPlacement = !!exp.linkedPlacementId;
+        const isReconciled = isPayroll || isVendor || isPlacement;
+
+        if (reconciliationFilter === 'reconciled' && !isReconciled) return false;
+        if (reconciliationFilter === 'unreconciled' && isReconciled) return false;
+        if (reconciliationFilter === 'payroll' && !isPayroll) return false;
+        if (reconciliationFilter === 'vendor' && !isVendor) return false;
+        if (reconciliationFilter === 'placement' && !isPlacement) return false;
+      }
+
       // Start / End Date Filter
       if (startDateFilter && exp.date < startDateFilter) return false;
       if (endDateFilter && exp.date > endDateFilter) return false;
@@ -262,7 +311,7 @@ export default function ExpensesTable({
   }, [
     expenses, nominalFilter, plMonthFilter, bankAccountFilter,
     companyFilter, deptFilter, staffFilter, vendorFilter,
-    startDateFilter, endDateFilter, searchQuery
+    reconciliationFilter, startDateFilter, endDateFilter, searchQuery
   ]);
 
   const sortedExpenses = useMemo(() => {
@@ -703,6 +752,19 @@ export default function ExpensesTable({
               ))}
           </select>
 
+          <select 
+            className="select-filter"
+            value={reconciliationFilter}
+            onChange={(e) => setReconciliationFilter(e.target.value)}
+          >
+            <option value="all">All Reconciliation Statuses</option>
+            <option value="reconciled">Reconciled (Any)</option>
+            <option value="unreconciled">Unreconciled only</option>
+            <option value="payroll">Linked to Group Payroll</option>
+            <option value="vendor">Linked to Vendor / SaaS</option>
+            <option value="placement">Linked to Placements</option>
+          </select>
+
           {/* Date range wrapper */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '4px 10px' }}>
             <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>From:</span>
@@ -974,53 +1036,93 @@ export default function ExpensesTable({
                 </th>
               )}
               {visibleCols.date && (
-                <th onClick={() => handleHeaderClick('date')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                <th 
+                  onClick={() => handleHeaderClick('date')} 
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.date ? `${colWidths.date}px` : undefined, minWidth: '50px' }}
+                >
                   Date {renderSortIndicator('date')}
+                  <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'date')} onClick={(e) => e.stopPropagation()} />
                 </th>
               )}
               {visibleCols.plMonth && (
-                <th onClick={() => handleHeaderClick('plMonth')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                <th 
+                  onClick={() => handleHeaderClick('plMonth')} 
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.plMonth ? `${colWidths.plMonth}px` : undefined, minWidth: '50px' }}
+                >
                   P&L Month {renderSortIndicator('plMonth')}
+                  <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'plMonth')} onClick={(e) => e.stopPropagation()} />
                 </th>
               )}
               {visibleCols.payee && (
-                <th onClick={() => handleHeaderClick('payee')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                <th 
+                  onClick={() => handleHeaderClick('payee')} 
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.payee ? `${colWidths.payee}px` : undefined, minWidth: '50px' }}
+                >
                   Payee / Vendor {renderSortIndicator('payee')}
+                  <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'payee')} onClick={(e) => e.stopPropagation()} />
                 </th>
               )}
               {visibleCols.bank && (
-                <th onClick={() => handleHeaderClick('bank')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                <th 
+                  onClick={() => handleHeaderClick('bank')} 
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.bank ? `${colWidths.bank}px` : undefined, minWidth: '50px' }}
+                >
                   Bank Account / Source {renderSortIndicator('bank')}
+                  <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'bank')} onClick={(e) => e.stopPropagation()} />
                 </th>
               )}
               {visibleCols.nominal && (
-                <th onClick={() => handleHeaderClick('nominalCode')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                <th 
+                  onClick={() => handleHeaderClick('nominalCode')} 
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.nominal ? `${colWidths.nominal}px` : undefined, minWidth: '50px' }}
+                >
                   Nominal Bracket {renderSortIndicator('nominalCode')}
+                  <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'nominal')} onClick={(e) => e.stopPropagation()} />
                 </th>
               )}
               {visibleCols.allocation && (
-                <th onClick={() => handleHeaderClick('allocation')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                <th 
+                  onClick={() => handleHeaderClick('allocation')} 
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.allocation ? `${colWidths.allocation}px` : undefined, minWidth: '50px' }}
+                >
                   Allocation Center Target {renderSortIndicator('allocation')}
+                  <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'allocation')} onClick={(e) => e.stopPropagation()} />
                 </th>
               )}
               {visibleCols.reconciliation && (
-                <th onClick={() => handleHeaderClick('reconciliation')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                <th 
+                  onClick={() => handleHeaderClick('reconciliation')} 
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.reconciliation ? `${colWidths.reconciliation}px` : undefined, minWidth: '50px' }}
+                >
                   Reconciled Link {renderSortIndicator('reconciliation')}
+                  <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'reconciliation')} onClick={(e) => e.stopPropagation()} />
                 </th>
               )}
               {visibleCols.tax && (
-                <th onClick={() => handleHeaderClick('taxRate')} style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}>
+                <th 
+                  onClick={() => handleHeaderClick('taxRate')} 
+                  style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.tax ? `${colWidths.tax}px` : undefined, minWidth: '50px' }}
+                >
                   Tax (VAT) {renderSortIndicator('taxRate')}
+                  <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'tax')} onClick={(e) => e.stopPropagation()} />
                 </th>
               )}
               {visibleCols.amount && (
-                <th onClick={() => handleHeaderClick('amount')} style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}>
+                <th 
+                  onClick={() => handleHeaderClick('amount')} 
+                  style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.amount ? `${colWidths.amount}px` : undefined, minWidth: '50px' }}
+                >
                   Amount (Gross) {renderSortIndicator('amount')}
+                  <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'amount')} onClick={(e) => e.stopPropagation()} />
                 </th>
               )}
               {visibleCols.receipt && (
-                <th onClick={() => handleHeaderClick('receipt')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                <th 
+                  onClick={() => handleHeaderClick('receipt')} 
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.receipt ? `${colWidths.receipt}px` : undefined, minWidth: '50px' }}
+                >
                   Linked Receipt {renderSortIndicator('receipt')}
+                  <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'receipt')} onClick={(e) => e.stopPropagation()} />
                 </th>
               )}
               {visibleCols.actions && (

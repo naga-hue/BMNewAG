@@ -2297,6 +2297,11 @@ export default function ExpensesTable({
                       className="select-filter"
                       style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
                     />
+                    {reconcilingExpense.id === 'bulk' && (
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                        💡 Leave blank to use each transaction's own P&L Month.
+                      </span>
+                    )}
                   </div>
                 </>
               )}
@@ -2331,6 +2336,11 @@ export default function ExpensesTable({
                       className="select-filter"
                       style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
                     />
+                    {reconcilingExpense.id === 'bulk' && (
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                        💡 Leave blank to use each transaction's own P&L Month.
+                      </span>
+                    )}
                   </div>
                 </>
               )}
@@ -2368,17 +2378,9 @@ export default function ExpensesTable({
                         onShowToast('Please select at least one vendor contract to link.', 'error');
                         return;
                       }
-                      if (!targetMonth) {
-                        onShowToast('Please select a target month.', 'error');
-                        return;
-                      }
                     } else if (targetType === 'payroll') {
                       if (!selectedStaffId) {
                         onShowToast('Please select a staff member to link.', 'error');
-                        return;
-                      }
-                      if (!targetMonth) {
-                        onShowToast('Please select a target month.', 'error');
                         return;
                       }
                     } else if (targetType === 'placement') {
@@ -2395,6 +2397,10 @@ export default function ExpensesTable({
 
                         const updated = { ...originalExp };
                         const tMonth = targetMonth || updated.plMonth || (updated.date ? updated.date.substring(0, 7) : '');
+                        if (!tMonth && targetType !== 'unreconciled') {
+                          onShowToast(`Transaction date/month for ${updated.payee} is missing. Please select a Target Month in the form.`, 'error');
+                          return;
+                        }
 
                         if (targetType === 'unreconciled') {
                           updated.linkedVendorCellId = '';

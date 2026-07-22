@@ -1017,7 +1017,7 @@ export default function ExpensesTable({
 
       {/* Expenses Table */}
       <div className="table-container">
-        <table className="entity-table dense">
+        <table className="entity-table dense" style={{ tableLayout: 'fixed', width: '100%' }}>
           <thead>
             <tr>
               {visibleCols.select && (
@@ -1126,7 +1126,7 @@ export default function ExpensesTable({
                 </th>
               )}
               {visibleCols.actions && (
-                <th style={{ textAlign: 'right' }}>Actions</th>
+                <th style={{ textAlign: 'right', width: '120px' }}>Actions</th>
               )}
             </tr>
           </thead>

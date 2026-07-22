@@ -79,6 +79,7 @@ export default function ExpensesTable({
     bank: true,
     nominal: true,
     allocation: true,
+    reconciliation: true,
     tax: true,
     amount: true,
     receipt: true,
@@ -281,6 +282,15 @@ export default function ExpensesTable({
       } else if (sortBy === 'allocation') {
         valA = String(a.allocationType || '').toLowerCase();
         valB = String(b.allocationType || '').toLowerCase();
+      } else if (sortBy === 'reconciliation') {
+        const getSortVal = (exp: any) => {
+          if (exp.linkedPayrollCellId) return `payroll_${exp.linkedPayrollCellId}`;
+          if (exp.linkedVendorCellId) return `vendor_${exp.linkedVendorCellId}`;
+          if (exp.linkedPlacementId) return `placement_${exp.linkedPlacementId}`;
+          return 'z_unreconciled';
+        };
+        valA = getSortVal(a);
+        valB = getSortVal(b);
       } else if (sortBy === 'receipt') {
         valA = a.invoiceUrl && a.invoiceUrl !== '#' ? 1 : 0;
         valB = b.invoiceUrl && b.invoiceUrl !== '#' ? 1 : 0;
@@ -752,6 +762,7 @@ export default function ExpensesTable({
                   { key: 'bank', label: 'Bank / Source' },
                   { key: 'nominal', label: 'Nominal Bracket' },
                   { key: 'allocation', label: 'Allocation Target' },
+                  { key: 'reconciliation', label: 'Reconciliation Link' },
                   { key: 'tax', label: 'Tax (VAT)' },
                   { key: 'amount', label: 'Amount' },
                   { key: 'receipt', label: 'Receipt' },
@@ -990,6 +1001,11 @@ export default function ExpensesTable({
               {visibleCols.allocation && (
                 <th onClick={() => handleHeaderClick('allocation')} style={{ cursor: 'pointer', userSelect: 'none' }}>
                   Allocation Center Target {renderSortIndicator('allocation')}
+                </th>
+              )}
+              {visibleCols.reconciliation && (
+                <th onClick={() => handleHeaderClick('reconciliation')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                  Reconciled Link {renderSortIndicator('reconciliation')}
                 </th>
               )}
               {visibleCols.tax && (
@@ -1279,6 +1295,43 @@ export default function ExpensesTable({
                       {exp.description && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>{exp.description}</div>}
                     </td>
                   )}
+                  {visibleCols.reconciliation && (() => {
+                    let reconText = 'Unreconciled';
+                    let reconStyle: React.CSSProperties = { color: 'var(--text-muted)', fontSize: '11px', fontStyle: 'italic' };
+                    let icon = '';
+
+                    if (exp.linkedPayrollCellId) {
+                      const staffId = exp.linkedPayrollCellId.split('_')[0];
+                      const member = staff.find(s => s.id === staffId);
+                      reconText = member ? `Payroll: ${member.fullName}` : 'Payroll Record';
+                      reconStyle = { color: 'var(--accent)', fontSize: '11px', fontWeight: 600 };
+                      icon = '👤 ';
+                    } else if (exp.linkedVendorCellId) {
+                      const cellIds = exp.linkedVendorCellId.split(',').map(s => s.trim()).filter(Boolean);
+                      const names = cellIds.map(cellId => {
+                        const contractId = cellId.split('_')[0];
+                        const c = contracts.find(con => con.id === contractId);
+                        return c ? c.name : 'Contract';
+                      });
+                      reconText = names.length > 0 ? `Vendor: ${names.join(', ')}` : 'Vendor Contract';
+                      reconStyle = { color: 'var(--success)', fontSize: '11px', fontWeight: 600 };
+                      icon = '🔗 ';
+                    } else if (exp.linkedPlacementId) {
+                      const placement = placements.find(p => p.id === exp.linkedPlacementId);
+                      reconText = placement ? `Placement: ${placement.candidateName}` : 'Placement Fee';
+                      reconStyle = { color: 'var(--primary)', fontSize: '11px', fontWeight: 600 };
+                      icon = '💼 ';
+                    }
+
+                    return (
+                      <td>
+                        <span style={reconStyle}>
+                          <span style={{ marginRight: '4px' }}>{icon}</span>
+                          {reconText}
+                        </span>
+                      </td>
+                    );
+                  })()}
                   {visibleCols.tax && <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{exp.taxRate}%</td>}
                   {visibleCols.amount && (
                     <td style={{ textAlign: 'right', fontWeight: 700, color: exp.nominalCode?.includes('Wages') || exp.nominalCode?.includes('Rent') ? 'var(--danger)' : 'var(--text-primary)' }}>

@@ -91,7 +91,7 @@ export default function ExpensesTable({
   const [reconcilingExpense, setReconcilingExpense] = useState<any | null>(null);
   const [targetType, setTargetType] = useState('unreconciled');
   const [selectedVendorId, setSelectedVendorId] = useState('');
-  const [selectedContractId, setSelectedContractId] = useState('');
+  const [selectedContractIds, setSelectedContractIds] = useState<string[]>([]);
   const [targetMonth, setTargetMonth] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState('');
   const [selectedPlacementId, setSelectedPlacementId] = useState('');
@@ -108,10 +108,11 @@ export default function ExpensesTable({
         setSelectedStaffId(staffId || '');
       } else if (exp.linkedVendorCellId) {
         setTargetType('vendor');
-        const [contractId] = exp.linkedVendorCellId.split('_');
-        const contractObj = contracts.find((c: any) => c.id === contractId);
-        setSelectedVendorId(contractObj ? contractObj.vendorId : '');
-        setSelectedContractId(contractId || '');
+        const cellIds = exp.linkedVendorCellId.split(',').map((s: string) => s.trim()).filter(Boolean);
+        const contractIds = cellIds.map((cid: string) => cid.split('_')[0]);
+        const firstContract = contracts.find((c: any) => c.id === contractIds[0]);
+        setSelectedVendorId(firstContract ? firstContract.vendorId : '');
+        setSelectedContractIds(contractIds);
       } else if (exp.linkedPlacementId) {
         setTargetType('placement');
         setSelectedPlacementId(exp.linkedPlacementId || '');
@@ -123,6 +124,7 @@ export default function ExpensesTable({
         if (suggestedVendor) {
           setTargetType('vendor');
           setSelectedVendorId(suggestedVendor.id);
+          setSelectedContractIds([]);
         } else {
           // Auto-suggest staff if payee matches staff name substring
           const suggestedStaff = staff.find(s => s.fullName && payeeStr.includes(s.fullName.toLowerCase()));
@@ -131,7 +133,7 @@ export default function ExpensesTable({
             setSelectedStaffId(suggestedStaff.id);
           } else {
             setSelectedVendorId('');
-            setSelectedContractId('');
+            setSelectedContractIds([]);
             setSelectedStaffId('');
             setSelectedPlacementId('');
           }
@@ -2185,20 +2187,45 @@ export default function ExpensesTable({
 
                   <div className="form-group">
                     <label style={{ fontSize: '11px', fontWeight: 600, marginBottom: '4px', display: 'block', color: 'var(--text-secondary)' }}>
-                      Select Contract Cell:
+                      Select Contract Packages (Check all that apply):
                     </label>
-                    <select
-                      value={selectedContractId}
-                      onChange={(e) => setSelectedContractId(e.target.value)}
-                      className="select-filter"
-                      style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
-                      disabled={!selectedVendorId}
-                    >
-                      <option value="">-- Choose Contract Package --</option>
-                      {contracts.filter((c: any) => c.vendorId === selectedVendorId).map((c: any) => (
-                        <option key={c.id} value={c.id}>{c.name} ({c.quantityPurchased || 0} seats)</option>
-                      ))}
-                    </select>
+                    <div style={{
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '6px',
+                      padding: '8px 12px',
+                      maxHeight: '130px',
+                      overflowY: 'auto',
+                      backgroundColor: 'var(--bg-secondary)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px'
+                    }}>
+                      {!selectedVendorId ? (
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Please select a vendor first.</span>
+                      ) : contracts.filter((c: any) => c.vendorId === selectedVendorId).length === 0 ? (
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>No contracts found for this vendor.</span>
+                      ) : (
+                        contracts.filter((c: any) => c.vendorId === selectedVendorId).map((c: any) => {
+                          const isChecked = selectedContractIds.includes(c.id);
+                          return (
+                            <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedContractIds(prev => [...prev, c.id]);
+                                  } else {
+                                    setSelectedContractIds(prev => prev.filter(id => id !== c.id));
+                                  }
+                                }}
+                              />
+                              <span>{c.name} ({c.quantityPurchased || 0} seats)</span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
 
                   <div className="form-group">
@@ -2284,15 +2311,15 @@ export default function ExpensesTable({
                     updated.linkedPayrollCellId = '';
                     updated.linkedPlacementId = '';
                   } else if (targetType === 'vendor') {
-                    if (!selectedContractId) {
-                      onShowToast('Please select a vendor contract to link.', 'error');
+                    if (selectedContractIds.length === 0) {
+                      onShowToast('Please select at least one vendor contract to link.', 'error');
                       return;
                     }
                     if (!targetMonth) {
                       onShowToast('Please select a target month.', 'error');
                       return;
                     }
-                    updated.linkedVendorCellId = `${selectedContractId}_${targetMonth}`;
+                    updated.linkedVendorCellId = selectedContractIds.map(id => `${id}_${targetMonth}`).join(',');
                     updated.linkedPayrollCellId = '';
                     updated.linkedPlacementId = '';
                     updated.recipientType = 'vendor';

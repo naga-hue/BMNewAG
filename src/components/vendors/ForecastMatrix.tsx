@@ -96,7 +96,10 @@ export default function ForecastMatrix({
     const linkedExps = expensesMap[`${c.id}_${monthKey}`] || [];
     
     if (linkedExps.length > 0) {
-      const actualGBP = linkedExps.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+      const actualGBP = linkedExps.reduce((sum, e) => {
+        const cellCount = e.linkedVendorCellId ? e.linkedVendorCellId.split(',').map((s: string) => s.trim()).filter(Boolean).length : 1;
+        return sum + ((Number(e.amount) || 0) / (cellCount || 1));
+      }, 0);
       let actualTarget = actualGBP;
       if (forecastCurrency !== 'GBP') {
         actualTarget = actualGBP / (FX_RATES[forecastCurrency] || 1.0);
@@ -434,6 +437,10 @@ export default function ForecastMatrix({
 
                             const hasLinked = linkedExps.length > 0;
                             const actualVal = hasLinked ? linkedExps.reduce((sum, exp) => {
+                              if (exp.linkedVendorCellId) {
+                                const cellCount = exp.linkedVendorCellId.split(',').map((s: string) => s.trim()).filter(Boolean).length;
+                                return sum + (toGBP(exp.amount, exp.currency || 'GBP') / (cellCount || 1));
+                              }
                               const itemVal = exp.contractSplits && exp.contractSplits[c.id] !== undefined
                                 ? exp.contractSplits[c.id]
                                 : toGBP(exp.amount, exp.currency || 'GBP');
@@ -453,7 +460,12 @@ export default function ForecastMatrix({
                                   transition: 'all 0.15s',
                                   padding: '6px 10px'
                                 }}
-                                title={hasLinked ? `✅ Reconciled & Paid from Bank Statement\nPlanned: £${Math.round(val).toLocaleString()}\nActual Paid: £${Math.round(actualVal || 0).toLocaleString()}\n${linkedExps.map(e => `- £${e.amount} (${e.date}) payee: ${e.payee}`).join('\n')}\nClick to review/reconcile` : `Planned Forecast: £${Math.round(val).toLocaleString()}\nStatus: Pending Bank Statement Payment\nClick to reconcile`}
+                                title={hasLinked ? `✅ Reconciled & Paid from Bank Statement\nPlanned: £${Math.round(val).toLocaleString()}\nActual Paid: £${Math.round(actualVal || 0).toLocaleString()}\n${linkedExps.map(e => {
+                                  const cellCount = e.linkedVendorCellId ? e.linkedVendorCellId.split(',').map((s: string) => s.trim()).filter(Boolean).length : 1;
+                                  const shareAmt = (Number(e.amount) || 0) / (cellCount || 1);
+                                  const splitText = cellCount > 1 ? ` [Split 1/${cellCount}]` : '';
+                                  return `- £${shareAmt.toFixed(2)} (${e.date}) payee: ${e.payee}${splitText}`;
+                                }).join('\n')}\nClick to review/reconcile` : `Planned Forecast: £${Math.round(val).toLocaleString()}\nStatus: Pending Bank Statement Payment\nClick to reconcile`}
                               >
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
                                   {hasLinked && <span style={{ fontSize: '9px', fontWeight: 800 }}>✓</span>}
@@ -550,7 +562,10 @@ export default function ForecastMatrix({
                               e.linkedVendorCellId.split(',').map(s => s.trim()).includes(`${c.id}_${monthKey}`)
                             ) || [];
                             const hasLinked = linkedExps.length > 0;
-                            const totalActualAmt = hasLinked ? linkedExps.reduce((sum, e) => sum + (Number(e.amount) || 0), 0) : 0;
+                            const totalActualAmt = hasLinked ? linkedExps.reduce((sum, e) => {
+                              const cellCount = e.linkedVendorCellId ? e.linkedVendorCellId.split(',').map((s: string) => s.trim()).filter(Boolean).length : 1;
+                              return sum + ((Number(e.amount) || 0) / (cellCount || 1));
+                            }, 0) : 0;
                             return (
                               <td 
                                 key={idx} 
@@ -564,7 +579,12 @@ export default function ForecastMatrix({
                                   transition: 'all 0.15s',
                                   padding: '6px 10px'
                                 }}
-                                title={hasLinked ? `Reconciled & Paid\nActual Total: £${Math.round(totalActualAmt).toLocaleString()}\n${linkedExps.map(e => `- £${e.amount} (${e.date}) payee: ${e.payee}`).join('\n')}\nClick to review/reconcile` : `Projected Cost: £${Math.round(val).toLocaleString()}\nClick to reconcile with bank payment`}
+                                title={hasLinked ? `Reconciled & Paid\nActual Total: £${Math.round(totalActualAmt).toLocaleString()}\n${linkedExps.map(e => {
+                                  const cellCount = e.linkedVendorCellId ? e.linkedVendorCellId.split(',').map((s: string) => s.trim()).filter(Boolean).length : 1;
+                                  const shareAmt = (Number(e.amount) || 0) / (cellCount || 1);
+                                  const splitText = cellCount > 1 ? ` [Split 1/${cellCount}]` : '';
+                                  return `- £${shareAmt.toFixed(2)} (${e.date}) payee: ${e.payee}${splitText}`;
+                                }).join('\n')}\nClick to review/reconcile` : `Projected Cost: £${Math.round(val).toLocaleString()}\nClick to reconcile with bank payment`}
                               >
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
                                   {hasLinked && <span style={{ fontSize: '9px', fontWeight: 800 }}>🔗</span>}

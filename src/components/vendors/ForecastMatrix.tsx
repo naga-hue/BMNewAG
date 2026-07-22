@@ -78,10 +78,14 @@ export default function ForecastMatrix({
   }, [contracts, vendors]);
 
   const expensesMap = useMemo(() => {
-    const map: Record<string, Expense> = {};
+    const map: Record<string, Expense[]> = {};
     (expenses || []).forEach(e => {
       if (e.linkedVendorCellId) {
-        map[e.linkedVendorCellId] = e;
+        const cellIds = e.linkedVendorCellId.split(',').map(s => s.trim()).filter(Boolean);
+        cellIds.forEach(cellId => {
+          if (!map[cellId]) map[cellId] = [];
+          map[cellId].push(e);
+        });
       }
     });
     return map;
@@ -89,10 +93,10 @@ export default function ForecastMatrix({
 
   const getContractCostForMonth = (c: any, year: number, monthIndex: number) => {
     const monthKey = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
-    const linkedExp = expensesMap[`${c.id}_${monthKey}`];
+    const linkedExps = expensesMap[`${c.id}_${monthKey}`] || [];
     
-    if (linkedExp) {
-      const actualGBP = Number(linkedExp.amount) || 0;
+    if (linkedExps.length > 0) {
+      const actualGBP = linkedExps.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
       let actualTarget = actualGBP;
       if (forecastCurrency !== 'GBP') {
         actualTarget = actualGBP / (FX_RATES[forecastCurrency] || 1.0);
@@ -405,10 +409,13 @@ export default function ForecastMatrix({
                             const monthKey = `${m.year}-${String(m.monthIndex + 1).padStart(2, '0')}`;
                             const matchedVendor = vendors.find(v => v.id === c.vendorId || (v.name && c.vendorName && v.name.toLowerCase() === c.vendorName.toLowerCase()));
 
-                            const linkedExp = (expenses || []).find(e => {
+                            const linkedExps = (expenses || []).filter(e => {
                               if (e.status === 'dns' || e.status === 'cancelled') return false;
                               
-                              if (e.linkedVendorCellId === `${c.id}_${monthKey}`) return true;
+                              if (e.linkedVendorCellId) {
+                                const parts = e.linkedVendorCellId.split(',').map(s => s.trim()).filter(Boolean);
+                                if (parts.includes(`${c.id}_${monthKey}`)) return true;
+                              }
 
                               if (e.contractSplits && e.contractSplits[c.id] !== undefined) {
                                 const expMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
@@ -425,11 +432,13 @@ export default function ForecastMatrix({
                               return false;
                             });
 
-                            const actualVal = linkedExp ? (
-                              linkedExp.contractSplits && linkedExp.contractSplits[c.id] !== undefined
-                                ? linkedExp.contractSplits[c.id]
-                                : toGBP(linkedExp.amount, linkedExp.currency || 'GBP')
-                            ) : null;
+                            const hasLinked = linkedExps.length > 0;
+                            const actualVal = hasLinked ? linkedExps.reduce((sum, exp) => {
+                              const itemVal = exp.contractSplits && exp.contractSplits[c.id] !== undefined
+                                ? exp.contractSplits[c.id]
+                                : toGBP(exp.amount, exp.currency || 'GBP');
+                              return sum + itemVal;
+                            }, 0) : null;
 
                             return (
                               <td 
@@ -439,16 +448,16 @@ export default function ForecastMatrix({
                                   textAlign: 'right', 
                                   fontFamily: 'monospace', 
                                   cursor: 'pointer',
-                                  backgroundColor: linkedExp ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
-                                  color: linkedExp ? 'var(--success)' : 'var(--text-muted)',
+                                  backgroundColor: hasLinked ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
+                                  color: hasLinked ? 'var(--success)' : 'var(--text-muted)',
                                   transition: 'all 0.15s',
                                   padding: '6px 10px'
                                 }}
-                                title={linkedExp ? `✅ Reconciled & Paid from Bank Statement\nPlanned: £${Math.round(val).toLocaleString()}\nActual Paid: £${Math.round(actualVal || 0).toLocaleString()} on ${linkedExp.date}\nPayee: ${linkedExp.payee}\nClick to review/reconcile` : `Planned Forecast: £${Math.round(val).toLocaleString()}\nStatus: Pending Bank Statement Payment\nClick to reconcile`}
+                                title={hasLinked ? `✅ Reconciled & Paid from Bank Statement\nPlanned: £${Math.round(val).toLocaleString()}\nActual Paid: £${Math.round(actualVal || 0).toLocaleString()}\n${linkedExps.map(e => `- £${e.amount} (${e.date}) payee: ${e.payee}`).join('\n')}\nClick to review/reconcile` : `Planned Forecast: £${Math.round(val).toLocaleString()}\nStatus: Pending Bank Statement Payment\nClick to reconcile`}
                               >
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                                  {linkedExp && <span style={{ fontSize: '9px', fontWeight: 800 }}>✓</span>}
-                                  <span>{linkedExp ? Math.round(actualVal || 0).toLocaleString() : (val > 0 ? Math.round(val).toLocaleString() : '-')}</span>
+                                  {hasLinked && <span style={{ fontSize: '9px', fontWeight: 800 }}>✓</span>}
+                                  <span>{hasLinked ? Math.round(actualVal || 0).toLocaleString() : (val > 0 ? Math.round(val).toLocaleString() : '-')}</span>
                                 </div>
                               </td>
                             );
@@ -536,7 +545,12 @@ export default function ForecastMatrix({
                             const val = getContractCostForMonth(c, m.year, m.monthIndex);
                             rowSum += val;
                             const monthKey = `${m.year}-${String(m.monthIndex + 1).padStart(2, '0')}`;
-                            const linkedExp = expenses?.find(e => e.linkedVendorCellId === `${c.id}_${monthKey}`);
+                            const linkedExps = expenses?.filter(e => 
+                              e.linkedVendorCellId && 
+                              e.linkedVendorCellId.split(',').map(s => s.trim()).includes(`${c.id}_${monthKey}`)
+                            ) || [];
+                            const hasLinked = linkedExps.length > 0;
+                            const totalActualAmt = hasLinked ? linkedExps.reduce((sum, e) => sum + (Number(e.amount) || 0), 0) : 0;
                             return (
                               <td 
                                 key={idx} 
@@ -545,15 +559,15 @@ export default function ForecastMatrix({
                                   textAlign: 'right', 
                                   fontFamily: 'monospace', 
                                   cursor: 'pointer',
-                                  backgroundColor: linkedExp ? 'rgba(16, 185, 129, 0.08)' : 'transparent',
-                                  color: linkedExp ? 'var(--success)' : 'var(--text-muted)',
+                                  backgroundColor: hasLinked ? 'rgba(16, 185, 129, 0.08)' : 'transparent',
+                                  color: hasLinked ? 'var(--success)' : 'var(--text-muted)',
                                   transition: 'all 0.15s',
                                   padding: '6px 10px'
                                 }}
-                                title={linkedExp ? `Reconciled & Paid\nActual: £${Math.round(linkedExp.amount).toLocaleString()} on ${linkedExp.date}\nPayee: ${linkedExp.payee}\nClick to unlink/change` : `Projected Cost: £${Math.round(val).toLocaleString()}\nClick to reconcile with bank payment`}
+                                title={hasLinked ? `Reconciled & Paid\nActual Total: £${Math.round(totalActualAmt).toLocaleString()}\n${linkedExps.map(e => `- £${e.amount} (${e.date}) payee: ${e.payee}`).join('\n')}\nClick to review/reconcile` : `Projected Cost: £${Math.round(val).toLocaleString()}\nClick to reconcile with bank payment`}
                               >
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                                  {linkedExp && <span style={{ fontSize: '9px', fontWeight: 800 }}>🔗</span>}
+                                  {hasLinked && <span style={{ fontSize: '9px', fontWeight: 800 }}>🔗</span>}
                                   <span>{val > 0 ? Math.round(val).toLocaleString() : '-'}</span>
                                 </div>
                               </td>

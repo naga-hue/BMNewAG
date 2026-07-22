@@ -2173,7 +2173,7 @@ export default function ExpensesTable({
                       value={selectedVendorId}
                       onChange={(e) => {
                         setSelectedVendorId(e.target.value);
-                        setSelectedContractId('');
+                        setSelectedContractIds([]);
                       }}
                       className="select-filter"
                       style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}

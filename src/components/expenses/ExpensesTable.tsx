@@ -1038,7 +1038,7 @@ export default function ExpensesTable({
               {visibleCols.date && (
                 <th 
                   onClick={() => handleHeaderClick('date')} 
-                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.date ? `${colWidths.date}px` : undefined, minWidth: '50px' }}
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'sticky', top: 0, zIndex: 30, backgroundColor: 'var(--bg-secondary)', width: colWidths.date ? `${colWidths.date}px` : undefined, minWidth: '50px' }}
                 >
                   Date {renderSortIndicator('date')}
                   <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'date')} onClick={(e) => e.stopPropagation()} />
@@ -1047,7 +1047,7 @@ export default function ExpensesTable({
               {visibleCols.plMonth && (
                 <th 
                   onClick={() => handleHeaderClick('plMonth')} 
-                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.plMonth ? `${colWidths.plMonth}px` : undefined, minWidth: '50px' }}
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'sticky', top: 0, zIndex: 30, backgroundColor: 'var(--bg-secondary)', width: colWidths.plMonth ? `${colWidths.plMonth}px` : undefined, minWidth: '50px' }}
                 >
                   P&L Month {renderSortIndicator('plMonth')}
                   <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'plMonth')} onClick={(e) => e.stopPropagation()} />
@@ -1056,7 +1056,7 @@ export default function ExpensesTable({
               {visibleCols.payee && (
                 <th 
                   onClick={() => handleHeaderClick('payee')} 
-                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.payee ? `${colWidths.payee}px` : undefined, minWidth: '50px' }}
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'sticky', top: 0, zIndex: 30, backgroundColor: 'var(--bg-secondary)', width: colWidths.payee ? `${colWidths.payee}px` : undefined, minWidth: '50px' }}
                 >
                   Payee / Vendor {renderSortIndicator('payee')}
                   <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'payee')} onClick={(e) => e.stopPropagation()} />
@@ -1065,7 +1065,7 @@ export default function ExpensesTable({
               {visibleCols.bank && (
                 <th 
                   onClick={() => handleHeaderClick('bank')} 
-                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.bank ? `${colWidths.bank}px` : undefined, minWidth: '50px' }}
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'sticky', top: 0, zIndex: 30, backgroundColor: 'var(--bg-secondary)', width: colWidths.bank ? `${colWidths.bank}px` : undefined, minWidth: '50px' }}
                 >
                   Bank Account / Source {renderSortIndicator('bank')}
                   <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'bank')} onClick={(e) => e.stopPropagation()} />
@@ -1074,7 +1074,7 @@ export default function ExpensesTable({
               {visibleCols.nominal && (
                 <th 
                   onClick={() => handleHeaderClick('nominalCode')} 
-                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.nominal ? `${colWidths.nominal}px` : undefined, minWidth: '50px' }}
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'sticky', top: 0, zIndex: 30, backgroundColor: 'var(--bg-secondary)', width: colWidths.nominal ? `${colWidths.nominal}px` : undefined, minWidth: '50px' }}
                 >
                   Nominal Bracket {renderSortIndicator('nominalCode')}
                   <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'nominal')} onClick={(e) => e.stopPropagation()} />
@@ -1083,7 +1083,7 @@ export default function ExpensesTable({
               {visibleCols.allocation && (
                 <th 
                   onClick={() => handleHeaderClick('allocation')} 
-                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.allocation ? `${colWidths.allocation}px` : undefined, minWidth: '50px' }}
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'sticky', top: 0, zIndex: 30, backgroundColor: 'var(--bg-secondary)', width: colWidths.allocation ? `${colWidths.allocation}px` : undefined, minWidth: '50px' }}
                 >
                   Allocation Center Target {renderSortIndicator('allocation')}
                   <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'allocation')} onClick={(e) => e.stopPropagation()} />
@@ -1092,7 +1092,7 @@ export default function ExpensesTable({
               {visibleCols.reconciliation && (
                 <th 
                   onClick={() => handleHeaderClick('reconciliation')} 
-                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.reconciliation ? `${colWidths.reconciliation}px` : undefined, minWidth: '50px' }}
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'sticky', top: 0, zIndex: 30, backgroundColor: 'var(--bg-secondary)', width: colWidths.reconciliation ? `${colWidths.reconciliation}px` : undefined, minWidth: '50px' }}
                 >
                   Reconciled Link {renderSortIndicator('reconciliation')}
                   <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'reconciliation')} onClick={(e) => e.stopPropagation()} />
@@ -1101,7 +1101,7 @@ export default function ExpensesTable({
               {visibleCols.tax && (
                 <th 
                   onClick={() => handleHeaderClick('taxRate')} 
-                  style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.tax ? `${colWidths.tax}px` : undefined, minWidth: '50px' }}
+                  style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none', position: 'sticky', top: 0, zIndex: 30, backgroundColor: 'var(--bg-secondary)', width: colWidths.tax ? `${colWidths.tax}px` : undefined, minWidth: '50px' }}
                 >
                   Tax (VAT) {renderSortIndicator('taxRate')}
                   <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'tax')} onClick={(e) => e.stopPropagation()} />
@@ -1110,7 +1110,7 @@ export default function ExpensesTable({
               {visibleCols.amount && (
                 <th 
                   onClick={() => handleHeaderClick('amount')} 
-                  style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.amount ? `${colWidths.amount}px` : undefined, minWidth: '50px' }}
+                  style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none', position: 'sticky', top: 0, zIndex: 30, backgroundColor: 'var(--bg-secondary)', width: colWidths.amount ? `${colWidths.amount}px` : undefined, minWidth: '50px' }}
                 >
                   Amount (Gross) {renderSortIndicator('amount')}
                   <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'amount')} onClick={(e) => e.stopPropagation()} />
@@ -1119,14 +1119,14 @@ export default function ExpensesTable({
               {visibleCols.receipt && (
                 <th 
                   onClick={() => handleHeaderClick('receipt')} 
-                  style={{ cursor: 'pointer', userSelect: 'none', position: 'relative', width: colWidths.receipt ? `${colWidths.receipt}px` : undefined, minWidth: '50px' }}
+                  style={{ cursor: 'pointer', userSelect: 'none', position: 'sticky', top: 0, zIndex: 30, backgroundColor: 'var(--bg-secondary)', width: colWidths.receipt ? `${colWidths.receipt}px` : undefined, minWidth: '50px' }}
                 >
                   Linked Receipt {renderSortIndicator('receipt')}
                   <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'receipt')} onClick={(e) => e.stopPropagation()} />
                 </th>
               )}
               {visibleCols.actions && (
-                <th style={{ textAlign: 'right', width: '120px' }}>Actions</th>
+                <th style={{ textAlign: 'right', width: '120px', position: 'sticky', top: 0, zIndex: 30, backgroundColor: 'var(--bg-secondary)' }}>Actions</th>
               )}
             </tr>
           </thead>
@@ -1339,9 +1339,9 @@ export default function ExpensesTable({
                     </td>
                   )}
                   {visibleCols.bank && (
-                    <td>
+                    <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
                       {exp.bankCompanyId ? (
-                        <div style={{ fontSize: '11px' }}>
+                        <div style={{ fontSize: '11px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                           <div style={{ fontWeight: 600 }}>{companies.find(c => c.id === exp.bankCompanyId)?.name || 'Company'}</div>
                           <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                             🏦 {exp.bankAccountRef || 'Main Account'}
@@ -1352,9 +1352,9 @@ export default function ExpensesTable({
                       )}
                     </td>
                   )}
-                  {visibleCols.nominal && <td style={{ fontSize: '11px' }}>{exp.nominalCode}</td>}
+                  {visibleCols.nominal && <td style={{ fontSize: '11px', whiteSpace: 'normal', wordBreak: 'break-word' }}>{exp.nominalCode}</td>}
                   {visibleCols.allocation && (
-                    <td>
+                    <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
                       <span 
                         onClick={() => {
                           setAllocatingRowIdLocal(exp.id);
@@ -1389,7 +1389,9 @@ export default function ExpensesTable({
                           borderRadius: '4px',
                           cursor: 'pointer',
                           textDecoration: 'underline dashed rgba(255,255,255,0.3)',
-                          display: 'inline-block'
+                          display: 'inline-block',
+                          whiteSpace: 'normal',
+                          wordBreak: 'break-word'
                         }}
                       >
                         {allocationLabel}
@@ -1399,14 +1401,14 @@ export default function ExpensesTable({
                   )}
                   {visibleCols.reconciliation && (() => {
                     let reconText = 'Unreconciled';
-                    let reconStyle: React.CSSProperties = { color: 'var(--text-muted)', fontSize: '11px', fontStyle: 'italic' };
+                    let reconStyle: React.CSSProperties = { color: 'var(--text-muted)', fontSize: '11px', fontStyle: 'italic', whiteSpace: 'normal', wordBreak: 'break-word' };
                     let icon = '';
 
                     if (exp.linkedPayrollCellId) {
                       const staffId = exp.linkedPayrollCellId.split('_')[0];
                       const member = staff.find(s => s.id === staffId);
                       reconText = member ? `Payroll: ${member.fullName}` : 'Payroll Record';
-                      reconStyle = { color: 'var(--accent)', fontSize: '11px', fontWeight: 600 };
+                      reconStyle = { color: 'var(--accent)', fontSize: '11px', fontWeight: 600, whiteSpace: 'normal', wordBreak: 'break-word' };
                       icon = '👤 ';
                     } else if (exp.linkedVendorCellId) {
                       const cellIds = exp.linkedVendorCellId.split(',').map(s => s.trim()).filter(Boolean);
@@ -1416,17 +1418,17 @@ export default function ExpensesTable({
                         return c ? c.name : 'Contract';
                       });
                       reconText = names.length > 0 ? `Vendor: ${names.join(', ')}` : 'Vendor Contract';
-                      reconStyle = { color: 'var(--success)', fontSize: '11px', fontWeight: 600 };
+                      reconStyle = { color: 'var(--success)', fontSize: '11px', fontWeight: 600, whiteSpace: 'normal', wordBreak: 'break-word' };
                       icon = '🔗 ';
                     } else if (exp.linkedPlacementId) {
                       const placement = placements.find(p => p.id === exp.linkedPlacementId);
                       reconText = placement ? `Placement: ${placement.candidateName}` : 'Placement Fee';
-                      reconStyle = { color: 'var(--primary)', fontSize: '11px', fontWeight: 600 };
+                      reconStyle = { color: 'var(--primary)', fontSize: '11px', fontWeight: 600, whiteSpace: 'normal', wordBreak: 'break-word' };
                       icon = '💼 ';
                     }
 
                     return (
-                      <td>
+                      <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
                         <span style={reconStyle}>
                           <span style={{ marginRight: '4px' }}>{icon}</span>
                           {reconText}

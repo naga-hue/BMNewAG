@@ -141,6 +141,29 @@ export default function ForecastMatrix({
       return actualTarget;
     }
 
+    const vendorContractsIds = vendorContracts.map(vc => vc.id);
+    const vendorHasReconciledInMonth = (expenses || []).some(e => {
+      if (e.status === 'dns' || e.status === 'cancelled') return false;
+      const expMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+      if (expMonth !== monthKey) return false;
+
+      if (e.linkedVendorCellId) {
+        const parts = e.linkedVendorCellId.split(',').map((s: string) => s.trim()).filter(Boolean);
+        return parts.some(part => {
+          const cid = part.split('_')[0];
+          return vendorContractsIds.includes(cid);
+        });
+      }
+      if (e.linkedContractId && vendorContractsIds.includes(e.linkedContractId)) {
+        return true;
+      }
+      return false;
+    });
+
+    if (vendorHasReconciledInMonth) {
+      return 0;
+    }
+
     const parseContractDate = (dateStr: any, fallbackYear: number, fallbackMonth: number) => {
       if (!dateStr) return new Date(fallbackYear, fallbackMonth, 1);
       const cleanStr = String(dateStr).trim();

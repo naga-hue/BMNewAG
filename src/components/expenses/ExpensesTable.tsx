@@ -1333,6 +1333,7 @@ export default function ExpensesTable({
                               value={exp.linkedContractId || (exp.contractSplits ? 'split_all' : '')}
                               onChange={(e) => {
                                 const val = e.target.value;
+                                const targetMonth = exp.plMonth || (exp.date ? exp.date.substring(0, 7) : '');
                                 if (val === 'split_all') {
                                   const totalProjected = vendorContracts.reduce((sum, c) => sum + (toGBP(c.unitCost, c.currency) * (c.quantityPurchased || 1)), 0) || 1;
                                   const expAmount = toGBP(exp.amount, exp.currency || 'GBP');
@@ -1346,6 +1347,7 @@ export default function ExpensesTable({
                                   saveExpense({
                                     ...exp,
                                     linkedContractId: 'split_all',
+                                    linkedVendorCellId: vendorContracts.map(c => `${c.id}_${targetMonth}`).join(','),
                                     contractSplits: splits,
                                     allocationType: assignedStaffIds.length > 0 ? 'staff' : exp.allocationType,
                                     allocationTarget: assignedStaffIds.length > 0 ? assignedStaffIds : exp.allocationTarget
@@ -1357,6 +1359,7 @@ export default function ExpensesTable({
                                   saveExpense({
                                     ...exp,
                                     linkedContractId: val,
+                                    linkedVendorCellId: val ? `${val}_${targetMonth}` : '',
                                     contractSplits: null,
                                     allocationType: assignedStaffIds.length > 0 ? 'staff' : exp.allocationType,
                                     allocationTarget: assignedStaffIds.length > 0 ? assignedStaffIds : exp.allocationTarget

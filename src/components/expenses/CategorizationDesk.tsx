@@ -214,6 +214,8 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
         return;
       }
 
+      const targetMonth = expense.plMonth || (expense.date ? expense.date.substring(0, 7) : '');
+
       if (val === 'split_all_contracts') {
         const vContracts = contracts.filter(c => c.vendorId === expense.recipientId);
         const totalProjected = vContracts.reduce((sum, c) => sum + (toGBP(c.unitCost, c.currency) * (c.quantityPurchased || 1)), 0) || 1;
@@ -228,6 +230,7 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
 
         updated.linkedContractId = 'split_all';
         updated.contractSplits = splits;
+        updated.linkedVendorCellId = vContracts.map(c => `${c.id}_${targetMonth}`).join(',');
 
         const allContractIds = vContracts.map(c => c.id);
         const assignedStaffIds = assetAssignments.filter(a => allContractIds.includes(a.contractId)).map(a => a.staffId).filter(Boolean);
@@ -238,6 +241,7 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
       } else {
         updated.linkedContractId = val;
         updated.contractSplits = null;
+        updated.linkedVendorCellId = val ? `${val}_${targetMonth}` : '';
         const contractObj = contracts.find(c => c.id === val);
         if (contractObj) {
           const assignedStaffIds = assetAssignments.filter(a => a.contractId === val).map(a => a.staffId).filter(Boolean);

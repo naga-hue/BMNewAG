@@ -102,7 +102,31 @@ export default function ExpensesTable({
       const monthVal = exp.plMonth || (exp.date ? exp.date.substring(0, 7) : new Date().toISOString().substring(0, 7));
       setTargetMonth(monthVal);
 
-      if (exp.linkedPayrollCellId) {
+      if (exp.id === 'bulk') {
+        setTargetType('unreconciled');
+        setSelectedVendorId('');
+        setSelectedContractIds([]);
+        setSelectedStaffId('');
+        setSelectedPlacementId('');
+        
+        // Use first selected expense to suggest vendor or staff member
+        const firstId = selectedExpenseIds[0];
+        const firstExp = expenses.find(e => e.id === firstId);
+        if (firstExp) {
+          const payeeStr = (firstExp.payee || '').toLowerCase();
+          const suggestedVendor = vendors.find(v => v.name && payeeStr.includes(v.name.toLowerCase()));
+          if (suggestedVendor) {
+            setTargetType('vendor');
+            setSelectedVendorId(suggestedVendor.id);
+          } else {
+            const suggestedStaff = staff.find(s => s.fullName && payeeStr.includes(s.fullName.toLowerCase()));
+            if (suggestedStaff) {
+              setTargetType('payroll');
+              setSelectedStaffId(suggestedStaff.id);
+            }
+          }
+        }
+      } else if (exp.linkedPayrollCellId) {
         setTargetType('payroll');
         const [staffId] = exp.linkedPayrollCellId.split('_');
         setSelectedStaffId(staffId || '');
@@ -1032,6 +1056,37 @@ export default function ExpensesTable({
                 </optgroup>
               </select>
             </div>
+
+            <button
+               type="button"
+               className="btn-primary"
+               onClick={() => {
+                 const totalAmt = selectedExpenseIds.reduce((sum, id) => {
+                   const found = expenses.find(e => e.id === id);
+                   return sum + (found ? (Number(found.amount) || 0) : 0);
+                 }, 0);
+                 setReconcilingExpense({
+                   id: 'bulk',
+                   payee: `${selectedExpenseIds.length} Transactions`,
+                   amount: totalAmt,
+                   currency: 'GBP',
+                   date: 'Bulk Selection'
+                 } as any);
+               }}
+               style={{ 
+                 padding: '6px 12px', 
+                 fontSize: '11px', 
+                 display: 'flex', 
+                 alignItems: 'center', 
+                 gap: '4px', 
+                 backgroundColor: 'var(--success)', 
+                 border: 'none',
+                 color: 'white',
+                 fontWeight: 600
+               }}
+             >
+               🔗 Reconcile Selected...
+             </button>
 
             <button
               type="button"
@@ -2307,6 +2362,80 @@ export default function ExpensesTable({
                 className="btn-primary" 
                 style={{ flex: 1, justifyContent: 'center' }} 
                 onClick={async () => {
+                  if (reconcilingExpense.id === 'bulk') {
+                    if (targetType === 'vendor') {
+                      if (selectedContractIds.length === 0) {
+                        onShowToast('Please select at least one vendor contract to link.', 'error');
+                        return;
+                      }
+                      if (!targetMonth) {
+                        onShowToast('Please select a target month.', 'error');
+                        return;
+                      }
+                    } else if (targetType === 'payroll') {
+                      if (!selectedStaffId) {
+                        onShowToast('Please select a staff member to link.', 'error');
+                        return;
+                      }
+                      if (!targetMonth) {
+                        onShowToast('Please select a target month.', 'error');
+                        return;
+                      }
+                    } else if (targetType === 'placement') {
+                      if (!selectedPlacementId) {
+                        onShowToast('Please select a placement to link.', 'error');
+                        return;
+                      }
+                    }
+
+                    try {
+                      for (const id of selectedExpenseIds) {
+                        const originalExp = expenses.find(e => e.id === id);
+                        if (!originalExp) continue;
+
+                        const updated = { ...originalExp };
+                        const tMonth = targetMonth || updated.plMonth || (updated.date ? updated.date.substring(0, 7) : '');
+
+                        if (targetType === 'unreconciled') {
+                          updated.linkedVendorCellId = '';
+                          updated.linkedContractId = '';
+                          updated.contractSplits = null;
+                          updated.linkedPayrollCellId = '';
+                          updated.linkedPlacementId = '';
+                        } else if (targetType === 'vendor') {
+                          updated.linkedVendorCellId = selectedContractIds.map(cid => `${cid}_${tMonth}`).join(',');
+                          updated.linkedContractId = selectedContractIds[0] || '';
+                          updated.contractSplits = null;
+                          updated.linkedPayrollCellId = '';
+                          updated.linkedPlacementId = '';
+                          updated.recipientType = 'vendor';
+                          updated.recipientId = selectedVendorId;
+                        } else if (targetType === 'payroll') {
+                          updated.linkedPayrollCellId = `${selectedStaffId}_${tMonth}`;
+                          updated.linkedVendorCellId = '';
+                          updated.linkedContractId = '';
+                          updated.contractSplits = null;
+                          updated.linkedPlacementId = '';
+                          updated.recipientType = 'staff';
+                          updated.recipientId = selectedStaffId;
+                        } else if (targetType === 'placement') {
+                          updated.linkedPlacementId = selectedPlacementId;
+                          updated.linkedVendorCellId = '';
+                          updated.linkedContractId = '';
+                          updated.contractSplits = null;
+                          updated.linkedPayrollCellId = '';
+                        }
+                        await saveExpense(updated);
+                      }
+                      onShowToast(`Successfully reconciled ${selectedExpenseIds.length} expenses in bulk!`, 'success');
+                      setSelectedExpenseIds([]);
+                      setReconcilingExpense(null);
+                    } catch (err: any) {
+                      onShowToast(`Bulk reconciliation failed: ${err.message}`, 'warning');
+                    }
+                    return;
+                  }
+
                   let updated = { ...reconcilingExpense };
 
                   if (targetType === 'unreconciled') {

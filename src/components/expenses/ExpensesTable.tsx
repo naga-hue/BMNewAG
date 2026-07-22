@@ -2308,6 +2308,8 @@ export default function ExpensesTable({
 
                   if (targetType === 'unreconciled') {
                     updated.linkedVendorCellId = '';
+                    updated.linkedContractId = '';
+                    updated.contractSplits = null;
                     updated.linkedPayrollCellId = '';
                     updated.linkedPlacementId = '';
                   } else if (targetType === 'vendor') {
@@ -2320,6 +2322,8 @@ export default function ExpensesTable({
                       return;
                     }
                     updated.linkedVendorCellId = selectedContractIds.map(id => `${id}_${targetMonth}`).join(',');
+                    updated.linkedContractId = selectedContractIds[0] || '';
+                    updated.contractSplits = null;
                     updated.linkedPayrollCellId = '';
                     updated.linkedPlacementId = '';
                     updated.recipientType = 'vendor';
@@ -2335,6 +2339,8 @@ export default function ExpensesTable({
                     }
                     updated.linkedPayrollCellId = `${selectedStaffId}_${targetMonth}`;
                     updated.linkedVendorCellId = '';
+                    updated.linkedContractId = '';
+                    updated.contractSplits = null;
                     updated.linkedPlacementId = '';
                     updated.recipientType = 'staff';
                     updated.recipientId = selectedStaffId;
@@ -2345,6 +2351,8 @@ export default function ExpensesTable({
                     }
                     updated.linkedPlacementId = selectedPlacementId;
                     updated.linkedVendorCellId = '';
+                    updated.linkedContractId = '';
+                    updated.contractSplits = null;
                     updated.linkedPayrollCellId = '';
                   }
 

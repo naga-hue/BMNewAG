@@ -93,12 +93,42 @@ export default function ForecastMatrix({
 
   const getContractCostForMonth = (c: any, year: number, monthIndex: number) => {
     const monthKey = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
-    const linkedExps = expensesMap[`${c.id}_${monthKey}`] || [];
+    const matchedVendor = vendors.find(v => v.id === c.vendorId || (v.name && c.vendorName && v.name.toLowerCase() === c.vendorName.toLowerCase()));
+    const vendorContracts = contracts.filter(con => con.vendorId === c.vendorId || (matchedVendor && con.vendorId === matchedVendor.id));
+
+    const linkedExps = (expenses || []).filter(e => {
+      if (e.status === 'dns' || e.status === 'cancelled') return false;
+      
+      if (e.linkedVendorCellId) {
+        const parts = e.linkedVendorCellId.split(',').map(s => s.trim()).filter(Boolean);
+        if (parts.includes(`${c.id}_${monthKey}`)) return true;
+      }
+
+      if (e.contractSplits && e.contractSplits[c.id] !== undefined) {
+        const expMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+        if (expMonth === monthKey) return true;
+      }
+
+      if (vendorContracts.length === 1) {
+        const expMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+        if (expMonth !== monthKey) return false;
+        return (e.recipientType === 'vendor' && (e.recipientId === c.vendorId || e.recipientId === matchedVendor?.id)) ||
+               (e.payee && matchedVendor && e.payee.toLowerCase().includes(matchedVendor.name.toLowerCase()));
+      }
+
+      return false;
+    });
     
     if (linkedExps.length > 0) {
-      const actualGBP = linkedExps.reduce((sum, e) => {
-        const cellCount = e.linkedVendorCellId ? e.linkedVendorCellId.split(',').map((s: string) => s.trim()).filter(Boolean).length : 1;
-        return sum + ((Number(e.amount) || 0) / (cellCount || 1));
+      const actualGBP = linkedExps.reduce((sum, exp) => {
+        if (exp.linkedVendorCellId) {
+          const cellCount = exp.linkedVendorCellId.split(',').map(s => s.trim()).filter(Boolean).length;
+          return sum + (toGBP(exp.amount, exp.currency || 'GBP') / (cellCount || 1));
+        }
+        const itemVal = exp.contractSplits && exp.contractSplits[c.id] !== undefined
+          ? exp.contractSplits[c.id]
+          : toGBP(exp.amount, exp.currency || 'GBP');
+        return sum + itemVal;
       }, 0);
       let actualTarget = actualGBP;
       if (forecastCurrency !== 'GBP') {

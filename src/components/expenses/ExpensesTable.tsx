@@ -87,6 +87,59 @@ export default function ExpensesTable({
     actions: true
   });
 
+  // Reconciliation states for mapping modal
+  const [reconcilingExpense, setReconcilingExpense] = useState<any | null>(null);
+  const [targetType, setTargetType] = useState('unreconciled');
+  const [selectedVendorId, setSelectedVendorId] = useState('');
+  const [selectedContractId, setSelectedContractId] = useState('');
+  const [targetMonth, setTargetMonth] = useState('');
+  const [selectedStaffId, setSelectedStaffId] = useState('');
+  const [selectedPlacementId, setSelectedPlacementId] = useState('');
+
+  useEffect(() => {
+    if (reconcilingExpense) {
+      const exp = reconcilingExpense;
+      const monthVal = exp.plMonth || (exp.date ? exp.date.substring(0, 7) : new Date().toISOString().substring(0, 7));
+      setTargetMonth(monthVal);
+
+      if (exp.linkedPayrollCellId) {
+        setTargetType('payroll');
+        const [staffId] = exp.linkedPayrollCellId.split('_');
+        setSelectedStaffId(staffId || '');
+      } else if (exp.linkedVendorCellId) {
+        setTargetType('vendor');
+        const [contractId] = exp.linkedVendorCellId.split('_');
+        const contractObj = contracts.find((c: any) => c.id === contractId);
+        setSelectedVendorId(contractObj ? contractObj.vendorId : '');
+        setSelectedContractId(contractId || '');
+      } else if (exp.linkedPlacementId) {
+        setTargetType('placement');
+        setSelectedPlacementId(exp.linkedPlacementId || '');
+      } else {
+        setTargetType('unreconciled');
+        // Auto-suggest vendor if payee matches vendor name substring
+        const payeeStr = (exp.payee || '').toLowerCase();
+        const suggestedVendor = vendors.find(v => v.name && payeeStr.includes(v.name.toLowerCase()));
+        if (suggestedVendor) {
+          setTargetType('vendor');
+          setSelectedVendorId(suggestedVendor.id);
+        } else {
+          // Auto-suggest staff if payee matches staff name substring
+          const suggestedStaff = staff.find(s => s.fullName && payeeStr.includes(s.fullName.toLowerCase()));
+          if (suggestedStaff) {
+            setTargetType('payroll');
+            setSelectedStaffId(suggestedStaff.id);
+          } else {
+            setSelectedVendorId('');
+            setSelectedContractId('');
+            setSelectedStaffId('');
+            setSelectedPlacementId('');
+          }
+        }
+      }
+    }
+  }, [reconcilingExpense, contracts, vendors, staff]);
+
   // Column Widths for resizing
   const [colWidths, setColWidths] = useState<Record<string, number>>({
     date: 100,
@@ -1428,10 +1481,17 @@ export default function ExpensesTable({
                     }
 
                     return (
-                      <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                      <td 
+                        style={{ whiteSpace: 'normal', wordBreak: 'break-word', cursor: 'pointer', transition: 'background-color 0.15s' }} 
+                        onClick={() => setReconcilingExpense(exp)}
+                        title="Click to reconcile / link this transaction"
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.05)'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
                         <span style={reconStyle}>
                           <span style={{ marginRight: '4px' }}>{icon}</span>
                           {reconText}
+                          <span style={{ marginLeft: '4px', fontSize: '9px', opacity: 0.4 }}>✏️</span>
                         </span>
                       </td>
                     );
@@ -2018,6 +2078,272 @@ export default function ExpensesTable({
         </div>
       )}
 
+      {/* Reconcile Expense Direct Mapping Modal Overlay */}
+      {reconcilingExpense !== null && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 10050,
+          animation: 'fadeIn 0.2s'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            width: '95%',
+            maxWidth: '500px',
+            padding: '24px',
+            boxShadow: 'var(--shadow-xl)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Reconcile Ledger Expense
+                </h3>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  Set nominal/reconciliation mapping details
+                </span>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setReconcilingExpense(null)} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '16px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* Transaction details card */}
+              <div style={{ padding: '10px 12px', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', fontSize: '11px', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Date / Payee:</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{reconcilingExpense.date} | {reconcilingExpense.payee}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Nominal Classification:</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{reconcilingExpense.nominalCode || 'Unclassified'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Amount:</span>
+                  <span style={{ fontWeight: 700, color: 'var(--success)' }}>
+                    £{Number(reconcilingExpense.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Target Type Selector */}
+              <div className="form-group">
+                <label style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', display: 'block', color: 'var(--text-primary)' }}>
+                  Link Status / Target:
+                </label>
+                <select
+                  value={targetType}
+                  onChange={(e) => setTargetType(e.target.value)}
+                  className="select-filter"
+                  style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                >
+                  <option value="unreconciled">Unreconciled / General Cost</option>
+                  <option value="vendor">Vendor Contract / SaaS License</option>
+                  <option value="payroll">Group Payroll (Staff Cost)</option>
+                  <option value="placement">Placement Invoice Settlement</option>
+                </select>
+              </div>
+
+              {/* Conditional Inputs */}
+              {targetType === 'vendor' && (
+                <>
+                  <div className="form-group">
+                    <label style={{ fontSize: '11px', fontWeight: 600, marginBottom: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                      Select Vendor:
+                    </label>
+                    <select
+                      value={selectedVendorId}
+                      onChange={(e) => {
+                        setSelectedVendorId(e.target.value);
+                        setSelectedContractId('');
+                      }}
+                      className="select-filter"
+                      style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                    >
+                      <option value="">-- Choose Vendor --</option>
+                      {vendors.map(v => (
+                        <option key={v.id} value={v.id}>{v.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '11px', fontWeight: 600, marginBottom: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                      Select Contract Cell:
+                    </label>
+                    <select
+                      value={selectedContractId}
+                      onChange={(e) => setSelectedContractId(e.target.value)}
+                      className="select-filter"
+                      style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                      disabled={!selectedVendorId}
+                    >
+                      <option value="">-- Choose Contract Package --</option>
+                      {contracts.filter((c: any) => c.vendorId === selectedVendorId).map((c: any) => (
+                        <option key={c.id} value={c.id}>{c.name} ({c.quantityPurchased || 0} seats)</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '11px', fontWeight: 600, marginBottom: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                      Target Month:
+                    </label>
+                    <input
+                      type="month"
+                      value={targetMonth}
+                      onChange={(e) => setTargetMonth(e.target.value)}
+                      className="select-filter"
+                      style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                    />
+                  </div>
+                </>
+              )}
+
+              {targetType === 'payroll' && (
+                <>
+                  <div className="form-group">
+                    <label style={{ fontSize: '11px', fontWeight: 600, marginBottom: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                      Select Staff / Consultant:
+                    </label>
+                    <select
+                      value={selectedStaffId}
+                      onChange={(e) => setSelectedStaffId(e.target.value)}
+                      className="select-filter"
+                      style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                    >
+                      <option value="">-- Choose Staff Member --</option>
+                      {staff.map(s => (
+                        <option key={s.id} value={s.id}>{s.fullName}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '11px', fontWeight: 600, marginBottom: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                      Target Month:
+                    </label>
+                    <input
+                      type="month"
+                      value={targetMonth}
+                      onChange={(e) => setTargetMonth(e.target.value)}
+                      className="select-filter"
+                      style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                    />
+                  </div>
+                </>
+              )}
+
+              {targetType === 'placement' && (
+                <div className="form-group">
+                  <label style={{ fontSize: '11px', fontWeight: 600, marginBottom: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                    Select Placement:
+                  </label>
+                  <select
+                    value={selectedPlacementId}
+                    onChange={(e) => setSelectedPlacementId(e.target.value)}
+                    className="select-filter"
+                    style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                  >
+                    <option value="">-- Choose Placement --</option>
+                    {placements.map(p => (
+                      <option key={p.id} value={p.id}>{p.candidateName} | {p.clientName} (Fee: £{Number(p.feeAmount || 0).toLocaleString()})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '12px', marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+              <button 
+                type="button" 
+                className="btn-primary" 
+                style={{ flex: 1, justifyContent: 'center' }} 
+                onClick={async () => {
+                  let updated = { ...reconcilingExpense };
+
+                  if (targetType === 'unreconciled') {
+                    updated.linkedVendorCellId = '';
+                    updated.linkedPayrollCellId = '';
+                    updated.linkedPlacementId = '';
+                  } else if (targetType === 'vendor') {
+                    if (!selectedContractId) {
+                      onShowToast('Please select a vendor contract to link.', 'error');
+                      return;
+                    }
+                    if (!targetMonth) {
+                      onShowToast('Please select a target month.', 'error');
+                      return;
+                    }
+                    updated.linkedVendorCellId = `${selectedContractId}_${targetMonth}`;
+                    updated.linkedPayrollCellId = '';
+                    updated.linkedPlacementId = '';
+                    updated.recipientType = 'vendor';
+                    updated.recipientId = selectedVendorId;
+                  } else if (targetType === 'payroll') {
+                    if (!selectedStaffId) {
+                      onShowToast('Please select a staff member to link.', 'error');
+                      return;
+                    }
+                    if (!targetMonth) {
+                      onShowToast('Please select a target month.', 'error');
+                      return;
+                    }
+                    updated.linkedPayrollCellId = `${selectedStaffId}_${targetMonth}`;
+                    updated.linkedVendorCellId = '';
+                    updated.linkedPlacementId = '';
+                    updated.recipientType = 'staff';
+                    updated.recipientId = selectedStaffId;
+                  } else if (targetType === 'placement') {
+                    if (!selectedPlacementId) {
+                      onShowToast('Please select a placement to link.', 'error');
+                      return;
+                    }
+                    updated.linkedPlacementId = selectedPlacementId;
+                    updated.linkedVendorCellId = '';
+                    updated.linkedPayrollCellId = '';
+                  }
+
+                  try {
+                    await saveExpense(updated);
+                    onShowToast('Expense reconciled successfully!', 'success');
+                    setReconcilingExpense(null);
+                  } catch (err: any) {
+                    onShowToast(`Failed to reconcile: ${err.message}`, 'warning');
+                  }
+                }}
+              >
+                Save Linkage
+              </button>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                style={{ flex: 1, justifyContent: 'center' }} 
+                onClick={() => setReconcilingExpense(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1327,14 +1327,14 @@ th.freeze-col-2 {
 
 /* Dense table layouts for detailed analytics spreadsheets */
 .entity-table.dense th {
-  padding: 10px 14px;
+  padding: 6px 10px;
   font-size: 11px;
   white-space: nowrap;
 }
 
 .entity-table.dense td {
-  padding: 10px 14px;
-  font-size: 12px;
+  padding: 6px 10px;
+  font-size: 11px;
   white-space: nowrap;
 }
 

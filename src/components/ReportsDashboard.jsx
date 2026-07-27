@@ -3288,11 +3288,69 @@ export default function ReportsDashboard({
                         {fullName} {rec.status === 'exited' && <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 500, marginLeft: '4px' }}>(Exited)</span>}
                       </td>
                       <td>{deptCompany}</td>
-                      <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{tenureInMonths} mos</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{formatGBP(wagesPaid)}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{formatGBP(commissionsPaid)}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{formatGBP(totalPaid)}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: 'var(--success)' }}>
+                      <td 
+                        style={{ textAlign: 'center', fontFamily: 'monospace', cursor: 'pointer', textDecoration: 'underline decoration-dotted' }}
+                        onClick={() => setDrilldownState({
+                          title: `Hiring & Tenure Details: ${fullName}`,
+                          label: `Hiring Details for ${fullName}`,
+                          categoryKey: 'recruiterTenure',
+                          recruiterId: rec.id,
+                          amount: tenureInMonths
+                        })}
+                        title={`Click to view hiring date for ${fullName}`}
+                      >
+                        {tenureInMonths} mos
+                      </td>
+                      <td 
+                        style={{ textAlign: 'right', fontFamily: 'monospace', cursor: wagesPaid > 0 ? 'pointer' : 'default', textDecoration: wagesPaid > 0 ? 'underline decoration-dotted' : 'none' }}
+                        onClick={() => wagesPaid > 0 && setDrilldownState({
+                          title: `Monthly Wages Paid: ${fullName}`,
+                          label: `Base Wages details for ${fullName}`,
+                          categoryKey: 'recruiterWages',
+                          recruiterId: rec.id,
+                          amount: wagesPaid
+                        })}
+                        title={wagesPaid > 0 ? `Click to view wages breakdown for ${fullName}` : undefined}
+                      >
+                        {formatGBP(wagesPaid)}
+                      </td>
+                      <td 
+                        style={{ textAlign: 'right', fontFamily: 'monospace', cursor: commissionsPaid > 0 ? 'pointer' : 'default', textDecoration: commissionsPaid > 0 ? 'underline decoration-dotted' : 'none' }}
+                        onClick={() => commissionsPaid > 0 && setDrilldownState({
+                          title: `Monthly Commissions Paid: ${fullName}`,
+                          label: `Commissions details for ${fullName}`,
+                          categoryKey: 'recruiterCommissions',
+                          recruiterId: rec.id,
+                          amount: commissionsPaid
+                        })}
+                        title={commissionsPaid > 0 ? `Click to view commissions breakdown for ${fullName}` : undefined}
+                      >
+                        {formatGBP(commissionsPaid)}
+                      </td>
+                      <td 
+                        style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, cursor: totalPaid > 0 ? 'pointer' : 'default', textDecoration: totalPaid > 0 ? 'underline decoration-dotted' : 'none' }}
+                        onClick={() => totalPaid > 0 && setDrilldownState({
+                          title: `Total Compensation Breakdown: ${fullName}`,
+                          label: `Wages & Commissions details for ${fullName}`,
+                          categoryKey: 'recruiterTotalCompensation',
+                          recruiterId: rec.id,
+                          amount: totalPaid
+                        })}
+                        title={totalPaid > 0 ? `Click to view total compensation breakdown for ${fullName}` : undefined}
+                      >
+                        {formatGBP(totalPaid)}
+                      </td>
+                      <td 
+                        style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: 'var(--success)', cursor: periodBillings > 0 ? 'pointer' : 'default', textDecoration: periodBillings > 0 ? 'underline decoration-dotted' : 'none' }}
+                        onClick={() => periodBillings > 0 && setDrilldownState({
+                          title: `Revenue Generated (Billings Share): ${fullName}`,
+                          label: `Fee billings placements share for ${fullName}`,
+                          categoryKey: 'recruiterRevenue',
+                          recruiterId: rec.id,
+                          amount: periodBillings
+                        })}
+                        title={periodBillings > 0 ? `Click to view placements revenue share for ${fullName}` : undefined}
+                      >
                         {formatGBP(periodBillings)}
                       </td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: ratio > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
@@ -3991,6 +4049,179 @@ export default function ReportsDashboard({
         const getDrilldownItems = () => {
           const { categoryKey, monthKey, nominalCode } = drilldownState;
           if (!categoryKey) return [];
+
+          if (categoryKey === 'recruiterTenure') {
+            const { recruiterId } = drilldownState;
+            const sObj = staff.find(s => s.id === recruiterId);
+            if (!sObj) return [];
+            return [{
+              fullName: sObj.fullName,
+              startDate: sObj.startDate || 'Not set',
+              exitDate: sObj.exitDate || 'Active in business',
+              status: sObj.status,
+              department: sObj.department,
+              companyName: companies.find(c => c.id === sObj.companyId)?.name || 'Unknown Company'
+            }];
+          }
+
+          if (categoryKey === 'recruiterWages' || categoryKey === 'recruiterTotalCompensation') {
+            const { recruiterId } = drilldownState;
+            const sObj = staff.find(s => s.id === recruiterId);
+            if (!sObj) return [];
+
+            const results = [];
+            const activeMonthsList = monthsList.filter(m => m <= new Date().toISOString().substring(0, 7));
+            activeMonthsList.forEach(m => {
+              const pay = getStaffPayrollForMonth(sObj, m);
+              
+              const policy = payrollPolicies.find(p => p.id === sObj.payrollPolicyId);
+              let targetNominal = policy?.nominalCode;
+              if (!targetNominal && policy) {
+                if (policy.type === 'freelance') {
+                  const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code;
+                  targetNominal = contractorNominal || '1001 - Freelancer Payments';
+                } else {
+                  const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code;
+                  targetNominal = salaryNominal || '1002 - Salary';
+                }
+              }
+
+              let shareFactor = 1.0;
+              let isShared = false;
+
+              if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
+                const groupActiveStaff = staff.filter(st => {
+                  const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
+                  return daysWorked >= 10;
+                });
+                const otherStaff = groupActiveStaff.filter(os => {
+                  const comp = companies.find(c => c.id === os.companyId);
+                  return comp && comp.includeInConsolidation !== false && os.companyId !== sObj.companyId;
+                });
+
+                if (otherStaff.length > 0) {
+                  let activeOtherStaffCount = 0;
+                  otherStaff.forEach(os => {
+                    const isComp = activeCompanyIds.includes(os.companyId);
+                    const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
+                    if (isComp && isDept) {
+                      activeOtherStaffCount++;
+                    }
+                  });
+                  shareFactor = activeOtherStaffCount / otherStaff.length;
+                  isShared = true;
+                }
+              }
+
+              const wagesPaid = pay.salaries * shareFactor;
+              const commissionsPaid = pay.commissions * shareFactor;
+
+              if (wagesPaid > 0 || commissionsPaid > 0) {
+                results.push({
+                  month: m,
+                  baseSalary: pay.salaries,
+                  shareFactor,
+                  isShared,
+                  wagesPaid,
+                  commissionsPaid,
+                  totalPaid: wagesPaid + commissionsPaid
+                });
+              }
+            });
+            return results;
+          }
+
+          if (categoryKey === 'recruiterCommissions') {
+            const { recruiterId } = drilldownState;
+            const sObj = staff.find(s => s.id === recruiterId);
+            if (!sObj) return [];
+
+            const results = [];
+            const activeMonthsList = monthsList.filter(m => m <= new Date().toISOString().substring(0, 7));
+            activeMonthsList.forEach(m => {
+              const pay = getStaffPayrollForMonth(sObj, m);
+              
+              const policy = payrollPolicies.find(p => p.id === sObj.payrollPolicyId);
+              let targetNominal = policy?.nominalCode;
+              if (!targetNominal && policy) {
+                if (policy.type === 'freelance') {
+                  const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code;
+                  targetNominal = contractorNominal || '1001 - Freelancer Payments';
+                } else {
+                  const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code;
+                  targetNominal = salaryNominal || '1002 - Salary';
+                }
+              }
+
+              let shareFactor = 1.0;
+              let isShared = false;
+
+              if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
+                const groupActiveStaff = staff.filter(st => {
+                  const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
+                  return daysWorked >= 10;
+                });
+                const otherStaff = groupActiveStaff.filter(os => {
+                  const comp = companies.find(c => c.id === os.companyId);
+                  return comp && comp.includeInConsolidation !== false && os.companyId !== sObj.companyId;
+                });
+
+                if (otherStaff.length > 0) {
+                  let activeOtherStaffCount = 0;
+                  otherStaff.forEach(os => {
+                    const isComp = activeCompanyIds.includes(os.companyId);
+                    const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
+                    if (isComp && isDept) {
+                      activeOtherStaffCount++;
+                    }
+                  });
+                  shareFactor = activeOtherStaffCount / otherStaff.length;
+                  isShared = true;
+                }
+              }
+
+              const commissionsPaid = pay.commissions * shareFactor;
+
+              if (commissionsPaid > 0) {
+                results.push({
+                  month: m,
+                  rawCommissions: pay.commissions,
+                  shareFactor,
+                  isShared,
+                  commissionsPaid
+                });
+              }
+            });
+            return results;
+          }
+
+          if (categoryKey === 'recruiterRevenue') {
+            const { recruiterId } = drilldownState;
+            const currentMonthKey = new Date().toISOString().substring(0, 7);
+
+            return (placements || []).filter(p => {
+              if (!p.startDate || p.status === 'dns') return false;
+              const startMonthKey = p.startDate.substring(0, 7);
+              if (startMonthKey < startMonth || startMonthKey > endMonth || startMonthKey > currentMonthKey) return false;
+              return p.splits?.some(s => s.staffId === recruiterId);
+            }).map(p => {
+              const splitObj = p.splits.find(s => s.staffId === recruiterId);
+              const pct = splitObj ? splitObj.percentage : 100;
+              const netFee = toGBP(p.netScoreValue, 'GBP');
+              const recruiterShare = (netFee * pct) / 100;
+              return {
+                id: p.id,
+                placementId: p.placementId || p.pId || p.id,
+                candidateName: p.candidateName,
+                clientName: p.clientName,
+                jobTitle: p.jobTitle,
+                startDate: p.startDate,
+                percentage: pct,
+                netScoreValue: netFee,
+                amount: recruiterShare
+              };
+            });
+          }
 
           if (categoryKey === 'revenue') {
             return (placements || []).filter(p => {
@@ -4836,7 +5067,11 @@ export default function ReportsDashboard({
                     🔍 P&L Line Itemization: {drilldownState.label}
                   </h3>
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                    Period: <strong>{drilldownState.monthKey || 'YTD Full Period'}</strong> • Total Value: <strong style={{ color: 'var(--primary)' }}>{formatGBP(drilldownState.amount)}</strong>
+                    Period: <strong>{drilldownState.monthKey || 'YTD Full Period'}</strong> • {drilldownState.categoryKey === 'recruiterTenure' ? (
+                      <>Total Tenure: <strong style={{ color: 'var(--primary)' }}>{drilldownState.amount} months</strong></>
+                    ) : (
+                      <>Total Value: <strong style={{ color: 'var(--primary)' }}>{formatGBP(drilldownState.amount)}</strong></>
+                    )}
                     {!deptFilter.includes('all') && (
                       <span style={{ marginLeft: '8px', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(59, 130, 246, 0.15)', color: 'var(--primary)', fontWeight: 700 }}>
                         Filtered by Division: {deptFilter.join(', ')}

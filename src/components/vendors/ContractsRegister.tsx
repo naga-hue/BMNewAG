@@ -314,26 +314,59 @@ export default function ContractsRegister({
                     <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>
                       {(() => {
                         const matchedV = vendors.find(v => v.name === contract.vendorName || v.id === contract.vendorId);
-                        const actualPaid = (expenses || []).reduce((sum, exp) => {
-                          const isMatch = (exp.recipientType === 'vendor' && (exp.recipientId === matchedV?.id || exp.recipientId === contract.vendorId)) ||
-                                          (exp.payee && matchedV && exp.payee.toLowerCase().includes(matchedV.name.toLowerCase()));
-                          if (isMatch && exp.status !== 'dns' && exp.status !== 'cancelled') {
-                            return sum + toGBP(exp.amount, exp.currency || 'GBP');
-                          }
-                          return sum;
-                        }, 0);
+                        
+                        // Count how many contracts exist for this vendor
+                        const vendorContractsCount = contracts.filter(c => 
+                          (c.vendorId && c.vendorId === contract.vendorId) || 
+                          (c.vendorName && c.vendorName === contract.vendorName)
+                        ).length;
 
-                        const diff = actualPaid - monthlyCostEquivalent;
+                        // Find expenses specifically linked to this contract
+                        const contractExpenses = (expenses || []).filter(exp => {
+                          const isContractMatch = exp.linkedContractId === contract.id || 
+                            (exp.linkedVendorCellId && exp.linkedVendorCellId.split(',').some((part: string) => part.split('_')[0] === contract.id));
+                          return isContractMatch && exp.status !== 'dns' && exp.status !== 'cancelled';
+                        });
+
+                        let totalPaid = 0;
+                        let uniqueMonths = new Set();
+
+                        if (contractExpenses.length > 0) {
+                          totalPaid = contractExpenses.reduce((sum, exp) => {
+                            const splitsCount = exp.linkedVendorCellId ? exp.linkedVendorCellId.split(',').length : 1;
+                            const share = toGBP(exp.amount, exp.currency || 'GBP') / Math.max(1, splitsCount);
+                            return sum + share;
+                          }, 0);
+                          contractExpenses.forEach(exp => {
+                            const m = exp.plMonth || (exp.date ? exp.date.substring(0, 7) : '');
+                            if (m) uniqueMonths.add(m);
+                          });
+                        } else if (vendorContractsCount === 1) {
+                          // Fallback to vendor-level matching only if this is the only contract for the vendor
+                          const vendorExpenses = (expenses || []).filter(exp => {
+                            const isMatch = (exp.recipientType === 'vendor' && (exp.recipientId === matchedV?.id || exp.recipientId === contract.vendorId)) ||
+                                            (exp.payee && matchedV && exp.payee.toLowerCase().includes(matchedV.name.toLowerCase()));
+                            return isMatch && exp.status !== 'dns' && exp.status !== 'cancelled';
+                          });
+                          totalPaid = vendorExpenses.reduce((sum, exp) => sum + toGBP(exp.amount, exp.currency || 'GBP'), 0);
+                          vendorExpenses.forEach(exp => {
+                            const m = exp.plMonth || (exp.date ? exp.date.substring(0, 7) : '');
+                            if (m) uniqueMonths.add(m);
+                          });
+                        }
+
+                        const actualPaidMonthly = uniqueMonths.size > 0 ? (totalPaid / uniqueMonths.size) : 0;
+                        const diff = actualPaidMonthly - monthlyCostEquivalent;
 
                         return (
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
                             <div style={{ color: 'var(--success)', fontWeight: 700 }}>
                               Proj: £{monthlyCostEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </div>
-                            <div style={{ fontSize: '10px', color: actualPaid > 0 ? 'var(--primary)' : 'var(--text-muted)', fontWeight: 600 }}>
-                              Actual Paid: £{actualPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <div style={{ fontSize: '10px', color: actualPaidMonthly > 0 ? 'var(--primary)' : 'var(--text-muted)', fontWeight: 600 }}>
+                              Actual Paid: £{actualPaidMonthly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </div>
-                            {actualPaid > 0 && (
+                            {actualPaidMonthly > 0 && (
                               <span style={{ 
                                 fontSize: '9px', 
                                 padding: '1px 5px', 
@@ -342,7 +375,7 @@ export default function ContractsRegister({
                                 backgroundColor: diff <= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
                                 color: diff <= 0 ? 'var(--success)' : 'var(--danger)'
                               }}>
-                                {diff <= 0 ? `-${toGBP(Math.abs(diff), 'GBP').toLocaleString()} Under` : `+${toGBP(diff, 'GBP').toLocaleString()} Over`}
+                                {diff <= 0 ? `-${Math.abs(diff).toLocaleString(undefined, { maximumFractionDigits: 2 })} Under` : `+${diff.toLocaleString(undefined, { maximumFractionDigits: 2 })} Over`}
                               </span>
                             )}
                           </div>

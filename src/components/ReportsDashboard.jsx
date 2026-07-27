@@ -966,11 +966,13 @@ export default function ReportsDashboard({
               unusedCost = unusedBase;
             }
 
-            gbpCost = toGBP(assignedCost + unusedCost, contract.currency || 'GBP');
+            const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
+            gbpCost = toGBP(assignedCost + unusedCost, contract.currency || 'GBP') * taxFactor;
           } else {
             if (!activeCompanyIds.includes(contract.companyId)) return;
             let cost = unitMonthlyCost * totalSeats;
-            gbpCost = toGBP(cost, contract.currency || 'GBP');
+            const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
+            gbpCost = toGBP(cost, contract.currency || 'GBP') * taxFactor;
 
             if (!deptFilter.includes('all')) {
               const compActiveStaff = groupActiveStaff.filter(s => s.companyId === contract.companyId);
@@ -3449,11 +3451,13 @@ export default function ReportsDashboard({
                       unusedCost = unusedBase;
                     }
 
-                    gbpCost = toGBP(assignedCost + unusedCost, contract.currency || 'GBP');
+                    const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
+                    gbpCost = toGBP(assignedCost + unusedCost, contract.currency || 'GBP') * taxFactor;
                   } else {
                     if (!isCompanyMatch(contract.companyId)) return;
                     let cost = unitMonthlyCost * totalSeats;
-                    gbpCost = toGBP(cost, contract.currency || 'GBP');
+                    const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
+                    gbpCost = toGBP(cost, contract.currency || 'GBP') * taxFactor;
 
                     if (!deptFilter.includes('all')) {
                       const compActiveStaff = staff.filter(s => s.companyId === contract.companyId && getDaysWorkedInMonth(s.startDate, s.exitDate, mKey) >= 10);

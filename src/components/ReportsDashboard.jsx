@@ -205,6 +205,8 @@ export default function ReportsDashboard({
   const [ratiosSortDirection, setRatiosSortDirection] = useState('asc');
   const [leaguesSortField, setLeaguesSortField] = useState('totalVal');
   const [leaguesSortDirection, setLeaguesSortDirection] = useState('desc');
+  const [showPnlDashboard, setShowPnlDashboard] = useState(true);
+  const [activeTooltip, setActiveTooltip] = useState(null);
 
   const handleLeaguesHeaderClick = (field) => {
     if (leaguesSortField === field) {
@@ -1594,323 +1596,908 @@ export default function ReportsDashboard({
       {/* ==============================================================
           TAB 1: DYNAMIC COMPANY-WIDE P&L MATRIX
           ============================================================== */}
-      {activeTab === 'consolidated' && (
-        <div className="table-container" style={{ overflowX: 'auto', width: '100%' }}>
-          <table className="entity-table dense" style={{ minWidth: '1200px' }}>
-            <thead>
-              <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                <th style={{ minWidth: '220px', fontWeight: 700 }}>P&L Account Line Items (GBP)</th>
-                {monthsList.map(m => {
-                  const label = new Date(m + '-02').toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
-                  return <th key={m} style={{ textAlign: 'right', fontWeight: 700 }}>{label}</th>;
-                })}
-                <th style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.04)' }}>Period Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                const rowData = monthsList.map(m => getFilteredMonthlyData(m));
+      {activeTab === 'consolidated' && (() => {
+        const rowData = monthsList.map(m => getFilteredMonthlyData(m));
 
-                const handleCellClick = (label, categoryKey, monthKey, amount, nominalCode = null) => {
-                  setDrilldownState({
-                    title: `${label} ${monthKey ? `(${new Date(monthKey + '-02').toLocaleDateString(undefined, { month: 'short', year: 'numeric' })})` : '(YTD Period Total)'}`,
-                    label,
-                    categoryKey,
-                    monthKey,
-                    nominalCode,
-                    amount
-                  });
-                };
+        const totalRevenue = rowData.reduce((acc, row) => acc + (row.revenue || 0), 0);
+        const totalCommissions = rowData.reduce((acc, row) => acc + (row.commissions || 0), 0);
+        const totalOverheads = rowData.reduce((acc, row) => acc + (row.overheadsExpenses || 0), 0);
+        const totalProfit = rowData.reduce((acc, row) => acc + (row.netProfit || 0), 0);
+        const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
-                const renderRow = (label, key, isBold = false, isSub = false, color = 'var(--text-primary)') => {
-                  const ytdSum = rowData.reduce((acc, row) => acc + (row[key] || 0), 0);
-                  return (
-                    <tr style={{ fontWeight: isBold ? 700 : 400 }}>
-                      <td 
-                        style={{ paddingLeft: isSub ? '24px' : '12px', color, cursor: 'pointer', textDecoration: 'underline decoration-dotted' }}
-                        onClick={() => handleCellClick(label, key, null, ytdSum)}
-                        title={`Click to view itemized ${label} records for full period`}
-                      >
-                        {label} 🔍
-                      </td>
-                      {rowData.map((row, idx) => {
-                        const monthKey = monthsList[idx];
-                        const val = row[key] || 0;
-                        return (
-                          <td 
-                            key={idx} 
-                            style={{ 
-                              textAlign: 'right', 
-                              color, 
-                              cursor: val !== 0 ? 'pointer' : 'default',
-                              fontWeight: val !== 0 ? 600 : 400
-                            }}
-                            onClick={() => val !== 0 && handleCellClick(label, key, monthKey, val)}
-                            title={val !== 0 ? `Click to drilldown into ${label} for ${monthKey}` : undefined}
-                          >
-                            {formatGBP(val)}
-                          </td>
-                        );
-                      })}
-                      <td 
-                        style={{ textAlign: 'right', fontWeight: 700, color, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer' }}
-                        onClick={() => handleCellClick(label, key, null, ytdSum)}
-                        title="Click to view total period itemized transactions"
-                      >
-                        {formatGBP(ytdSum)}
-                      </td>
-                    </tr>
-                  );
-                };
+        // Recruiter Ratios calculations for Overall compensation to billings gauge
+        const recruiterRatios = staff.map(rec => {
+          if (!companyFilter.includes('all') && !companyFilter.includes(rec.companyId)) return null;
+          if (!deptFilter.includes('all') && !deptFilter.includes(rec.department)) return null;
 
+          const recPlacements = placements.filter(p => {
+            if (!p.startDate || p.status === 'dns') return false;
+            const startMonthKey = p.startDate.substring(0, 7);
+            if (startMonthKey < startMonth || startMonthKey > endMonth) return false;
+            return p.splits?.some(s => s.staffId === rec.id);
+          });
+
+          const periodBillings = recPlacements.reduce((sum, p) => {
+            const split = p.splits.find(s => s.staffId === rec.id);
+            const share = split ? (p.netScoreValue * split.percentage) / 100 : 0;
+            return sum + toGBP(share, 'GBP');
+          }, 0);
+
+          let wagesPaid = 0;
+          let commissionsPaid = 0;
+          monthsList.forEach(m => {
+            const pay = getStaffPayrollForMonth(rec, m);
+            const policy = payrollPolicies.find(p => p.id === rec.payrollPolicyId);
+            let targetNominal = policy?.nominalCode;
+            if (!targetNominal && policy) {
+              if (policy.type === 'freelance') {
+                const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code;
+                targetNominal = contractorNominal || '1001 - Freelancer Payments';
+              } else {
+                const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code;
+                targetNominal = salaryNominal || '1002 - Salary';
+              }
+            }
+
+            if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
+              const groupActiveStaff = staff.filter(st => {
+                const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
+                return daysWorked >= 10;
+              });
+              const otherStaff = groupActiveStaff.filter(os => {
+                const comp = companies.find(c => c.id === os.companyId);
+                return comp && comp.includeInConsolidation !== false && os.companyId !== rec.companyId;
+              });
+
+              if (otherStaff.length > 0) {
+                let activeOtherStaffCount = 0;
+                otherStaff.forEach(os => {
+                  const isComp = activeCompanyIds.includes(os.companyId);
+                  const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
+                  if (isComp && isDept) {
+                    activeOtherStaffCount++;
+                  }
+                });
+                const shareFactor = activeOtherStaffCount / otherStaff.length;
+                wagesPaid += pay.salaries * shareFactor;
+                commissionsPaid += pay.commissions * shareFactor;
+              } else {
+                const isComp = activeCompanyIds.includes(rec.companyId);
+                const isDept = deptFilter.includes('all') || deptFilter.includes(rec.department);
+                if (isComp && isDept) {
+                  wagesPaid += pay.salaries;
+                  commissionsPaid += pay.commissions;
+                }
+              }
+            } else {
+              const isComp = activeCompanyIds.includes(rec.companyId);
+              const isDept = deptFilter.includes('all') || deptFilter.includes(rec.department);
+              if (isComp && isDept) {
+                wagesPaid += pay.salaries;
+                commissionsPaid += pay.commissions;
+              }
+            }
+          });
+
+          const totalPaid = wagesPaid + commissionsPaid;
+          const ratio = periodBillings > 0 ? (totalPaid / periodBillings) * 100 : 0;
+
+          return { rec, periodBillings, ratio, totalPaid };
+        }).filter(Boolean);
+
+        let superb = 0;
+        let good = 0;
+        let highCost = 0;
+        let low = 0;
+
+        recruiterRatios.forEach(item => {
+          if (item.periodBillings > 0) {
+            if (item.ratio <= 30) superb++;
+            else if (item.ratio <= 60) good++;
+            else highCost++;
+          } else {
+            low++;
+          }
+        });
+
+        const totalRecPaid = recruiterRatios.reduce((sum, item) => sum + item.totalPaid, 0);
+        const totalRecBillings = recruiterRatios.reduce((sum, item) => sum + item.periodBillings, 0);
+        const overallCompToBillingsRatio = totalRecBillings > 0 ? (totalRecPaid / totalRecBillings) * 100 : 0;
+
+        const handleCellClick = (label, categoryKey, monthKey, amount, nominalCode = null) => {
+          setDrilldownState({
+            title: `${label} ${monthKey ? `(${new Date(monthKey + '-02').toLocaleDateString(undefined, { month: 'short', year: 'numeric' })})` : '(YTD Period Total)'}`,
+            label,
+            categoryKey,
+            monthKey,
+            nominalCode,
+            amount
+          });
+        };
+
+        const renderRow = (label, key, isBold = false, isSub = false, color = 'var(--text-primary)') => {
+          const ytdSum = rowData.reduce((acc, row) => acc + (row[key] || 0), 0);
+          return (
+            <tr style={{ fontWeight: isBold ? 700 : 400 }}>
+              <td 
+                style={{ paddingLeft: isSub ? '24px' : '12px', color, cursor: 'pointer', textDecoration: 'underline decoration-dotted' }}
+                onClick={() => handleCellClick(label, key, null, ytdSum)}
+                title={`Click to view itemized ${label} records for full period`}
+              >
+                {label} 🔍
+              </td>
+              {rowData.map((row, idx) => {
+                const monthKey = monthsList[idx];
+                const val = row[key] || 0;
                 return (
-                  <>
-                    <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
-                      <td>Revenue stream credits</td>
-                      <td colSpan={monthsList.length + 1} />
-                    </tr>
-                    {renderRow('Net Placements Fee Billings', 'revenue', false, true, 'var(--success)')}
-                    
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }} />
-                    
-                    <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
-                      <td>Direct cost (Recruiter Commissions)</td>
-                      <td colSpan={monthsList.length + 1} />
-                    </tr>
-                    {renderRow('Accrued Recruiter Commissions', 'commissions', false, true, 'var(--danger)')}
+                  <td 
+                    key={idx} 
+                    style={{ 
+                      textAlign: 'right', 
+                      color, 
+                      cursor: val !== 0 ? 'pointer' : 'default',
+                      fontWeight: val !== 0 ? 600 : 400
+                    }}
+                    onClick={() => val !== 0 && handleCellClick(label, key, monthKey, val)}
+                    title={val !== 0 ? `Click to drilldown into ${label} for ${monthKey}` : undefined}
+                  >
+                    {formatGBP(val)}
+                  </td>
+                );
+              })}
+              <td 
+                style={{ textAlign: 'right', fontWeight: 700, color, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer' }}
+                onClick={() => handleCellClick(label, key, null, ytdSum)}
+                title="Click to view total period itemized transactions"
+              >
+                {formatGBP(ytdSum)}
+              </td>
+            </tr>
+          );
+        };
 
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }} />
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
+            
+            {/* Dashboard Toggle / Header Panel */}
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              backgroundColor: 'var(--bg-secondary)', 
+              padding: '12px 18px', 
+              borderRadius: 'var(--radius-md)', 
+              border: '1px solid var(--border-color)',
+              boxShadow: 'var(--shadow-sm)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '16px' }}>📊</span>
+                <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>P&L Performance Summary Dashboard</span>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowPnlDashboard(!showPnlDashboard)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--accent)',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                {showPnlDashboard ? '🙈 Hide Chart Analytics' : '👁️ Show Chart Analytics'}
+              </button>
+            </div>
 
-                    {renderRow('Gross Profit Margin', 'grossProfit', true, false, 'var(--accent)')}
+            {/* Visual Analytics dashboard */}
+            {showPnlDashboard && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                
+                {/* KPI Summary Cards Grid */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                  gap: '16px'
+                }}>
+                  {[
+                    { title: 'Total Revenue (Billings)', value: totalRevenue, color: 'var(--success)', icon: '💰', desc: 'Net Placements Fee Billings' },
+                    { title: 'Accrued Commissions', value: totalCommissions, color: 'var(--danger)', icon: '🎟️', desc: 'Direct Recruiter Commissions' },
+                    { title: 'Indirect Overheads & SaaS', value: totalOverheads, color: 'var(--warning)', icon: '🏢', desc: 'Apportioned Shared Expenses' },
+                    { title: 'EBITDA Net Profit', value: totalProfit, color: totalProfit >= 0 ? 'var(--success)' : 'var(--danger)', icon: '📈', desc: `${profitMargin.toFixed(1)}% Profit Margin` },
+                  ].map((card, idx) => (
+                    <div key={idx} style={{
+                      backgroundColor: 'var(--bg-card)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-lg)',
+                      padding: '16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      boxShadow: 'var(--shadow-md)',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        position: 'absolute',
+                        top: '-10px',
+                        right: '-10px',
+                        fontSize: '60px',
+                        opacity: 0.05,
+                        pointerEvents: 'none',
+                        userSelect: 'none'
+                      }}>
+                        {card.icon}
+                      </div>
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{card.title}</span>
+                      <span style={{ fontSize: '20px', fontWeight: 800, color: card.color, fontFamily: 'monospace' }}>{formatGBP(card.value)}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{card.desc}</span>
+                    </div>
+                  ))}
+                </div>
 
-                    <tr style={{ borderBottom: '1px dashed var(--border-color)', height: '8px' }} />
+                {/* Dashboard Charts Grid */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                  gap: '20px'
+                }}>
+                  
+                  {/* Chart 1: Revenue vs. Expenses Trend */}
+                  <div style={{
+                    backgroundColor: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '20px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '16px',
+                    boxShadow: 'var(--shadow-md)',
+                    minHeight: '320px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <h4 style={{ fontSize: '13px', fontWeight: 700, margin: 0 }}>Monthly Billings vs. Total Expenses</h4>
+                      <div style={{ display: 'flex', gap: '10px', fontSize: '10px', fontWeight: 700 }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ display: 'inline-block', width: '10px', height: '10px', backgroundColor: 'var(--success)', borderRadius: '2px' }} />
+                          Revenue
+                        </span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ display: 'inline-block', width: '10px', height: '10px', backgroundColor: 'var(--danger)', borderRadius: '2px' }} />
+                          Expenses
+                        </span>
+                      </div>
+                    </div>
 
-                    <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
-                      <td>Overheads & Staff Expenses</td>
-                      <td colSpan={monthsList.length + 1} />
-                    </tr>
+                    <div style={{ position: 'relative', flex: 1, minHeight: '200px' }}>
+                      {(() => {
+                        const width = 600;
+                        const height = 200;
+                        const paddingLeft = 55;
+                        const paddingRight = 15;
+                        const paddingTop = 15;
+                        const paddingBottom = 30;
 
-                    {/* Apportioned Overheads & SaaS (Expandable) */}
-                    <tr style={{ fontWeight: 400 }}>
-                      <td style={{ paddingLeft: '24px', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setExpandedExpenses(!expandedExpenses)}>
-                        <span style={{ fontSize: '10px', color: 'var(--accent)' }}>{expandedExpenses ? '▼' : '▶'}</span>
-                        <span style={{ fontWeight: 600 }}>Apportioned Overheads & SaaS</span>
-                      </td>
-                      {rowData.map((row, idx) => {
-                        const monthKey = monthsList[idx];
-                        const val = row.overheadsExpenses || 0;
+                        const chartWidth = width - paddingLeft - paddingRight;
+                        const chartHeight = height - paddingTop - paddingBottom;
+
+                        const maxVal = Math.max(
+                          ...rowData.map(r => Math.max(r.revenue || 0, (r.commissions || 0) + (r.overheadsExpenses || 0))),
+                          1000
+                        ) * 1.15;
+
+                        const colWidth = chartWidth / rowData.length;
+                        const barWidth = Math.max(6, colWidth * 0.3);
+
+                        const gridCount = 4;
+                        const gridLines = Array.from({ length: gridCount + 1 }).map((_, idx) => {
+                          const val = (maxVal / gridCount) * idx;
+                          const y = height - paddingBottom - (val / maxVal) * chartHeight;
+                          return { val, y };
+                        });
+
                         return (
-                          <td 
-                            key={idx} 
-                            style={{ textAlign: 'right', cursor: val > 0 ? 'pointer' : 'default' }}
-                            onClick={() => val > 0 && handleCellClick('Apportioned Overheads & SaaS', 'overheadsExpenses', monthKey, val)}
-                            title={val > 0 ? `Click to view all overhead expenses for ${monthKey}` : undefined}
-                          >
-                            {formatGBP(val)}
-                          </td>
-                        );
-                      })}
-                      <td 
-                        style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer' }}
-                        onClick={() => handleCellClick('Apportioned Overheads & SaaS', 'overheadsExpenses', null, rowData.reduce((acc, row) => acc + (row.overheadsExpenses || 0), 0))}
-                      >
-                        {formatGBP(rowData.reduce((acc, row) => acc + (row.overheadsExpenses || 0), 0))}
-                      </td>
-                    </tr>
+                          <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="100%" style={{ overflow: 'visible' }}>
+                            <defs>
+                              <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#10b981" stopOpacity="0.85" />
+                                <stop offset="100%" stopColor="#10b981" stopOpacity="0.25" />
+                              </linearGradient>
+                              <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#ef4444" stopOpacity="0.85" />
+                                <stop offset="100%" stopColor="#ef4444" stopOpacity="0.25" />
+                              </linearGradient>
+                            </defs>
 
-                    {/* Sub-rows for each nominal code category when expanded */}
-                    {expandedExpenses && (() => {
-                      const codeKeys = Array.from(new Set(
-                        rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
-                      )).sort();
+                            {gridLines.map((line, idx) => (
+                              <g key={idx}>
+                                <line 
+                                  x1={paddingLeft} 
+                                  y1={line.y} 
+                                  x2={width - paddingRight} 
+                                  y2={line.y} 
+                                  stroke="var(--border-color)" 
+                                  strokeWidth={0.5} 
+                                  strokeDasharray={idx === 0 ? "none" : "3,3"}
+                                />
+                                <text 
+                                  x={paddingLeft - 8} 
+                                  y={line.y + 3} 
+                                  textAnchor="end" 
+                                  fill="var(--text-muted)" 
+                                  fontSize="9px" 
+                                  fontFamily="monospace"
+                                >
+                                  {formatGBP(line.val, 0)}
+                                </text>
+                              </g>
+                            ))}
 
-                      return codeKeys.map(code => {
-                        const ytdSum = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
-                        return (
-                          <tr key={code} style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                            <td 
-                              style={{ paddingLeft: '48px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
-                              onClick={() => handleCellClick(`Nominal Cost: ${code}`, 'nominal', null, ytdSum, code)}
-                              title={`Click to view all itemized ${code} transactions for full period`}
-                            >
-                              <span style={{ color: 'var(--text-muted)' }}>↳</span> {code} 🔍
-                            </td>
                             {rowData.map((row, idx) => {
                               const monthKey = monthsList[idx];
-                              const val = row.nominalBreakdown?.[code] || 0;
+                              const revenue = row.revenue || 0;
+                              const expenses = (row.commissions || 0) + (row.overheadsExpenses || 0);
+                              const xCenter = paddingLeft + idx * colWidth + colWidth / 2;
+
+                              const revHeight = (revenue / maxVal) * chartHeight;
+                              const revY = height - paddingBottom - revHeight;
+                              const revX = xCenter - barWidth - 1.5;
+
+                              const expHeight = (expenses / maxVal) * chartHeight;
+                              const expY = height - paddingBottom - expHeight;
+                              const expX = xCenter + 1.5;
+
+                              const label = new Date(monthKey + '-02').toLocaleDateString(undefined, { month: 'short' });
+                              const isHovered = activeTooltip && activeTooltip.index === idx && activeTooltip.chart === 'trend';
+
                               return (
-                                <td 
-                                  key={idx} 
-                                  style={{ 
-                                    textAlign: 'right', 
-                                    opacity: val > 0 ? 0.9 : 0.4, 
-                                    cursor: val > 0 ? 'pointer' : 'default',
-                                    fontWeight: val > 0 ? 600 : 400
-                                  }}
-                                  onClick={() => val > 0 && handleCellClick(`Nominal Cost: ${code}`, 'nominal', monthKey, val, code)}
-                                  title={val > 0 ? `Click to view ${code} transactions for ${monthKey}` : undefined}
-                                >
-                                  {val > 0 ? formatGBP(val) : '—'}
-                                </td>
+                                <g key={idx}>
+                                  <rect
+                                    x={paddingLeft + idx * colWidth}
+                                    y={paddingTop}
+                                    width={colWidth}
+                                    height={chartHeight}
+                                    fill="currentColor"
+                                    opacity={isHovered ? 0.03 : 0}
+                                    style={{ pointerEvents: 'none' }}
+                                  />
+                                  {revenue > 0 && (
+                                    <rect x={revX} y={revY} width={barWidth} height={revHeight} fill="url(#revGrad)" rx={1.5} />
+                                  )}
+                                  {expenses > 0 && (
+                                    <rect x={expX} y={expY} width={barWidth} height={expHeight} fill="url(#expGrad)" rx={1.5} />
+                                  )}
+                                  <text
+                                    x={xCenter}
+                                    y={height - paddingBottom + 16}
+                                    textAnchor="middle"
+                                    fill={isHovered ? "var(--accent)" : "var(--text-secondary)"}
+                                    fontSize="9px"
+                                    fontWeight={isHovered ? 700 : 500}
+                                  >
+                                    {label}
+                                  </text>
+                                  <rect
+                                    x={paddingLeft + idx * colWidth}
+                                    y={paddingTop}
+                                    width={colWidth}
+                                    height={chartHeight}
+                                    fill="transparent"
+                                    style={{ cursor: 'pointer' }}
+                                    onMouseEnter={(e) => {
+                                      setActiveTooltip({
+                                        chart: 'trend',
+                                        index: idx,
+                                        x: xCenter,
+                                        y: Math.min(revY, expY) - 10,
+                                        month: new Date(monthKey + '-02').toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+                                        revenue,
+                                        expenses,
+                                        profit: row.netProfit
+                                      });
+                                    }}
+                                    onMouseLeave={() => setActiveTooltip(null)}
+                                  />
+                                </g>
                               );
                             })}
-                            <td 
-                              style={{ textAlign: 'right', fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)', opacity: ytdSum > 0 ? 0.9 : 0.4, cursor: ytdSum > 0 ? 'pointer' : 'default' }}
-                              onClick={() => ytdSum > 0 && handleCellClick(`Nominal Cost: ${code}`, 'nominal', null, ytdSum, code)}
-                            >
-                              {formatGBP(ytdSum)}
-                            </td>
-                          </tr>
+
+                            {activeTooltip && activeTooltip.chart === 'trend' && (
+                              <g>
+                                <line x1={activeTooltip.x} y1={paddingTop} x2={activeTooltip.x} y2={height - paddingBottom} stroke="var(--accent)" strokeWidth={0.75} strokeDasharray="2,2" />
+                                <foreignObject
+                                  x={Math.max(paddingLeft, Math.min(width - paddingRight - 150, activeTooltip.x - 75))}
+                                  y={Math.max(5, activeTooltip.y - 85)}
+                                  width={160}
+                                  height={95}
+                                  pointerEvents="none"
+                                >
+                                  <div style={{
+                                    backgroundColor: 'var(--bg-sidebar)',
+                                    border: '1px solid var(--accent)',
+                                    borderRadius: '4px',
+                                    padding: '6px 8px',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '2px',
+                                    fontSize: '10px'
+                                  }}>
+                                    <strong style={{ color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '3px', marginBottom: '3px', display: 'block' }}>
+                                      {activeTooltip.month}
+                                    </strong>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                      <span style={{ color: 'var(--text-muted)' }}>Billings:</span>
+                                      <span style={{ color: 'var(--success)', fontWeight: 700 }}>{formatGBP(activeTooltip.revenue)}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                      <span style={{ color: 'var(--text-muted)' }}>Expenses:</span>
+                                      <span style={{ color: 'var(--danger)', fontWeight: 700 }}>{formatGBP(activeTooltip.expenses)}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-color)', paddingTop: '2px', marginTop: '2px' }}>
+                                      <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Net Profit:</span>
+                                      <span style={{ color: activeTooltip.profit >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 800 }}>
+                                        {formatGBP(activeTooltip.profit)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </foreignObject>
+                              </g>
+                            )}
+                          </svg>
                         );
-                      });
-                    })()}
-                    {renderRow('Total Indirect Overheads', 'totalOverheads', true, true, 'var(--text-secondary)')}
+                      })()}
+                    </div>
+                  </div>
 
-                    <tr style={{ borderTop: '2px solid var(--border-color)' }} />
+                  {/* Chart 2: Top Recruiter Yields */}
+                  <div style={{
+                    backgroundColor: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '20px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '16px',
+                    boxShadow: 'var(--shadow-md)',
+                    minHeight: '320px'
+                  }}>
+                    <h4 style={{ fontSize: '13px', fontWeight: 700, margin: 0 }}>Top 5 Recruiter Billings Yield</h4>
                     
-                    <tr style={{ fontWeight: 700, backgroundColor: 'rgba(16, 185, 129, 0.04)', fontSize: '13px' }}>
-                      <td style={{ color: 'var(--success)' }}>EBITDA Net Profit Margin</td>
-                      {rowData.map((row, idx) => (
-                        <td key={idx} style={{ textAlign: 'right', color: row.netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                          {formatGBP(row.netProfit)}
-                        </td>
-                      ))}
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
-                        {formatGBP(rowData.reduce((acc, r) => acc + r.netProfit, 0))}
-                      </td>
-                    </tr>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, justifyContent: 'center' }}>
+                      {(() => {
+                        const topRecs = staff.map(rec => {
+                          if (!companyFilter.includes('all') && !companyFilter.includes(rec.companyId)) return null;
+                          if (!deptFilter.includes('all') && !deptFilter.includes(rec.department)) return null;
 
-                    {/* Cumulative Carry-Forward P&L Row */}
-                    {(() => {
-                      let cumulativePnl = 0;
+                          const recPlacements = placements.filter(p => {
+                            if (!p.startDate || p.status === 'dns') return false;
+                            const startMonthKey = p.startDate.substring(0, 7);
+                            if (startMonthKey < startMonth || startMonthKey > endMonth) return false;
+                            return p.splits?.some(s => s.staffId === rec.id);
+                          });
+
+                          const totalVal = recPlacements.reduce((sum, p) => {
+                            const split = p.splits.find(s => s.staffId === rec.id);
+                            const share = split ? (p.netScoreValue * split.percentage) / 100 : 0;
+                            return sum + toGBP(share, 'GBP');
+                          }, 0);
+
+                          return { fullName: rec.fullName || 'Unknown', totalVal };
+                        })
+                        .filter(Boolean)
+                        .filter(item => item.totalVal > 0)
+                        .sort((a, b) => b.totalVal - a.totalVal)
+                        .slice(0, 5);
+
+                        if (topRecs.length === 0) {
+                          return (
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0' }}>
+                              No recruiter billings recorded in this period.
+                            </div>
+                          );
+                        }
+
+                        const maxYield = Math.max(...topRecs.map(r => r.totalVal), 1);
+
+                        return topRecs.map((item, idx) => {
+                          const percent = (item.totalVal / maxYield) * 100;
+                          return (
+                            <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 600 }}>
+                                <span>{idx + 1}. {item.fullName}</span>
+                                <span style={{ color: 'var(--success)', fontFamily: 'monospace' }}>{formatGBP(item.totalVal)}</span>
+                              </div>
+                              <div style={{ width: '100%', height: '8px', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '4px', overflow: 'hidden' }}>
+                                <div 
+                                  style={{ 
+                                    width: `${percent}%`, 
+                                    height: '100%', 
+                                    background: 'linear-gradient(90deg, var(--accent) 0%, #38bdf8 100%)', 
+                                    borderRadius: '4px'
+                                  }} 
+                                />
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Chart 3: Salary-to-Billings Efficiency Progress Circle */}
+                  <div style={{
+                    backgroundColor: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '20px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '16px',
+                    boxShadow: 'var(--shadow-md)',
+                    minHeight: '320px'
+                  }}>
+                    <h4 style={{ fontSize: '13px', fontWeight: 700, margin: 0 }}>Salary-to-Billings Efficiency ROI</h4>
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '20px', padding: '10px 0' }}>
+                      
+                      {/* SVG Gauge */}
+                      <div style={{ width: '100px', height: '100px', position: 'relative' }}>
+                        {(() => {
+                          const r = 40;
+                          const circ = 2 * Math.PI * r;
+                          const offset = circ - (Math.min(100, overallCompToBillingsRatio) / 100) * circ;
+                          return (
+                            <svg width="100%" height="100%" viewBox="0 0 100 100">
+                              <circle 
+                                cx="50" 
+                                cy="50" 
+                                r={r} 
+                                fill="transparent" 
+                                stroke="rgba(255, 255, 255, 0.05)" 
+                                strokeWidth="8" 
+                              />
+                              <circle 
+                                cx="50" 
+                                cy="50" 
+                                r={r} 
+                                fill="transparent" 
+                                stroke="var(--accent)" 
+                                strokeWidth="8" 
+                                strokeDasharray={circ}
+                                strokeDashoffset={offset}
+                                strokeLinecap="round"
+                                transform="rotate(-90 50 50)"
+                                style={{ transition: 'stroke-dashoffset 0.6s ease-in-out' }}
+                              />
+                              <text 
+                                x="50" 
+                                y="54" 
+                                textAnchor="middle" 
+                                fill="var(--text-primary)" 
+                                fontSize="12px" 
+                                fontWeight="800"
+                                fontFamily="monospace"
+                              >
+                                {overallCompToBillingsRatio > 0 ? `${overallCompToBillingsRatio.toFixed(1)}%` : '0%'}
+                              </text>
+                            </svg>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Distribution breakdown */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>Overall Compensation/Billings:</span>
+                          <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--accent)' }}>
+                            {formatGBP(totalRecPaid)} / {formatGBP(totalRecBillings)}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
+                          <div style={{ display: 'flex', justify: 'space-between', alignItems: 'center', fontSize: '10px' }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span style={{ display: 'inline-block', width: '6px', height: '6px', backgroundColor: 'var(--success)', borderRadius: '50%' }} />
+                              Superb (≤30%):
+                            </span>
+                            <span style={{ fontWeight: 700 }}>{superb} recruiter(s)</span>
+                          </div>
+                          <div style={{ display: 'flex', justify: 'space-between', alignItems: 'center', fontSize: '10px' }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span style={{ display: 'inline-block', width: '6px', height: '6px', backgroundColor: '#38bdf8', borderRadius: '50%' }} />
+                              Good (31-60%):
+                            </span>
+                            <span style={{ fontWeight: 700 }}>{good} recruiter(s)</span>
+                          </div>
+                          <div style={{ display: 'flex', justify: 'space-between', alignItems: 'center', fontSize: '10px' }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span style={{ display: 'inline-block', width: '6px', height: '6px', backgroundColor: 'var(--warning)', borderRadius: '50%' }} />
+                              High Cost (&gt;60%):
+                            </span>
+                            <span style={{ fontWeight: 700 }}>{highCost} recruiter(s)</span>
+                          </div>
+                          <div style={{ display: 'flex', justify: 'space-between', alignItems: 'center', fontSize: '10px' }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span style={{ display: 'inline-block', width: '6px', height: '6px', backgroundColor: 'var(--text-muted)', borderRadius: '50%' }} />
+                              Low/No Billings:
+                            </span>
+                            <span style={{ fontWeight: 700 }}>{low} recruiter(s)</span>
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+            )}
+
+            {/* Numerical P&L Table Container */}
+            <div className="table-container" style={{ overflowX: 'auto', width: '100%' }}>
+              <table className="entity-table dense" style={{ minWidth: '1200px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                    <th style={{ minWidth: '220px', fontWeight: 700 }}>P&L Account Line Items (GBP)</th>
+                    {monthsList.map(m => {
+                      const label = new Date(m + '-02').toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+                      return <th key={m} style={{ textAlign: 'right', fontWeight: 700 }}>{label}</th>;
+                    })}
+                    <th style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.04)' }}>Period Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
+                    <td>Revenue stream credits</td>
+                    <td colSpan={monthsList.length + 1} />
+                  </tr>
+                  {renderRow('Net Placements Fee Billings', 'revenue', false, true, 'var(--success)')}
+                  
+                  <tr style={{ borderBottom: '1px solid var(--border-color)' }} />
+                  
+                  <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
+                    <td>Direct cost (Recruiter Commissions)</td>
+                    <td colSpan={monthsList.length + 1} />
+                  </tr>
+                  {renderRow('Accrued Recruiter Commissions', 'commissions', false, true, 'var(--danger)')}
+
+                  <tr style={{ borderBottom: '1px solid var(--border-color)' }} />
+
+                  {renderRow('Gross Profit Margin', 'grossProfit', true, false, 'var(--accent)')}
+
+                  <tr style={{ borderBottom: '1px dashed var(--border-color)', height: '8px' }} />
+
+                  <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
+                    <td>Overheads & Staff Expenses</td>
+                    <td colSpan={monthsList.length + 1} />
+                  </tr>
+
+                  {/* Apportioned Overheads & SaaS (Expandable) */}
+                  <tr style={{ fontWeight: 400 }}>
+                    <td style={{ paddingLeft: '24px', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setExpandedExpenses(!expandedExpenses)}>
+                      <span style={{ fontSize: '10px', color: 'var(--accent)' }}>{expandedExpenses ? '▼' : '▶'}</span>
+                      <span style={{ fontWeight: 600 }}>Apportioned Overheads & SaaS</span>
+                    </td>
+                    {rowData.map((row, idx) => {
+                      const monthKey = monthsList[idx];
+                      const val = row.overheadsExpenses || 0;
                       return (
-                        <tr style={{ fontWeight: 800, backgroundColor: 'rgba(59, 130, 246, 0.07)', fontSize: '13px', borderTop: '1px dashed rgba(59, 130, 246, 0.3)' }}>
-                          <td style={{ color: '#38bdf8' }}>📈 Cumulative Carry-Forward P&L</td>
+                        <td 
+                          key={idx} 
+                          style={{ textAlign: 'right', cursor: val > 0 ? 'pointer' : 'default' }}
+                          onClick={() => val > 0 && handleCellClick('Apportioned Overheads & SaaS', 'overheadsExpenses', monthKey, val)}
+                          title={val > 0 ? `Click to view all overhead expenses for ${monthKey}` : undefined}
+                        >
+                          {formatGBP(val)}
+                        </td>
+                      );
+                    })}
+                    <td 
+                      style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer' }}
+                      onClick={() => handleCellClick('Apportioned Overheads & SaaS', 'overheadsExpenses', null, rowData.reduce((acc, row) => acc + (row.overheadsExpenses || 0), 0))}
+                    >
+                      {formatGBP(rowData.reduce((acc, row) => acc + (row.overheadsExpenses || 0), 0))}
+                    </td>
+                  </tr>
+
+                  {/* Sub-rows for each nominal code category when expanded */}
+                  {expandedExpenses && (() => {
+                    const codeKeys = Array.from(new Set(
+                      rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
+                    )).sort();
+
+                    return codeKeys.map(code => {
+                      const ytdSum = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
+                      return (
+                        <tr key={code} style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                          <td 
+                            style={{ paddingLeft: '48px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                            onClick={() => handleCellClick(`Nominal Cost: ${code}`, 'nominal', null, ytdSum, code)}
+                            title={`Click to view all itemized ${code} transactions for full period`}
+                          >
+                            <span style={{ color: 'var(--text-muted)' }}>↳</span> {code} 🔍
+                          </td>
                           {rowData.map((row, idx) => {
-                            cumulativePnl += row.netProfit;
+                            const monthKey = monthsList[idx];
+                            const val = row.nominalBreakdown?.[code] || 0;
                             return (
-                              <td key={idx} style={{ textAlign: 'right', color: cumulativePnl >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 800 }}>
-                                {formatGBP(cumulativePnl)}
+                              <td 
+                                key={idx} 
+                                style={{ 
+                                  textAlign: 'right', 
+                                  opacity: val > 0 ? 0.9 : 0.4, 
+                                  cursor: val > 0 ? 'pointer' : 'default',
+                                  fontWeight: val > 0 ? 600 : 400
+                                }}
+                                onClick={() => val > 0 && handleCellClick(`Nominal Cost: ${code}`, 'nominal', monthKey, val, code)}
+                                title={val > 0 ? `Click to view itemized ${code} expenses for ${monthKey}` : undefined}
+                              >
+                                {formatGBP(val)}
                               </td>
                             );
                           })}
-                          <td style={{ textAlign: 'right', fontWeight: 800, color: cumulativePnl >= 0 ? 'var(--success)' : 'var(--danger)', backgroundColor: 'rgba(255,255,255,0.04)' }}>
-                            {formatGBP(cumulativePnl)}
+                          <td 
+                            style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer' }}
+                            onClick={() => handleCellClick(`Nominal Cost: ${code}`, 'nominal', null, ytdSum, code)}
+                          >
+                            {formatGBP(ytdSum)}
                           </td>
                         </tr>
                       );
-                    })()}
+                    });
+                  })()}
+                  {renderRow('Total Indirect Overheads', 'totalOverheads', true, true, 'var(--text-secondary)')}
 
-                    <tr style={{ borderBottom: '1px solid var(--border-color)', height: '12px' }} />
-
-                    <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
-                      <td>Non-P&L Balance Sheet Items (Cash Flow Only)</td>
-                      <td colSpan={monthsList.length + 1} />
-                    </tr>
-
-                    <tr style={{ fontWeight: 400 }}>
-                      <td style={{ paddingLeft: '24px', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setExpandedBalanceSheet(!expandedBalanceSheet)}>
-                        <span style={{ fontSize: '10px', color: 'var(--accent)' }}>{expandedBalanceSheet ? '▼' : '▶'}</span>
-                        <span style={{ fontWeight: 600 }}>Refundable Deposits & Prepayments</span>
+                  <tr style={{ borderTop: '2px solid var(--border-color)' }} />
+                  
+                  <tr style={{ fontWeight: 700, backgroundColor: 'rgba(16, 185, 129, 0.04)', fontSize: '13px' }}>
+                    <td style={{ color: 'var(--success)' }}>EBITDA Net Profit Margin</td>
+                    {rowData.map((row, idx) => (
+                      <td key={idx} style={{ textAlign: 'right', color: row.netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                        {formatGBP(row.netProfit)}
                       </td>
-                      {rowData.map((row, idx) => {
-                        const monthKey = monthsList[idx];
-                        const val = row.balanceSheetTotal || 0;
-                        return (
-                          <td 
-                            key={idx} 
-                            style={{ textAlign: 'right', cursor: val > 0 ? 'pointer' : 'default', color: 'var(--text-muted)' }}
-                            onClick={() => val > 0 && handleCellClick('Refundable Deposits & Prepayments', 'balanceSheet', monthKey, val)}
-                            title={val > 0 ? `Click to view balance sheet items for ${monthKey}` : undefined}
-                          >
-                            {val > 0 ? formatGBP(val) : '—'}
-                          </td>
-                        );
-                      })}
-                      <td 
-                        style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer', color: 'var(--text-muted)' }}
-                        onClick={() => handleCellClick('Refundable Deposits & Prepayments', 'balanceSheet', null, rowData.reduce((acc, row) => acc + (row.balanceSheetTotal || 0), 0))}
-                      >
-                        {formatGBP(rowData.reduce((acc, row) => acc + (row.balanceSheetTotal || 0), 0))}
-                      </td>
-                    </tr>
+                    ))}
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                      {formatGBP(rowData.reduce((acc, r) => acc + r.netProfit, 0))}
+                    </td>
+                  </tr>
 
-                    {/* Sub-rows for each balance sheet nominal code when expanded */}
-                    {expandedBalanceSheet && (() => {
-                      const codeKeys = Array.from(new Set(
-                        rowData.flatMap(r => Object.keys(r.balanceSheetBreakdown || {}))
-                      )).sort();
-
-                      return codeKeys.map(code => {
-                        const ytdSum = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0);
-                        return (
-                          <tr key={code} style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                            <td 
-                              style={{ paddingLeft: '48px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
-                              onClick={() => ytdSum > 0 && handleCellClick(`Balance Sheet item: ${code}`, 'balanceSheet', null, ytdSum, code)}
-                              title={ytdSum > 0 ? `Click to view all itemized ${code} transactions` : undefined}
-                            >
-                              <span style={{ color: 'var(--text-muted)' }}>↳</span> {code} 🔍
+                  {/* Cumulative Carry-Forward P&L Row */}
+                  {(() => {
+                    let cumulativePnl = 0;
+                    return (
+                      <tr style={{ fontWeight: 800, backgroundColor: 'rgba(59, 130, 246, 0.07)', fontSize: '13px', borderTop: '1px dashed rgba(59, 130, 246, 0.3)' }}>
+                        <td style={{ color: '#38bdf8' }}>📈 Cumulative Carry-Forward P&L</td>
+                        {rowData.map((row, idx) => {
+                          cumulativePnl += row.netProfit;
+                          return (
+                            <td key={idx} style={{ textAlign: 'right', color: cumulativePnl >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 800 }}>
+                              {formatGBP(cumulativePnl)}
                             </td>
-                            {rowData.map((row, idx) => {
-                              const monthKey = monthsList[idx];
-                              const val = row.balanceSheetBreakdown?.[code] || 0;
-                              return (
-                                <td 
-                                  key={idx} 
-                                  style={{ 
-                                    textAlign: 'right', 
-                                    opacity: val > 0 ? 0.9 : 0.4, 
-                                    cursor: val > 0 ? 'pointer' : 'default',
-                                    fontWeight: val > 0 ? 600 : 400
-                                  }}
-                                  onClick={() => val > 0 && handleCellClick(`Balance Sheet item: ${code}`, 'balanceSheet', monthKey, val, code)}
-                                  title={val > 0 ? `Click to view ${code} transactions for ${monthKey}` : undefined}
-                                >
-                                  {val > 0 ? formatGBP(val) : '—'}
-                                </td>
-                              );
-                            })}
-                            <td 
-                              style={{ textAlign: 'right', fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)', opacity: ytdSum > 0 ? 0.9 : 0.4, cursor: ytdSum > 0 ? 'pointer' : 'default' }}
-                              onClick={() => ytdSum > 0 && handleCellClick(`Balance Sheet item: ${code}`, 'balanceSheet', null, ytdSum, code)}
-                            >
-                              {formatGBP(ytdSum)}
-                            </td>
-                          </tr>
-                        );
-                      });
-                    })()}
+                          );
+                        })}
+                        <td style={{ textAlign: 'right', fontWeight: 800, color: cumulativePnl >= 0 ? 'var(--success)' : 'var(--danger)', backgroundColor: 'rgba(255,255,255,0.04)' }}>
+                          {formatGBP(cumulativePnl)}
+                        </td>
+                      </tr>
+                    );
+                  })()}
 
-                    <tr style={{ borderBottom: '1px solid var(--border-color)', height: '12px' }} />
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', height: '12px' }} />
 
-                    <tr style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                      <td 
-                        onClick={() => setDrilldownState({ categoryKey: 'staffCount', label: 'Staff Count in Apportionment', amount: rowData.reduce((acc, r) => acc + r.headcount, 0), monthKey: null })} 
-                        style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--primary)' }}
-                        title="Click to view all staff members included in apportionment"
-                      >
-                        Staff Count in Apportionment 🔍
-                      </td>
-                      {rowData.map((row, idx) => (
+                  <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
+                    <td>Non-P&L Balance Sheet Items (Cash Flow Only)</td>
+                    <td colSpan={monthsList.length + 1} />
+                  </tr>
+
+                  <tr style={{ fontWeight: 400 }}>
+                    <td style={{ paddingLeft: '24px', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setExpandedBalanceSheet(!expandedBalanceSheet)}>
+                      <span style={{ fontSize: '10px', color: 'var(--accent)' }}>{expandedBalanceSheet ? '▼' : '▶'}</span>
+                      <span style={{ fontWeight: 600 }}>Refundable Deposits & Prepayments</span>
+                    </td>
+                    {rowData.map((row, idx) => {
+                      const monthKey = monthsList[idx];
+                      const val = row.balanceSheetTotal || 0;
+                      return (
                         <td 
                           key={idx} 
-                          onClick={() => setDrilldownState({ categoryKey: 'staffCount', label: 'Staff Count in Apportionment', amount: row.headcount, monthKey: monthsList[idx] })}
-                          style={{ textAlign: 'right', cursor: 'pointer', fontWeight: 700, color: 'var(--primary)', textDecoration: 'underline' }}
-                          title={`Click to view ${row.headcount} active staff members for ${monthsList[idx]}`}
+                          style={{ textAlign: 'right', cursor: val > 0 ? 'pointer' : 'default', color: 'var(--text-muted)' }}
+                          onClick={() => val > 0 && handleCellClick('Refundable Deposits & Prepayments', 'balanceSheet', monthKey, val)}
+                          title={val > 0 ? `Click to view balance sheet items for ${monthKey}` : undefined}
                         >
-                          {row.headcount} active
+                          {val > 0 ? formatGBP(val) : '—'}
                         </td>
-                      ))}
-                      <td style={{ textAlign: 'right', backgroundColor: 'rgba(255,255,255,0.02)' }}>—</td>
-                    </tr>
-                  </>
-                );
-              })()}
-            </tbody>
-          </table>
-        </div>
-      )}
+                      );
+                    })}
+                    <td 
+                      style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer', color: 'var(--text-muted)' }}
+                      onClick={() => handleCellClick('Refundable Deposits & Prepayments', 'balanceSheet', null, rowData.reduce((acc, row) => acc + (row.balanceSheetTotal || 0), 0))}
+                    >
+                      {formatGBP(rowData.reduce((acc, row) => acc + (row.balanceSheetTotal || 0), 0))}
+                    </td>
+                  </tr>
+
+                  {/* Sub-rows for each balance sheet nominal code when expanded */}
+                  {expandedBalanceSheet && (() => {
+                    const codeKeys = Array.from(new Set(
+                      rowData.flatMap(r => Object.keys(r.balanceSheetBreakdown || {}))
+                    )).sort();
+
+                    return codeKeys.map(code => {
+                      const ytdSum = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0);
+                      return (
+                        <tr key={code} style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                          <td 
+                            style={{ paddingLeft: '48px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                            onClick={() => handleCellClick(`Balance Sheet Item: ${code}`, 'balanceSheet', null, ytdSum, code)}
+                            title={`Click to view all itemized ${code} transactions for full period`}
+                          >
+                            <span style={{ color: 'var(--text-muted)' }}>↳</span> {code} 🔍
+                          </td>
+                          {rowData.map((row, idx) => {
+                            const monthKey = monthsList[idx];
+                            const val = row.balanceSheetBreakdown?.[code] || 0;
+                            return (
+                              <td 
+                                key={idx} 
+                                style={{ 
+                                  textAlign: 'right', 
+                                  opacity: val > 0 ? 0.9 : 0.4, 
+                                  cursor: val > 0 ? 'pointer' : 'default',
+                                  fontWeight: val > 0 ? 600 : 400
+                                }}
+                                onClick={() => val > 0 && handleCellClick(`Balance Sheet Item: ${code}`, 'balanceSheet', monthKey, val, code)}
+                                title={val > 0 ? `Click to view itemized ${code} transactions for ${monthKey}` : undefined}
+                              >
+                                {val > 0 ? formatGBP(val) : '—'}
+                              </td>
+                            );
+                          })}
+                          <td 
+                            style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer' }}
+                            onClick={() => handleCellClick(`Balance Sheet Item: ${code}`, 'balanceSheet', null, ytdSum, code)}
+                          >
+                            {formatGBP(ytdSum)}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', height: '12px' }} />
+
+                  <tr style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                    <td 
+                      onClick={() => setDrilldownState({ categoryKey: 'staffCount', label: 'Staff Count in Apportionment', amount: rowData.reduce((acc, r) => acc + r.headcount, 0), monthKey: null })} 
+                      style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--primary)' }}
+                      title="Click to view all staff members included in apportionment"
+                    >
+                      Staff Count in Apportionment 🔍
+                    </td>
+                    {rowData.map((row, idx) => (
+                      <td 
+                        key={idx} 
+                        onClick={() => setDrilldownState({ categoryKey: 'staffCount', label: 'Staff Count in Apportionment', amount: row.headcount, monthKey: monthsList[idx] })}
+                        style={{ textAlign: 'right', cursor: 'pointer', fontWeight: 700, color: 'var(--primary)', textDecoration: 'underline' }}
+                        title={`Click to view ${row.headcount} active staff members for ${monthsList[idx]}`}
+                      >
+                        {row.headcount} active
+                      </td>
+                    ))}
+                    <td style={{ textAlign: 'right', backgroundColor: 'rgba(255,255,255,0.02)' }}>—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+        );
+      })()}
+
 
       {/* ==============================================================
           TAB 2: DIVISIONAL COMPARISONS (COMPANIES SIDE BY SIDE)

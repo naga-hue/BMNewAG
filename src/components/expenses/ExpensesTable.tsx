@@ -105,12 +105,19 @@ export default function ExpensesTable({
   useEffect(() => {
     if (reconcilingExpense) {
       const exp = reconcilingExpense;
-      const monthVal = exp.plMonth || (exp.date ? exp.date.substring(0, 7) : new Date().toISOString().substring(0, 7));
+      let monthVal = exp.plMonth || (exp.date ? exp.date.substring(0, 7) : new Date().toISOString().substring(0, 7));
+      if (exp.id === 'bulk') {
+        const firstId = selectedExpenseIds[0];
+        const firstExp = expenses.find(e => e.id === firstId);
+        if (firstExp) {
+          monthVal = firstExp.plMonth || (firstExp.date ? firstExp.date.substring(0, 7) : new Date().toISOString().substring(0, 7));
+        }
+      }
       setTargetMonth(monthVal);
       
       setAmortize(exp.amortize || false);
       setAmortizeMonths(exp.amortizeMonths || 36);
-      setAmortizeStartMonth(exp.amortizeStartMonth || monthVal);
+      setAmortizeStartMonth(exp.amortizeStartMonth && exp.amortizeStartMonth !== 'Bulk Selection' ? exp.amortizeStartMonth : monthVal);
       setAmortizeNominalCode(exp.amortizeNominalCode || exp.nominalCode || '');
 
       if (exp.id === 'bulk') {

@@ -1014,7 +1014,9 @@ export default function ReportsDashboard({
     const amortizedExpenses = (expenses || []).filter(e => e.amortize === true);
     amortizedExpenses.forEach(exp => {
       if (exp.status === 'dns' || exp.status === 'cancelled') return;
-      const startM = exp.amortizeStartMonth || exp.plMonth || (exp.date ? exp.date.substring(0, 7) : '');
+      const startM = (exp.amortizeStartMonth && /^\d{4}-\d{2}$/.test(exp.amortizeStartMonth.trim())) 
+        ? exp.amortizeStartMonth.trim() 
+        : (exp.plMonth || (exp.date ? exp.date.substring(0, 7) : ''));
       if (!startM) return;
       const N = Number(exp.amortizeMonths || 36);
       
@@ -3864,7 +3866,9 @@ export default function ReportsDashboard({
             targetAmortizeMonths.forEach(mKey => {
               amortizedExpensesList.forEach(e => {
                 if (e.status === 'dns' || e.status === 'cancelled') return;
-                const startM = e.amortizeStartMonth || e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+                const startM = (e.amortizeStartMonth && /^\d{4}-\d{2}$/.test(e.amortizeStartMonth.trim())) 
+                   ? e.amortizeStartMonth.trim() 
+                   : (e.plMonth || (e.date ? e.date.substring(0, 7) : ''));
                 if (!startM) return;
                 const N = Number(e.amortizeMonths || 36);
                 

@@ -3974,6 +3974,7 @@ export default function ReportsDashboard({
             const targetMonths = monthKey ? [monthKey] : monthsList.filter(m => m >= '2026-07');
 
             targetMonths.forEach(mKey => {
+              if (mKey < '2026-07') return;
               // 1. Vendor Contracts Projections (7001, 7002 or explicit nominalCode)
               contracts.forEach(contract => {
                 if (!contract.startDate || !contract.endDate) return;

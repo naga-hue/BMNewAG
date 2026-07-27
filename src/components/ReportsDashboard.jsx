@@ -4661,6 +4661,69 @@ export default function ReportsDashboard({
         );
       })()}
 
+      {/* Temporary Audit Debug Section */}
+      <div style={{ marginTop: '40px', padding: '20px', border: '2px dashed var(--danger)', borderRadius: '8px', backgroundColor: 'rgba(239, 68, 68, 0.05)' }}>
+        <h4 style={{ color: 'var(--danger)', marginTop: 0 }}>🔍 AUDIT DEBUGLOG: July 2026 Remote Monitoring Cost Calculation</h4>
+        <pre style={{ fontSize: '11px', whiteSpace: 'pre-wrap', maxHeight: '400px', overflow: 'auto', backgroundColor: '#1e293b', color: '#f8fafc', padding: '12px', borderRadius: '6px' }}>
+          {(() => {
+            try {
+              const debugInfo = [];
+              debugInfo.push(`1. isCloudConnected: ${isCloudConnected}`);
+              debugInfo.push(`2. nominalCodes count: ${nominalCodes.length}`);
+              debugInfo.push(`3. nominalCodes names: ${nominalCodes.map(nc => nc.code).join(', ')}`);
+              
+              // Run breakdown calculation for July
+              const breakdown = getNominalBreakdownForMonth('2026-07');
+              debugInfo.push(`4. July breakdown keys with non-zero values:`);
+              Object.entries(breakdown).forEach(([k, v]) => {
+                if (v > 0) debugInfo.push(`  - ${k}: £${v}`);
+              });
+
+              // Trace contracts mapping
+              debugInfo.push(`5. July Contract Projections trace:`);
+              contracts.forEach(contract => {
+                if (!contract.startDate || !contract.endDate) return;
+                const startM = contract.startDate.substring(0, 7);
+                const endM = contract.endDate.substring(0, 7);
+                if ('2026-07' >= startM && '2026-07' <= endM) {
+                  const vendorObj = vendors.find(v => v.id === contract.vendorId);
+                  let assignedNominal = contract.nominalCode || vendorObj?.nominalCode;
+                  const originalAssigned = assignedNominal || 'undefined';
+                  
+                  if (!assignedNominal) {
+                    const nameLower = contract.name.toLowerCase();
+                    if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
+                      const rentMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('rent') || nc.code.toLowerCase().includes('rates') || nc.code.startsWith('700'));
+                      assignedNominal = rentMatch ? rentMatch.code : 'Unassigned';
+                    } else {
+                      const swMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'));
+                      assignedNominal = swMatch ? swMatch.code : 'Unassigned';
+                    }
+                  }
+                  
+                  const cost = (contract.unitCost || 0) * (contract.quantityPurchased || 1);
+                  debugInfo.push(`  - Contract: "${contract.name}" (Vendor: "${vendorObj?.name || 'Unknown'}")`);
+                  debugInfo.push(`    * cost: ${cost} ${contract.currency}, originalAssigned: "${originalAssigned}", finalNominal: "${assignedNominal}"`);
+                }
+              });
+
+              // Trace actual expenses
+              debugInfo.push(`6. July Actual Expenses trace:`);
+              expenses.forEach(e => {
+                const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+                if (eMonth === '2026-07') {
+                  debugInfo.push(`  - Expense: "${e.payee}" (Nominal: "${e.nominalCode}", amount: ${e.amount} ${e.currency}, status: ${e.status})`);
+                }
+              });
+
+              return debugInfo.join('\n');
+            } catch (err) {
+              return `Error generating debug info: ${err.message}`;
+            }
+          })()}
+        </pre>
+      </div>
+
     </div>
   );
 }

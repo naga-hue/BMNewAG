@@ -4668,8 +4668,7 @@ export default function ReportsDashboard({
           {(() => {
             try {
               const debugInfo = [];
-              debugInfo.push(`1. isCloudConnected: ${firebaseService.isConfigured()}`);
-              debugInfo.push(`2. nominalCodes count: ${nominalCodes.length}`);
+              debugInfo.push(`1. nominalCodes count: ${nominalCodes.length}`);
               debugInfo.push(`3. nominalCodes names: ${nominalCodes.map(nc => nc.code).join(', ')}`);
               
               // Run breakdown calculation for July

@@ -4388,6 +4388,10 @@ export default function ReportsDashboard({
 
             targetMonths.forEach(mKey => {
               if (mKey < '2026-07') return;
+              const groupActiveStaff = staff.filter(st => {
+                const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
+                return daysWorked >= 10;
+              });
               // 1. Vendor Contracts Projections (7001, 7002 or explicit nominalCode)
               contracts.forEach(contract => {
                 if (!contract.startDate || !contract.endDate) return;
@@ -4620,10 +4624,6 @@ export default function ReportsDashboard({
               }
 
               // 4. Staff Payroll/Freelance/Consulting Projections (1001, 1002, 1003, 1004)
-              const groupActiveStaff = staff.filter(st => {
-                const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
-                return daysWorked >= 10;
-              });
 
               staff.forEach(s => {
                 const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, mKey);

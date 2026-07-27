@@ -985,15 +985,16 @@ export default function ReportsDashboard({
             empNi = empNi * proration;
             empPension = empPension * proration;
 
-            const taxNominal = nominalCodes.find(nc => nc.id === '501' || nc.code?.includes('501') || nc.code?.toLowerCase().includes('paye') || nc.code?.toLowerCase().includes('tax') || nc.code?.toLowerCase().includes('ni') || nc.code?.toLowerCase().includes('pension'))?.code || 'Unassigned';
-            if (taxNominal) {
-              // Only add tax/pension overhead if staff member matches active filters
-              const isComp = activeCompanyIds.includes(s.companyId);
-              const isDept = deptFilter.includes('all') || deptFilter.includes(s.department);
-              if (isComp && isDept) {
-                breakdown[taxNominal] = (breakdown[taxNominal] || 0) + (empNi + empPension);
-              }
-            }
+             const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code || '1002 - Salary';
+             const taxNominal = nominalCodes.find(nc => nc.id === '501' || nc.code?.includes('501') || nc.code?.toLowerCase().includes('paye') || nc.code?.toLowerCase().includes('tax') || /\bni\b/i.test(nc.code) || nc.code?.toLowerCase().includes('pension'))?.code || salaryNominal;
+             if (taxNominal) {
+               // Only add tax/pension overhead if staff member matches active filters
+               const isComp = activeCompanyIds.includes(s.companyId);
+               const isDept = deptFilter.includes('all') || deptFilter.includes(s.department);
+               if (isComp && isDept) {
+                 breakdown[taxNominal] = (breakdown[taxNominal] || 0) + (empNi + empPension);
+               }
+             }
           }
 
           // Dynamic nominal routing
@@ -1473,7 +1474,7 @@ export default function ReportsDashboard({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div style={{ alignSelf: 'flex-end', fontSize: '9px', color: 'var(--text-muted)', opacity: 0.5 }}>
-        Build Tag: v2.0.2-drilldown-combined-v2
+        Build Tag: v2.0.3-tax-nominal-fixed
       </div>
       
       {/* Dynamic Global Filters Toolbar */}
@@ -4088,16 +4089,19 @@ export default function ReportsDashboard({
                 }
               });
 
-              // 2. Staff Payroll Taxes & Pension Projections (7003)
-              if (!nominalCode || nominalCode.startsWith('7003') || nominalCode === '7003 - Staff Payroll & Wages') {
-                staff.forEach(s => {
-                  const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, mKey);
-                  if (daysWorked < 10) return;
-                  if (!isCompanyMatch(s.companyId) || !isDeptMatch(s.department)) return;
+              // 2. Staff Payroll Taxes & Pension Projections
+              staff.forEach(s => {
+                const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, mKey);
+                if (daysWorked < 10) return;
+                if (!isCompanyMatch(s.companyId) || !isDeptMatch(s.department)) return;
 
-                  const sPolicy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
-                  const isContractor = s.employmentStatus === 'contractor' || s.employmentStatus === 'freelance' || (sPolicy && sPolicy.type === 'freelance');
-                  if (!isContractor) {
+                const sPolicy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+                const isContractor = s.employmentStatus === 'contractor' || s.employmentStatus === 'freelance' || (sPolicy && sPolicy.type === 'freelance');
+                if (!isContractor) {
+                  const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code || '1002 - Salary';
+                  const taxNominal = nominalCodes.find(nc => nc.id === '501' || nc.code?.includes('501') || nc.code?.toLowerCase().includes('paye') || nc.code?.toLowerCase().includes('tax') || /\bni\b/i.test(nc.code) || nc.code?.toLowerCase().includes('pension'))?.code || salaryNominal;
+
+                  if (!nominalCode || taxNominal === nominalCode || taxNominal.startsWith(nominalCode)) {
                     let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
                     let proration = 1.0;
                     if (s.startDate && s.startDate.substring(0, 7) === mKey) {
@@ -4133,7 +4137,7 @@ export default function ReportsDashboard({
                         date: `${mKey}-01`,
                         plMonth: mKey,
                         payee: `Employer NI & Pension (${s.fullName})`,
-                        nominalCode: '7003 - Staff Payroll & Wages',
+                        nominalCode: taxNominal,
                         recipientType: 'staff',
                         recipientId: s.id,
                         amount: totalTaxes,
@@ -4142,8 +4146,8 @@ export default function ReportsDashboard({
                       });
                     }
                   }
-                });
-              }
+                }
+              });
 
               // 3. Freelancers & Subcontractors Projections (7004)
               if (!nominalCode || nominalCode.startsWith('7004') || nominalCode === '7004 - Freelancers & Subcontractors') {

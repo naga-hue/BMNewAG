@@ -219,8 +219,12 @@ export default function ForecastMatrix({
         let matchingAssignedCount = 0;
         assignedSeats.forEach(a => {
           const member = staff.find(s => s.id === a.staffId);
-          if (member && activeCompanyIds.includes(member.companyId)) {
-            matchingAssignedCount++;
+          if (member) {
+            const staffComp = companies.find(co => co.id === member.companyId);
+            const effectiveCompanyId = staffComp?.country === 'India' ? c.companyId : member.companyId;
+            if (activeCompanyIds.includes(effectiveCompanyId)) {
+              matchingAssignedCount++;
+            }
           }
         });
         const assignedCost = matchingAssignedCount * costPerSeat;

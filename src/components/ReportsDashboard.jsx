@@ -3421,7 +3421,10 @@ export default function ReportsDashboard({
                     assignedSeats.forEach(a => {
                       const member = staff.find(s => s.id === a.staffId);
                       if (member) {
-                        const isComp = isCompanyMatch(member.companyId);
+                        const staffComp = companies.find(co => co.id === member.companyId);
+                        const effectiveCompanyId = staffComp?.country === 'India' ? contract.companyId : member.companyId;
+
+                        const isComp = isCompanyMatch(effectiveCompanyId);
                         const isDept = isDeptMatch(member.department);
                         if (isComp && isDept) {
                           matchingAssignedCount++;

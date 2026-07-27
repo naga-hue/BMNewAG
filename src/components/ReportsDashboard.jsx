@@ -108,6 +108,96 @@ export default function ReportsDashboard({
     }
     return companyFilter.includes(c.id);
   });
+
+  const getContractShareForCompanies = (c, mKey, compIds) => {
+    const splits = c.splits || [];
+    
+    // Filter active staff in the month
+    const activeStaff = staff.filter(s => {
+      const days = getDaysWorkedInMonth(s.startDate, s.exitDate, mKey);
+      return days >= 10;
+    });
+
+    if (c.useHeadcountSplit) {
+      if (splits.length === 0) {
+        // Global headcount split across all consolidated companies
+        const consolidatedComps = companies.filter(co => co.includeInConsolidation !== false).map(co => co.id);
+        const eligibleStaff = activeStaff.filter(s => consolidatedComps.includes(s.companyId));
+        const total = eligibleStaff.length;
+        if (total === 0) return 0;
+        const matchingStaff = eligibleStaff.filter(s => compIds.includes(s.companyId));
+        return matchingStaff.length / total;
+      } else {
+        // Headcount split among targets in splits list
+        const counts = splits.map(s => {
+          if (s.type === 'company') {
+            return activeStaff.filter(member => member.companyId === s.targetId).length;
+          } else if (s.type === 'department') {
+            return activeStaff.filter(member => member.department === s.targetId).length;
+          } else if (s.type === 'user') {
+            return activeStaff.some(member => member.id === s.targetId) ? 1 : 0;
+          }
+          return 0;
+        });
+
+        const totalCount = counts.reduce((a, b) => a + b, 0);
+        if (totalCount <= 0) return 0;
+
+        let companyShare = 0;
+        splits.forEach((s, idx) => {
+          const count = counts[idx];
+          const targetShare = count / totalCount;
+          
+          if (s.type === 'company') {
+            if (compIds.includes(s.targetId)) {
+              companyShare += targetShare;
+            }
+          } else if (s.type === 'department') {
+            const deptStaff = activeStaff.filter(member => member.department === s.targetId);
+            const targetCompStaffCount = deptStaff.filter(member => compIds.includes(member.companyId)).length;
+            if (deptStaff.length > 0) {
+              companyShare += targetShare * (targetCompStaffCount / deptStaff.length);
+            }
+          } else if (s.type === 'user' && s.targetId) {
+            const member = activeStaff.find(member => member.id === s.targetId);
+            if (member && compIds.includes(member.companyId)) {
+              companyShare += targetShare;
+            }
+          }
+        });
+
+        return companyShare;
+      }
+    } else {
+      // Manual splits
+      if (splits.length === 0) {
+        return compIds.includes(c.companyId) ? 1.0 : 0;
+      }
+
+      let companyShare = 0;
+      splits.forEach(s => {
+        const manualPct = Number(s.percentage || 0) / 100;
+        if (s.type === 'company') {
+          if (compIds.includes(s.targetId)) {
+            companyShare += manualPct;
+          }
+        } else if (s.type === 'department') {
+          const deptStaff = activeStaff.filter(member => member.department === s.targetId);
+          const targetCompStaffCount = deptStaff.filter(member => compIds.includes(member.companyId)).length;
+          if (deptStaff.length > 0) {
+            companyShare += manualPct * (targetCompStaffCount / deptStaff.length);
+          }
+        } else if (s.type === 'user' && s.targetId) {
+          const member = activeStaff.find(member => member.id === s.targetId);
+          if (member && compIds.includes(member.companyId)) {
+            companyShare += manualPct;
+          }
+        }
+      });
+
+      return companyShare;
+    }
+  };
   const activeCompanyIds = activeCompaniesForPL.map(c => c.id);
   const [expandedExitedLeaguesPlacements, setExpandedExitedLeaguesLeaguesPlacements] = useState(false);
   const [expandedExitedOverheads, setExpandedExitedOverheads] = useState(false);
@@ -1075,21 +1165,25 @@ export default function ReportsDashboard({
 
             const unusedCount = Math.max(0, totalSeats - assignedSeats.length);
             let unusedCost = 0;
-            if (unusedCount > 0 && activeCompanyIds.includes(contract.companyId)) {
-              let unusedBase = unusedCount * costPerSeat;
-              if (!deptFilter.includes('all')) {
-                const compActiveStaff = groupActiveStaff.filter(s => s.companyId === contract.companyId);
-                const deptActiveStaff = compActiveStaff.filter(s => deptFilter.includes(s.department));
-                unusedBase = unusedBase * (deptActiveStaff.length / (compActiveStaff.length || 1));
+            if (unusedCount > 0) {
+              const share = getContractShareForCompanies(contract, monthKey, activeCompanyIds);
+              if (share > 0) {
+                let unusedBase = unusedCount * costPerSeat * share;
+                if (!deptFilter.includes('all')) {
+                  const compActiveStaff = groupActiveStaff.filter(s => s.companyId === contract.companyId);
+                  const deptActiveStaff = compActiveStaff.filter(s => deptFilter.includes(s.department));
+                  unusedBase = unusedBase * (deptActiveStaff.length / (compActiveStaff.length || 1));
+                }
+                unusedCost = unusedBase;
               }
-              unusedCost = unusedBase;
             }
 
             const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
             gbpCost = toGBP(assignedCost + unusedCost, contract.currency || 'GBP') * taxFactor;
           } else {
-            if (!activeCompanyIds.includes(contract.companyId)) return;
-            let cost = unitMonthlyCost * totalSeats;
+            const share = getContractShareForCompanies(contract, monthKey, activeCompanyIds);
+            if (share <= 0) return;
+            let cost = unitMonthlyCost * totalSeats * share;
             const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
             gbpCost = toGBP(cost, contract.currency || 'GBP') * taxFactor;
 
@@ -3872,27 +3966,31 @@ export default function ReportsDashboard({
 
                     const unusedCount = Math.max(0, totalSeats - assignedSeats.length);
                     let unusedCost = 0;
-                    if (unusedCount > 0 && isCompanyMatch(contract.companyId)) {
-                      let unusedBase = unusedCount * costPerSeat;
-                      if (!deptFilter.includes('all')) {
-                        const compActiveStaff = staff.filter(s => s.companyId === contract.companyId && getDaysWorkedInMonth(s.startDate, s.exitDate, mKey) >= 10);
-                        const deptActiveStaff = compActiveStaff.filter(s => isDeptMatch(s.department));
-                        unusedBase = unusedBase * (deptActiveStaff.length / (compActiveStaff.length || 1));
+                    if (unusedCount > 0) {
+                      const share = getContractShareForCompanies(contract, mKey, activeCompanyIds);
+                      if (share > 0) {
+                        let unusedBase = unusedCount * costPerSeat * share;
+                        if (!deptFilter.includes('all')) {
+                          const compActiveStaff = groupActiveStaff.filter(s => s.companyId === contract.companyId);
+                          const deptActiveStaff = compActiveStaff.filter(s => deptFilter.includes(s.department));
+                          unusedBase = unusedBase * (deptActiveStaff.length / (compActiveStaff.length || 1));
+                        }
+                        unusedCost = unusedBase;
                       }
-                      unusedCost = unusedBase;
                     }
 
                     const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
                     gbpCost = toGBP(assignedCost + unusedCost, contract.currency || 'GBP') * taxFactor;
                   } else {
-                    if (!isCompanyMatch(contract.companyId)) return;
-                    let cost = unitMonthlyCost * totalSeats;
+                    const share = getContractShareForCompanies(contract, mKey, activeCompanyIds);
+                    if (share <= 0) return;
+                    let cost = unitMonthlyCost * totalSeats * share;
                     const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
                     gbpCost = toGBP(cost, contract.currency || 'GBP') * taxFactor;
 
                     if (!deptFilter.includes('all')) {
-                      const compActiveStaff = staff.filter(s => s.companyId === contract.companyId && getDaysWorkedInMonth(s.startDate, s.exitDate, mKey) >= 10);
-                      const deptActiveStaff = compActiveStaff.filter(s => isDeptMatch(s.department));
+                      const compActiveStaff = groupActiveStaff.filter(s => s.companyId === contract.companyId);
+                      const deptActiveStaff = compActiveStaff.filter(s => deptFilter.includes(s.department));
                       if (deptActiveStaff.length === 0) return;
                       gbpCost = gbpCost * (deptActiveStaff.length / (compActiveStaff.length || 1));
                     }

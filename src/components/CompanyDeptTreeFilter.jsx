@@ -154,21 +154,40 @@ export default function CompanyDeptTreeFilter({
     onChange({ companyIds: newCompIds, departments: newDepts });
   };
 
-  const handleToggleDept = (deptName) => {
+  const handleToggleDept = (compId, deptName) => {
     let newDepts = [...selectedDepartments];
     let newCompIds = [...selectedCompanyIds];
 
+    // If currently 'all', expand to actual explicit lists first
+    if (newCompIds.includes('all')) {
+      newCompIds = companies.map(c => c.id);
+    }
     if (newDepts.includes('all')) {
       const allDepts = Array.from(new Set(companyTree.flatMap(c => c.departments)));
       newDepts = allDepts;
     }
 
     if (newDepts.includes(deptName)) {
+      // Unselecting department
       newDepts = newDepts.filter(d => d !== deptName);
+      
+      // If this company still has other departments selected, keep it. Else, unselect.
+      const companyObj = companyTree.find(c => c.id === compId);
+      const hasAnySelectedDept = companyObj?.departments.some(d => newDepts.includes(d));
+      if (!hasAnySelectedDept) {
+        newCompIds = newCompIds.filter(id => id !== compId);
+      }
     } else {
+      // Selecting department
       newDepts.push(deptName);
+      // Automatically check/select the parent company!
+      if (!newCompIds.includes(compId)) {
+        newCompIds.push(compId);
+      }
     }
 
+    // Check if everything selected -> reset to ['all']
+    if (newCompIds.length === companies.length) newCompIds = ['all'];
     const allUniqueDepts = Array.from(new Set(companyTree.flatMap(c => c.departments)));
     if (newDepts.length === allUniqueDepts.length) newDepts = ['all'];
 
@@ -448,7 +467,7 @@ export default function CompanyDeptTreeFilter({
                         return (
                           <div
                             key={dept}
-                            onClick={() => handleToggleDept(dept)}
+                            onClick={() => handleToggleDept(comp.id, dept)}
                             style={{
                               display: 'flex',
                               alignItems: 'center',

@@ -699,10 +699,31 @@ export default function ReportsDashboard({
   };
 
   const getNominalBreakdownForMonth = (monthKey, overrideCompanyId = null) => {
-    const breakdown = {};
+    const targetBreakdown = {};
     nominalCodes.forEach(nc => {
-      breakdown[nc.code] = 0;
+      targetBreakdown[nc.code] = 0;
     });
+
+    const handler = {
+      get(target, prop) {
+        return target[prop];
+      },
+      set(target, prop, value) {
+        const oldValue = target[prop] || 0;
+        const diff = value - oldValue;
+        if (monthKey === '2026-07' && !overrideCompanyId && String(prop).startsWith('8')) {
+          if (!window.rmDebugLog) window.rmDebugLog = [];
+          window.rmDebugLog.push(`[PROXY SET] Key "${prop}": changed from £${oldValue.toFixed(2)} to £${value.toFixed(2)} (diff: +£${diff.toFixed(2)})`);
+          try {
+            const stack = new Error().stack;
+            window.rmDebugLog.push(`  Stack trace: ${stack.split('\n').slice(1, 4).join('\n')}`);
+          } catch (e) {}
+        }
+        target[prop] = value;
+        return true;
+      }
+    };
+    const breakdown = new Proxy(targetBreakdown, handler);
 
     const activeStaff = staff.filter(s => {
       const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
@@ -4714,6 +4735,13 @@ export default function ReportsDashboard({
                   debugInfo.push(`  - Expense: "${e.payee}" (Nominal: "${e.nominalCode}", amount: ${e.amount} ${e.currency}, status: ${e.status})`);
                 }
               });
+
+              debugInfo.push(`\n7. REAL-TIME PROXY TRACE OF ADDITIONS TO "8 - IT-Remote Monitoring":`);
+              if (window.rmDebugLog && window.rmDebugLog.length > 0) {
+                window.rmDebugLog.forEach(logLine => debugInfo.push(logLine));
+              } else {
+                debugInfo.push(`  (No real-time additions logged to 8 - IT-Remote Monitoring)`);
+              }
 
               return debugInfo.join('\n');
             } catch (err) {

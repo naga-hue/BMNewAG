@@ -3926,9 +3926,6 @@ export default function ReportsDashboard({
             });
 
             const finalItems = [...actualItems, ...amortizedShares];
-            if (finalItems.length > 0) {
-              return finalItems;
-            }
 
             // Unbilled Projection Items for 7001, 7002, 7003, 7004 & future nominal cells
             const projectedItems = [];
@@ -4354,7 +4351,7 @@ export default function ReportsDashboard({
               });
             });
 
-            return projectedItems;
+            return [...finalItems, ...projectedItems];
           }
 
           return [];

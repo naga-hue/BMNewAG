@@ -4115,7 +4115,8 @@ export default function ReportsDashboard({
                     let empPension = 0;
                     const comm = calculateCommissionForRecruiter(s.id, mKey);
                     const gross = basicGBP + comm;
-                    const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId) || DEFAULT_PAYROLL_POLICY;
+                    const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+                    if (!policy) return;
 
                     if (policy.employerNiSlabs && policy.employerNiSlabs.length > 0) {
                       empNi = calculateSlabCost(gross, policy.employerNiSlabs);
@@ -4167,7 +4168,8 @@ export default function ReportsDashboard({
                       if (dayOfWeek !== 0 && dayOfWeek !== 6) totalBusinessDays++;
                     }
                     const attendanceDays = daysWorked || totalBusinessDays;
-                    const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId) || DEFAULT_PAYROLL_POLICY;
+                    const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+                    if (!policy) return;
                     let dailyRate = 0;
                     if (s.salary && Number(s.salary) > 0) {
                       dailyRate = (Number(s.salary) / 12) / totalBusinessDays;

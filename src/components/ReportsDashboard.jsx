@@ -699,6 +699,11 @@ export default function ReportsDashboard({
   };
 
   const getNominalBreakdownForMonth = (monthKey, overrideCompanyId = null) => {
+    let currentContractContext = null;
+    let currentStaffContext = null;
+    let currentAmortizeContext = null;
+    let currentExpenseContext = null;
+
     const targetBreakdown = {};
     nominalCodes.forEach(nc => {
       targetBreakdown[nc.code] = 0;
@@ -713,7 +718,13 @@ export default function ReportsDashboard({
         const diff = value - oldValue;
         if (monthKey === '2026-07' && !overrideCompanyId && String(prop).startsWith('8')) {
           if (!window.rmDebugLog) window.rmDebugLog = [];
-          window.rmDebugLog.push(`[PROXY SET] Key "${prop}": changed from £${oldValue.toFixed(2)} to £${value.toFixed(2)} (diff: +£${diff.toFixed(2)})`);
+          let contextStr = 'Unknown';
+          if (currentContractContext) contextStr = `Contract: "${currentContractContext.name}"`;
+          else if (currentStaffContext) contextStr = `Staff: "${currentStaffContext.fullName}"`;
+          else if (currentAmortizeContext) contextStr = `Amortized Expense: "${currentAmortizeContext.payee}"`;
+          else if (currentExpenseContext) contextStr = `Reconciled Expense: "${currentExpenseContext.payee}"`;
+
+          window.rmDebugLog.push(`[PROXY SET] Key "${prop}": changed from £${oldValue.toFixed(2)} to £${value.toFixed(2)} (diff: +£${diff.toFixed(2)}) | Context: ${contextStr}`);
           try {
             const stack = new Error().stack;
             window.rmDebugLog.push(`  Stack trace: ${stack.split('\n').slice(1, 4).join('\n')}`);
@@ -849,6 +860,7 @@ export default function ReportsDashboard({
       });
     } else {
       groupActiveStaff.forEach(s => {
+        currentStaffContext = s;
         const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
         if (policy) {
           let staffCost = 0;
@@ -1030,10 +1042,12 @@ export default function ReportsDashboard({
           }
         }
       });
+      currentStaffContext = null;
 
     // Process all amortized expenses
     const amortizedExpenses = (expenses || []).filter(e => e.amortize === true);
     amortizedExpenses.forEach(exp => {
+      currentAmortizeContext = exp;
       if (exp.status === 'dns' || exp.status === 'cancelled') return;
       const startM = (exp.amortizeStartMonth && /^\d{4}-\d{2}$/.test(exp.amortizeStartMonth.trim())) 
         ? exp.amortizeStartMonth.trim() 
@@ -1150,8 +1164,10 @@ export default function ReportsDashboard({
         }
       }
     });
+    currentAmortizeContext = null;
 
       contracts.forEach(contract => {
+        currentContractContext = contract;
         if (!contract.startDate || !contract.endDate) return;
         const startM = contract.startDate.substring(0, 7);
         const endM = contract.endDate.substring(0, 7);
@@ -1242,6 +1258,7 @@ export default function ReportsDashboard({
           }
         }
       });
+      currentContractContext = null;
     }
 
     return breakdown;

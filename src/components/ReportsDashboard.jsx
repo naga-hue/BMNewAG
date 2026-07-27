@@ -1224,12 +1224,16 @@ export default function ReportsDashboard({
     return breakdown;
   };
 
-  const getBalanceSheetBreakdownForMonth = (monthKey) => {
+  const getBalanceSheetBreakdownForMonth = (monthKey, overrideCompanyId = null) => {
     const breakdown = {};
+    const targetCompIds = overrideCompanyId ? [overrideCompanyId] : activeCompanyIds;
 
     const activeStaff = staff.filter(s => {
       const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
-      return daysWorked >= 10;
+      if (daysWorked < 10) return false;
+      if (!targetCompIds.includes(s.companyId)) return false;
+      if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) return false;
+      return true;
     });
 
     const activeStaffIds = activeStaff.map(s => s.id);

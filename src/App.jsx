@@ -1568,19 +1568,6 @@ export default function App() {
               Sign In
             </button>
           </form>
-
-          <div style={{ 
-            fontSize: '11px', 
-            color: 'var(--text-muted)', 
-            backgroundColor: 'rgba(255,255,255,0.02)', 
-            padding: '10px', 
-            borderRadius: '6px', 
-            border: '1px solid var(--border-color)', 
-            textAlign: 'center' 
-          }}>
-            🔑 Super Admin default: <strong>naga@globalrecruiters.ae</strong><br/>
-            Password default: <strong>Welcome123</strong>
-          </div>
         </div>
       </div>
     );

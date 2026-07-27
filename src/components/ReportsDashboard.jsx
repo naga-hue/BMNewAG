@@ -86,6 +86,7 @@ export default function ReportsDashboard({
   const [startMonth, setStartMonth] = useState('2026-01');
   const [endMonth, setEndMonth] = useState('2026-12');
   const [expandedExpenses, setExpandedExpenses] = useState(false);
+  const [expandedBalanceSheet, setExpandedBalanceSheet] = useState(false);
   const [drilldownState, setDrilldownState] = useState(null);
   const [drilldownSearch, setDrilldownSearch] = useState('');
   const [selectedRecruiterPlacements, setSelectedRecruiterPlacements] = useState(null); // { recruiterName, placements: [...] }
@@ -1129,6 +1130,123 @@ export default function ReportsDashboard({
     return breakdown;
   };
 
+  const getBalanceSheetBreakdownForMonth = (monthKey) => {
+    const breakdown = {};
+
+    const activeStaff = staff.filter(s => {
+      const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
+      return daysWorked >= 10;
+    });
+
+    const activeStaffIds = activeStaff.map(s => s.id);
+
+    const groupActiveStaff = staff.filter(s => {
+      const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
+      return daysWorked >= 10;
+    });
+    const groupActiveStaffIds = groupActiveStaff.map(s => s.id);
+
+    if (monthKey < '2026-07') {
+      const monthExpenses = expenses.filter(e => e.plMonth === monthKey && e.nominalCode?.trim().startsWith('9'));
+      monthExpenses.forEach(exp => {
+        const gbpAmt = toGBP(exp.amount, exp.currency);
+        let allocatedGbp = 0;
+
+        if (exp.allocationType === 'company') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+          if (targets.length > 0) {
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(compId => {
+                const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
+                const companyShare = gbpAmt * (percent / 100);
+                const compStaff = groupActiveStaff.filter(s => s.companyId === compId);
+                const compHead = compStaff.length || 1;
+                const perStaffShare = companyShare / compHead;
+                compStaff.forEach(s => {
+                  if (activeStaffIds.includes(s.id)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                });
+              });
+            } else {
+              const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.companyId));
+              const totalHead = eligibleStaff.length || 1;
+              const perStaffShare = gbpAmt / totalHead;
+              eligibleStaff.forEach(s => {
+                if (activeStaffIds.includes(s.id)) {
+                  allocatedGbp += perStaffShare;
+                }
+              });
+            }
+          }
+        } else if (exp.allocationType === 'department') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+          if (targets.length > 0) {
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(dept => {
+                const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
+                const deptShare = gbpAmt * (percent / 100);
+                const deptStaff = groupActiveStaff.filter(s => s.department === dept);
+                const deptHead = deptStaff.length || 1;
+                const perStaffShare = deptShare / deptHead;
+                deptStaff.forEach(s => {
+                  if (activeStaffIds.includes(s.id)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                });
+              });
+            } else {
+              const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.department));
+              const totalHead = eligibleStaff.length || 1;
+              const perStaffShare = gbpAmt / totalHead;
+              eligibleStaff.forEach(s => {
+                if (activeStaffIds.includes(s.id)) {
+                  allocatedGbp += perStaffShare;
+                }
+              });
+            }
+          }
+        } else if (exp.allocationType === 'staff') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
+          if (targets.length > 0) {
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(staffId => {
+                if (groupActiveStaffIds.includes(staffId)) {
+                  const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
+                  const perStaffShare = gbpAmt * (percent / 100);
+                  if (activeStaffIds.includes(staffId)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                }
+              });
+            } else {
+              const perStaffShare = gbpAmt / targets.length;
+              targets.forEach(staffId => {
+                if (groupActiveStaffIds.includes(staffId)) {
+                  if (activeStaffIds.includes(staffId)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                }
+              });
+            }
+          }
+        } else {
+          const groupHead = groupActiveStaff.length || 1;
+          groupActiveStaff.forEach(s => {
+            if (activeStaffIds.includes(s.id)) {
+              allocatedGbp += gbpAmt / groupHead;
+            }
+          });
+        }
+
+        const matchedKey = Object.keys(breakdown).find(k => k.startsWith(exp.nominalCode) || k === exp.nominalCode) || exp.nominalCode;
+        breakdown[matchedKey] = (breakdown[matchedKey] || 0) + allocatedGbp;
+      });
+    }
+
+    return breakdown;
+  };
+
   // Filtered monthly calculations row generator
   const getFilteredMonthlyData = (monthKey) => {
     // 1. Active staff members matching company & department
@@ -1172,6 +1290,9 @@ export default function ReportsDashboard({
     const nominalBreakdown = getNominalBreakdownForMonth(monthKey);
     const overheadsExpenses = Object.values(nominalBreakdown).reduce((sum, v) => sum + v, 0);
 
+    const balanceSheetBreakdown = getBalanceSheetBreakdownForMonth(monthKey);
+    const balanceSheetTotal = Object.values(balanceSheetBreakdown).reduce((sum, v) => sum + v, 0);
+
     const grossProfit = revenue - commissions;
     const totalOverheads = overheadsExpenses;
     const netProfit = revenue - commissions - totalOverheads;
@@ -1185,6 +1306,8 @@ export default function ReportsDashboard({
       totalOverheads,
       netProfit,
       nominalBreakdown,
+      balanceSheetBreakdown,
+      balanceSheetTotal,
       headcount: activeStaff.length
     };
   };
@@ -1505,6 +1628,89 @@ export default function ReportsDashboard({
                         </tr>
                       );
                     })()}
+
+                    <tr style={{ borderBottom: '1px solid var(--border-color)', height: '12px' }} />
+
+                    <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
+                      <td>Non-P&L Balance Sheet Items (Cash Flow Only)</td>
+                      <td colSpan={monthsList.length + 1} />
+                    </tr>
+
+                    <tr style={{ fontWeight: 400 }}>
+                      <td style={{ paddingLeft: '24px', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setExpandedBalanceSheet(!expandedBalanceSheet)}>
+                        <span style={{ fontSize: '10px', color: 'var(--accent)' }}>{expandedBalanceSheet ? '▼' : '▶'}</span>
+                        <span style={{ fontWeight: 600 }}>Refundable Deposits & Prepayments</span>
+                      </td>
+                      {rowData.map((row, idx) => {
+                        const monthKey = monthsList[idx];
+                        const val = row.balanceSheetTotal || 0;
+                        return (
+                          <td 
+                            key={idx} 
+                            style={{ textAlign: 'right', cursor: val > 0 ? 'pointer' : 'default', color: 'var(--text-muted)' }}
+                            onClick={() => val > 0 && handleCellClick('Refundable Deposits & Prepayments', 'balanceSheet', monthKey, val)}
+                            title={val > 0 ? `Click to view balance sheet items for ${monthKey}` : undefined}
+                          >
+                            {val > 0 ? formatGBP(val) : '—'}
+                          </td>
+                        );
+                      })}
+                      <td 
+                        style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer', color: 'var(--text-muted)' }}
+                        onClick={() => handleCellClick('Refundable Deposits & Prepayments', 'balanceSheet', null, rowData.reduce((acc, row) => acc + (row.balanceSheetTotal || 0), 0))}
+                      >
+                        {formatGBP(rowData.reduce((acc, row) => acc + (row.balanceSheetTotal || 0), 0))}
+                      </td>
+                    </tr>
+
+                    {/* Sub-rows for each balance sheet nominal code when expanded */}
+                    {expandedBalanceSheet && (() => {
+                      const codeKeys = Array.from(new Set(
+                        rowData.flatMap(r => Object.keys(r.balanceSheetBreakdown || {}))
+                      )).sort();
+
+                      return codeKeys.map(code => {
+                        const ytdSum = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0);
+                        return (
+                          <tr key={code} style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            <td 
+                              style={{ paddingLeft: '48px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                              onClick={() => ytdSum > 0 && handleCellClick(`Balance Sheet item: ${code}`, 'balanceSheet', null, ytdSum, code)}
+                              title={ytdSum > 0 ? `Click to view all itemized ${code} transactions` : undefined}
+                            >
+                              <span style={{ color: 'var(--text-muted)' }}>↳</span> {code} 🔍
+                            </td>
+                            {rowData.map((row, idx) => {
+                              const monthKey = monthsList[idx];
+                              const val = row.balanceSheetBreakdown?.[code] || 0;
+                              return (
+                                <td 
+                                  key={idx} 
+                                  style={{ 
+                                    textAlign: 'right', 
+                                    opacity: val > 0 ? 0.9 : 0.4, 
+                                    cursor: val > 0 ? 'pointer' : 'default',
+                                    fontWeight: val > 0 ? 600 : 400
+                                  }}
+                                  onClick={() => val > 0 && handleCellClick(`Balance Sheet item: ${code}`, 'balanceSheet', monthKey, val, code)}
+                                  title={val > 0 ? `Click to view ${code} transactions for ${monthKey}` : undefined}
+                                >
+                                  {val > 0 ? formatGBP(val) : '—'}
+                                </td>
+                              );
+                            })}
+                            <td 
+                              style={{ textAlign: 'right', fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)', opacity: ytdSum > 0 ? 0.9 : 0.4, cursor: ytdSum > 0 ? 'pointer' : 'default' }}
+                              onClick={() => ytdSum > 0 && handleCellClick(`Balance Sheet item: ${code}`, 'balanceSheet', null, ytdSum, code)}
+                            >
+                              {formatGBP(ytdSum)}
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
+
+                    <tr style={{ borderBottom: '1px solid var(--border-color)', height: '12px' }} />
 
                     <tr style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
                       <td 
@@ -3473,6 +3679,45 @@ export default function ReportsDashboard({
               });
             });
             return results;
+          }
+
+          if (categoryKey === 'balanceSheet') {
+            const actualItems = (expenses || []).filter(e => {
+              if (e.status === 'dns' || e.status === 'cancelled') return false;
+              if (!e.nominalCode?.trim().startsWith('9')) return false;
+              const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+              if (monthKey && eMonth !== monthKey) return false;
+              if (nominalCode) {
+                const cleanN1 = nominalCode.split(' - ')[0]?.trim() || nominalCode;
+                const cleanN2 = e.nominalCode?.split(' - ')[0]?.trim() || e.nominalCode || '';
+                const matchExact = e.nominalCode === nominalCode;
+                const matchId = cleanN1 === cleanN2;
+                const matchPrefix = e.nominalCode?.startsWith(nominalCode) || nominalCode.startsWith(e.nominalCode);
+                if (!matchExact && !matchId && !matchPrefix) return false;
+              }
+
+              if (e.allocationType === 'staff' || e.recipientType === 'staff') {
+                const targetStaffIds = Array.isArray(e.allocationTarget) ? e.allocationTarget : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
+                const matchedStaff = staff.filter(s => targetStaffIds.includes(s.id));
+                const hasDeptMatch = matchedStaff.some(s => isDeptMatch(s.department));
+                const hasCompMatch = matchedStaff.some(s => isCompanyMatch(s.companyId));
+                if (!hasDeptMatch || !hasCompMatch) return false;
+              } else if (e.allocationType === 'department') {
+                const targetDepts = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget].filter(Boolean);
+                if (!deptFilter.includes('all') && !targetDepts.some(d => deptFilter.includes(d))) return false;
+              } else if (e.allocationType === 'company') {
+                const targetComps = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget].filter(Boolean);
+                if (!companyFilter.includes('all') && !targetComps.some(c => companyFilter.includes(c))) return false;
+
+                if (!deptFilter.includes('all')) {
+                  const hasDeptStaff = staff.some(s => targetComps.includes(s.companyId) && deptFilter.includes(s.department));
+                  if (!hasDeptStaff) return false;
+                }
+              }
+
+              return true;
+            });
+            return actualItems;
           }
 
           if (categoryKey === 'overheadsExpenses' || categoryKey === 'nominal' || categoryKey === 'totalOverheads') {

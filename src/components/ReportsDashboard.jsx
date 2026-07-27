@@ -1148,9 +1148,6 @@ export default function ReportsDashboard({
           const targetCompIds = overrideCompanyId ? [overrideCompanyId] : activeCompanyIds;
 
           targetCompIds.forEach(compId => {
-            const baseShare = getContractCompanyShare(contract, monthKey, compId);
-            if (baseShare <= 0) return;
-
             let deptProration = 1.0;
             if (!deptFilter.includes('all')) {
               const compActiveStaff = groupActiveStaff.filter(s => s.companyId === compId);
@@ -1180,13 +1177,21 @@ export default function ReportsDashboard({
               const unusedCount = Math.max(0, totalSeats - assignedSeats.length);
               let unusedCost = 0;
               if (unusedCount > 0) {
-                unusedCost = unusedCount * costPerSeat * baseShare * deptProration;
+                const baseShare = getContractCompanyShare(contract, monthKey, compId);
+                if (baseShare > 0) {
+                  unusedCost = unusedCount * costPerSeat * baseShare * deptProration;
+                }
               }
 
-              gbpCost += toGBP(assignedCost + unusedCost, contract.currency || 'GBP') * taxFactor;
+              if (assignedCost > 0 || unusedCost > 0) {
+                gbpCost += toGBP(assignedCost + unusedCost, contract.currency || 'GBP') * taxFactor;
+              }
             } else {
-              const cost = unitMonthlyCost * totalSeats * baseShare * deptProration;
-              gbpCost += toGBP(cost, contract.currency || 'GBP') * taxFactor;
+              const baseShare = getContractCompanyShare(contract, monthKey, compId);
+              if (baseShare > 0) {
+                const cost = unitMonthlyCost * totalSeats * baseShare * deptProration;
+                gbpCost += toGBP(cost, contract.currency || 'GBP') * taxFactor;
+              }
             }
           });
 
@@ -3940,9 +3945,6 @@ export default function ReportsDashboard({
                   const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
 
                   activeCompanyIds.forEach(compId => {
-                    const baseShare = getContractCompanyShare(contract, mKey, compId);
-                    if (baseShare <= 0) return;
-
                     let deptProration = 1.0;
                     if (!deptFilter.includes('all')) {
                       const compActiveStaff = groupActiveStaff.filter(s => s.companyId === compId);
@@ -3978,13 +3980,21 @@ export default function ReportsDashboard({
                       const unusedCount = Math.max(0, totalSeats - assignedSeats.length);
                       let unusedCost = 0;
                       if (unusedCount > 0) {
-                        unusedCost = unusedCount * costPerSeat * baseShare * deptProration;
+                        const baseShare = getContractCompanyShare(contract, mKey, compId);
+                        if (baseShare > 0) {
+                          unusedCost = unusedCount * costPerSeat * baseShare * deptProration;
+                        }
                       }
 
-                      compGbpCost = toGBP(assignedCost + unusedCost, contract.currency || 'GBP') * taxFactor;
+                      if (assignedCost > 0 || unusedCost > 0) {
+                        compGbpCost = toGBP(assignedCost + unusedCost, contract.currency || 'GBP') * taxFactor;
+                      }
                     } else {
-                      const cost = unitMonthlyCost * totalSeats * baseShare * deptProration;
-                      compGbpCost = toGBP(cost, contract.currency || 'GBP') * taxFactor;
+                      const baseShare = getContractCompanyShare(contract, mKey, compId);
+                      if (baseShare > 0) {
+                        const cost = unitMonthlyCost * totalSeats * baseShare * deptProration;
+                        compGbpCost = toGBP(cost, contract.currency || 'GBP') * taxFactor;
+                      }
                     }
 
                     if (compGbpCost <= 0) return;

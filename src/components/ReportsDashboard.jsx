@@ -820,7 +820,7 @@ export default function ReportsDashboard({
         if (matchedKey) {
           breakdown[matchedKey] = (breakdown[matchedKey] || 0) + allocatedGbp;
         } else {
-          const defaultSoftwareNominal = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'))?.code || nominalCodes[0]?.code;
+          const defaultSoftwareNominal = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'))?.code || 'Unassigned';
           if (defaultSoftwareNominal) {
             breakdown[defaultSoftwareNominal] = (breakdown[defaultSoftwareNominal] || 0) + allocatedGbp;
           }
@@ -952,7 +952,7 @@ export default function ReportsDashboard({
             empNi = empNi * proration;
             empPension = empPension * proration;
 
-            const taxNominal = nominalCodes.find(nc => nc.id === '501' || nc.code?.includes('501') || nc.code?.toLowerCase().includes('paye') || nc.code?.toLowerCase().includes('tax') || nc.code?.toLowerCase().includes('ni') || nc.code?.toLowerCase().includes('pension'))?.code || nominalCodes[0]?.code;
+            const taxNominal = nominalCodes.find(nc => nc.id === '501' || nc.code?.includes('501') || nc.code?.toLowerCase().includes('paye') || nc.code?.toLowerCase().includes('tax') || nc.code?.toLowerCase().includes('ni') || nc.code?.toLowerCase().includes('pension'))?.code || 'Unassigned';
             if (taxNominal) {
               // Only add tax/pension overhead if staff member matches active filters
               const isComp = activeCompanyIds.includes(s.companyId);
@@ -1122,7 +1122,7 @@ export default function ReportsDashboard({
         if (matchedKey) {
           breakdown[matchedKey] = (breakdown[matchedKey] || 0) + allocatedGbp;
         } else {
-          const defaultSoftwareNominal = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'))?.code || nominalCodes[0]?.code;
+          const defaultSoftwareNominal = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'))?.code || 'Unassigned';
           if (defaultSoftwareNominal) {
             breakdown[defaultSoftwareNominal] = (breakdown[defaultSoftwareNominal] || 0) + allocatedGbp;
           }
@@ -1206,10 +1206,10 @@ export default function ReportsDashboard({
             const nameLower = contract.name.toLowerCase();
             if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
               const rentMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('rent') || nc.code.toLowerCase().includes('rates') || nc.code.startsWith('700'));
-              assignedNominal = rentMatch ? rentMatch.code : (nominalCodes[0]?.code || 'Unassigned');
+              assignedNominal = rentMatch ? rentMatch.code : 'Unassigned';
             } else {
               const swMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'));
-              assignedNominal = swMatch ? swMatch.code : (nominalCodes[0]?.code || 'Unassigned');
+              assignedNominal = swMatch ? swMatch.code : 'Unassigned';
             }
           }
 
@@ -4013,10 +4013,10 @@ export default function ReportsDashboard({
                       const nameLower = contract.name.toLowerCase();
                       if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
                         const rentMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('rent') || nc.code.toLowerCase().includes('rates') || nc.code.startsWith('700'));
-                        assignedNominal = rentMatch ? rentMatch.code : (nominalCodes[0]?.code || 'Unassigned');
+                        assignedNominal = rentMatch ? rentMatch.code : 'Unassigned';
                       } else {
                         const swMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'));
-                        assignedNominal = swMatch ? swMatch.code : (nominalCodes[0]?.code || 'Unassigned');
+                        assignedNominal = swMatch ? swMatch.code : 'Unassigned';
                       }
                     }
 

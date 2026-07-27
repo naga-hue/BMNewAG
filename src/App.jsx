@@ -1517,7 +1517,8 @@ export default function App() {
             // 2. Check Staff list
             const foundStaff = staff.find(s => s.businessEmail?.toLowerCase() === email || s.personalEmail?.toLowerCase() === email);
             if (foundStaff) {
-              if (foundStaff.password === password) {
+              const correctPassword = foundStaff.password || 'Welcome123';
+              if (correctPassword === password) {
                 const updatedPermissions = foundStaff.permissions || {
                   role: foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
                   dataScope: foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',

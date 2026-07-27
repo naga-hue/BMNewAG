@@ -201,6 +201,22 @@ export default function ReportsDashboard({
   const activeCompanyIds = activeCompaniesForPL.map(c => c.id);
   const [expandedExitedLeaguesPlacements, setExpandedExitedLeaguesLeaguesPlacements] = useState(false);
   const [expandedExitedOverheads, setExpandedExitedOverheads] = useState(false);
+  const [ratiosSortField, setRatiosSortField] = useState('fullName');
+  const [ratiosSortDirection, setRatiosSortDirection] = useState('asc');
+
+  const handleRatiosHeaderClick = (field) => {
+    if (ratiosSortField === field) {
+      setRatiosSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setRatiosSortField(field);
+      setRatiosSortDirection('desc');
+    }
+  };
+
+  const renderRatiosSortIndicator = (field) => {
+    if (ratiosSortField !== field) return ' ↕';
+    return ratiosSortDirection === 'asc' ? ' ▲' : ' ▼';
+  };
 
   // Generate months range dynamically
   const generateMonthsRange = (start, end) => {
@@ -2680,13 +2696,30 @@ export default function ReportsDashboard({
           <table className="entity-table dense">
             <thead>
               <tr>
-                <th>Recruiter Name</th>
-                <th>Department / Company</th>
-                <th style={{ textAlign: 'right' }}>Wages Paid (GBP)</th>
-                <th style={{ textAlign: 'right' }}>Commissions Paid (GBP)</th>
-                <th style={{ textAlign: 'right', fontWeight: 600 }}>Total Compensation (GBP)</th>
-                <th style={{ textAlign: 'right' }}>Revenue Generated (GBP)</th>
-                <th style={{ textAlign: 'right', fontWeight: 700 }}>Cost-to-Revenue Ratio</th>
+                <th onClick={() => handleRatiosHeaderClick('fullName')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                  Recruiter Name{renderRatiosSortIndicator('fullName')}
+                </th>
+                <th onClick={() => handleRatiosHeaderClick('deptCompany')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                  Department / Company{renderRatiosSortIndicator('deptCompany')}
+                </th>
+                <th onClick={() => handleRatiosHeaderClick('tenureInMonths')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'center' }}>
+                  Tenure (Months){renderRatiosSortIndicator('tenureInMonths')}
+                </th>
+                <th onClick={() => handleRatiosHeaderClick('wagesPaid')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right' }}>
+                  Wages Paid (GBP){renderRatiosSortIndicator('wagesPaid')}
+                </th>
+                <th onClick={() => handleRatiosHeaderClick('commissionsPaid')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right' }}>
+                  Commissions Paid (GBP){renderRatiosSortIndicator('commissionsPaid')}
+                </th>
+                <th onClick={() => handleRatiosHeaderClick('totalPaid')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right', fontWeight: 600 }}>
+                  Total Compensation (GBP){renderRatiosSortIndicator('totalPaid')}
+                </th>
+                <th onClick={() => handleRatiosHeaderClick('periodBillings')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right' }}>
+                  Revenue Generated (GBP){renderRatiosSortIndicator('periodBillings')}
+                </th>
+                <th onClick={() => handleRatiosHeaderClick('ratio')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right', fontWeight: 700 }}>
+                  Cost-to-Revenue Ratio{renderRatiosSortIndicator('ratio')}
+                </th>
                 <th>ROI Grading Status</th>
               </tr>
             </thead>
@@ -2699,23 +2732,33 @@ export default function ReportsDashboard({
                   return true;
                 });
 
-                const activeRecs = recruitersList.filter(s => s.status !== 'exited');
-                const exitedRecs = recruitersList.filter(s => s.status === 'exited');
-
                 if (recruitersList.length === 0) {
                   return (
                     <tr>
-                      <td colSpan="8" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-secondary)' }}>
+                      <td colSpan="9" style={{ textAlign: 'center', padding: '16px', color: 'var(--text-secondary)' }}>
                         No recruiters found matching the filtered company or department.
                       </td>
                     </tr>
                   );
                 }
 
-                const renderRecRow = (rec) => {
+                const recruitersData = recruitersList.map(rec => {
                   const employer = companies.find(c => c.id === rec.companyId);
+                  const deptCompany = `${rec.department || 'General'} • ${employer ? employer.name : 'Group'}`;
                   
                   const currentMonthKey = new Date().toISOString().substring(0, 7);
+
+                  // Tenure in months calculation
+                  const tenureInMonths = (() => {
+                    if (!rec.startDate) return 0;
+                    const start = new Date(rec.startDate);
+                    if (isNaN(start.getTime())) return 0;
+                    const end = rec.exitDate ? new Date(rec.exitDate) : new Date();
+                    if (isNaN(end.getTime())) return 0;
+                    const yearsDiff = end.getFullYear() - start.getFullYear();
+                    const monthsDiff = end.getMonth() - start.getMonth();
+                    return Math.max(0, yearsDiff * 12 + monthsDiff);
+                  })();
 
                   // Period Billings (within selected start and end months range, up to current month)
                   const periodPlacements = placements.filter(p => {
@@ -2791,8 +2834,44 @@ export default function ReportsDashboard({
                       }
                     }
                   });
+
                   const totalPaid = wagesPaid + commissionsPaid;
                   const ratio = periodBillings > 0 ? (totalPaid / periodBillings) * 100 : 0;
+
+                  return {
+                    rec,
+                    fullName: rec.fullName || '',
+                    deptCompany,
+                    tenureInMonths,
+                    wagesPaid,
+                    commissionsPaid,
+                    totalPaid,
+                    periodBillings,
+                    ratio,
+                    status: rec.status
+                  };
+                });
+
+                // Sort the recruiters data based on the selected field & direction
+                const sortedRecData = [...recruitersData].sort((a, b) => {
+                  let valA = a[ratiosSortField];
+                  let valB = b[ratiosSortField];
+
+                  if (typeof valA === 'string') {
+                    valA = valA.toLowerCase();
+                    valB = valB.toLowerCase();
+                  }
+
+                  if (valA < valB) return ratiosSortDirection === 'asc' ? -1 : 1;
+                  if (valA > valB) return ratiosSortDirection === 'asc' ? 1 : -1;
+                  return 0;
+                });
+
+                const activeRecs = sortedRecData.filter(item => item.status !== 'exited');
+                const exitedRecs = sortedRecData.filter(item => item.status === 'exited');
+
+                const renderRecRow = (item) => {
+                  const { rec, fullName, deptCompany, tenureInMonths, wagesPaid, commissionsPaid, totalPaid, periodBillings, ratio } = item;
 
                   let statusText = 'Low ROI / No Billings';
                   let statusColor = 'var(--danger)';
@@ -2817,9 +2896,10 @@ export default function ReportsDashboard({
                   return (
                     <tr key={rec.id} style={{ opacity: rec.status === 'exited' ? 0.75 : 1 }}>
                       <td style={{ fontWeight: 600 }}>
-                        {rec.fullName} {rec.status === 'exited' && <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 500, marginLeft: '4px' }}>(Exited)</span>}
+                        {fullName} {rec.status === 'exited' && <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 500, marginLeft: '4px' }}>(Exited)</span>}
                       </td>
-                      <td>{rec.department} &bull; {employer ? employer.name : 'Group'}</td>
+                      <td>{deptCompany}</td>
+                      <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{tenureInMonths} mos</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{formatGBP(wagesPaid)}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{formatGBP(commissionsPaid)}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{formatGBP(totalPaid)}</td>
@@ -2855,7 +2935,7 @@ export default function ReportsDashboard({
                           onClick={() => setExpandedExitedRatios(!expandedExitedRatios)}
                           style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'pointer', userSelect: 'none' }}
                         >
-                          <td colSpan="8" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          <td colSpan="9" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)' }}>
                             <span style={{ marginRight: '6px' }}>{expandedExitedRatios ? '▼' : '▶'}</span>
                             Exited Staff ({exitedRecs.length})
                           </td>
@@ -4706,74 +4786,7 @@ export default function ReportsDashboard({
         );
       })()}
 
-      {/* Temporary Audit Debug Section */}
-      <div style={{ marginTop: '40px', padding: '20px', border: '2px dashed var(--danger)', borderRadius: '8px', backgroundColor: 'rgba(239, 68, 68, 0.05)' }}>
-        <h4 style={{ color: 'var(--danger)', marginTop: 0 }}>🔍 AUDIT DEBUGLOG: July 2026 Remote Monitoring Cost Calculation</h4>
-        <pre style={{ fontSize: '11px', whiteSpace: 'pre-wrap', maxHeight: '400px', overflow: 'auto', backgroundColor: '#1e293b', color: '#f8fafc', padding: '12px', borderRadius: '6px' }}>
-          {(() => {
-            try {
-              const debugInfo = [];
-              debugInfo.push(`1. nominalCodes count: ${nominalCodes.length}`);
-              debugInfo.push(`3. nominalCodes names: ${nominalCodes.map(nc => nc.code).join(', ')}`);
-              
-              // Run breakdown calculation for July
-              const breakdown = getNominalBreakdownForMonth('2026-07');
-              debugInfo.push(`4. July breakdown keys with non-zero values:`);
-              Object.entries(breakdown).forEach(([k, v]) => {
-                if (v > 0) debugInfo.push(`  - ${k}: £${v}`);
-              });
 
-              // Trace contracts mapping
-              debugInfo.push(`5. July Contract Projections trace:`);
-              contracts.forEach(contract => {
-                if (!contract.startDate || !contract.endDate) return;
-                const startM = contract.startDate.substring(0, 7);
-                const endM = contract.endDate.substring(0, 7);
-                if ('2026-07' >= startM && '2026-07' <= endM) {
-                  const vendorObj = vendors.find(v => v.id === contract.vendorId);
-                  let assignedNominal = contract.nominalCode || vendorObj?.nominalCode;
-                  const originalAssigned = assignedNominal || 'undefined';
-                  
-                  if (!assignedNominal) {
-                    const nameLower = contract.name.toLowerCase();
-                    if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
-                      const rentMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('rent') || nc.code.toLowerCase().includes('rates') || nc.code.startsWith('700'));
-                      assignedNominal = rentMatch ? rentMatch.code : 'Unassigned';
-                    } else {
-                      const swMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'));
-                      assignedNominal = swMatch ? swMatch.code : 'Unassigned';
-                    }
-                  }
-                  
-                  const cost = (contract.unitCost || 0) * (contract.quantityPurchased || 1);
-                  debugInfo.push(`  - Contract: "${contract.name}" (Vendor: "${vendorObj?.name || 'Unknown'}")`);
-                  debugInfo.push(`    * cost: ${cost} ${contract.currency}, originalAssigned: "${originalAssigned}", finalNominal: "${assignedNominal}"`);
-                }
-              });
-
-              // Trace actual expenses
-              debugInfo.push(`6. July Actual Expenses trace:`);
-              expenses.forEach(e => {
-                const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
-                if (eMonth === '2026-07') {
-                  debugInfo.push(`  - Expense: "${e.payee}" (Nominal: "${e.nominalCode}", amount: ${e.amount} ${e.currency}, status: ${e.status})`);
-                }
-              });
-
-              debugInfo.push(`\n7. REAL-TIME PROXY TRACE OF ADDITIONS TO "8 - IT-Remote Monitoring":`);
-              if (window.rmDebugLog && window.rmDebugLog.length > 0) {
-                window.rmDebugLog.forEach(logLine => debugInfo.push(logLine));
-              } else {
-                debugInfo.push(`  (No real-time additions logged to 8 - IT-Remote Monitoring)`);
-              }
-
-              return debugInfo.join('\n');
-            } catch (err) {
-              return `Error generating debug info: ${err.message}`;
-            }
-          })()}
-        </pre>
-      </div>
 
     </div>
   );

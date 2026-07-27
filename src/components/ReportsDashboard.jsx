@@ -633,7 +633,7 @@ export default function ReportsDashboard({
     const groupActiveStaffIds = groupActiveStaff.map(s => s.id);
 
     if (monthKey < '2026-07') {
-      const monthExpenses = expenses.filter(e => e.plMonth === monthKey);
+      const monthExpenses = expenses.filter(e => e.plMonth === monthKey && e.amortize !== true && !e.nominalCode?.trim().startsWith('9'));
       monthExpenses.forEach(exp => {
         const gbpAmt = toGBP(exp.amount, exp.currency);
         let allocatedGbp = 0;
@@ -918,6 +918,124 @@ export default function ReportsDashboard({
           }
         }
       });
+
+    // Process all amortized expenses
+    const amortizedExpenses = (expenses || []).filter(e => e.amortize === true);
+    amortizedExpenses.forEach(exp => {
+      if (exp.status === 'dns' || exp.status === 'cancelled') return;
+      const startM = exp.amortizeStartMonth || exp.plMonth || (exp.date ? exp.date.substring(0, 7) : '');
+      if (!startM) return;
+      const N = Number(exp.amortizeMonths || 36);
+      
+      const [y1, mo1] = monthKey.split('-').map(Number);
+      const [y2, mo2] = startM.split('-').map(Number);
+      const diff = (y1 - y2) * 12 + (mo1 - mo2);
+      
+      if (diff >= 0 && diff < N) {
+        const shareAmount = (Number(exp.amount) || 0) / N;
+        const gbpAmt = toGBP(shareAmount, exp.currency);
+        let allocatedGbp = 0;
+
+        // Run the allocation logic for this share
+        if (exp.allocationType === 'company') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+          if (targets.length > 0) {
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(compId => {
+                const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
+                const companyShare = gbpAmt * (percent / 100);
+                const compStaff = groupActiveStaff.filter(s => s.companyId === compId);
+                const compHead = compStaff.length || 1;
+                const perStaffShare = companyShare / compHead;
+                compStaff.forEach(s => {
+                  if (activeStaffIds.includes(s.id)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                });
+              });
+            } else {
+              const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.companyId));
+              const totalHead = eligibleStaff.length || 1;
+              const perStaffShare = gbpAmt / totalHead;
+              eligibleStaff.forEach(s => {
+                if (activeStaffIds.includes(s.id)) {
+                  allocatedGbp += perStaffShare;
+                }
+              });
+            }
+          }
+        } else if (exp.allocationType === 'department') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+          if (targets.length > 0) {
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(dept => {
+                const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
+                const deptShare = gbpAmt * (percent / 100);
+                const deptStaff = groupActiveStaff.filter(s => s.department === dept);
+                const deptHead = deptStaff.length || 1;
+                const perStaffShare = deptShare / deptHead;
+                deptStaff.forEach(s => {
+                  if (activeStaffIds.includes(s.id)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                });
+              });
+            } else {
+              const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.department));
+              const totalHead = eligibleStaff.length || 1;
+              const perStaffShare = gbpAmt / totalHead;
+              eligibleStaff.forEach(s => {
+                if (activeStaffIds.includes(s.id)) {
+                  allocatedGbp += perStaffShare;
+                }
+              });
+            }
+          }
+        } else if (exp.allocationType === 'staff') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
+          if (targets.length > 0) {
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(staffId => {
+                if (groupActiveStaffIds.includes(staffId)) {
+                  const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
+                  const perStaffShare = gbpAmt * (percent / 100);
+                  if (activeStaffIds.includes(staffId)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                }
+              });
+            } else {
+              const perStaffShare = gbpAmt / targets.length;
+              targets.forEach(staffId => {
+                if (groupActiveStaffIds.includes(staffId)) {
+                  if (activeStaffIds.includes(staffId)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                }
+              });
+            }
+          }
+        } else {
+          const groupHead = groupActiveStaff.length || 1;
+          groupActiveStaff.forEach(s => {
+            if (activeStaffIds.includes(s.id)) {
+              allocatedGbp += gbpAmt / groupHead;
+            }
+          });
+        }
+
+        const targetCode = exp.amortizeNominalCode || exp.nominalCode;
+        const matchedKey = Object.keys(breakdown).find(k => k.startsWith(targetCode) || k === targetCode);
+        if (matchedKey) {
+          breakdown[matchedKey] = (breakdown[matchedKey] || 0) + allocatedGbp;
+        } else {
+          const defaultSoftwareNominal = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'))?.code || nominalCodes[0]?.code;
+          if (defaultSoftwareNominal) {
+            breakdown[defaultSoftwareNominal] = (breakdown[defaultSoftwareNominal] || 0) + allocatedGbp;
+          }
+        }
+      }
+    });
 
       contracts.forEach(contract => {
         if (!contract.startDate || !contract.endDate) return;
@@ -3360,6 +3478,8 @@ export default function ReportsDashboard({
           if (categoryKey === 'overheadsExpenses' || categoryKey === 'nominal' || categoryKey === 'totalOverheads') {
             const actualItems = (expenses || []).filter(e => {
               if (e.status === 'dns' || e.status === 'cancelled') return false;
+              if (e.amortize === true) return false;
+              if (e.nominalCode?.trim().startsWith('9')) return false;
               const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
               if (monthKey && eMonth !== monthKey) return false;
               if (nominalCode) {
@@ -3393,8 +3513,74 @@ export default function ReportsDashboard({
               return true;
             });
 
-            if (actualItems.length > 0) {
-              return actualItems;
+            const amortizedShares = [];
+            const amortizedExpensesList = (expenses || []).filter(e => e.amortize === true);
+            
+            const targetAmortizeMonths = monthKey ? [monthKey] : monthsList;
+            
+            targetAmortizeMonths.forEach(mKey => {
+              amortizedExpensesList.forEach(e => {
+                if (e.status === 'dns' || e.status === 'cancelled') return;
+                const startM = e.amortizeStartMonth || e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+                if (!startM) return;
+                const N = Number(e.amortizeMonths || 36);
+                
+                const [y1, mo1] = mKey.split('-').map(Number);
+                const [y2, mo2] = startM.split('-').map(Number);
+                const diff = (y1 - y2) * 12 + (mo1 - mo2);
+                
+                if (diff >= 0 && diff < N) {
+                  const targetCode = e.amortizeNominalCode || e.nominalCode;
+                  if (nominalCode) {
+                    const cleanN1 = nominalCode.split(' - ')[0]?.trim() || nominalCode;
+                    const cleanN2 = targetCode?.split(' - ')[0]?.trim() || targetCode || '';
+                    const matchExact = targetCode === nominalCode;
+                    const matchId = cleanN1 === cleanN2;
+                    const matchPrefix = targetCode?.startsWith(nominalCode) || nominalCode.startsWith(targetCode);
+                    if (!matchExact && !matchId && !matchPrefix) return;
+                  }
+
+                  // Check allocation matches
+                  let matchesFilter = true;
+                  if (e.allocationType === 'staff' || e.recipientType === 'staff') {
+                    const targetStaffIds = Array.isArray(e.allocationTarget) ? e.allocationTarget : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
+                    const matchedStaff = staff.filter(s => targetStaffIds.includes(s.id));
+                    const hasDeptMatch = matchedStaff.some(s => isDeptMatch(s.department));
+                    const hasCompMatch = matchedStaff.some(s => isCompanyMatch(s.companyId));
+                    if (!hasDeptMatch || !hasCompMatch) matchesFilter = false;
+                  } else if (e.allocationType === 'department') {
+                    const targetDepts = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget].filter(Boolean);
+                    if (!deptFilter.includes('all') && !targetDepts.some(d => deptFilter.includes(d))) matchesFilter = false;
+                  } else if (e.allocationType === 'company') {
+                    const targetComps = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget].filter(Boolean);
+                    if (!companyFilter.includes('all') && !targetComps.some(c => companyFilter.includes(c))) matchesFilter = false;
+
+                    if (!deptFilter.includes('all')) {
+                      const hasDeptStaff = staff.some(s => targetComps.includes(s.companyId) && deptFilter.includes(s.department));
+                      if (!hasDeptStaff) matchesFilter = false;
+                    }
+                  }
+
+                  if (matchesFilter) {
+                    const shareAmount = (Number(e.amount) || 0) / N;
+                    amortizedShares.push({
+                      id: `virtual-amort-${e.id}-${mKey}`,
+                      date: `${mKey}-01`,
+                      plMonth: mKey,
+                      payee: `Amortization (${diff + 1}/${N}): ${e.payee}`,
+                      nominalCode: targetCode,
+                      amount: shareAmount,
+                      currency: e.currency || 'GBP',
+                      isAmortizedShare: true
+                    });
+                  }
+                }
+              });
+            });
+
+            const finalItems = [...actualItems, ...amortizedShares];
+            if (finalItems.length > 0) {
+              return finalItems;
             }
 
             // Unbilled Projection Items for 7001, 7002, 7003, 7004 & future nominal cells

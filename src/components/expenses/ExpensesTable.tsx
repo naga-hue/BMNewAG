@@ -96,11 +96,22 @@ export default function ExpensesTable({
   const [selectedStaffId, setSelectedStaffId] = useState('');
   const [selectedPlacementId, setSelectedPlacementId] = useState('');
 
+  // Amortization states
+  const [amortize, setAmortize] = useState(false);
+  const [amortizeMonths, setAmortizeMonths] = useState(36);
+  const [amortizeStartMonth, setAmortizeStartMonth] = useState('');
+  const [amortizeNominalCode, setAmortizeNominalCode] = useState('');
+
   useEffect(() => {
     if (reconcilingExpense) {
       const exp = reconcilingExpense;
       const monthVal = exp.plMonth || (exp.date ? exp.date.substring(0, 7) : new Date().toISOString().substring(0, 7));
       setTargetMonth(monthVal);
+      
+      setAmortize(exp.amortize || false);
+      setAmortizeMonths(exp.amortizeMonths || 36);
+      setAmortizeStartMonth(exp.amortizeStartMonth || monthVal);
+      setAmortizeNominalCode(exp.amortizeNominalCode || exp.nominalCode || '');
 
       if (exp.id === 'bulk') {
         setTargetType('unreconciled');
@@ -2363,7 +2374,83 @@ export default function ExpensesTable({
                   </select>
                 </div>
               )}
+            {/* Amortization / Capex Options */}
+            <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '11px', color: 'var(--text-primary)' }}>
+                <input
+                  type="checkbox"
+                  checked={amortize}
+                  onChange={(e) => {
+                    setAmortize(e.target.checked);
+                    if (e.target.checked && !amortizeNominalCode) {
+                      setAmortizeNominalCode(reconcilingExpense?.nominalCode || '');
+                    }
+                  }}
+                />
+                ⚙️ Amortize / Spread this Expense (Capex)
+              </label>
+
+              {amortize && (
+                <div style={{
+                  marginTop: '12px',
+                  backgroundColor: 'rgba(255,255,255,0.02)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  padding: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <div style={{ flex: 1 }} className="form-group">
+                      <label style={{ fontSize: '10px', fontWeight: 600, marginBottom: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                        Amortization Period (Months):
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="120"
+                        value={amortizeMonths}
+                        onChange={(e) => setAmortizeMonths(Math.max(1, Number(e.target.value) || 36))}
+                        className="select-filter"
+                        style={{ width: '100%', padding: '6px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px' }}
+                      />
+                    </div>
+
+                    <div style={{ flex: 1 }} className="form-group">
+                      <label style={{ fontSize: '10px', fontWeight: 600, marginBottom: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                        Start Month:
+                      </label>
+                      <input
+                        type="month"
+                        value={amortizeStartMonth}
+                        onChange={(e) => setAmortizeStartMonth(e.target.value)}
+                        className="select-filter"
+                        style={{ width: '100%', padding: '6px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '10px', fontWeight: 600, marginBottom: '4px', display: 'block', color: 'var(--text-secondary)' }}>
+                      Target P&L Nominal Code:
+                    </label>
+                    <select
+                      value={amortizeNominalCode}
+                      onChange={(e) => setAmortizeNominalCode(e.target.value)}
+                      className="select-filter"
+                      style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px' }}
+                    >
+                      <option value="">-- Choose Nominal Code --</option>
+                      {nominalCodes.map(nc => (
+                        <option key={nc.id} value={nc.code}>{nc.code}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
             </div>
+          </div>
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: '12px', marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
@@ -2429,8 +2516,13 @@ export default function ExpensesTable({
                           updated.linkedVendorCellId = '';
                           updated.linkedContractId = '';
                           updated.contractSplits = null;
-                          updated.linkedPayrollCellId = '';
                         }
+
+                        updated.amortize = amortize;
+                        updated.amortizeMonths = amortize ? amortizeMonths : null;
+                        updated.amortizeStartMonth = amortize ? amortizeStartMonth : null;
+                        updated.amortizeNominalCode = amortize ? amortizeNominalCode : null;
+
                         await saveExpense(updated);
                       }
                       onShowToast(`Successfully reconciled ${selectedExpenseIds.length} expenses in bulk!`, 'success');
@@ -2493,6 +2585,11 @@ export default function ExpensesTable({
                     updated.contractSplits = null;
                     updated.linkedPayrollCellId = '';
                   }
+
+                  updated.amortize = amortize;
+                  updated.amortizeMonths = amortize ? amortizeMonths : null;
+                  updated.amortizeStartMonth = amortize ? amortizeStartMonth : null;
+                  updated.amortizeNominalCode = amortize ? amortizeNominalCode : null;
 
                   try {
                     await saveExpense(updated);

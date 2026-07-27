@@ -203,6 +203,22 @@ export default function ReportsDashboard({
   const [expandedExitedOverheads, setExpandedExitedOverheads] = useState(false);
   const [ratiosSortField, setRatiosSortField] = useState('fullName');
   const [ratiosSortDirection, setRatiosSortDirection] = useState('asc');
+  const [leaguesSortField, setLeaguesSortField] = useState('totalVal');
+  const [leaguesSortDirection, setLeaguesSortDirection] = useState('desc');
+
+  const handleLeaguesHeaderClick = (field) => {
+    if (leaguesSortField === field) {
+      setLeaguesSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setLeaguesSortField(field);
+      setLeaguesSortDirection('desc');
+    }
+  };
+
+  const renderLeaguesSortIndicator = (field) => {
+    if (leaguesSortField !== field) return ' ↕';
+    return leaguesSortDirection === 'asc' ? ' ▲' : ' ▼';
+  };
 
   const handleRatiosHeaderClick = (field) => {
     if (ratiosSortField === field) {
@@ -1549,9 +1565,7 @@ export default function ReportsDashboard({
         {[
           { key: 'consolidated', label: 'Group P&L', icon: <BarChart3 size={14} /> },
           { key: 'ratios', label: 'Salary to billings', icon: <Percent size={14} /> },
-          { key: 'leagues_billings', label: 'Recruiter billings', icon: <TrendingUp size={14} /> },
-          { key: 'leagues_placements', label: 'Recruiter placements', icon: <Award size={14} /> },
-          { key: 'forecast', label: 'Forecast desk', icon: <Coins size={14} /> }
+          { key: 'leagues', label: 'Recruiter Leagues', icon: <Award size={14} /> }
         ].map(t => (
           <button
             key={t.key}
@@ -2477,218 +2491,6 @@ export default function ReportsDashboard({
       )}
 
       {/* ==============================================================
-          TAB 4: FORECAST DESK
-          ============================================================== */}
-      {activeTab === 'forecast' && (
-        <div className="table-container" style={{ overflowX: 'auto', width: '100%' }}>
-          <table className="entity-table dense" style={{ minWidth: '1000px' }}>
-            <thead>
-              <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                <th style={{ minWidth: '220px' }}>Projected Account (GBP)</th>
-                {monthsList.map(m => {
-                  const label = new Date(m + '-02').toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
-                  return <th key={m} style={{ textAlign: 'right' }}>{label}</th>;
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                const baselineOverhead = expenses
-                  .filter(e => e.plMonth)
-                  .reduce((sum, e) => sum + toGBP(e.amount, e.currency), 0) / 6;
-
-                const periodMetrics = monthsList.map(pKey => {
-                  const isForecast = pKey > '2026-06';
-                  
-                  // Active staff matching filter
-                  const activeStaff = staff.filter(s => {
-                    const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, pKey);
-                    if (daysWorked < 10) return false;
-                    
-                    if (!activeCompanyIds.includes(s.companyId)) return false;
-                    if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) return false;
-                    return true;
-                  });
-
-                  const activeStaffIds = activeStaff.map(s => s.id);
-
-                  // Placements splits
-                  const monthPlacements = placements.filter(p => p.startDate && p.startDate.substring(0, 7) === pKey);
-                  const revenue = monthPlacements.reduce((sum, p) => {
-                    let cellSum = 0;
-                    p.splits?.forEach(s => {
-                      const member = staff.find(st => st.id === s.staffId);
-                      if (member) {
-                        if (!activeCompanyIds.includes(member.companyId)) return;
-                        if (!deptFilter.includes('all') && !deptFilter.includes(member.department)) return;
-                        cellSum += toGBP((p.netScoreValue * s.percentage) / 100, 'GBP');
-                      }
-                    });
-                    return sum + cellSum;
-                  }, 0);
-
-                  // Salaries & Commissions matching overrides/reconciled actuals
-                  let salaries = 0;
-                  let commissions = 0;
-
-                  activeStaff.forEach(s => {
-                    const pay = getStaffPayrollForMonth(s, pKey);
-                    if (pKey > '2026-06') {
-                      salaries += pay.salaries;
-                      commissions += pay.commissions;
-                    }
-                  });
-
-                  // Overheads
-                  let overheadsExpenses = 0;
-                  if (isForecast) {
-                    overheadsExpenses = baselineOverhead * (activeStaff.length / (staff.length || 1));
-                  } else {
-                    const groupActiveStaff = staff.filter(s => {
-                      const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, pKey);
-                      return daysWorked >= 10;
-                    });
-                    const groupActiveStaffIds = groupActiveStaff.map(s => s.id);
-                    const monthExp = expenses.filter(e => e.plMonth === pKey);
-                    
-                    monthExp.forEach(exp => {
-                      const gbpAmt = toGBP(exp.amount, exp.currency);
-                      if (exp.allocationType === 'company') {
-                        const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-                        if (targets.length > 0) {
-                          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
-                            targets.forEach(compId => {
-                              const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
-                              const companyShare = gbpAmt * (percent / 100);
-                              const compStaff = groupActiveStaff.filter(s => s.companyId === compId);
-                              const compHead = compStaff.length || 1;
-                              const perStaffShare = companyShare / compHead;
-                              compStaff.forEach(s => {
-                                if (activeStaffIds.includes(s.id)) overheadsExpenses += perStaffShare;
-                              });
-                            });
-                          } else {
-                            const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.companyId));
-                            const totalHead = eligibleStaff.length || 1;
-                            const perStaffShare = gbpAmt / totalHead;
-                            eligibleStaff.forEach(s => {
-                              if (activeStaffIds.includes(s.id)) overheadsExpenses += perStaffShare;
-                            });
-                          }
-                        }
-                      } else if (exp.allocationType === 'department') {
-                        const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-                        if (targets.length > 0) {
-                          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
-                            targets.forEach(dept => {
-                              const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
-                              const deptShare = gbpAmt * (percent / 100);
-                              const deptStaff = groupActiveStaff.filter(s => s.department === dept);
-                              const deptHead = deptStaff.length || 1;
-                              const perStaffShare = deptShare / deptHead;
-                              deptStaff.forEach(s => {
-                                if (activeStaffIds.includes(s.id)) overheadsExpenses += perStaffShare;
-                              });
-                            });
-                          } else {
-                            const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.department));
-                            const totalHead = eligibleStaff.length || 1;
-                            const perStaffShare = gbpAmt / totalHead;
-                            eligibleStaff.forEach(s => {
-                              if (activeStaffIds.includes(s.id)) overheadsExpenses += perStaffShare;
-                            });
-                          }
-                        }
-                      } else if (exp.allocationType === 'staff') {
-                        const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
-                        if (targets.length > 0) {
-                          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
-                            targets.forEach(staffId => {
-                              if (groupActiveStaffIds.includes(staffId)) {
-                                const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
-                                const perStaffShare = gbpAmt * (percent / 100);
-                                if (activeStaffIds.includes(staffId)) overheadsExpenses += perStaffShare;
-                              }
-                            });
-                          } else {
-                            const perStaffShare = gbpAmt / targets.length;
-                            targets.forEach(staffId => {
-                              if (groupActiveStaffIds.includes(staffId)) {
-                                if (activeStaffIds.includes(staffId)) overheadsExpenses += perStaffShare;
-                              }
-                            });
-                          }
-                        }
-                      } else {
-                        const groupHead = groupActiveStaff.length || 1;
-                        groupActiveStaff.forEach(s => {
-                          if (activeStaffIds.includes(s.id)) overheadsExpenses += gbpAmt / groupHead;
-                        });
-                      }
-                    });
-                  }
-
-                  const totalOverheads = salaries + overheadsExpenses;
-                  const netProfit = revenue - commissions - totalOverheads;
-
-                  return { revenue, salaries, commissions, overheadsExpenses, totalOverheads, netProfit };
-                });
-
-                const renderForecastRow = (label, key, color = 'var(--text-primary)', isBold = false) => {
-                  return (
-                    <tr style={{ fontWeight: isBold ? 700 : 400 }}>
-                      <td style={{ color }}>{label}</td>
-                      {periodMetrics.map((met, idx) => (
-                        <td key={idx} style={{ textAlign: 'right', color, fontFamily: 'monospace' }}>
-                          {formatGBP(met[key])}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                };
-
-                return (
-                  <>
-                    {renderForecastRow('Pipeline Revenue (Billings)', 'revenue', 'var(--success)', true)}
-                    {renderForecastRow('Direct Commissions Cost', 'commissions', 'var(--danger)')}
-                    <tr style={{ height: '1px', backgroundColor: 'var(--border-color)' }} />
-                    {renderForecastRow('Employee Salaries', 'salaries')}
-                    {renderForecastRow('Projected Shared Overheads', 'overheadsExpenses')}
-                    {renderForecastRow('Total Projected Overheads', 'totalOverheads', 'var(--text-secondary)', true)}
-                    <tr style={{ borderTop: '2px solid var(--border-color)' }} />
-                    <tr style={{ fontWeight: 700, backgroundColor: 'rgba(16, 185, 129, 0.04)', fontSize: '13px' }}>
-                      <td style={{ color: 'var(--success)' }}>EBITDA Net Profit Margin</td>
-                      {periodMetrics.map((met, idx) => (
-                        <td key={idx} style={{ textAlign: 'right', color: met.netProfit >= 0 ? 'var(--success)' : 'var(--danger)', fontFamily: 'monospace' }}>
-                          {formatGBP(met.netProfit)}
-                        </td>
-                      ))}
-                    </tr>
-                    {(() => {
-                      let cumVal = 0;
-                      return (
-                        <tr style={{ fontWeight: 800, backgroundColor: 'rgba(59, 130, 246, 0.07)', fontSize: '13px', borderTop: '1px dashed rgba(59, 130, 246, 0.3)' }}>
-                          <td style={{ color: '#38bdf8' }}>📈 Cumulative Carry-Forward P&L</td>
-                          {periodMetrics.map((met, idx) => {
-                            cumVal += met.netProfit;
-                            return (
-                              <td key={idx} style={{ textAlign: 'right', color: cumVal >= 0 ? 'var(--success)' : 'var(--danger)', fontFamily: 'monospace', fontWeight: 800 }}>
-                                {formatGBP(cumVal)}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })()}
-                  </>
-                );
-              })()}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ==============================================================
           TAB 5: SALARY-TO-BILLINGS RATIO
           ============================================================== */}
       {activeTab === 'ratios' && (
@@ -2954,23 +2756,27 @@ export default function ReportsDashboard({
       {/* ==============================================================
           TAB 6: RECRUITER LEAGUES
           ============================================================== */}
-      {/* ==============================================================
-          TAB 6: RECRUITER BILLINGS LEAGUE
-          ============================================================== */}
-      {activeTab === 'leagues_billings' && (
+      {activeTab === 'leagues' && (
         <div className="table-container" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Rankings by Period Billings</h3>
+          <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Recruiter Leagues Leaderboard</h3>
           <table className="entity-table dense">
             <thead>
               <tr>
-                <th style={{ width: '60px' }}>Rank</th>
-                <th>Recruiter Name</th>
-                <th style={{ textAlign: 'right' }}>Total Billings (GBP)</th>
+                <th style={{ width: '80px' }}>Rank</th>
+                <th onClick={() => handleLeaguesHeaderClick('fullName')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                  Recruiter Name{renderLeaguesSortIndicator('fullName')}
+                </th>
+                <th onClick={() => handleLeaguesHeaderClick('totalVal')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right' }}>
+                  Total Billings (GBP){renderLeaguesSortIndicator('totalVal')}
+                </th>
+                <th onClick={() => handleLeaguesHeaderClick('count')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right' }}>
+                  Placements Count{renderLeaguesSortIndicator('count')}
+                </th>
               </tr>
             </thead>
             <tbody>
               {(() => {
-                const billingsRankList = staff.map(rec => {
+                const recruitersLeagueList = staff.map(rec => {
                   if (!companyFilter.includes('all') && !companyFilter.includes(rec.companyId)) return null;
                   if (!deptFilter.includes('all') && !deptFilter.includes(rec.department)) return null;
 
@@ -2987,128 +2793,65 @@ export default function ReportsDashboard({
                     return sum + toGBP(share, 'GBP');
                   }, 0);
 
-                  return { rec, totalVal };
-                })
-                .filter(Boolean)
-                .filter(item => item.totalVal > 0)
-                .sort((a, b) => b.totalVal - a.totalVal);
-
-                if (billingsRankList.length === 0) {
-                  return (
-                    <tr>
-                      <td colSpan="3" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-secondary)' }}>
-                        No billings logged matching active filters.
-                      </td>
-                    </tr>
-                  );
-                }
-
-                const activeRank = billingsRankList.filter(item => item.rec.status !== 'exited');
-                const exitedRank = billingsRankList.filter(item => item.rec.status === 'exited');
-
-                return (
-                  <>
-                    {activeRank.map((item, idx) => (
-                      <tr key={item.rec.id}>
-                        <td style={{ fontWeight: 700 }}>#{idx + 1}</td>
-                        <td>{item.rec.fullName}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
-                          {formatGBP(item.totalVal)}
-                        </td>
-                      </tr>
-                    ))}
-                    {exitedRank.length > 0 && (
-                      <>
-                        <tr 
-                          onClick={() => setExpandedExitedLeaguesLeaguesBillings(!expandedExitedLeaguesBillings)}
-                          style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'pointer', userSelect: 'none' }}
-                        >
-                          <td colSpan="3" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            <span style={{ marginRight: '6px' }}>{expandedExitedLeaguesBillings ? '▼' : '▶'}</span>
-                            Exited Staff ({exitedRank.length})
-                          </td>
-                        </tr>
-                        {expandedExitedLeaguesBillings && exitedRank.map((item, idx) => (
-                          <tr key={item.rec.id} style={{ opacity: 0.75 }}>
-                            <td style={{ fontWeight: 700, color: 'var(--text-muted)' }}>—</td>
-                            <td>{item.rec.fullName} <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(Exited)</span></td>
-                            <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
-                              {formatGBP(item.totalVal)}
-                            </td>
-                          </tr>
-                        ))}
-                      </>
-                    )}
-                  </>
-                );
-              })()}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ==============================================================
-          TAB 7: RECRUITER PLACEMENTS LEAGUE
-          ============================================================== */}
-      {activeTab === 'leagues_placements' && (
-        <div className="table-container" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Rankings by Placement Count</h3>
-          <table className="entity-table dense">
-            <thead>
-              <tr>
-                <th style={{ width: '60px' }}>Rank</th>
-                <th>Recruiter Name</th>
-                <th style={{ textAlign: 'right' }}>Placements Count</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                const volumeRankList = staff.map(rec => {
-                  if (!companyFilter.includes('all') && !companyFilter.includes(rec.companyId)) return null;
-                  if (!deptFilter.includes('all') && !deptFilter.includes(rec.department)) return null;
-
-                  const recPlacements = placements.filter(p => {
-                    if (!p.startDate || p.status === 'dns') return false;
-                    const startMonthKey = p.startDate.substring(0, 7);
-                    if (startMonthKey < startMonth || startMonthKey > endMonth) return false;
-                    return p.splits?.some(s => s.staffId === rec.id);
-                  });
-
                   const splitWeightedCount = recPlacements.reduce((sum, p) => {
                     const split = p.splits.find(s => s.staffId === rec.id);
                     const percentage = split ? (Number(split.percentage) || 0) : 0;
                     return sum + (percentage / 100);
                   }, 0);
 
-                  return { rec, count: splitWeightedCount, rawPlacements: recPlacements };
+                  return {
+                    rec,
+                    fullName: rec.fullName || '',
+                    totalVal,
+                    count: splitWeightedCount,
+                    rawPlacements: recPlacements,
+                    status: rec.status
+                  };
                 })
                 .filter(Boolean)
-                .filter(item => item.count > 0)
-                .sort((a, b) => b.count - a.count);
+                .filter(item => item.totalVal > 0 || item.count > 0);
 
-                if (volumeRankList.length === 0) {
+                if (recruitersLeagueList.length === 0) {
                   return (
                     <tr>
-                      <td colSpan="3" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-secondary)' }}>
-                        No placements recorded matching active filters.
+                      <td colSpan="4" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-secondary)' }}>
+                        No billings or placements recorded matching active filters.
                       </td>
                     </tr>
                   );
                 }
 
-                const activeRank = volumeRankList.filter(item => item.rec.status !== 'exited');
-                const exitedRank = volumeRankList.filter(item => item.rec.status === 'exited');
+                // Sort list by leaguesSortField and leaguesSortDirection
+                const sortedLeagues = [...recruitersLeagueList].sort((a, b) => {
+                  let valA = a[leaguesSortField];
+                  let valB = b[leaguesSortField];
+
+                  if (typeof valA === 'string') {
+                    valA = valA.toLowerCase();
+                    valB = valB.toLowerCase();
+                  }
+
+                  if (valA < valB) return leaguesSortDirection === 'asc' ? -1 : 1;
+                  if (valA > valB) return leaguesSortDirection === 'asc' ? 1 : -1;
+                  return 0;
+                });
+
+                const activeRank = sortedLeagues.filter(item => item.status !== 'exited');
+                const exitedRank = sortedLeagues.filter(item => item.status === 'exited');
 
                 return (
                   <>
                     {activeRank.map((item, idx) => (
                       <tr key={item.rec.id}>
                         <td style={{ fontWeight: 700 }}>#{idx + 1}</td>
-                        <td>{item.rec.fullName}</td>
+                        <td style={{ fontWeight: 600 }}>{item.fullName}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)', fontFamily: 'monospace' }}>
+                          {formatGBP(item.totalVal)}
+                        </td>
                         <td style={{ textAlign: 'right' }}>
                           <button 
                             onClick={() => setSelectedRecruiterPlacements({
-                              recruiterName: item.rec.fullName,
+                              recruiterName: item.fullName,
                               placements: item.rawPlacements,
                               recruiterId: item.rec.id
                             })}
@@ -3131,22 +2874,25 @@ export default function ReportsDashboard({
                     {exitedRank.length > 0 && (
                       <>
                         <tr 
-                          onClick={() => setExpandedExitedLeaguesLeaguesPlacements(!expandedExitedLeaguesPlacements)}
+                          onClick={() => setExpandedExitedLeaguesLeaguesBillings(!expandedExitedLeaguesLeaguesBillings)}
                           style={{ backgroundColor: 'var(--bg-secondary)', cursor: 'pointer', userSelect: 'none' }}
                         >
-                          <td colSpan="3" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            <span style={{ marginRight: '6px' }}>{expandedExitedLeaguesPlacements ? '▼' : '▶'}</span>
+                          <td colSpan="4" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            <span style={{ marginRight: '6px' }}>{expandedExitedLeaguesBillings ? '▼' : '▶'}</span>
                             Exited Staff ({exitedRank.length})
                           </td>
                         </tr>
-                        {expandedExitedLeaguesPlacements && exitedRank.map((item, idx) => (
+                        {expandedExitedLeaguesBillings && exitedRank.map((item) => (
                           <tr key={item.rec.id} style={{ opacity: 0.75 }}>
                             <td style={{ fontWeight: 700, color: 'var(--text-muted)' }}>—</td>
-                            <td>{item.rec.fullName} <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(Exited)</span></td>
+                            <td>{item.fullName} <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(Exited)</span></td>
+                            <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)', fontFamily: 'monospace' }}>
+                              {formatGBP(item.totalVal)}
+                            </td>
                             <td style={{ textAlign: 'right' }}>
                               <button 
                                 onClick={() => setSelectedRecruiterPlacements({
-                                  recruiterName: item.rec.fullName,
+                                  recruiterName: item.fullName,
                                   placements: item.rawPlacements,
                                   recruiterId: item.rec.id
                                 })}

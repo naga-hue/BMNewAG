@@ -3509,7 +3509,8 @@ export default function ReportsDashboard({
                   if (daysWorked < 10) return;
                   if (!isCompanyMatch(s.companyId) || !isDeptMatch(s.department)) return;
 
-                  const isContractor = s.employmentStatus === 'contractor' || s.employmentStatus === 'freelance';
+                  const sPolicy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+                  const isContractor = s.employmentStatus === 'contractor' || s.employmentStatus === 'freelance' || (sPolicy && sPolicy.type === 'freelance');
                   if (!isContractor) {
                     let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
                     let proration = 1.0;
@@ -3565,7 +3566,8 @@ export default function ReportsDashboard({
                   if (daysWorked < 10) return;
                   if (!isCompanyMatch(s.companyId) || !isDeptMatch(s.department)) return;
 
-                  const isContractor = s.employmentStatus === 'contractor' || s.employmentStatus === 'freelance';
+                  const sPolicy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+                  const isContractor = s.employmentStatus === 'contractor' || s.employmentStatus === 'freelance' || (sPolicy && sPolicy.type === 'freelance');
                   if (isContractor) {
                     const [yearNum, monthNum] = mKey.split('-').map(Number);
                     const totalDaysInMonth = new Date(yearNum, monthNum, 0).getDate();

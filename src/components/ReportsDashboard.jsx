@@ -109,7 +109,7 @@ export default function ReportsDashboard({
     return companyFilter.includes(c.id);
   });
 
-  const getContractShareForCompanies = (c, mKey, compIds) => {
+  const getContractCompanyShare = (c, mKey, companyId) => {
     const splits = c.splits || [];
     
     // Filter active staff in the month
@@ -125,7 +125,7 @@ export default function ReportsDashboard({
         const eligibleStaff = activeStaff.filter(s => consolidatedComps.includes(s.companyId));
         const total = eligibleStaff.length;
         if (total === 0) return 0;
-        const matchingStaff = eligibleStaff.filter(s => compIds.includes(s.companyId));
+        const matchingStaff = eligibleStaff.filter(s => s.companyId === companyId);
         return matchingStaff.length / total;
       } else {
         // Headcount split among targets in splits list
@@ -149,18 +149,18 @@ export default function ReportsDashboard({
           const targetShare = count / totalCount;
           
           if (s.type === 'company') {
-            if (compIds.includes(s.targetId)) {
+            if (s.targetId === companyId) {
               companyShare += targetShare;
             }
           } else if (s.type === 'department') {
             const deptStaff = activeStaff.filter(member => member.department === s.targetId);
-            const targetCompStaffCount = deptStaff.filter(member => compIds.includes(member.companyId)).length;
+            const targetCompStaffCount = deptStaff.filter(member => member.companyId === companyId).length;
             if (deptStaff.length > 0) {
               companyShare += targetShare * (targetCompStaffCount / deptStaff.length);
             }
           } else if (s.type === 'user' && s.targetId) {
             const member = activeStaff.find(member => member.id === s.targetId);
-            if (member && compIds.includes(member.companyId)) {
+            if (member && member.companyId === companyId) {
               companyShare += targetShare;
             }
           }
@@ -171,25 +171,25 @@ export default function ReportsDashboard({
     } else {
       // Manual splits
       if (splits.length === 0) {
-        return compIds.includes(c.companyId) ? 1.0 : 0;
+        return c.companyId === companyId ? 1.0 : 0;
       }
 
       let companyShare = 0;
       splits.forEach(s => {
         const manualPct = Number(s.percentage || 0) / 100;
         if (s.type === 'company') {
-          if (compIds.includes(s.targetId)) {
+          if (s.targetId === companyId) {
             companyShare += manualPct;
           }
         } else if (s.type === 'department') {
           const deptStaff = activeStaff.filter(member => member.department === s.targetId);
-          const targetCompStaffCount = deptStaff.filter(member => compIds.includes(member.companyId)).length;
+          const targetCompStaffCount = deptStaff.filter(member => member.companyId === companyId).length;
           if (deptStaff.length > 0) {
             companyShare += manualPct * (targetCompStaffCount / deptStaff.length);
           }
         } else if (s.type === 'user' && s.targetId) {
           const member = activeStaff.find(member => member.id === s.targetId);
-          if (member && compIds.includes(member.companyId)) {
+          if (member && member.companyId === companyId) {
             companyShare += manualPct;
           }
         }
@@ -1144,56 +1144,51 @@ export default function ReportsDashboard({
 
           const assignedSeats = assetAssignments.filter(a => a.contractId === contract.id);
           let gbpCost = 0;
+          const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
+          const targetCompIds = overrideCompanyId ? [overrideCompanyId] : activeCompanyIds;
 
-          if (assignedSeats.length > 0) {
-            const costPerSeat = unitMonthlyCost;
-            let matchingAssignedCount = 0;
-            assignedSeats.forEach(a => {
-              const member = staff.find(s => s.id === a.staffId);
-              if (member) {
-                const staffComp = companies.find(co => co.id === member.companyId);
-                const effectiveCompanyId = staffComp?.country === 'India' ? contract.companyId : member.companyId;
+          targetCompIds.forEach(compId => {
+            const baseShare = getContractCompanyShare(contract, monthKey, compId);
+            if (baseShare <= 0) return;
 
-                const isComp = activeCompanyIds.includes(effectiveCompanyId);
-                const isDept = deptFilter.includes('all') || deptFilter.includes(member.department);
-                if (isComp && isDept) {
-                  matchingAssignedCount++;
-                }
-              }
-            });
-            let assignedCost = matchingAssignedCount * costPerSeat;
-
-            const unusedCount = Math.max(0, totalSeats - assignedSeats.length);
-            let unusedCost = 0;
-            if (unusedCount > 0) {
-              const share = getContractShareForCompanies(contract, monthKey, activeCompanyIds);
-              if (share > 0) {
-                let unusedBase = unusedCount * costPerSeat * share;
-                if (!deptFilter.includes('all')) {
-                  const compActiveStaff = groupActiveStaff.filter(s => s.companyId === contract.companyId);
-                  const deptActiveStaff = compActiveStaff.filter(s => deptFilter.includes(s.department));
-                  unusedBase = unusedBase * (deptActiveStaff.length / (compActiveStaff.length || 1));
-                }
-                unusedCost = unusedBase;
-              }
-            }
-
-            const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
-            gbpCost = toGBP(assignedCost + unusedCost, contract.currency || 'GBP') * taxFactor;
-          } else {
-            const share = getContractShareForCompanies(contract, monthKey, activeCompanyIds);
-            if (share <= 0) return;
-            let cost = unitMonthlyCost * totalSeats * share;
-            const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
-            gbpCost = toGBP(cost, contract.currency || 'GBP') * taxFactor;
-
+            let deptProration = 1.0;
             if (!deptFilter.includes('all')) {
-              const compActiveStaff = groupActiveStaff.filter(s => s.companyId === contract.companyId);
+              const compActiveStaff = groupActiveStaff.filter(s => s.companyId === compId);
               const deptActiveStaff = compActiveStaff.filter(s => deptFilter.includes(s.department));
-              if (deptActiveStaff.length === 0) return;
-              gbpCost = gbpCost * (deptActiveStaff.length / (compActiveStaff.length || 1));
+              deptProration = compActiveStaff.length > 0 ? (deptActiveStaff.length / compActiveStaff.length) : 0;
             }
-          }
+
+            if (assignedSeats.length > 0) {
+              const costPerSeat = unitMonthlyCost;
+              let companyAssignedCount = 0;
+              assignedSeats.forEach(a => {
+                const member = staff.find(s => s.id === a.staffId);
+                if (member) {
+                  const staffComp = companies.find(co => co.id === member.companyId);
+                  const effectiveCompanyId = staffComp?.country === 'India' ? contract.companyId : member.companyId;
+                  if (effectiveCompanyId === compId) {
+                    const isDept = deptFilter.includes('all') || deptFilter.includes(member.department);
+                    if (isDept) {
+                      companyAssignedCount++;
+                    }
+                  }
+                }
+              });
+
+              const assignedCost = companyAssignedCount * costPerSeat;
+
+              const unusedCount = Math.max(0, totalSeats - assignedSeats.length);
+              let unusedCost = 0;
+              if (unusedCount > 0) {
+                unusedCost = unusedCount * costPerSeat * baseShare * deptProration;
+              }
+
+              gbpCost += toGBP(assignedCost + unusedCost, contract.currency || 'GBP') * taxFactor;
+            } else {
+              const cost = unitMonthlyCost * totalSeats * baseShare * deptProration;
+              gbpCost += toGBP(cost, contract.currency || 'GBP') * taxFactor;
+            }
+          });
 
           if (gbpCost <= 0) return;
 
@@ -3942,98 +3937,97 @@ export default function ReportsDashboard({
                   }
 
                   const assignedSeats = assetAssignments.filter(a => a.contractId === contract.id);
-                  let gbpCost = 0;
-                  let recipientStaffNames = [];
+                  const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
 
-                  if (assignedSeats.length > 0) {
-                    const costPerSeat = unitMonthlyCost;
-                    let matchingAssignedCount = 0;
-                    assignedSeats.forEach(a => {
-                      const member = staff.find(s => s.id === a.staffId);
-                      if (member) {
-                        const staffComp = companies.find(co => co.id === member.companyId);
-                        const effectiveCompanyId = staffComp?.country === 'India' ? contract.companyId : member.companyId;
+                  activeCompanyIds.forEach(compId => {
+                    const baseShare = getContractCompanyShare(contract, mKey, compId);
+                    if (baseShare <= 0) return;
 
-                        const isComp = isCompanyMatch(effectiveCompanyId);
-                        const isDept = isDeptMatch(member.department);
-                        if (isComp && isDept) {
-                          matchingAssignedCount++;
-                          recipientStaffNames.push(member.fullName);
-                        }
-                      }
-                    });
-                    let assignedCost = matchingAssignedCount * costPerSeat;
-
-                    const unusedCount = Math.max(0, totalSeats - assignedSeats.length);
-                    let unusedCost = 0;
-                    if (unusedCount > 0) {
-                      const share = getContractShareForCompanies(contract, mKey, activeCompanyIds);
-                      if (share > 0) {
-                        let unusedBase = unusedCount * costPerSeat * share;
-                        if (!deptFilter.includes('all')) {
-                          const compActiveStaff = groupActiveStaff.filter(s => s.companyId === contract.companyId);
-                          const deptActiveStaff = compActiveStaff.filter(s => deptFilter.includes(s.department));
-                          unusedBase = unusedBase * (deptActiveStaff.length / (compActiveStaff.length || 1));
-                        }
-                        unusedCost = unusedBase;
-                      }
-                    }
-
-                    const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
-                    gbpCost = toGBP(assignedCost + unusedCost, contract.currency || 'GBP') * taxFactor;
-                  } else {
-                    const share = getContractShareForCompanies(contract, mKey, activeCompanyIds);
-                    if (share <= 0) return;
-                    let cost = unitMonthlyCost * totalSeats * share;
-                    const taxFactor = 1 + (Number(contract.taxRate || 0) / 100);
-                    gbpCost = toGBP(cost, contract.currency || 'GBP') * taxFactor;
-
+                    let deptProration = 1.0;
                     if (!deptFilter.includes('all')) {
-                      const compActiveStaff = groupActiveStaff.filter(s => s.companyId === contract.companyId);
+                      const compActiveStaff = groupActiveStaff.filter(s => s.companyId === compId);
                       const deptActiveStaff = compActiveStaff.filter(s => deptFilter.includes(s.department));
-                      if (deptActiveStaff.length === 0) return;
-                      gbpCost = gbpCost * (deptActiveStaff.length / (compActiveStaff.length || 1));
+                      deptProration = compActiveStaff.length > 0 ? (deptActiveStaff.length / compActiveStaff.length) : 0;
                     }
-                  }
 
-                  if (gbpCost <= 0) return;
+                    let compGbpCost = 0;
+                    let compRecipientStaffNames = [];
+                    let compAssignedSeats = [];
 
-                  const nameLower = contract.name.toLowerCase();
+                    if (assignedSeats.length > 0) {
+                      const costPerSeat = unitMonthlyCost;
+                      let companyAssignedCount = 0;
+                      assignedSeats.forEach(a => {
+                        const member = staff.find(s => s.id === a.staffId);
+                        if (member) {
+                          const staffComp = companies.find(co => co.id === member.companyId);
+                          const effectiveCompanyId = staffComp?.country === 'India' ? contract.companyId : member.companyId;
+                          if (effectiveCompanyId === compId) {
+                            const isDept = deptFilter.includes('all') || deptFilter.includes(member.department);
+                            if (isDept) {
+                              companyAssignedCount++;
+                              compRecipientStaffNames.push(member.fullName);
+                              compAssignedSeats.push(a);
+                            }
+                          }
+                        }
+                      });
 
-                  const vendorObj = vendors.find(v => v.id === contract.vendorId);
-                  let assignedNominal = contract.nominalCode || vendorObj?.nominalCode;
-                  if (!assignedNominal) {
-                    const nameLower = contract.name.toLowerCase();
-                    if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
-                      const rentMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('rent') || nc.code.toLowerCase().includes('rates') || nc.code.startsWith('700'));
-                      assignedNominal = rentMatch ? rentMatch.code : (nominalCodes[0]?.code || 'Unassigned');
+                      const assignedCost = companyAssignedCount * costPerSeat;
+
+                      const unusedCount = Math.max(0, totalSeats - assignedSeats.length);
+                      let unusedCost = 0;
+                      if (unusedCount > 0) {
+                        unusedCost = unusedCount * costPerSeat * baseShare * deptProration;
+                      }
+
+                      compGbpCost = toGBP(assignedCost + unusedCost, contract.currency || 'GBP') * taxFactor;
                     } else {
-                      const swMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'));
-                      assignedNominal = swMatch ? swMatch.code : (nominalCodes[0]?.code || 'Unassigned');
+                      const cost = unitMonthlyCost * totalSeats * baseShare * deptProration;
+                      compGbpCost = toGBP(cost, contract.currency || 'GBP') * taxFactor;
                     }
-                  }
 
-                  if (nominalCode && !assignedNominal.startsWith(nominalCode) && assignedNominal !== nominalCode) {
-                    return;
-                  }
+                    if (compGbpCost <= 0) return;
 
-                  let payeeLabel = vendorObj ? `${vendorObj.name} (${contract.name})` : contract.name;
-                  if (recipientStaffNames.length > 0) {
-                    payeeLabel += ` [${recipientStaffNames.length} Seats: ${recipientStaffNames.join(', ')}]`;
-                  }
+                    const vendorObj = vendors.find(v => v.id === contract.vendorId);
+                    let assignedNominal = contract.nominalCode || vendorObj?.nominalCode;
+                    if (!assignedNominal) {
+                      const nameLower = contract.name.toLowerCase();
+                      if (nameLower.includes('rent') || nameLower.includes('office') || nameLower.includes('lease')) {
+                        const rentMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('rent') || nc.code.toLowerCase().includes('rates') || nc.code.startsWith('700'));
+                        assignedNominal = rentMatch ? rentMatch.code : (nominalCodes[0]?.code || 'Unassigned');
+                      } else {
+                        const swMatch = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'));
+                        assignedNominal = swMatch ? swMatch.code : (nominalCodes[0]?.code || 'Unassigned');
+                      }
+                    }
 
-                  projectedItems.push({
-                    id: `proj-contract-${contract.id}-${mKey}`,
-                    date: `${mKey}-01`,
-                    plMonth: mKey,
-                    payee: payeeLabel,
-                    linkedContractId: contract.id,
-                    nominalCode: assignedNominal,
-                    allocationType: recipientStaffNames.length > 0 ? 'staff' : 'company',
-                    allocationTarget: recipientStaffNames.length > 0 ? assignedSeats.map(a => a.staffId) : [contract.companyId],
-                    amount: gbpCost,
-                    currency: 'GBP',
-                    isProjection: true
+                    if (nominalCode && !assignedNominal.startsWith(nominalCode) && assignedNominal !== nominalCode) {
+                      return;
+                    }
+
+                    const compObj = companies.find(co => co.id === compId);
+                    let payeeLabel = vendorObj ? `${vendorObj.name} (${contract.name})` : contract.name;
+                    if (compRecipientStaffNames.length > 0) {
+                      payeeLabel += ` [${compRecipientStaffNames.length} Seats: ${compRecipientStaffNames.join(', ')}]`;
+                    }
+                    if (compObj) {
+                      payeeLabel += ` - ${compObj.name} Share`;
+                    }
+
+                    projectedItems.push({
+                      id: `proj-contract-${contract.id}-${compId}-${mKey}`,
+                      date: `${mKey}-01`,
+                      plMonth: mKey,
+                      payee: payeeLabel,
+                      linkedContractId: contract.id,
+                      nominalCode: assignedNominal,
+                      allocationType: compRecipientStaffNames.length > 0 ? 'staff' : 'company',
+                      allocationTarget: compRecipientStaffNames.length > 0 ? compAssignedSeats.map(a => a.staffId) : [compId],
+                      amount: compGbpCost,
+                      currency: 'GBP',
+                      isProjection: true
+                    });
                   });
                 }
               });

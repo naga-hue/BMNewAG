@@ -1434,6 +1434,9 @@ export default function ReportsDashboard({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div style={{ alignSelf: 'flex-end', fontSize: '9px', color: 'var(--text-muted)', opacity: 0.5 }}>
+        Build Tag: v2.0.2-drilldown-combined-v2
+      </div>
       
       {/* Dynamic Global Filters Toolbar */}
       <div style={{ padding: '16px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'visible', position: 'relative', zIndex: 100 }}>

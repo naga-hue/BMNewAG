@@ -81,6 +81,16 @@ export default function App() {
   });
 
   // Default Super Admin User configuration
+  const getDefaultAllowedModules = (role) => {
+    if (role === 'admin') {
+      return ['whats_important', 'dashboard', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors', 'logs', 'reports', 'rbac', 'credit_control', 'cashflow'];
+    }
+    if (role === 'manager') {
+      return ['whats_important', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'reports'];
+    }
+    return ['staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses'];
+  };
+
   const DEFAULT_ADMIN_USER = {
     id: 'super-admin',
     fullName: 'Naga Kandasamy',
@@ -88,7 +98,7 @@ export default function App() {
     permissions: {
       role: 'admin',
       dataScope: 'all',
-      allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors', 'logs', 'reports', 'rbac', 'credit_control', 'cashflow']
+      allowedModules: getDefaultAllowedModules('admin')
     }
   };
 
@@ -117,6 +127,18 @@ export default function App() {
 
   // Navigation tab: 'dashboard' | 'directory' | 'staff'
   const [activeTab, setActiveTab] = useState('whats_important');
+
+  // Fallback to allowed activeTab if current tab is not permitted
+  useEffect(() => {
+    if (currentUser) {
+      const allowed = currentUser.permissions?.allowedModules || [];
+      if (allowed.length > 0 && !allowed.includes(activeTab)) {
+        const fallback = allowed.find(m => m !== 'dashboard' && m !== 'whats_important' && m !== 'rbac') || allowed[0] || 'staff';
+        setActiveTab(fallback);
+      }
+    }
+  }, [currentUser, activeTab]);
+
   const [letterTemplates, setLetterTemplates] = useState([]);
   const [fxRatesVersion, setFxRatesVersion] = useState(0);
   const [isQuickSearchOpen, setIsQuickSearchOpen] = useState(false);
@@ -159,10 +181,11 @@ export default function App() {
       } else if (storedId && useBoundStore.getState().staff.length > 0) {
         const found = useBoundStore.getState().staff.find(s => s.id === storedId);
         if (found) {
+          const role = found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter';
           const permissions = found.permissions || {
-            role: found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
-            dataScope: found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
-            allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors']
+            role,
+            dataScope: role === 'manager' ? 'department' : 'self',
+            allowedModules: getDefaultAllowedModules(role)
           };
           setCurrentUser({ ...found, permissions });
         }
@@ -178,10 +201,11 @@ export default function App() {
         if (storedId && storedId !== 'super-admin') {
           const found = staffList.find(s => s.id === storedId);
           if (found) {
+            const role = found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter';
             const permissions = found.permissions || {
-              role: found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
-              dataScope: found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
-              allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors']
+              role,
+              dataScope: role === 'manager' ? 'department' : 'self',
+              allowedModules: getDefaultAllowedModules(role)
             };
             setCurrentUser({ ...found, permissions });
           }
@@ -1519,10 +1543,11 @@ export default function App() {
             if (foundStaff) {
               const correctPassword = foundStaff.password || 'Welcome123';
               if (correctPassword === password) {
+                const role = foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter';
                 const updatedPermissions = foundStaff.permissions || {
-                  role: foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
-                  dataScope: foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
-                  allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors']
+                  role,
+                  dataScope: role === 'manager' ? 'department' : 'self',
+                  allowedModules: getDefaultAllowedModules(role)
                 };
                 setCurrentUser({
                   ...foundStaff,
@@ -1602,15 +1627,17 @@ export default function App() {
           
           <nav>
             <ul className="nav-links">
-              <li>
-                <div 
-                  className={`nav-item ${activeTab === 'whats_important' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('whats_important')}
-                >
-                  <Bell size={18} />
-                  <span>What's Important</span>
-                </div>
-              </li>
+              {currentUser.permissions.allowedModules.includes('whats_important') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'whats_important' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('whats_important')}
+                  >
+                    <Bell size={18} />
+                    <span>What's Important</span>
+                  </div>
+                </li>
+              )}
 
               {currentUser.permissions.allowedModules.includes('dashboard') && (
                 <li>
@@ -1968,10 +1995,11 @@ export default function App() {
                     } else {
                       const selectedMember = staff.find(st => st.id === val);
                       if (selectedMember) {
+                        const role = selectedMember.department === 'Finance' || selectedMember.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter';
                         const updatedPermissions = selectedMember.permissions || {
-                          role: selectedMember.department === 'Finance' || selectedMember.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
-                          dataScope: selectedMember.department === 'Finance' || selectedMember.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
-                          allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors']
+                          role,
+                          dataScope: role === 'manager' ? 'department' : 'self',
+                          allowedModules: getDefaultAllowedModules(role)
                         };
                         setCurrentUser({
                           ...selectedMember,

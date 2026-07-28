@@ -207,6 +207,7 @@ export default function ReportsDashboard({
   const [leaguesSortDirection, setLeaguesSortDirection] = useState('desc');
   const [showPnlDashboard, setShowPnlDashboard] = useState(true);
   const [activeTooltip, setActiveTooltip] = useState(null);
+  const [pnlVersion, setPnlVersion] = useState('v1');
 
   const handleLeaguesHeaderClick = (field) => {
     if (leaguesSortField === field) {
@@ -1597,7 +1598,42 @@ export default function ReportsDashboard({
           TAB 1: DYNAMIC COMPANY-WIDE P&L MATRIX
           ============================================================== */}
       {activeTab === 'consolidated' && (() => {
-        const rowData = monthsList.map(m => getFilteredMonthlyData(m));
+        let rowData = monthsList.map(m => getFilteredMonthlyData(m));
+
+        if (pnlVersion === 'v2') {
+          // Compute 3-month run-rate average from April, May, June 2026
+          const runRateMonths = ['2026-04', '2026-05', '2026-06'];
+          const runRateData = runRateMonths.map(m => getFilteredMonthlyData(m));
+          
+          const avgOverheads = runRateData.reduce((sum, d) => sum + (d.overheadsExpenses || 0), 0) / 3;
+          
+          const allCodes = Array.from(new Set([
+            ...nominalCodes.map(nc => nc.code),
+            ...runRateData.flatMap(d => Object.keys(d.nominalBreakdown || {}))
+          ]));
+          const avgNominalBreakdown = {};
+          allCodes.forEach(code => {
+            const sum = runRateData.reduce((acc, d) => acc + (d.nominalBreakdown?.[code] || 0), 0);
+            avgNominalBreakdown[code] = sum / 3;
+          });
+
+          // Apply flat-lined averages to forecast months (July 2026 onwards)
+          rowData = rowData.map((row, idx) => {
+            const mKey = monthsList[idx];
+            if (mKey >= '2026-07') {
+              const updatedOverheads = avgOverheads;
+              const updatedNetProfit = (row.revenue || 0) - (row.commissions || 0) - updatedOverheads;
+              return {
+                ...row,
+                overheadsExpenses: updatedOverheads,
+                totalOverheads: updatedOverheads,
+                nominalBreakdown: avgNominalBreakdown,
+                netProfit: updatedNetProfit
+              };
+            }
+            return row;
+          });
+        }
 
         const totalRevenue = rowData.reduce((acc, row) => acc + (row.revenue || 0), 0);
         const totalCommissions = rowData.reduce((acc, row) => acc + (row.commissions || 0), 0);
@@ -1758,6 +1794,63 @@ export default function ReportsDashboard({
 
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
+            
+            {/* Forecast Model Version Switcher */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: 'var(--bg-secondary)',
+              padding: '8px 16px',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-color)',
+              gap: '12px'
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-primary)' }}>P&L Forecasting Model:</span>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  {pnlVersion === 'v1' 
+                    ? 'Version 1: Uses actual reconciled transactions for historical months and explicit projections/contracts for future months.' 
+                    : 'Version 2: Uses actual reconciled transactions for historical months and flat-lines future months to a 3-month run-rate average (April - June 2026).'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-primary)', padding: '3px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                <button
+                  type="button"
+                  onClick={() => setPnlVersion('v1')}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    borderRadius: '4px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    backgroundColor: pnlVersion === 'v1' ? 'var(--accent)' : 'transparent',
+                    color: pnlVersion === 'v1' ? '#fff' : 'var(--text-secondary)',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  v1 - Standard Projections
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPnlVersion('v2')}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    borderRadius: '4px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    backgroundColor: pnlVersion === 'v2' ? 'var(--accent)' : 'transparent',
+                    color: pnlVersion === 'v2' ? '#fff' : 'var(--text-secondary)',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  v2 - 3-Month Running Average
+                </button>
+              </div>
+            </div>
             
             {/* Dashboard Toggle / Header Panel */}
             <div style={{ 

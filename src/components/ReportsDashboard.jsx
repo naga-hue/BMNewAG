@@ -5157,6 +5157,17 @@ export default function ReportsDashboard({
           return JSON.stringify(item).toLowerCase().includes(q);
         });
 
+        const v1Data = drilldownState.monthKey ? getFilteredMonthlyData(drilldownState.monthKey) : null;
+        let v1Value = 0;
+        if (v1Data) {
+          if (drilldownState.categoryKey === 'revenue') v1Value = v1Data.revenue;
+          else if (drilldownState.categoryKey === 'commissions') v1Value = v1Data.commissions;
+          else if (drilldownState.categoryKey === 'totalOverheads' || drilldownState.categoryKey === 'overheadsExpenses') v1Value = v1Data.overheadsExpenses;
+          else if (drilldownState.categoryKey === 'nominal') {
+            v1Value = v1Data.nominalBreakdown?.[drilldownState.nominalCode] || 0;
+          }
+        }
+
         return (
           <div className="form-wizard-overlay" onClick={() => setDrilldownState(null)} style={{ zIndex: 1200 }}>
             <div className="form-wizard-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '960px', width: '90%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', gap: '16px', padding: '24px' }}>
@@ -5197,6 +5208,43 @@ export default function ReportsDashboard({
                   Showing {filteredItems.length} of {rawItems.length} contributing records
                 </span>
               </div>
+
+              {/* Version 2 vs Version 1 (Actual Database Generated Pipeline) Comparison Card */}
+              {pnlVersion === 'v2' && drilldownState.monthKey && drilldownState.monthKey >= '2026-07' && (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '16px',
+                  backgroundColor: 'rgba(255,255,255,0.02)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  fontSize: '13px'
+                }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px' }}>
+                      VERSION 2 FORECAST (3-MONTH AVERAGE)
+                    </span>
+                    <strong style={{ fontSize: '18px', color: 'var(--accent)' }}>
+                      {formatGBP(drilldownState.amount)}
+                    </strong>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Flat-lined running average (April - June 2026)
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid var(--border-color)', paddingLeft: '16px' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px' }}>
+                      ACTUAL GENERATED / DATABASE PIPELINE
+                    </span>
+                    <strong style={{ fontSize: '18px', color: 'var(--success)' }}>
+                      {formatGBP(v1Value)}
+                    </strong>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Actual pipeline placements / explicit projected items in database
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Recipient Allocation Breakdown Bar ("For Whom The Sum Is") */}
               {(drilldownState.categoryKey === 'overheadsExpenses' || drilldownState.categoryKey === 'nominal' || drilldownState.categoryKey === 'totalOverheads') && (() => {

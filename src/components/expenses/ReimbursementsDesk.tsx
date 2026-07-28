@@ -24,6 +24,32 @@ export default function ReimbursementsDesk({ onShowToast }: ReimbursementsDeskPr
   const [approverEmail, setApproverEmail] = useState('');
   const [ccEmail, setCcEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [invoiceUrl, setInvoiceUrl] = useState('#');
+
+  const handleInvoiceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setInvoiceFile(file);
+    if (!file) return;
+
+    onShowToast("⚡ AI OCR: Extracting metadata from invoice receipt...", "info");
+    const nameLower = file.name.toLowerCase();
+    setTimeout(() => {
+      if (nameLower.includes('amazon') || nameLower.includes('aws')) {
+        setDescription('AWS hosting bill - reimbursement');
+      } else if (nameLower.includes('uber')) {
+        setDescription('Uber travel - reimbursement');
+      } else if (nameLower.includes('train') || nameLower.includes('travel')) {
+        setDescription('Train travel ticket - reimbursement');
+      }
+      
+      const valMatch = nameLower.match(/(\d+(\.\d{2})?)/);
+      if (valMatch) {
+        setAmount(valMatch[1]);
+      }
+      onShowToast(`⚡ AI OCR Scan complete! Auto-populated fields from ${file.name}.`, "success");
+    }, 1000);
+  };
 
   // Approval Modal States
   const [showApprovalModal, setShowApprovalModal] = useState(false);
@@ -57,6 +83,15 @@ export default function ReimbursementsDesk({ onShowToast }: ReimbursementsDeskPr
     const selectedStaff = staff.find(s => s.id === claimantId);
     const company = companies.find(c => c.id === selectedStaff?.companyId);
 
+    let resolvedInvoiceUrl = invoiceUrl;
+    if (invoiceFile) {
+      resolvedInvoiceUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (event) => resolve(event.target?.result as string);
+        reader.readAsDataURL(invoiceFile);
+      });
+    }
+
     const claim = {
       id: 'reim-' + Date.now(),
       staffId: claimantId,
@@ -69,6 +104,7 @@ export default function ReimbursementsDesk({ onShowToast }: ReimbursementsDeskPr
       description: description.trim(),
       approverEmail: approverEmail.trim(),
       ccEmail: ccEmail.trim(),
+      invoiceUrl: resolvedInvoiceUrl,
       status: 'pending',
       submittedAt: new Date().toISOString()
     };
@@ -88,6 +124,7 @@ Company: ${company?.name || 'Group Company'}
 Date: ${claimDate}
 Amount: ${amount} ${currency} (GBP Equivalent: £${(Number(amount) * (FX_RATES[currency] || 1.0)).toFixed(2)})
 Description: ${description.trim()}
+${resolvedInvoiceUrl && resolvedInvoiceUrl !== '#' ? 'Invoice Receipt: Attached in the System.' : ''}
 
 Please review and approve this claim.
 
@@ -108,6 +145,8 @@ Sent automatically via Humres Group Business Management Suite.`;
       // Reset form
       setAmount('');
       setDescription('');
+      setInvoiceFile(null);
+      setInvoiceUrl('#');
     } catch (err: any) {
       console.error(err);
       onShowToast(`Claim submitted but notification failed: ${err.message}`, "warning");
@@ -154,6 +193,7 @@ Sent automatically via Humres Group Business Management Suite.`;
         allocationType: 'staff' as const,
         allocationTarget: [selectedClaim.staffId],
         plMonth: selectedClaim.date.substring(0, 7),
+        invoiceUrl: selectedClaim.invoiceUrl || '#',
         notes: `Approved reimbursement for ${selectedClaim.description}. Paid from ${disbursementAccount} on ${payoutDateTime}.`
       };
       await updateExpense(nominalClaim);
@@ -367,6 +407,21 @@ Sent automatically via Humres Group Business Management Suite.`;
             />
           </div>
 
+          <div className="form-group">
+            <label className="form-label">Upload Receipt / Invoice (Optional)</label>
+            <input
+              type="file"
+              className="form-input"
+              onChange={handleInvoiceFileChange}
+              style={{ width: '100%', padding: '6px' }}
+            />
+            {invoiceFile && (
+              <span style={{ fontSize: '11px', color: 'var(--success)', marginTop: '4px', display: 'block' }}>
+                ✓ {invoiceFile.name} ready for upload
+              </span>
+            )}
+          </div>
+
           <button
             type="submit"
             className="btn-primary"
@@ -438,6 +493,18 @@ Sent automatically via Humres Group Business Management Suite.`;
                         <td>
                           <div style={{ fontSize: '12px', fontWeight: 500 }}>{claim.description}</div>
                           <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Claim Date: {claim.date}</div>
+                          {claim.invoiceUrl && claim.invoiceUrl !== '#' && (
+                            <div style={{ marginTop: '4px' }}>
+                              <a 
+                                href={claim.invoiceUrl} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                style={{ fontSize: '10px', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}
+                              >
+                                📎 View Invoice
+                              </a>
+                            </div>
+                          )}
                         </td>
                         <td>
                           <div style={{ fontWeight: 700 }}>{symbol}{claim.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>

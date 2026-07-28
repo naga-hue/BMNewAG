@@ -13,10 +13,12 @@ import './expenses.css';
 
 interface ExpensesDashboardProps {
   onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
+  currentUser?: any;
 }
 
-export default function ExpensesDashboard({ onShowToast }: ExpensesDashboardProps) {
-  const [activeSubTab, setActiveSubTab] = useState('ledger');
+export default function ExpensesDashboard({ onShowToast, currentUser }: ExpensesDashboardProps) {
+  const isRecruiter = currentUser?.permissions?.role === 'recruiter';
+  const [activeSubTab, setActiveSubTab] = useState(isRecruiter ? 'reimbursements' : 'ledger');
   const [showForm, setShowForm] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
@@ -305,7 +307,7 @@ export default function ExpensesDashboard({ onShowToast }: ExpensesDashboardProp
           { key: 'matrix', label: 'YTD Expenses Allocation Matrix' },
           { key: 'recipients', label: 'Recipient Payments Matrix' },
           { key: 'settings', label: 'Nominal Codes Setup' }
-        ].map(t => (
+        ].filter(t => !isRecruiter || t.key === 'reimbursements').map(t => (
           <button
             key={t.key}
             onClick={() => {
@@ -369,7 +371,7 @@ export default function ExpensesDashboard({ onShowToast }: ExpensesDashboardProp
       )}
 
       {activeSubTab === 'reimbursements' && (
-        <ReimbursementsDesk onShowToast={onShowToast} />
+        <ReimbursementsDesk onShowToast={onShowToast} currentUser={currentUser} />
       )}
 
       {activeSubTab === 'matrix' && (

@@ -17,6 +17,7 @@ interface CommissionsPayrollProps {
   setPayrollMonth: (month: string) => void;
   selectedBreakdownRow: any;
   setSelectedBreakdownRow: (row: any) => void;
+  currentUser?: any;
 }
 
 export default function CommissionsPayroll({
@@ -30,8 +31,10 @@ export default function CommissionsPayroll({
   payrollMonth,
   setPayrollMonth,
   selectedBreakdownRow,
-  setSelectedBreakdownRow
+  setSelectedBreakdownRow,
+  currentUser
 }: CommissionsPayrollProps) {
+  const isRecruiter = currentUser?.permissions?.role === 'recruiter';
 
   // Filters state
   const [companyFilter, setCompanyFilter] = useState<string[]>(['all']);
@@ -244,37 +247,39 @@ export default function CommissionsPayroll({
       </div>
 
       {/* Universal Filters Toolbar */}
-      <div className="controls-row" style={{ marginTop: 0 }}>
-        <div className="search-filter-group" style={{ flexWrap: 'wrap', gap: '8px' }}>
-          <MultiSelectFilter
-            options={companyOptions}
-            selectedValues={companyFilter}
-            onChange={(vals: string[]) => {
-              setCompanyFilter(vals);
-              setDeptFilter(['all']);
-            }}
-            placeholder="Select Companies"
-          />
+      {!isRecruiter && (
+        <div className="controls-row" style={{ marginTop: 0 }}>
+          <div className="search-filter-group" style={{ flexWrap: 'wrap', gap: '8px' }}>
+            <MultiSelectFilter
+              options={companyOptions}
+              selectedValues={companyFilter}
+              onChange={(vals: string[]) => {
+                setCompanyFilter(vals);
+                setDeptFilter(['all']);
+              }}
+              placeholder="Select Companies"
+            />
 
-          <MultiSelectFilter
-            options={departmentOptionsList}
-            selectedValues={deptFilter}
-            onChange={(vals: string[]) => setDeptFilter(vals)}
-            placeholder="Select Departments"
-          />
+            <MultiSelectFilter
+              options={departmentOptionsList}
+              selectedValues={deptFilter}
+              onChange={(vals: string[]) => setDeptFilter(vals)}
+              placeholder="Select Departments"
+            />
 
-          <select 
-            className="select-filter"
-            value={staffFilter}
-            onChange={(e) => setStaffFilter(e.target.value)}
-          >
-            <option value="all">All Staff Allocated</option>
-            {staff.map(s => (
-              <option key={s.id} value={s.id}>{s.fullName}</option>
-            ))}
-          </select>
+            <select 
+              className="select-filter"
+              value={staffFilter}
+              onChange={(e) => setStaffFilter(e.target.value)}
+            >
+              <option value="all">All Staff Allocated</option>
+              {staff.map(s => (
+                <option key={s.id} value={s.id}>{s.fullName}</option>
+              ))}
+            </select>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Ledger Table */}
       <div className="table-container">

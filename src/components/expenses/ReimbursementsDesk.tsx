@@ -6,17 +6,20 @@ import { CheckCircle2, XCircle, AlertCircle, FileText, Send, Calendar, DollarSig
 
 interface ReimbursementsDeskProps {
   onShowToast: (msg: string, type?: string) => void;
+  currentUser?: any;
 }
 
-export default function ReimbursementsDesk({ onShowToast }: ReimbursementsDeskProps) {
+export default function ReimbursementsDesk({ onShowToast, currentUser }: ReimbursementsDeskProps) {
   const staff = useBoundStore(state => state.staff);
   const companies = useBoundStore(state => state.companies);
   const reimbursementClaims = useBoundStore(state => state.reimbursementClaims || []);
   const saveReimbursementClaim = useBoundStore(state => state.saveReimbursementClaim);
   const updateExpense = useBoundStore(state => state.updateExpense);
 
+  const isRecruiter = currentUser?.permissions?.role === 'recruiter';
+
   // Form States
-  const [claimantId, setClaimantId] = useState('');
+  const [claimantId, setClaimantId] = useState(isRecruiter ? currentUser?.id || '' : '');
   const [claimDate, setClaimDate] = useState(new Date().toISOString().split('T')[0]);
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState('GBP');
@@ -61,6 +64,13 @@ export default function ReimbursementsDesk({ onShowToast }: ReimbursementsDeskPr
 
   // Filter States
   const [statusFilter, setStatusFilter] = useState('All');
+
+  React.useEffect(() => {
+    if (currentUser?.permissions?.role === 'recruiter') {
+      setClaimantId(currentUser.id);
+      setCurrency(currentUser.currency || 'GBP');
+    }
+  }, [currentUser]);
 
   // Available bank accounts for payout selection
   const BANK_ACCOUNTS = [
@@ -276,11 +286,26 @@ Sent automatically via Humres Group Business Management Suite.`;
   };
 
   const filteredClaims = useMemo(() => {
+    const isManager = currentUser?.permissions?.role === 'manager';
+    const userDept = currentUser?.department;
+
     return reimbursementClaims.filter(c => {
+      // 1. Recruiter restriction: see only own claims
+      if (isRecruiter && c.staffId !== currentUser?.id) return false;
+
+      // 2. Manager restriction: see only own department's team members' claims
+      if (isManager) {
+        const claimant = staff.find(s => s.id === c.staffId);
+        if (claimant && claimant.department !== userDept && c.staffId !== currentUser?.id) {
+          return false;
+        }
+      }
+
+      // 3. Status filter
       if (statusFilter === 'All') return true;
       return c.status === statusFilter.toLowerCase();
     });
-  }, [reimbursementClaims, statusFilter]);
+  }, [reimbursementClaims, statusFilter, currentUser, staff, isRecruiter]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -304,17 +329,24 @@ Sent automatically via Humres Group Business Management Suite.`;
                 if (s) setCurrency(s.currency || 'GBP');
               }}
               required
+              disabled={isRecruiter}
               style={{ width: '100%', padding: '8px 10px' }}
             >
-              <option value="">-- Choose Employee --</option>
-              {staff.map(s => {
-                const comp = companies.find(c => c.id === s.companyId);
-                return (
-                  <option key={s.id} value={s.id}>
-                    {s.fullName} ({comp?.name || 'Group'})
-                  </option>
-                );
-              })}
+              {isRecruiter ? (
+                <option value={currentUser?.id}>{currentUser?.fullName}</option>
+              ) : (
+                <>
+                  <option value="">-- Choose Employee --</option>
+                  {staff.map(s => {
+                    const comp = companies.find(c => c.id === s.companyId);
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {s.fullName} ({comp?.name || 'Group'})
+                      </option>
+                    );
+                  })}
+                </>
+              )}
             </select>
           </div>
 
@@ -531,7 +563,11 @@ Sent automatically via Humres Group Business Management Suite.`;
                           )}
                         </td>
                         <td style={{ textAlign: 'right' }}>
-                          {claim.status === 'pending' ? (
+                          {isRecruiter ? (
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                              {claim.status === 'pending' ? 'Awaiting Approval' : 'Processed'}
+                            </span>
+                          ) : claim.status === 'pending' ? (
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                               <button
                                 type="button"

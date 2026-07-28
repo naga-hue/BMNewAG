@@ -11,6 +11,7 @@ interface CommissionsMatrixProps {
   commissionPolicies: any[];
   placements: Placement[];
   onSelectRecruiterDetail: (member: Staff, policy: any, targetMonth: string) => void;
+  currentUser?: any;
 }
 
 const matrixMonths = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
@@ -20,8 +21,10 @@ export default function CommissionsMatrix({
   staff,
   commissionPolicies,
   placements,
-  onSelectRecruiterDetail
+  onSelectRecruiterDetail,
+  currentUser
 }: CommissionsMatrixProps) {
+  const isRecruiter = currentUser?.permissions?.role === 'recruiter';
   const [matrixYear, setMatrixYear] = useState('2026');
   const [matrixMeasure, setMatrixMeasure] = useState<'payout' | 'base'>('payout'); // payout, base
   const [matrixSearch, setMatrixSearch] = useState('');
@@ -177,40 +180,44 @@ export default function CommissionsMatrix({
       {/* Filter Bar */}
       <div className="controls-card" style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', padding: '16px', backgroundColor: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
         
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: '200px' }}>
-          <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Search Recruiter:</span>
-          <input
-            type="text"
-            className="form-input"
-            placeholder="Search by name..."
-            value={matrixSearch}
-            onChange={(e) => setMatrixSearch(e.target.value)}
-            style={{ padding: '8px 12px', fontSize: '13px' }}
-          />
-        </div>
+        {!isRecruiter && (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: '200px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Search Recruiter:</span>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Search by name..."
+                value={matrixSearch}
+                onChange={(e) => setMatrixSearch(e.target.value)}
+                style={{ padding: '8px 12px', fontSize: '13px' }}
+              />
+            </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '150px' }}>
-          <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Company Filter:</span>
-          <MultiSelectFilter
-            options={companyOptions}
-            selectedValues={matrixCompany}
-            onChange={(vals: string[]) => {
-              setMatrixCompany(vals);
-              setMatrixDept(['all']);
-            }}
-            placeholder="Select Companies"
-          />
-        </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '150px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Company Filter:</span>
+              <MultiSelectFilter
+                options={companyOptions}
+                selectedValues={matrixCompany}
+                onChange={(vals: string[]) => {
+                  setMatrixCompany(vals);
+                  setMatrixDept(['all']);
+                }}
+                placeholder="Select Companies"
+              />
+            </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '150px' }}>
-          <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Department Filter:</span>
-          <MultiSelectFilter
-            options={departmentOptionsList}
-            selectedValues={matrixDept}
-            onChange={(vals: string[]) => setMatrixDept(vals)}
-            placeholder="Select Departments"
-          />
-        </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '150px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Department Filter:</span>
+              <MultiSelectFilter
+                options={departmentOptionsList}
+                selectedValues={matrixDept}
+                onChange={(vals: string[]) => setMatrixDept(vals)}
+                placeholder="Select Departments"
+              />
+            </div>
+          </>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '100px' }}>
           <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Fiscal Year:</span>

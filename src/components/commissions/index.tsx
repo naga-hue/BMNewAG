@@ -17,6 +17,7 @@ interface CommissionsDashboardProps {
   onUpdateStaff?: (s: Staff) => Promise<any>;
   onSavePlacement?: (p: Placement) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
+  currentUser?: any;
 }
 
 export default function CommissionsDashboard({
@@ -28,9 +29,11 @@ export default function CommissionsDashboard({
   onDeletePolicy = async () => {},
   onUpdateStaff = async () => {},
   onSavePlacement = async () => {},
-  onShowToast
+  onShowToast,
+  currentUser
 }: CommissionsDashboardProps) {
-  const [activeSubTab, setActiveSubTab] = useState('policies'); // policies, assignments, payroll, matrix
+  const isRecruiter = currentUser?.permissions?.role === 'recruiter';
+  const [activeSubTab, setActiveSubTab] = useState(isRecruiter ? 'payroll' : 'policies'); // policies, assignments, payroll, matrix
   const [payrollMonth, setPayrollMonth] = useState('2026-06');
   const [selectedBreakdownRow, setSelectedBreakdownRow] = useState<any>(null);
 
@@ -51,7 +54,7 @@ export default function CommissionsDashboard({
           { key: 'assignments', label: 'Recruiter Assignments' },
           { key: 'payroll', label: 'Commissions Payroll Ledger' },
           { key: 'matrix', label: 'YTD Commission Matrix' }
-        ].map(t => (
+        ].filter(t => !isRecruiter || t.key === 'payroll' || t.key === 'matrix').map(t => (
           <button
             key={t.key}
             onClick={() => {
@@ -100,6 +103,7 @@ export default function CommissionsDashboard({
           setPayrollMonth={setPayrollMonth}
           selectedBreakdownRow={selectedBreakdownRow}
           setSelectedBreakdownRow={setSelectedBreakdownRow}
+          currentUser={currentUser}
         />
       )}
 
@@ -110,6 +114,7 @@ export default function CommissionsDashboard({
           commissionPolicies={commissionPolicies}
           placements={placements}
           onSelectRecruiterDetail={handleSelectRecruiterDetail}
+          currentUser={currentUser}
         />
       )}
 

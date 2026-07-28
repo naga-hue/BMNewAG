@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MultiSelectFilter from './MultiSelectFilter';
 import CompanyDeptTreeFilter from './CompanyDeptTreeFilter';
 import { toGBP, FX_RATES } from '../utils/currency';
@@ -76,15 +76,26 @@ export default function ReportsDashboard({
   vendors = [],
   contracts = [],
   assetAssignments = [],
-  onShowToast
+  onShowToast,
+  currentUser
 }) {
   const [activeTab, setActiveTab] = useState('consolidated'); // consolidated, divisional, departmental, forecast, ratios, leagues
   
+  const isManager = currentUser?.permissions?.role === 'manager';
+  const userDept = currentUser?.department;
+
   // Global Filters
   const [companyFilter, setCompanyFilter] = useState(['all']);
-  const [deptFilter, setDeptFilter] = useState(['all']);
+  const [deptFilter, setDeptFilter] = useState(isManager && userDept ? [userDept] : ['all']);
   const [startMonth, setStartMonth] = useState('2026-01');
   const [endMonth, setEndMonth] = useState('2026-12');
+
+  useEffect(() => {
+    if (isManager && userDept) {
+      setDeptFilter([userDept]);
+      setCompanyFilter(['all']);
+    }
+  }, [currentUser, isManager, userDept]);
   const [expandedExpenses, setExpandedExpenses] = useState(false);
   const [expandedBalanceSheet, setExpandedBalanceSheet] = useState(false);
   const [drilldownState, setDrilldownState] = useState(null);
@@ -1518,16 +1529,22 @@ export default function ReportsDashboard({
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Entity / Department:</span>
-            <CompanyDeptTreeFilter
-              companies={companies}
-              staff={staff}
-              selectedCompanyIds={companyFilter}
-              selectedDepartments={deptFilter}
-              onChange={({ companyIds, departments }) => {
-                setCompanyFilter(companyIds);
-                setDeptFilter(departments);
-              }}
-            />
+            {isManager ? (
+              <div style={{ padding: '6px 12px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: '12px', fontWeight: 600, color: 'var(--accent)' }}>
+                🏢 Department: {userDept} (Locked)
+              </div>
+            ) : (
+              <CompanyDeptTreeFilter
+                companies={companies}
+                staff={staff}
+                selectedCompanyIds={companyFilter}
+                selectedDepartments={deptFilter}
+                onChange={({ companyIds, departments }) => {
+                  setCompanyFilter(companyIds);
+                  setDeptFilter(departments);
+                }}
+              />
+            )}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

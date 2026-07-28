@@ -24,6 +24,7 @@ interface PayrollDashboardProps {
   onSaveExpense?: (e: Expense) => Promise<any>;
   onDeleteExpense?: (id: string) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
+  currentUser?: any;
 }
 
 export default function PayrollDashboard({
@@ -44,9 +45,11 @@ export default function PayrollDashboard({
   onUpdateStaff = async () => {},
   onSaveExpense = async () => {},
   onDeleteExpense = async () => {},
-  onShowToast
+  onShowToast,
+  currentUser
 }: PayrollDashboardProps) {
   const [activeSubTab, setActiveSubTab] = useState('grid'); // grid, policies, rates
+  const isRecruiter = currentUser?.permissions?.role === 'recruiter';
 
   const [globalPayrollRates, setGlobalPayrollRates] = useState(() => {
     try {
@@ -79,30 +82,36 @@ export default function PayrollDashboard({
             <DollarSign size={28} />
           </div>
           <div>
-            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Spreadsheet Forecast & Actuals Ledgers</h3>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>
+              {isRecruiter ? 'My Payroll Workspace' : 'Spreadsheet Forecast & Actuals Ledgers'}
+            </h3>
             <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-              Interactive workspace for group-wide salaries and commissions normalized to GBP (£). Click on any monthly cell to reconcile with your bank statement uploads or book expenses directly.
+              {isRecruiter 
+                ? 'Track your monthly basic salary, commissions earned, pension contributions, and payout histories.'
+                : 'Interactive workspace for group-wide salaries and commissions normalized to GBP (£). Click on any monthly cell to reconcile with your bank statement uploads or book expenses directly.'}
             </p>
           </div>
         </div>
       </div>
 
       {/* Sub-tab Navigation */}
-      <div className="payroll-tab-nav">
-        {[
-          { key: 'grid', label: 'Group Payroll & Projections' },
-          { key: 'policies', label: 'Payroll Policy Templates' },
-          { key: 'rates', label: 'Global Payroll Rates Setup' }
-        ].map(t => (
-          <button
-            key={t.key}
-            onClick={() => setActiveSubTab(t.key)}
-            className={`payroll-tab-btn ${activeSubTab === t.key ? 'active' : ''}`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {!isRecruiter && (
+        <div className="payroll-tab-nav">
+          {[
+            { key: 'grid', label: 'Group Payroll & Projections' },
+            { key: 'policies', label: 'Payroll Policy Templates' },
+            { key: 'rates', label: 'Global Payroll Rates Setup' }
+          ].map(t => (
+            <button
+              key={t.key}
+              onClick={() => setActiveSubTab(t.key)}
+              className={`payroll-tab-btn ${activeSubTab === t.key ? 'active' : ''}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Main Tab Rendering */}
       {activeSubTab === 'grid' && (
@@ -122,6 +131,7 @@ export default function PayrollDashboard({
           onSaveExpense={onSaveExpense}
           onDeleteExpense={onDeleteExpense}
           onShowToast={onShowToast}
+          currentUser={currentUser}
         />
       )}
 

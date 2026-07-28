@@ -1612,15 +1612,17 @@ export default function App() {
                 </div>
               </li>
 
-              <li>
-                <div 
-                  className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('dashboard')}
-                >
-                  <LayoutDashboard size={18} />
-                  <span>Group Dashboard</span>
-                </div>
-              </li>
+              {currentUser.permissions.allowedModules.includes('dashboard') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('dashboard')}
+                  >
+                    <LayoutDashboard size={18} />
+                    <span>Group Dashboard</span>
+                  </div>
+                </li>
+              )}
               
               {currentUser.permissions.allowedModules.includes('directory') && (
                 <li>
@@ -1641,7 +1643,7 @@ export default function App() {
                     onClick={() => setActiveTab('staff')}
                   >
                     <Users size={18} />
-                    <span>Staff & Consultants</span>
+                    <span>{currentUser.permissions.role === 'recruiter' ? 'My Staff Profile' : 'Staff & Consultants'}</span>
                   </div>
                 </li>
               )}
@@ -1690,7 +1692,7 @@ export default function App() {
                     onClick={() => setActiveTab('payroll')}
                   >
                     <Wallet size={18} />
-                    <span>Group Payroll</span>
+                    <span>{currentUser.permissions.role === 'recruiter' ? 'My Payroll' : 'Group Payroll'}</span>
                   </div>
                 </li>
               )}
@@ -1714,7 +1716,7 @@ export default function App() {
                     onClick={() => setActiveTab('placements')}
                   >
                     <TrendingUp size={18} />
-                    <span>Sales & Placements</span>
+                    <span>{currentUser.permissions.role === 'recruiter' ? 'My Placements' : 'Sales & Placements'}</span>
                   </div>
                 </li>
               )}
@@ -1750,7 +1752,7 @@ export default function App() {
                     onClick={() => setActiveTab('expenses')}
                   >
                     <Receipt size={18} />
-                    <span>Expense Ledger</span>
+                    <span>{currentUser.permissions.role === 'recruiter' ? 'My Expense Claims' : 'Expense Ledger'}</span>
                   </div>
                 </li>
               )}
@@ -2852,6 +2854,7 @@ export default function App() {
               onUpdateStaff={handleSaveStaff}
               onSavePlacement={handleSavePlacement}
               onShowToast={handleShowToast}
+              currentUser={currentUser}
             />
           )}
 
@@ -2876,6 +2879,7 @@ export default function App() {
               onSaveExpense={handleSaveExpense}
               onDeleteExpense={handleDeleteExpense}
               onShowToast={handleShowToast}
+              currentUser={currentUser}
             />
           )}
 
@@ -2958,6 +2962,7 @@ export default function App() {
               onSavePayrollRecord={handleSavePayrollRecord}
               payrollRecords={payrollRecords}
               onShowToast={handleShowToast}
+              currentUser={currentUser}
             />
           )}
 
@@ -2988,6 +2993,7 @@ export default function App() {
               contracts={contracts}
               assetAssignments={assetAssignments}
               onShowToast={handleShowToast}
+              currentUser={currentUser}
             />
           )}
 

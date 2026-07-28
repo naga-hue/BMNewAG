@@ -21,6 +21,7 @@ interface PayrollRegisterTableProps {
   onSaveExpense: (expense: Expense) => Promise<any>;
   onDeleteExpense: (id: string) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
+  currentUser?: any;
 }
 
 export default function PayrollRegisterTable({
@@ -37,8 +38,10 @@ export default function PayrollRegisterTable({
   onSavePayrollRecord,
   onSaveExpense,
   onDeleteExpense,
-  onShowToast
+  onShowToast,
+  currentUser
 }: PayrollRegisterTableProps) {
+  const isRecruiter = currentUser?.permissions?.role === 'recruiter';
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCompanyId, setSelectedCompanyId] = useState<string[]>(['all']);
   const [selectedDept, setSelectedDept] = useState<string[]>(['all']);
@@ -708,22 +711,26 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
             />
           </div>
 
-          <MultiSelectFilter
-            options={companyOptions}
-            selectedValues={selectedCompanyId}
-            onChange={(vals: string[]) => {
-              setSelectedCompanyId(vals);
-              setSelectedDept(['all']);
-            }}
-            placeholder="Select Companies"
-          />
+          {!isRecruiter && (
+            <>
+              <MultiSelectFilter
+                options={companyOptions}
+                selectedValues={selectedCompanyId}
+                onChange={(vals: string[]) => {
+                  setSelectedCompanyId(vals);
+                  setSelectedDept(['all']);
+                }}
+                placeholder="Select Companies"
+              />
 
-          <MultiSelectFilter
-            options={departmentOptionsList}
-            selectedValues={selectedDept}
-            onChange={(vals: string[]) => setSelectedDept(vals)}
-            placeholder="Select Departments"
-          />
+              <MultiSelectFilter
+                options={departmentOptionsList}
+                selectedValues={selectedDept}
+                onChange={(vals: string[]) => setSelectedDept(vals)}
+                placeholder="Select Departments"
+              />
+            </>
+          )}
 
           <select 
             className="select-filter"
@@ -735,23 +742,27 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
             <option value="projected">Projections Only</option>
           </select>
 
-          <button 
-            type="button" 
-            className="btn-secondary" 
-            onClick={() => setShowBulkReconcile(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '10px 14px', marginLeft: 'auto' }}
-          >
-            ⚡ Bulk Reconcile Statement
-          </button>
+          {!isRecruiter && (
+            <>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                onClick={() => setShowBulkReconcile(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '10px 14px', marginLeft: 'auto' }}
+              >
+                ⚡ Bulk Reconcile Statement
+              </button>
 
-          <button 
-            type="button" 
-            className="btn-primary" 
-            onClick={handleExportSage}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '10px 14px' }}
-          >
-            ⚡ Export Sage Payroll CSV
-          </button>
+              <button 
+                type="button" 
+                className="btn-primary" 
+                onClick={handleExportSage}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '10px 14px' }}
+              >
+                ⚡ Export Sage Payroll CSV
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -944,7 +955,7 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
             <div style={{ display: 'flex', justifycontent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               <div style={{ flex: 1 }}>
                 <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>
-                  📝 Payroll Override & Reconciliation
+                  {isRecruiter ? '📋 My Payout Breakdown' : '📝 Payroll Override & Reconciliation'}
                 </h3>
                 <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                   {selectedCell.staffMember.fullName} &bull; {selectedCell.month}
@@ -1057,6 +1068,7 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                   className="form-input"
                   value={basicSalaryOverride}
                   onChange={(e) => setBasicSalaryOverride(e.target.value)}
+                  disabled={isRecruiter}
                   style={{ width: '100%', padding: '10px', marginTop: '4px' }}
                 />
               </div>
@@ -1071,9 +1083,10 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                   className="form-input"
                   value={commissionOverride}
                   onChange={(e) => setCommissionOverride(e.target.value)}
+                  disabled={isRecruiter}
                   style={{ width: '100%', padding: '10px', marginTop: '4px' }}
                 />
-                {(() => {
+                {!isRecruiter && (() => {
                   const commWritten = calculateCommissionForRecruiter(selectedCell.staffMember.id, selectedCell.month, staff, companies, placements, commissionPolicies, 'written');
                   const commCash = calculateCommissionForRecruiter(selectedCell.staffMember.id, selectedCell.month, staff, companies, placements, commissionPolicies, 'cash_received');
                   
@@ -1118,6 +1131,7 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                       setBonusOverride((Number(val) * rate).toFixed(2));
                     }}
                     placeholder="0.00"
+                    disabled={isRecruiter}
                     style={{ flex: 1, padding: '10px' }}
                   />
                   <select
@@ -1129,6 +1143,7 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                       const rate = FX_RATES[newCur] || 1.0;
                       setBonusOverride((Number(bonusAmountInput) * rate).toFixed(2));
                     }}
+                    disabled={isRecruiter}
                     style={{ width: '120px', padding: '10px' }}
                   >
                     <option value="GBP">GBP (£)</option>
@@ -1162,6 +1177,7 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                       setReimbursementsInput((Number(val) * rate).toFixed(2));
                     }}
                     placeholder="0.00"
+                    disabled={isRecruiter}
                     style={{ flex: 1, padding: '10px' }}
                   />
                   <select
@@ -1173,6 +1189,7 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                       const rate = FX_RATES[newCur] || 1.0;
                       setReimbursementsInput((Number(reimbursementsAmountInput) * rate).toFixed(2));
                     }}
+                    disabled={isRecruiter}
                     style={{ width: '120px', padding: '10px' }}
                   >
                     <option value="GBP">GBP (£)</option>
@@ -1201,6 +1218,7 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                       className="form-input"
                       value={employerNi}
                       onChange={(e) => setEmployerNi(e.target.value)}
+                      disabled={isRecruiter}
                       style={{ width: '100%', padding: '6px 8px', fontSize: '12px' }}
                     />
                   </div>
@@ -1211,6 +1229,7 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                       className="form-input"
                       value={employerPension}
                       onChange={(e) => setEmployerPension(e.target.value)}
+                      disabled={isRecruiter}
                       style={{ width: '100%', padding: '6px 8px', fontSize: '12px' }}
                     />
                   </div>
@@ -1227,6 +1246,7 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                       className="form-input"
                       value={employeeTaxNic}
                       onChange={(e) => setEmployeeTaxNic(e.target.value)}
+                      disabled={isRecruiter}
                       style={{ width: '100%', padding: '6px 8px', fontSize: '12px' }}
                     />
                   </div>
@@ -1237,6 +1257,7 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                       className="form-input"
                       value={employeePension}
                       onChange={(e) => setEmployeePension(e.target.value)}
+                      disabled={isRecruiter}
                       style={{ width: '100%', padding: '6px 8px', fontSize: '12px' }}
                     />
                   </div>
@@ -1278,6 +1299,7 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                   placeholder="e.g. Cleared via Barclays Statement Ref #48192"
                   value={reconcileNotes}
                   onChange={(e) => setReconcileNotes(e.target.value)}
+                  disabled={isRecruiter}
                   style={{ width: '100%', padding: '10px', resize: 'none' }}
                 />
               </div>
@@ -1289,6 +1311,7 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                     checked={bookExpense}
                     onChange={(e) => setBookExpense(e.target.checked)}
                     id="auto-book-expense-check"
+                    disabled={isRecruiter}
                     style={{ cursor: 'pointer' }}
                   />
                   <label htmlFor="auto-book-expense-check" style={{ cursor: 'pointer' }}>
@@ -1340,20 +1363,33 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                 }
                 return null;
               })()}
-              <button 
-                type="button"
-                className="btn-secondary"
-                onClick={() => setSelectedCell(null)}
-              >
-                Cancel
-              </button>
-              <button 
-                type="button"
-                className="btn-primary"
-                onClick={handleSaveOverride}
-              >
-                Save Roster Cell
-              </button>
+              {isRecruiter ? (
+                <button 
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setSelectedCell(null)}
+                  style={{ width: '120px' }}
+                >
+                  Close View
+                </button>
+              ) : (
+                <>
+                  <button 
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setSelectedCell(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleSaveOverride}
+                  >
+                    Save Roster Cell
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -1605,6 +1605,8 @@ export default function ReportsDashboard({
           const runRateMonths = ['2026-04', '2026-05', '2026-06'];
           const runRateData = runRateMonths.map(m => getFilteredMonthlyData(m));
           
+          const avgRevenue = runRateData.reduce((sum, d) => sum + (d.revenue || 0), 0) / 3;
+          const avgCommissions = runRateData.reduce((sum, d) => sum + (d.commissions || 0), 0) / 3;
           const avgOverheads = runRateData.reduce((sum, d) => sum + (d.overheadsExpenses || 0), 0) / 3;
           
           const allCodes = Array.from(new Set([
@@ -1621,14 +1623,20 @@ export default function ReportsDashboard({
           rowData = rowData.map((row, idx) => {
             const mKey = monthsList[idx];
             if (mKey >= '2026-07') {
+              const updatedRevenue = avgRevenue;
+              const updatedCommissions = avgCommissions;
               const updatedOverheads = avgOverheads;
-              const updatedNetProfit = (row.revenue || 0) - (row.commissions || 0) - updatedOverheads;
+              const updatedGrossProfit = updatedRevenue - updatedCommissions;
+              const updatedNetProfit = updatedGrossProfit - updatedOverheads;
               return {
                 ...row,
+                revenue: updatedRevenue,
+                commissions: updatedCommissions,
                 overheadsExpenses: updatedOverheads,
                 totalOverheads: updatedOverheads,
-                nominalBreakdown: avgNominalBreakdown,
-                netProfit: updatedNetProfit
+                grossProfit: updatedGrossProfit,
+                netProfit: updatedNetProfit,
+                nominalBreakdown: avgNominalBreakdown
               };
             }
             return row;
@@ -1811,7 +1819,7 @@ export default function ReportsDashboard({
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                   {pnlVersion === 'v1' 
                     ? 'Version 1: Uses actual reconciled transactions for historical months and explicit projections/contracts for future months.' 
-                    : 'Version 2: Uses actual reconciled transactions for historical months and flat-lines future months to a 3-month run-rate average (April - June 2026).'}
+                    : 'Version 2: Uses actual reconciled transactions for historical months and flat-lines future months\' sales revenue, commissions, and overheads to a 3-month run-rate average (April - June 2026).'}
                 </span>
               </div>
               <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-primary)', padding: '3px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>

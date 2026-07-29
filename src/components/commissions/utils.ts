@@ -158,21 +158,26 @@ export const calculateCashReceivedCommission = (
   };
 
   // 1. Current Cycle calculations (starts in previous month)
+  const isAHComissn = policy.name === 'AH comissn';
   const isTeamLeadCommission = policy.name === 'AH Manager commission Team Lead Commission' || policy.name === 'Team Lead Commission';
   
-  // Custom logic for Team Lead Commission
+  // Get reporting team members
+  const teamMembers = staff.filter(s => s.reportingManagerId === member.id && s.status === 'active');
+  const teamStaffIds = teamMembers.map(s => s.id);
+  const teamHeadcount = teamStaffIds.length;
+
+  // Individual cycle billing and base earned
+  const managerBilling = getRecruiterBillingForStartMonth(cycleYear, cycleMonth);
+  const individualBaseEarned = policy.calcInterval === 'quarterly'
+    ? getQuarterlyCommissionForMonth(cycleYear, cycleMonth)
+    : getPolicyCommission(managerBilling);
+
+  // Team override billing and base earned
   let teamBillingForCycle = 0;
-  let teamHeadcount = 0;
   let teamRate = 0;
   let teamLeadBaseEarned = 0;
-  let teamStaffIds: string[] = [];
 
-  if (isTeamLeadCommission) {
-    const teamMembers = staff.filter(s => s.reportingManagerId === member.id && s.status === 'active');
-    teamStaffIds = teamMembers.map(s => s.id);
-    teamHeadcount = teamStaffIds.length;
-
-    // Calculate team total billing for target start month
+  if (isAHComissn || isTeamLeadCommission) {
     placements.forEach(p => {
       if (!p.startDate || p.status === 'dns') return;
       const pStart = new Date(p.startDate);
@@ -193,14 +198,50 @@ export const calculateCashReceivedCommission = (
     teamLeadBaseEarned = (teamBillingForCycle * teamRate) / 100;
   }
 
-  const currentCycleBilling = isTeamLeadCommission ? teamBillingForCycle : getRecruiterBillingForStartMonth(cycleYear, cycleMonth);
-  const baseEarned = isTeamLeadCommission ? teamLeadBaseEarned : (
-    policy.calcInterval === 'quarterly'
-      ? getQuarterlyCommissionForMonth(cycleYear, cycleMonth)
-      : getPolicyCommission(currentCycleBilling)
-  );
+  const currentCycleBilling = isAHComissn 
+    ? (managerBilling + teamBillingForCycle) 
+    : (isTeamLeadCommission ? teamBillingForCycle : managerBilling);
 
-  const activeTargetStaffIds = isTeamLeadCommission ? teamStaffIds : targetStaffIds;
+  const baseEarned = isAHComissn 
+    ? (individualBaseEarned + teamLeadBaseEarned) 
+    : (isTeamLeadCommission ? teamLeadBaseEarned : individualBaseEarned);
+
+  // Active target staff IDs for filter
+  const activeTargetStaffIds = isAHComissn 
+    ? Array.from(new Set([member.id, ...teamStaffIds]))
+    : (isTeamLeadCommission ? teamStaffIds : targetStaffIds);
+
+  // Helper to compute a placement's commission share
+  const computePlacementCommShare = (
+    p: any, 
+    cycleBilling: number, 
+    baseIndividual: number, 
+    teamBilling: number, 
+    baseTeam: number
+  ) => {
+    let placementCommShare = 0;
+    
+    // Manager's individual portion
+    if (!isTeamLeadCommission) {
+      const managerSplit = p.splits?.find((s: any) => s.staffId === member.id);
+      if (managerSplit) {
+        const billingShare = (p.netScoreValue * managerSplit.percentage) / 100;
+        placementCommShare += cycleBilling > 0 ? (billingShare / cycleBilling) * baseIndividual : 0;
+      }
+    }
+    
+    // Team override portion
+    if (isAHComissn || isTeamLeadCommission) {
+      const teamSplits = p.splits?.filter((s: any) => teamStaffIds.includes(s.staffId)) || [];
+      if (teamSplits.length > 0) {
+        const teamSplitPct = teamSplits.reduce((acc: number, s: any) => acc + s.percentage, 0);
+        const teamBillingShare = (p.netScoreValue * teamSplitPct) / 100;
+        placementCommShare += teamBilling > 0 ? (teamBillingShare / teamBilling) * baseTeam : 0;
+      }
+    }
+
+    return placementCommShare;
+  };
 
   const currentPlacements: any[] = [];
   let totalPaidNow = 0;
@@ -215,9 +256,13 @@ export const calculateCashReceivedCommission = (
         const totalSplitPct = mySplits.reduce((acc, s) => acc + s.percentage, 0);
         const myBillingShare = (p.netScoreValue * totalSplitPct) / 100;
         
-        const myCommShare = currentCycleBilling > 0 
-          ? (myBillingShare / currentCycleBilling) * baseEarned 
-          : 0;
+        const myCommShare = computePlacementCommShare(
+          p, 
+          managerBilling, 
+          individualBaseEarned, 
+          teamBillingForCycle, 
+          teamLeadBaseEarned
+        );
 
         const isPaid = p.clientPaymentStatus === 'paid';
         if (isPaid) {
@@ -265,11 +310,19 @@ export const calculateCashReceivedCommission = (
         const myBillingShare = (p.netScoreValue * totalSplitPct) / 100;
 
         // Reconstruct historical month's aggregate
-        let histBaseEarned = 0;
-        let histCycleBilling = 0;
+        let histIndividualBase = 0;
+        let histManagerBilling = 0;
+        let histTeamBilling = 0;
+        let histTeamBase = 0;
 
-        if (isTeamLeadCommission) {
-          let histTeamBilling = 0;
+        if (!isTeamLeadCommission) {
+          histManagerBilling = getRecruiterBillingForStartMonth(pStartYear, pStartMonth);
+          histIndividualBase = policy.calcInterval === 'quarterly'
+            ? getQuarterlyCommissionForMonth(pStartYear, pStartMonth)
+            : getPolicyCommission(histManagerBilling);
+        }
+
+        if (isAHComissn || isTeamLeadCommission) {
           placements.forEach(hp => {
             if (!hp.startDate || hp.status === 'dns') return;
             const hpStart = new Date(hp.startDate);
@@ -287,18 +340,16 @@ export const calculateCashReceivedCommission = (
           else if (histRatio >= 10000) histRate = 4;
           else if (histRatio >= 5000) histRate = 3;
 
-          histBaseEarned = (histTeamBilling * histRate) / 100;
-          histCycleBilling = histTeamBilling;
-        } else {
-          histCycleBilling = getRecruiterBillingForStartMonth(pStartYear, pStartMonth);
-          histBaseEarned = policy.calcInterval === 'quarterly'
-            ? getQuarterlyCommissionForMonth(pStartYear, pStartMonth)
-            : getPolicyCommission(histCycleBilling);
+          histTeamBase = (histTeamBilling * histRate) / 100;
         }
 
-        const myCommShare = histCycleBilling > 0 
-          ? (myBillingShare / histCycleBilling) * histBaseEarned 
-          : 0;
+        const myCommShare = computePlacementCommShare(
+          p, 
+          histManagerBilling, 
+          histIndividualBase, 
+          histTeamBilling, 
+          histTeamBase
+        );
 
         if (myCommShare > 0) {
           const isPaid = p.clientPaymentStatus === 'paid';

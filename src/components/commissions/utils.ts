@@ -158,7 +158,7 @@ export const calculateCashReceivedCommission = (
   };
 
   // 1. Current Cycle calculations (starts in previous month)
-  const isTeamLeadCommission = policy.name === 'AH Manager commission Team Lead Commission';
+  const isTeamLeadCommission = policy.name === 'AH Manager commission Team Lead Commission' || policy.name === 'Team Lead Commission';
   
   // Custom logic for Team Lead Commission
   let teamBillingForCycle = 0;

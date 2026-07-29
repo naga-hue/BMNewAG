@@ -3,6 +3,7 @@ import CommissionsBandsSetup from './CommissionsBandsSetup';
 import CommissionsAssignments from './CommissionsAssignments';
 import CommissionsPayroll from './CommissionsPayroll';
 import CommissionsMatrix from './CommissionsMatrix';
+import CommissionPayoutTracker from './CommissionPayoutTracker';
 import { Company, Staff, Placement } from '../../types';
 import { calculateCashReceivedCommission } from './utils';
 import './commissions.css';
@@ -53,8 +54,9 @@ export default function CommissionsDashboard({
           { key: 'policies', label: 'Commission Schemes' },
           { key: 'assignments', label: 'Recruiter Assignments' },
           { key: 'payroll', label: 'Commissions Payroll Ledger' },
-          { key: 'matrix', label: 'YTD Commission Matrix' }
-        ].filter(t => !isRecruiter || t.key === 'payroll' || t.key === 'matrix').map(t => (
+          { key: 'matrix', label: 'YTD Commission Matrix' },
+          { key: 'tracker', label: 'Commission Payout Tracker' }
+        ].filter(t => !isRecruiter || t.key === 'payroll' || t.key === 'matrix' || t.key === 'tracker').map(t => (
           <button
             key={t.key}
             onClick={() => {
@@ -114,6 +116,17 @@ export default function CommissionsDashboard({
           commissionPolicies={commissionPolicies}
           placements={placements}
           onSelectRecruiterDetail={handleSelectRecruiterDetail}
+          currentUser={currentUser}
+        />
+      )}
+
+      {activeSubTab === 'tracker' && (
+        <CommissionPayoutTracker
+          companies={companies}
+          staff={staff}
+          placements={placements}
+          onSavePlacement={onSavePlacement}
+          onShowToast={onShowToast}
           currentUser={currentUser}
         />
       )}

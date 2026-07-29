@@ -1331,7 +1331,7 @@ export default function App() {
         module,
         action,
         description,
-        user: "Admin"
+        user: currentUser?.fullName || "Admin"
       };
       await firebaseService.saveAuditLog(log);
     } catch (err) {

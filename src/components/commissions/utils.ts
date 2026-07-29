@@ -158,10 +158,49 @@ export const calculateCashReceivedCommission = (
   };
 
   // 1. Current Cycle calculations (starts in previous month)
-  const currentCycleBilling = getRecruiterBillingForStartMonth(cycleYear, cycleMonth);
-  const baseEarned = policy.calcInterval === 'quarterly'
-    ? getQuarterlyCommissionForMonth(cycleYear, cycleMonth)
-    : getPolicyCommission(currentCycleBilling);
+  const isTeamLeadCommission = policy.name === 'AH Manager commission Team Lead Commission';
+  
+  // Custom logic for Team Lead Commission
+  let teamBillingForCycle = 0;
+  let teamHeadcount = 0;
+  let teamRate = 0;
+  let teamLeadBaseEarned = 0;
+  let teamStaffIds: string[] = [];
+
+  if (isTeamLeadCommission) {
+    const teamMembers = staff.filter(s => s.reportingManagerId === member.id && s.status === 'active');
+    teamStaffIds = teamMembers.map(s => s.id);
+    teamHeadcount = teamStaffIds.length;
+
+    // Calculate team total billing for target start month
+    placements.forEach(p => {
+      if (!p.startDate || p.status === 'dns') return;
+      const pStart = new Date(p.startDate);
+      if (pStart.getFullYear() === cycleYear && (pStart.getMonth() + 1) === cycleMonth) {
+        p.splits?.forEach(s => {
+          if (teamStaffIds.includes(s.staffId)) {
+            teamBillingForCycle += (p.netScoreValue * s.percentage) / 100;
+          }
+        });
+      }
+    });
+
+    const ratio = teamHeadcount > 0 ? teamBillingForCycle / teamHeadcount : 0;
+    if (ratio >= 15000) teamRate = 5;
+    else if (ratio >= 10000) teamRate = 4;
+    else if (ratio >= 5000) teamRate = 3;
+
+    teamLeadBaseEarned = (teamBillingForCycle * teamRate) / 100;
+  }
+
+  const currentCycleBilling = isTeamLeadCommission ? teamBillingForCycle : getRecruiterBillingForStartMonth(cycleYear, cycleMonth);
+  const baseEarned = isTeamLeadCommission ? teamLeadBaseEarned : (
+    policy.calcInterval === 'quarterly'
+      ? getQuarterlyCommissionForMonth(cycleYear, cycleMonth)
+      : getPolicyCommission(currentCycleBilling)
+  );
+
+  const activeTargetStaffIds = isTeamLeadCommission ? teamStaffIds : targetStaffIds;
 
   const currentPlacements: any[] = [];
   let totalPaidNow = 0;
@@ -171,7 +210,7 @@ export const calculateCashReceivedCommission = (
     if (!p.startDate || p.status === 'dns') return;
     const pStart = new Date(p.startDate);
     if (pStart.getFullYear() === cycleYear && (pStart.getMonth() + 1) === cycleMonth) {
-      const mySplits = p.splits?.filter(s => targetStaffIds.includes(s.staffId)) || [];
+      const mySplits = p.splits?.filter(s => activeTargetStaffIds.includes(s.staffId)) || [];
       if (mySplits.length > 0) {
         const totalSplitPct = mySplits.reduce((acc, s) => acc + s.percentage, 0);
         const myBillingShare = (p.netScoreValue * totalSplitPct) / 100;
@@ -220,16 +259,42 @@ export const calculateCashReceivedCommission = (
     const isPriorStart = pStartYear < cycleYear || (pStartYear === cycleYear && pStartMonth < cycleMonth);
 
     if (isPriorStart) {
-      const mySplits = p.splits?.filter(s => targetStaffIds.includes(s.staffId)) || [];
+      const mySplits = p.splits?.filter(s => activeTargetStaffIds.includes(s.staffId)) || [];
       if (mySplits.length > 0) {
         const totalSplitPct = mySplits.reduce((acc, s) => acc + s.percentage, 0);
         const myBillingShare = (p.netScoreValue * totalSplitPct) / 100;
 
         // Reconstruct historical month's aggregate
-        const histCycleBilling = getRecruiterBillingForStartMonth(pStartYear, pStartMonth);
-        const histBaseEarned = policy.calcInterval === 'quarterly'
-          ? getQuarterlyCommissionForMonth(pStartYear, pStartMonth)
-          : getPolicyCommission(histCycleBilling);
+        let histBaseEarned = 0;
+        let histCycleBilling = 0;
+
+        if (isTeamLeadCommission) {
+          let histTeamBilling = 0;
+          placements.forEach(hp => {
+            if (!hp.startDate || hp.status === 'dns') return;
+            const hpStart = new Date(hp.startDate);
+            if (hpStart.getFullYear() === pStartYear && (hpStart.getMonth() + 1) === pStartMonth) {
+              hp.splits?.forEach(s => {
+                if (teamStaffIds.includes(s.staffId)) {
+                  histTeamBilling += (hp.netScoreValue * s.percentage) / 100;
+                }
+              });
+            }
+          });
+          const histRatio = teamHeadcount > 0 ? histTeamBilling / teamHeadcount : 0;
+          let histRate = 0;
+          if (histRatio >= 15000) histRate = 5;
+          else if (histRatio >= 10000) histRate = 4;
+          else if (histRatio >= 5000) histRate = 3;
+
+          histBaseEarned = (histTeamBilling * histRate) / 100;
+          histCycleBilling = histTeamBilling;
+        } else {
+          histCycleBilling = getRecruiterBillingForStartMonth(pStartYear, pStartMonth);
+          histBaseEarned = policy.calcInterval === 'quarterly'
+            ? getQuarterlyCommissionForMonth(pStartYear, pStartMonth)
+            : getPolicyCommission(histCycleBilling);
+        }
 
         const myCommShare = histCycleBilling > 0 
           ? (myBillingShare / histCycleBilling) * histBaseEarned 

@@ -21,6 +21,16 @@ const CURRENCIES = [
   { code: 'ZAR', symbol: 'R', label: 'ZAR - South African Rand' }
 ];
 
+const doesPolicyMatchCompany = (policyCompanyId, employeeCompanyId) => {
+  if (policyCompanyId === employeeCompanyId) return true;
+  // Humres, Huntek, and Global Recruiters are group sister entities and share policies
+  const groupCompanyIds = ['comp-1782806063117', 'comp-1782806109180', 'comp-1782789370085'];
+  if (groupCompanyIds.includes(policyCompanyId) && groupCompanyIds.includes(employeeCompanyId)) {
+    return true;
+  }
+  return false;
+};
+
 export default function StaffForm({ staffMember, companies, isOpen, onClose, onSave, onShowToast, staffList = [], leavePolicies = [], commissionPolicies = [], payrollPolicies = [], initialStep = 1 }) {
   const [currentStep, setCurrentStep] = useState(initialStep || 1);
   const [errors, setErrors] = useState({});
@@ -201,13 +211,13 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
     }
 
     // Auto-select first matching leave policy
-    const matchingPolicies = leavePolicies.filter(p => p.companyId === companyId);
+    const matchingPolicies = leavePolicies.filter(p => doesPolicyMatchCompany(p.companyId, companyId));
     if (!staffMember && matchingPolicies.length > 0 && !matchingPolicies.some(p => p.id === leavePolicyId)) {
       setLeavePolicyId(matchingPolicies[0].id);
     }
 
     // Auto-select first matching commission policy
-    const matchingComms = commissionPolicies.filter(p => p.companyId === companyId);
+    const matchingComms = commissionPolicies.filter(p => doesPolicyMatchCompany(p.companyId, companyId));
     if (!staffMember && matchingComms.length > 0 && !matchingComms.some(p => p.id === commissionPolicyId)) {
       setCommissionPolicyId(matchingComms[0].id);
     }
@@ -569,7 +579,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                   >
                     <option value="">-- Select Leave Policy --</option>
                     {leavePolicies
-                      .filter(p => p.companyId === companyId)
+                      .filter(p => doesPolicyMatchCompany(p.companyId, companyId))
                       .map(p => (
                         <option key={p.id} value={p.id}>{p.name} ({p.annualAllowance} Annual / {p.sickAllowance} Sick)</option>
                       ))
@@ -749,7 +759,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                   >
                     <option value="">-- Select Commission Scheme --</option>
                     {commissionPolicies
-                      .filter(p => p.companyId === companyId)
+                      .filter(p => doesPolicyMatchCompany(p.companyId, companyId))
                       .map(p => (
                         <option key={p.id} value={p.id}>
                           {p.name} ({p.type === 'manager' ? `Manager Override ${p.teamOverridePercent}%` : 'Recruiter Plan'})

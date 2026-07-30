@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { UploadCloud, Grid, Trash2, CheckCircle2, Clock, Check } from 'lucide-react';
 import { useBoundStore } from '../../store/useBoundStore';
+import { parseAndStandardizeDate } from './shared';
 
 interface BankStatementImportProps {
   onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
@@ -241,13 +242,8 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       const refVal = refColIdx > -1 ? row[refColIdx] || '' : '';
       const nominalVal = nominalColIdx > -1 ? row[nominalColIdx] || '' : '';
       
-      const parts = dateVal.split(/[-/]/);
-      let yyyymm = new Date().toISOString().substring(0, 7);
-      if (parts.length >= 3) {
-        const year = parts[0].length === 4 ? parts[0] : parts[2];
-        const month = parts[1];
-        yyyymm = `${year}-${String(month).padStart(2, '0')}`;
-      }
+      const standardizedDate = parseAndStandardizeDate(dateVal);
+      const yyyymm = standardizedDate ? standardizedDate.substring(0, 7) : new Date().toISOString().substring(0, 7);
 
       // Auto-detect recipient matching vendor name or staff member name
       let autoRecType = 'other';
@@ -317,7 +313,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
 
       return {
         id: `stmt-row-${idx}-${Date.now()}`,
-        date: dateVal,
+        date: standardizedDate,
         plMonth: yyyymm,
         payee: payeeVal,
         reference: refVal,

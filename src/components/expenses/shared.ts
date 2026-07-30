@@ -62,3 +62,73 @@ export const getDaysWorkedInMonth = (startDateStr: string | undefined | null, ex
 
   return diffDays > 0 ? diffDays : 0;
 };
+
+export function parseAndStandardizeDate(dateStr: string | undefined | null): string {
+  if (!dateStr) return '';
+  const cleanStr = dateStr.trim();
+  
+  // 1. If it's already standard YYYY-MM-DD, return it
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) {
+    return cleanStr;
+  }
+
+  // 2. Parse using parts split by slash, hyphen, space
+  const parts = cleanStr.split(/[-/ ]+/);
+  if (parts.length === 3) {
+    let day = '';
+    let monthStr = '';
+    let year = '';
+
+    // Check if first part is a 4-digit year (e.g. YYYY-MM-DD with slashes or spaces)
+    if (parts[0].length === 4) {
+      year = parts[0];
+      monthStr = parts[1];
+      day = parts[2];
+    } else {
+      // UK formats: DD-MM-YYYY, DD/MM/YYYY, DD-MMM-YY, etc.
+      day = parts[0];
+      monthStr = parts[1];
+      year = parts[2];
+    }
+
+    // Standardize year
+    if (year.length === 2) {
+      year = `20${year}`;
+    }
+
+    // Standardize month (handle names like "Jan", "Feb", "July", etc.)
+    let monthNum = parseInt(monthStr, 10);
+    if (isNaN(monthNum)) {
+      const monthsMap: Record<string, string> = {
+        jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+        jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+        january: '01', february: '02', march: '03', april: '04', june: '06',
+        july: '07', august: '08', september: '09', october: '10', november: '11', december: '12'
+      };
+      const key = monthStr.toLowerCase();
+      if (monthsMap[key]) {
+        monthStr = monthsMap[key];
+      } else {
+        // Fallback to current month if we can't parse it
+        monthStr = String(new Date().getMonth() + 1).padStart(2, '0');
+      }
+    } else {
+      monthStr = String(monthNum).padStart(2, '0');
+    }
+
+    day = String(parseInt(day, 10) || 1).padStart(2, '0');
+
+    return `${year}-${monthStr}-${day}`;
+  }
+
+  // 3. Fallback to native JS Date parsing (caution: standard JS parses MM/DD/YYYY first)
+  try {
+    const d = new Date(cleanStr);
+    if (!isNaN(d.getTime())) {
+      return d.toISOString().substring(0, 10);
+    }
+  } catch {}
+
+  return cleanStr;
+}
+

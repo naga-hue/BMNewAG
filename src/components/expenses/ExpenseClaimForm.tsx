@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import { useBoundStore } from '../../store/useBoundStore';
-import { CURRENCIES } from './shared';
+import { CURRENCIES, parseAndStandardizeDate } from './shared';
 
 interface ExpenseClaimFormProps {
   editingExpenseId: string | null;
@@ -158,31 +158,7 @@ export default function ExpenseClaimForm({
     if (editingExpenseId) {
       const exp = expenses.find(e => e.id === editingExpenseId);
       if (exp) {
-        let formattedDate = '';
-        if (exp.date) {
-          if (/^\d{4}-\d{2}-\d{2}$/.test(exp.date)) {
-            formattedDate = exp.date;
-          } else {
-            const parts = exp.date.split(/[-/]/);
-            if (parts.length === 3) {
-              if (parts[0].length === 4) {
-                formattedDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-              } else {
-                const day = parts[0];
-                const month = parts[1];
-                const year = parts[2];
-                formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-              }
-            } else {
-              try {
-                const d = new Date(exp.date);
-                if (!isNaN(d.getTime())) {
-                  formattedDate = d.toISOString().substring(0, 10);
-                }
-              } catch {}
-            }
-          }
-        }
+        const formattedDate = exp.date ? parseAndStandardizeDate(exp.date) : '';
         setDate(formattedDate);
         setPlMonth(exp.plMonth || '');
         setPayee(exp.payee || '');
@@ -276,7 +252,9 @@ export default function ExpenseClaimForm({
       }
     }
 
+    const originalExp = editingExpenseId ? expenses.find(e => e.id === editingExpenseId) : null;
     const expenseData = {
+      ...originalExp,
       id: editingExpenseId || `exp-${Date.now()}`,
       date,
       plMonth,

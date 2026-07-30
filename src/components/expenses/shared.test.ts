@@ -36,3 +36,35 @@ describe('getDaysWorkedInMonth', () => {
     expect(days).toBe(8);
   });
 });
+
+import { parseAndStandardizeDate } from './shared';
+
+describe('parseAndStandardizeDate', () => {
+  it('should preserve already standardized date YYYY-MM-DD', () => {
+    expect(parseAndStandardizeDate('2026-07-29')).toBe('2026-07-29');
+  });
+
+  it('should standardize DD/MM/YYYY', () => {
+    expect(parseAndStandardizeDate('29/07/2026')).toBe('2026-07-29');
+    expect(parseAndStandardizeDate('04/01/2026')).toBe('2026-01-04');
+  });
+
+  it('should standardize DD-MM-YYYY', () => {
+    expect(parseAndStandardizeDate('29-07-2026')).toBe('2026-07-29');
+  });
+
+  it('should standardize DD-MMM-YY', () => {
+    expect(parseAndStandardizeDate('29-Jul-26')).toBe('2026-07-29');
+    expect(parseAndStandardizeDate('04-Jan-26')).toBe('2026-01-04');
+  });
+
+  it('should standardize DD-MMM-YYYY', () => {
+    expect(parseAndStandardizeDate('29-Jul-2026')).toBe('2026-07-29');
+  });
+
+  it('should handle slashes, hyphens, and spaces with word months', () => {
+    expect(parseAndStandardizeDate('29 Jul 2026')).toBe('2026-07-29');
+    expect(parseAndStandardizeDate('29/Jul/2026')).toBe('2026-07-29');
+  });
+});
+

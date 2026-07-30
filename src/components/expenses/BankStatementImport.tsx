@@ -382,7 +382,9 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
           bankCompanyId: statementCompanyId || (companies[0] ? companies[0].id : ''),
           bankAccountId: statementBankAccountId,
           bankAccountRef: statementAccountRef || 'Main Current Account',
-          linkedPayrollCellId: row.linkedPayrollCellId || null
+          linkedPayrollCellId: row.linkedPayrollCellId || null,
+          reference: row.reference || '',
+          description: row.reference || ''
         };
 
         await saveExpense(expenseData);

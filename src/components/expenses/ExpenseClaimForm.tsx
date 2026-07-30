@@ -41,6 +41,7 @@ export default function ExpenseClaimForm({
   const [description, setDescription] = useState('');
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const [invoiceUrl, setInvoiceUrl] = useState('#');
+  const [reference, setReference] = useState('');
 
   const [isOcrScanning, setIsOcrScanning] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
@@ -168,6 +169,7 @@ export default function ExpenseClaimForm({
         setTaxRate(String(exp.taxRate || 0));
         setDescription(exp.description || '');
         setInvoiceUrl(exp.invoiceUrl || '#');
+        setReference(exp.reference || '');
         setAllocationType(exp.allocationType || 'company');
         setAllocationMode(exp.allocationMode || 'auto');
         setManualAllocationShares(exp.manualAllocationShares || {});
@@ -194,6 +196,7 @@ export default function ExpenseClaimForm({
       setDescription('');
       setInvoiceFile(null);
       setInvoiceUrl('#');
+      setReference('');
       setAllocationType('company');
       setAllocationTarget([]);
       setSelectedStaffIds([]);
@@ -274,7 +277,8 @@ export default function ExpenseClaimForm({
       linkedPlacementId: linkedPlacementId || null,
       bankCompanyId,
       bankAccountId,
-      bankAccountRef
+      bankAccountRef,
+      reference
     };
 
     try {
@@ -535,6 +539,17 @@ export default function ExpenseClaimForm({
             </select>
           </div>
         )}
+      </div>
+
+      <div className="form-group" style={{ marginTop: '16px' }}>
+        <label className="form-label">Transaction Reference (e.g. Bank Statement reference)</label>
+        <input 
+          type="text" 
+          className="form-input" 
+          placeholder="e.g. STARLING-129384, Direct Debit" 
+          value={reference} 
+          onChange={(e) => setReference(e.target.value)} 
+        />
       </div>
 
       <div className="form-group" style={{ marginTop: '16px' }}>

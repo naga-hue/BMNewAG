@@ -291,16 +291,109 @@ export default function DirectLedgerTable({
         break;
       case 'clientCompany':
         cellContent = (
-          <div>
-            <strong>{inv.clientCompany}</strong>
+          <div onClick={(e) => e.stopPropagation()} style={{ minWidth: '160px' }}>
+            <strong style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>{inv.clientCompany}</strong>
             {inv.invoiceType === 'simplicity' && (
-              <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '2px', lineHeight: 1.2 }}>
-                <span>Client No: <strong style={{ color: 'var(--text-secondary)' }}>{inv.simplicityClientNo || '—'}</strong></span>
-                <span>Limit: <strong style={{ color: 'var(--primary)' }}>{inv.simplicityCreditLimit || '—'}</strong></span>
-                <div style={{ display: 'flex', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
-                  {inv.noaRequired && <span style={{ color: '#38bdf8', fontSize: '8px', fontWeight: 'bold', backgroundColor: 'rgba(56, 189, 248, 0.08)', padding: '1px 3px', borderRadius: '2px' }}>NOA</span>}
-                  {inv.consultantInvoiceReceived && <span style={{ color: 'var(--success)', fontSize: '8px', fontWeight: 'bold', backgroundColor: 'rgba(16, 185, 129, 0.08)', padding: '1px 3px', borderRadius: '2px' }}>Consultant Inv</span>}
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px', lineHeight: 1.2 }}>
+                
+                {/* Client No Inline Edit */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: '45px', flexShrink: 0 }}>Client No:</span>
+                  <input
+                    type="text"
+                    defaultValue={inv.simplicityClientNo || ''}
+                    placeholder="—"
+                    onBlur={async (e) => {
+                      const val = e.target.value;
+                      if (val !== inv.simplicityClientNo) {
+                        const original = placements.find(p => p.id === inv.id);
+                        if (original) {
+                          try {
+                            await updatePlacement({ ...original, simplicityClientNo: val });
+                            onShowToast(`Updated Client Number for ${inv.clientCompany}`, "success");
+                          } catch (err: any) {
+                            onShowToast(`Failed to update Client Number: ${err.message}`, "warning");
+                          }
+                        }
+                      }
+                    }}
+                    onKeyDown={(e: any) => {
+                      if (e.key === 'Enter') e.target.blur();
+                    }}
+                    style={{
+                      width: '75px',
+                      background: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)',
+                      padding: '1px 4px',
+                      borderRadius: '3px',
+                      fontSize: '10px',
+                      fontFamily: 'monospace',
+                      height: '18px'
+                    }}
+                  />
                 </div>
+
+                {/* Credit Limit Inline Edit */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: '45px', flexShrink: 0 }}>Limit:</span>
+                  <input
+                    type="text"
+                    defaultValue={inv.simplicityCreditLimit || ''}
+                    placeholder="—"
+                    onBlur={async (e) => {
+                      const val = e.target.value;
+                      if (val !== inv.simplicityCreditLimit) {
+                        const original = placements.find(p => p.id === inv.id);
+                        if (original) {
+                          try {
+                            await updatePlacement({ ...original, simplicityCreditLimit: val });
+                            onShowToast(`Updated Credit Limit for ${inv.clientCompany}`, "success");
+                          } catch (err: any) {
+                            onShowToast(`Failed to update Credit Limit: ${err.message}`, "warning");
+                          }
+                        }
+                      }
+                    }}
+                    onKeyDown={(e: any) => {
+                      if (e.key === 'Enter') e.target.blur();
+                    }}
+                    style={{
+                      width: '75px',
+                      background: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)',
+                      padding: '1px 4px',
+                      borderRadius: '3px',
+                      fontSize: '10px',
+                      fontFamily: 'monospace',
+                      height: '18px'
+                    }}
+                  />
+                </div>
+
+                {/* NOA & Consultant Invoice Checkboxes */}
+                <div style={{ display: 'flex', gap: '10px', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', margin: 0, fontWeight: 500 }}>
+                    <input 
+                      type="checkbox"
+                      checked={!!inv.noaRequired}
+                      onChange={() => handleTogglePlacementField(inv.id, 'noaRequired', !!inv.noaRequired)}
+                      style={{ accentColor: 'var(--primary)', cursor: 'pointer', width: '12px', height: '12px' }}
+                    />
+                    NOA
+                  </label>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', margin: 0, fontWeight: 500 }}>
+                    <input 
+                      type="checkbox"
+                      checked={!!inv.consultantInvoiceReceived}
+                      onChange={() => handleTogglePlacementField(inv.id, 'consultantInvoiceReceived', !!inv.consultantInvoiceReceived)}
+                      style={{ accentColor: 'var(--primary)', cursor: 'pointer', width: '12px', height: '12px' }}
+                    />
+                    Inv Rec'd
+                  </label>
+                </div>
+
               </div>
             )}
           </div>

@@ -55,8 +55,8 @@ export default function WhatsImportantDashboard({
 
   const [dispatchLogs, setDispatchLogs] = useState([]);
 
-  // Fixed Anchor Date representing "Today"
-  const ANCHOR_DATE = new Date('2026-07-13');
+  // Dynamic Anchor Date representing "Today"
+  const ANCHOR_DATE = new Date();
 
   const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
   const getContractCostText = (c) => {

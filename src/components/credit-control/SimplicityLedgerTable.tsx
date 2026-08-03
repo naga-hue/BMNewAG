@@ -38,6 +38,7 @@ interface SimplicityLedgerTableProps {
   renderSortIndicator: (field: string) => React.ReactNode;
   todayStr: string;
   onShowToast: (msg: string, type?: string) => void;
+  showRescheduleDropzones: boolean;
 }
 
 export default function SimplicityLedgerTable({
@@ -60,7 +61,8 @@ export default function SimplicityLedgerTable({
   handleSort,
   renderSortIndicator,
   todayStr,
-  onShowToast
+  onShowToast,
+  showRescheduleDropzones
 }: SimplicityLedgerTableProps) {
   const placements = useBoundStore(state => state.placements);
   const companies = useBoundStore(state => state.companies);
@@ -673,44 +675,46 @@ export default function SimplicityLedgerTable({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
       
       {/* Simplicity Upcoming Friday Drop Zones */}
-      <div>
-        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '8px', letterSpacing: '0.5px' }}>
-          📬 Reschedule Expected Payout Week (Drag Invoice Row & Drop Here):
-        </span>
-        <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '8px' }}>
-          {upcomingFridays.map(fri => (
-            <div 
-              key={fri}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                const invoiceId = e.dataTransfer.getData("text/plain");
-                handleMoveInvoiceToWeek(invoiceId, fri);
-              }}
-              style={{ 
-                flex: '0 0 130px', 
-                padding: '8px 10px', 
-                backgroundColor: 'rgba(99, 102, 241, 0.03)', 
-                border: '1px dashed var(--primary)', 
-                borderRadius: '6px', 
-                fontSize: '11px',
-                textAlign: 'center',
-                cursor: 'default',
-                color: 'var(--primary)',
-                fontWeight: 600,
-                transition: 'all 0.2s'
-              }}
-              onDragEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.1)';
-              }}
-              onDragLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.03)';
-              }}
-            >
-              📅 Drop to {fri}
-            </div>
-          ))}
+      {showRescheduleDropzones && (
+        <div style={{ animation: 'fadeIn 0.2s' }}>
+          <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '8px', letterSpacing: '0.5px' }}>
+            📬 Reschedule Expected Payout Week (Drag Invoice Row & Drop Here):
+          </span>
+          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '8px' }}>
+            {upcomingFridays.map(fri => (
+              <div 
+                key={fri}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  const invoiceId = e.dataTransfer.getData("text/plain");
+                  handleMoveInvoiceToWeek(invoiceId, fri);
+                }}
+                style={{ 
+                  flex: '0 0 130px', 
+                  padding: '8px 10px', 
+                  backgroundColor: 'rgba(99, 102, 241, 0.03)', 
+                  border: '1px dashed var(--primary)', 
+                  borderRadius: '6px', 
+                  fontSize: '11px',
+                  textAlign: 'center',
+                  cursor: 'default',
+                  color: 'var(--primary)',
+                  fontWeight: 600,
+                  transition: 'all 0.2s'
+                }}
+                onDragEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.1)';
+                }}
+                onDragLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.03)';
+                }}
+              >
+                📅 Drop to {fri}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 1. DISPUTED & LEGAL SIMPLICITY RECORDS */}
       {renderSimplicityTable(

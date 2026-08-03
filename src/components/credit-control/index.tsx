@@ -85,6 +85,9 @@ export default function CreditControlDashboard({
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [expandDebtors60, setExpandDebtors60] = useState(false);
   const [collapseAnalytics, setCollapseAnalytics] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showActionsDropdown, setShowActionsDropdown] = useState(false);
+  const [showRescheduleDropzones, setShowRescheduleDropzones] = useState(false);
 
   // Simplicity importer states
   const [showSimplicityImporter, setShowSimplicityImporter] = useState(false);
@@ -911,160 +914,223 @@ export default function CreditControlDashboard({
         </div>
       )}
 
-      {/* Filters Panel */}
-      <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', width: '100%', marginBottom: '8px' }}>
-        <div className="search-box-container" style={{ flex: '2 1 250px' }}>
-          <Search size={14} className="search-icon" />
-          <input 
-            type="text" 
-            className="search-input" 
-            placeholder="Search invoices by client, candidate, inv number, recruiter..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ width: '100%', paddingLeft: '32px' }}
-          />
-        </div>
+      {/* Filters & Actions Panel */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', marginBottom: '8px' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', width: '100%' }}>
+          
+          {/* Search Box */}
+          <div className="search-box-container" style={{ flex: '1 1 300px', margin: 0, height: '34px' }}>
+            <Search size={14} className="search-icon" style={{ top: '10px' }} />
+            <input 
+              type="text" 
+              className="search-input" 
+              placeholder="Search by client, candidate, invoice, recruiter..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ width: '100%', paddingLeft: '32px', height: '34px', fontSize: '12.5px' }}
+            />
+          </div>
 
-        <select 
-          className="select-filter"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          style={{ flex: '1 1 150px', padding: '10px' }}
-        >
-          <option value="all">All Payment Statuses</option>
-          <option value="unpaid">Outstanding Invoices</option>
-          {PAYMENT_STATUSES.map(st => (
-            <option key={st.value} value={st.value}>{st.label}</option>
-          ))}
-        </select>
+          {/* Controls & Actions Toolbar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            
+            {/* Filter Toggle */}
+            <button
+              type="button"
+              className={`btn-secondary ${showFilters ? 'active' : ''}`}
+              onClick={() => setShowFilters(!showFilters)}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px', height: '34px', border: showFilters ? '1px solid var(--primary)' : '1px solid var(--border-color)', backgroundColor: showFilters ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }}
+            >
+              🔍 Filters
+            </button>
 
-        <select 
-          className="select-filter"
-          value={recruiterFilter}
-          onChange={(e) => setRecruiterFilter(e.target.value)}
-          style={{ flex: '1 1 150px', padding: '10px' }}
-        >
-          <option value="all">All Recruiters</option>
-          {staff.map(s => (
-            <option key={s.id} value={s.id}>{s.fullName}</option>
-          ))}
-        </select>
+            {/* Reschedule Dropzones Toggle (Simplicity Only) */}
+            {activeSubTab === 'simplicity' && (
+              <button
+                type="button"
+                className={`btn-secondary ${showRescheduleDropzones ? 'active' : ''}`}
+                onClick={() => setShowRescheduleDropzones(!showRescheduleDropzones)}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px', height: '34px', border: showRescheduleDropzones ? '1px solid var(--primary)' : '1px solid var(--border-color)', backgroundColor: showRescheduleDropzones ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }}
+              >
+                📅 Reschedule Zones
+              </button>
+            )}
 
-        <select 
-          className="select-filter"
-          value={dateFilter}
-          onChange={(e) => setDateFilter(e.target.value)}
-          style={{ flex: '1 1 150px', padding: '10px' }}
-        >
-          <option value="all">All Date Ranges</option>
-          <option value="overdue">Overdue Invoices</option>
-          <option value="next-7">Expected Next 7 Days</option>
-          <option value="next-30">Expected Next 30 Days</option>
-          <option value="this-month">Expected This Month</option>
-          <option value="next-month">Expected Next Month</option>
-        </select>
+            {/* Export CSV */}
+            <button 
+              type="button" 
+              className="btn-secondary" 
+              onClick={handleExportCSV}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px', height: '34px' }}
+            >
+              📥 Export CSV
+            </button>
 
-         <button 
-          type="button" 
-          className="btn-secondary" 
-          onClick={handleExportCSV}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '10px 14px' }}
-        >
-          📥 Export CSV
-        </button>
-
-        <button 
-          type="button" 
-          className="btn-primary" 
-          onClick={handleExportSimplicity}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '10px 14px' }}
-        >
-          ⚡ Simplicity Factoring Export
-        </button>
-
-        <button 
-          type="button" 
-          className="btn-secondary" 
-          onClick={() => setShowSimplicityImporter(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '10px 14px' }}
-        >
-          ⚡ Simplicity Importer
-        </button>
-
-        <div style={{ position: 'relative', flex: '0 0 auto' }}>
-          <button 
-            type="button" 
-            className="btn-secondary" 
-            onClick={() => setShowColConfig(!showColConfig)}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '10px 14px' }}
-          >
-            ⚙️ Column Config
-          </button>
-          {showColConfig && (
-            <div style={{
-              position: 'absolute',
-              top: 'calc(100% + 8px)',
-              right: 0,
-              width: '320px',
-              maxHeight: '380px',
-              overflowY: 'auto',
-              backgroundColor: 'var(--bg-card)',
-              border: '2px solid var(--primary)',
-              borderRadius: '8px',
-              boxShadow: '0 12px 24px rgba(0,0,0,0.3)',
-              zIndex: 1000,
-              padding: '12px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '4px'
-            }}>
-              <strong style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '8px', display: 'block', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px' }}>
-                ⚙️ Choose & Order Columns
-              </strong>
-              {columnsConfig.map((col, index) => (
-                <div 
-                  key={col.id} 
-                  style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'space-between', 
-                    padding: '4px 6px', 
-                    borderBottom: '1px solid var(--border-color)',
-                    gap: '8px'
-                  }}
+            {/* Simplicity Factoring Export (Simplicity Only) */}
+            {activeSubTab === 'simplicity' && (
+              <>
+                <button 
+                  type="button" 
+                  className="btn-primary" 
+                  onClick={handleExportSimplicity}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px', height: '34px' }}
                 >
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '11.5px', color: 'var(--text-primary)', margin: 0, userSelect: 'none', fontWeight: 500 }}>
-                    <input 
-                      type="checkbox" 
-                      checked={col.visible} 
-                      onChange={() => handleToggleColVisible(col.id)} 
-                      style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
-                    />
-                    {col.label}
-                  </label>
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    <button 
-                      type="button" 
-                      onClick={() => handleMoveCol(index, -1)} 
-                      disabled={index === 0}
-                      style={{ padding: '3px 7px', fontSize: '9px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', color: 'var(--text-primary)', opacity: index === 0 ? 0.3 : 1 }}
+                  ⚡ Factoring Export
+                </button>
+
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  onClick={() => setShowSimplicityImporter(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px', height: '34px' }}
+                >
+                  ⚡ Importer
+                </button>
+              </>
+            )}
+
+            {/* Column Config */}
+            <div style={{ position: 'relative', flex: '0 0 auto' }}>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                onClick={() => setShowColConfig(!showColConfig)}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px', height: '34px', border: showColConfig ? '1px solid var(--primary)' : '1px solid var(--border-color)' }}
+              >
+                ⚙️ Columns
+              </button>
+              {showColConfig && (
+                <div style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  right: 0,
+                  width: '320px',
+                  maxHeight: '380px',
+                  overflowY: 'auto',
+                  backgroundColor: 'var(--bg-card)',
+                  border: '2px solid var(--primary)',
+                  borderRadius: '8px',
+                  boxShadow: '0 12px 24px rgba(0,0,0,0.3)',
+                  zIndex: 1000,
+                  padding: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px'
+                }}>
+                  <strong style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '8px', display: 'block', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px' }}>
+                    ⚙️ Choose & Order Columns
+                  </strong>
+                  {columnsConfig.map((col, index) => (
+                    <div 
+                      key={col.id} 
+                      style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'space-between', 
+                        padding: '4px 6px', 
+                        borderBottom: '1px solid var(--border-color)',
+                        gap: '8px'
+                      }}
                     >
-                      ▲
-                    </button>
-                    <button 
-                      type="button" 
-                      onClick={() => handleMoveCol(index, 1)} 
-                      disabled={index === columnsConfig.length - 1}
-                      style={{ padding: '3px 7px', fontSize: '9px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', color: 'var(--text-primary)', opacity: index === columnsConfig.length - 1 ? 0.3 : 1 }}
-                    >
-                      ▼
-                    </button>
-                  </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '11.5px', color: 'var(--text-primary)', margin: 0, userSelect: 'none', fontWeight: 500 }}>
+                        <input 
+                          type="checkbox" 
+                          checked={col.visible} 
+                          onChange={() => handleToggleColVisible(col.id)} 
+                          style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                        />
+                        {col.label}
+                      </label>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button 
+                          type="button" 
+                          onClick={() => handleMoveCol(index, -1)} 
+                          disabled={index === 0}
+                          style={{ padding: '3px 7px', fontSize: '9px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', color: 'var(--text-primary)', opacity: index === 0 ? 0.3 : 1 }}
+                        >
+                          ▲
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={() => handleMoveCol(index, 1)} 
+                          disabled={index === columnsConfig.length - 1}
+                          style={{ padding: '3px 7px', fontSize: '9px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', color: 'var(--text-primary)', opacity: index === columnsConfig.length - 1 ? 0.3 : 1 }}
+                        >
+                          ▼
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          )}
+
+          </div>
         </div>
+
+        {/* Collapsible Dropdown Filters */}
+        {showFilters && (
+          <div style={{ 
+            display: 'flex', 
+            gap: '12px', 
+            alignItems: 'center', 
+            flexWrap: 'wrap', 
+            width: '100%', 
+            padding: '12px 16px', 
+            backgroundColor: 'var(--bg-secondary)', 
+            border: '1px solid var(--border-color)',
+            borderRadius: '8px',
+            animation: 'fadeIn 0.2s'
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: '1 1 150px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Payment Status</span>
+              <select 
+                className="select-filter"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                style={{ width: '100%', padding: '6px 10px', height: '34px', fontSize: '12.5px' }}
+              >
+                <option value="all">All Payment Statuses</option>
+                <option value="unpaid">Outstanding Invoices</option>
+                {PAYMENT_STATUSES.map(st => (
+                  <option key={st.value} value={st.value}>{st.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: '1 1 150px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Recruiter</span>
+              <select 
+                className="select-filter"
+                value={recruiterFilter}
+                onChange={(e) => setRecruiterFilter(e.target.value)}
+                style={{ width: '100%', padding: '6px 10px', height: '34px', fontSize: '12.5px' }}
+              >
+                <option value="all">All Recruiters</option>
+                {staff.map(s => (
+                  <option key={s.id} value={s.id}>{s.fullName}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: '1 1 150px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Date Range</span>
+              <select 
+                className="select-filter"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                style={{ width: '100%', padding: '6px 10px', height: '34px', fontSize: '12.5px' }}
+              >
+                <option value="all">All Date Ranges</option>
+                <option value="overdue">Overdue Invoices</option>
+                <option value="next-7">Expected Next 7 Days</option>
+                <option value="next-30">Expected Next 30 Days</option>
+                <option value="this-month">Expected This Month</option>
+                <option value="next-month">Expected Next Month</option>
+              </select>
+            </div>
+          </div>
+        )}
       </div>
 
       {activeSubTab === 'direct' ? (
@@ -1104,6 +1170,7 @@ export default function CreditControlDashboard({
           renderSortIndicator={renderSortIndicator}
           todayStr={todayStr}
           onShowToast={onShowToast}
+          showRescheduleDropzones={showRescheduleDropzones}
         />
       )}
 

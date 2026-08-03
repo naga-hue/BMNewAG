@@ -48,6 +48,286 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
   const [bankNotes, setBankNotes] = useState('');
   const [showAddBankForm, setShowAddBankForm] = useState(false);
 
+  // -------------------------------------------------------------
+  // VAT FILING OBLIGATIONS & LIKELY VAT ESTIMATES
+  // -------------------------------------------------------------
+  const vatFrequency = company?.vatFrequency || 'none';
+  const vatStartMonth = company?.vatStartMonth || 1;
+  const vatDueDateDays = company?.vatDueDateDays || 37;
+
+  // 1. Generate VAT Periods for the selected year
+  const vatPeriods = React.useMemo(() => {
+    if (!company || vatFrequency === 'none') return [];
+    
+    const yearNum = Number(selectedVatYear) || 2026;
+    const periods = [];
+    
+    if (vatFrequency === 'monthly') {
+      for (let m = 0; m < 12; m++) {
+        const monthStart = new Date(yearNum, m, 1);
+        const monthEnd = new Date(yearNum, m + 1, 0);
+        const due = new Date(monthEnd);
+        due.setDate(due.getDate() + vatDueDateDays);
+        
+        const periodKey = `${yearNum}-${String(m + 1).padStart(2, '0')}`;
+        const name = monthStart.toLocaleString('default', { month: 'long', year: 'numeric' });
+        periods.push({
+          key: periodKey,
+          name,
+          startDate: monthStart.toISOString().split('T')[0],
+          endDate: monthEnd.toISOString().split('T')[0],
+          dueDate: due.toISOString().split('T')[0],
+          months: [periodKey]
+        });
+      }
+    } else if (vatFrequency === 'quarterly') {
+      for (let q = 0; q < 4; q++) {
+        const startMonthIndex = (vatStartMonth - 1 + q * 3) % 12;
+        const endMonthIndex = (vatStartMonth - 1 + q * 3 + 2) % 12;
+        
+        const startYear = yearNum + Math.floor((vatStartMonth - 1 + q * 3) / 12);
+        const endYear = yearNum + Math.floor((vatStartMonth - 1 + q * 3 + 2) / 12);
+        
+        const periodStart = new Date(startYear, startMonthIndex, 1);
+        const periodEnd = new Date(endYear, endMonthIndex + 1, 0);
+        
+        const due = new Date(periodEnd);
+        due.setDate(due.getDate() + vatDueDateDays);
+        
+        const periodKey = `${yearNum}-Q${q + 1}`;
+        const name = `Q${q + 1} (${periodStart.toLocaleString('default', { month: 'short' })} - ${periodEnd.toLocaleString('default', { month: 'short', year: 'numeric' })})`;
+        
+        const months = [];
+        let temp = new Date(periodStart);
+        while (temp <= periodEnd) {
+          months.push(`${temp.getFullYear()}-${String(temp.getMonth() + 1).padStart(2, '0')}`);
+          temp.setMonth(temp.getMonth() + 1);
+        }
+        
+        periods.push({
+          key: periodKey,
+          name,
+          startDate: periodStart.toISOString().split('T')[0],
+          endDate: periodEnd.toISOString().split('T')[0],
+          dueDate: due.toISOString().split('T')[0],
+          months
+        });
+      }
+    } else if (vatFrequency === 'annually') {
+      const periodStart = new Date(yearNum, vatStartMonth - 1, 1);
+      const periodEnd = new Date(yearNum + 1, vatStartMonth - 1, 0);
+      
+      const due = new Date(periodEnd);
+      due.setDate(due.getDate() + vatDueDateDays);
+      
+      const periodKey = `${yearNum}-ANNUAL`;
+      const name = `Annual (${periodStart.toLocaleString('default', { month: 'short', year: 'numeric' })} - ${periodEnd.toLocaleString('default', { month: 'short', year: 'numeric' })})`;
+      
+      const months = [];
+      let temp = new Date(periodStart);
+      while (temp <= periodEnd) {
+        months.push(`${temp.getFullYear()}-${String(temp.getMonth() + 1).padStart(2, '0')}`);
+        temp.setMonth(temp.getMonth() + 1);
+      }
+      
+      periods.push({
+        key: periodKey,
+        name,
+        startDate: periodStart.toISOString().split('T')[0],
+        endDate: periodEnd.toISOString().split('T')[0],
+        dueDate: due.toISOString().split('T')[0],
+        months
+      });
+    }
+    
+    return periods;
+  }, [company, vatFrequency, vatStartMonth, vatDueDateDays, selectedVatYear]);
+
+  // 2. Perform dynamic VAT allocations & calculations for each period
+  const vatCalculations = React.useMemo(() => {
+    if (!company || vatFrequency === 'none') return {};
+    
+    const results = {};
+    
+    vatPeriods.forEach(period => {
+      // Find Placements (Sales) contributing to this period's company share
+      const contributingPlacements = placements.filter(p => {
+        if (p.status === 'dns') return false;
+        
+        // Match months
+        const pDate = p.invoiceRaisedDate || p.startDate || p.scoredDate;
+        if (!pDate) return false;
+        const pMonth = pDate.substring(0, 7);
+        if (!period.months.includes(pMonth)) return false;
+        
+        // Match company splits
+        let hasCompanySplit = false;
+        if (p.splits && p.splits.length > 0) {
+          hasCompanySplit = p.splits.some(s => {
+            const member = staff.find(st => st.id === s.staffId);
+            return member?.companyId === company.id;
+          });
+        } else {
+          const member = staff.find(st => st.id === p.recruiterId);
+          hasCompanySplit = member?.companyId === company.id;
+        }
+        
+        return hasCompanySplit;
+      });
+      
+      // Calculate output VAT details
+      const salesDetails = contributingPlacements.map(p => {
+        let companyShare = 0;
+        if (p.splits && p.splits.length > 0) {
+          p.splits.forEach(s => {
+            const member = staff.find(st => st.id === s.staffId);
+            if (member?.companyId === company.id) {
+              companyShare += (s.percentage || 0) / 100;
+            }
+          });
+        } else {
+          const member = staff.find(st => st.id === p.recruiterId);
+          if (member?.companyId === company.id) {
+            companyShare = 1;
+          }
+        }
+        
+        const grossValue = Number(p.totalInvoiceAmount) || Number(p.netScoreValue) * 1.20;
+        const netValue = Number(p.netScoreValue) || grossValue / 1.20;
+        const vatVal = p.vatAmount !== undefined && p.vatAmount !== null && p.vatAmount !== ''
+          ? Number(p.vatAmount)
+          : netValue * 0.20;
+          
+        return {
+          id: p.id,
+          type: 'sales',
+          reference: p.placementId || 'PL-New',
+          payee: p.clientCompany || 'Client Name',
+          candidate: p.candidateName,
+          date: p.invoiceRaisedDate || p.startDate || p.scoredDate,
+          net: netValue * companyShare,
+          vat: vatVal * companyShare,
+          gross: (netValue + vatVal) * companyShare,
+          share: companyShare
+        };
+      });
+      
+      const totalSalesNet = salesDetails.reduce((sum, item) => sum + item.net, 0);
+      const totalSalesVat = salesDetails.reduce((sum, item) => sum + item.vat, 0);
+      
+      // Find Expenses (Purchases) contributing to this period's company share
+      const contributingExpenses = expenses.filter(e => {
+        if (!e.date) return false;
+        const eMonth = e.date.substring(0, 7);
+        if (!period.months.includes(eMonth)) return false;
+        
+        // Match allocation to company
+        let hasCompanyAlloc = false;
+        if (e.allocationType === 'company') {
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
+          hasCompanyAlloc = targets.includes(company.id);
+        } else if (e.allocationType === 'staff') {
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [];
+          hasCompanyAlloc = targets.some(sid => {
+            const member = staff.find(st => st.id === sid);
+            return member?.companyId === company.id;
+          });
+        } else if (e.allocationType === 'department') {
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
+          const companyDepts = (company.departments || []).map(d => d.name || d);
+          hasCompanyAlloc = targets.some(t => companyDepts.includes(t));
+        }
+        
+        return hasCompanyAlloc;
+      });
+      
+      // Calculate input VAT details
+      const purchaseDetails = contributingExpenses.map(e => {
+        let expenseShare = 0;
+        if (e.allocationType === 'company') {
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
+          if (targets.includes(company.id)) {
+            if (e.allocationMode === 'manual' && e.manualAllocationShares) {
+              expenseShare = (e.manualAllocationShares[company.id] || 0) / 100;
+            } else {
+              expenseShare = 1 / Math.max(1, targets.length);
+            }
+          }
+        } else if (e.allocationType === 'staff') {
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [];
+          let matchingCount = 0;
+          let matchingManualShare = 0;
+          targets.forEach(sid => {
+            const member = staff.find(st => st.id === sid);
+            if (member?.companyId === company.id) {
+              matchingCount++;
+              if (e.allocationMode === 'manual' && e.manualAllocationShares) {
+                matchingManualShare += (e.manualAllocationShares[sid] || 0) / 100;
+              }
+            }
+          });
+          if (e.allocationMode === 'manual') {
+            expenseShare = matchingManualShare;
+          } else {
+            expenseShare = matchingCount / Math.max(1, targets.length);
+          }
+        } else if (e.allocationType === 'department') {
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
+          const companyDepts = (company.departments || []).map(d => d.name || d);
+          const matchingCount = targets.filter(t => companyDepts.includes(t)).length;
+          if (matchingCount > 0) {
+            if (e.allocationMode === 'manual' && e.manualAllocationShares) {
+              let sumShare = 0;
+              targets.forEach(t => {
+                if (companyDepts.includes(t)) {
+                  sumShare += (e.manualAllocationShares[t] || 0) / 100;
+                }
+              });
+              expenseShare = sumShare;
+            } else {
+              expenseShare = matchingCount / Math.max(1, targets.length);
+            }
+          }
+        }
+        
+        const grossVal = (e.amount || 0) * expenseShare;
+        const taxRate = Number(e.taxRate) !== undefined ? Number(e.taxRate) : 20;
+        const vatVal = grossVal * (taxRate / (100 + taxRate));
+        const netVal = grossVal - vatVal;
+        
+        return {
+          id: e.id,
+          type: 'purchase',
+          reference: e.reference || 'Purchase Receipt',
+          payee: e.payee || 'Vendor/Supplier',
+          candidate: e.nominalCode || 'Overhead',
+          date: e.date,
+          net: netVal,
+          vat: vatVal,
+          gross: grossVal,
+          share: expenseShare
+        };
+      });
+      
+      const totalPurchasesNet = purchaseDetails.reduce((sum, item) => sum + item.net, 0);
+      const totalPurchasesVat = purchaseDetails.reduce((sum, item) => sum + item.vat, 0);
+      
+      const netVatDue = totalSalesVat - totalPurchasesVat;
+      
+      results[period.key] = {
+        sales: salesDetails,
+        purchases: purchaseDetails,
+        salesNet: totalSalesNet,
+        salesVat: totalSalesVat,
+        purchasesNet: totalPurchasesNet,
+        purchasesVat: totalPurchasesVat,
+        netVatDue
+      };
+    });
+    
+    return results;
+  }, [vatPeriods, placements, expenses, staff, company?.id, company?.departments]);
+
   if (!company || !isOpen) return null;
 
   // Format currency symbols
@@ -458,286 +738,6 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
     if (diff <= 30) return 'var(--warning)';
     return 'var(--text-secondary)';
   };
-
-  // -------------------------------------------------------------
-  // VAT FILING OBLIGATIONS & LIKELY VAT ESTIMATES
-  // -------------------------------------------------------------
-  const vatFrequency = company.vatFrequency || 'none';
-  const vatStartMonth = company.vatStartMonth || 1;
-  const vatDueDateDays = company.vatDueDateDays || 37;
-
-  // 1. Generate VAT Periods for the selected year
-  const vatPeriods = React.useMemo(() => {
-    if (vatFrequency === 'none') return [];
-    
-    const yearNum = Number(selectedVatYear) || 2026;
-    const periods = [];
-    
-    if (vatFrequency === 'monthly') {
-      for (let m = 0; m < 12; m++) {
-        const monthStart = new Date(yearNum, m, 1);
-        const monthEnd = new Date(yearNum, m + 1, 0);
-        const due = new Date(monthEnd);
-        due.setDate(due.getDate() + vatDueDateDays);
-        
-        const periodKey = `${yearNum}-${String(m + 1).padStart(2, '0')}`;
-        const name = monthStart.toLocaleString('default', { month: 'long', year: 'numeric' });
-        periods.push({
-          key: periodKey,
-          name,
-          startDate: monthStart.toISOString().split('T')[0],
-          endDate: monthEnd.toISOString().split('T')[0],
-          dueDate: due.toISOString().split('T')[0],
-          months: [periodKey]
-        });
-      }
-    } else if (vatFrequency === 'quarterly') {
-      for (let q = 0; q < 4; q++) {
-        const startMonthIndex = (vatStartMonth - 1 + q * 3) % 12;
-        const endMonthIndex = (vatStartMonth - 1 + q * 3 + 2) % 12;
-        
-        const startYear = yearNum + Math.floor((vatStartMonth - 1 + q * 3) / 12);
-        const endYear = yearNum + Math.floor((vatStartMonth - 1 + q * 3 + 2) / 12);
-        
-        const periodStart = new Date(startYear, startMonthIndex, 1);
-        const periodEnd = new Date(endYear, endMonthIndex + 1, 0);
-        
-        const due = new Date(periodEnd);
-        due.setDate(due.getDate() + vatDueDateDays);
-        
-        const periodKey = `${yearNum}-Q${q + 1}`;
-        const name = `Q${q + 1} (${periodStart.toLocaleString('default', { month: 'short' })} - ${periodEnd.toLocaleString('default', { month: 'short', year: 'numeric' })})`;
-        
-        const months = [];
-        let temp = new Date(periodStart);
-        while (temp <= periodEnd) {
-          months.push(`${temp.getFullYear()}-${String(temp.getMonth() + 1).padStart(2, '0')}`);
-          temp.setMonth(temp.getMonth() + 1);
-        }
-        
-        periods.push({
-          key: periodKey,
-          name,
-          startDate: periodStart.toISOString().split('T')[0],
-          endDate: periodEnd.toISOString().split('T')[0],
-          dueDate: due.toISOString().split('T')[0],
-          months
-        });
-      }
-    } else if (vatFrequency === 'annually') {
-      const periodStart = new Date(yearNum, vatStartMonth - 1, 1);
-      const periodEnd = new Date(yearNum + 1, vatStartMonth - 1, 0);
-      
-      const due = new Date(periodEnd);
-      due.setDate(due.getDate() + vatDueDateDays);
-      
-      const periodKey = `${yearNum}-ANNUAL`;
-      const name = `Annual (${periodStart.toLocaleString('default', { month: 'short', year: 'numeric' })} - ${periodEnd.toLocaleString('default', { month: 'short', year: 'numeric' })})`;
-      
-      const months = [];
-      let temp = new Date(periodStart);
-      while (temp <= periodEnd) {
-        months.push(`${temp.getFullYear()}-${String(temp.getMonth() + 1).padStart(2, '0')}`);
-        temp.setMonth(temp.getMonth() + 1);
-      }
-      
-      periods.push({
-        key: periodKey,
-        name,
-        startDate: periodStart.toISOString().split('T')[0],
-        endDate: periodEnd.toISOString().split('T')[0],
-        dueDate: due.toISOString().split('T')[0],
-        months
-      });
-    }
-    
-    return periods;
-  }, [vatFrequency, vatStartMonth, vatDueDateDays, selectedVatYear]);
-
-  // 2. Perform dynamic VAT allocations & calculations for each period
-  const vatCalculations = React.useMemo(() => {
-    if (vatFrequency === 'none') return {};
-    
-    const results = {};
-    
-    vatPeriods.forEach(period => {
-      // Find Placements (Sales) contributing to this period's company share
-      const contributingPlacements = placements.filter(p => {
-        if (p.status === 'dns') return false;
-        
-        // Match months
-        const pDate = p.invoiceRaisedDate || p.startDate || p.scoredDate;
-        if (!pDate) return false;
-        const pMonth = pDate.substring(0, 7);
-        if (!period.months.includes(pMonth)) return false;
-        
-        // Match company splits
-        let hasCompanySplit = false;
-        if (p.splits && p.splits.length > 0) {
-          hasCompanySplit = p.splits.some(s => {
-            const member = staff.find(st => st.id === s.staffId);
-            return member?.companyId === company.id;
-          });
-        } else {
-          const member = staff.find(st => st.id === p.recruiterId);
-          hasCompanySplit = member?.companyId === company.id;
-        }
-        
-        return hasCompanySplit;
-      });
-      
-      // Calculate output VAT details
-      const salesDetails = contributingPlacements.map(p => {
-        let companyShare = 0;
-        if (p.splits && p.splits.length > 0) {
-          p.splits.forEach(s => {
-            const member = staff.find(st => st.id === s.staffId);
-            if (member?.companyId === company.id) {
-              companyShare += (s.percentage || 0) / 100;
-            }
-          });
-        } else {
-          const member = staff.find(st => st.id === p.recruiterId);
-          if (member?.companyId === company.id) {
-            companyShare = 1;
-          }
-        }
-        
-        const grossValue = Number(p.totalInvoiceAmount) || Number(p.netScoreValue) * 1.20;
-        const netValue = Number(p.netScoreValue) || grossValue / 1.20;
-        const vatVal = p.vatAmount !== undefined && p.vatAmount !== null && p.vatAmount !== ''
-          ? Number(p.vatAmount)
-          : netValue * 0.20;
-          
-        return {
-          id: p.id,
-          type: 'sales',
-          reference: p.placementId || 'PL-New',
-          payee: p.clientCompany || 'Client Name',
-          candidate: p.candidateName,
-          date: p.invoiceRaisedDate || p.startDate || p.scoredDate,
-          net: netValue * companyShare,
-          vat: vatVal * companyShare,
-          gross: (netValue + vatVal) * companyShare,
-          share: companyShare
-        };
-      });
-      
-      const totalSalesNet = salesDetails.reduce((sum, item) => sum + item.net, 0);
-      const totalSalesVat = salesDetails.reduce((sum, item) => sum + item.vat, 0);
-      
-      // Find Expenses (Purchases) contributing to this period's company share
-      const contributingExpenses = expenses.filter(e => {
-        if (!e.date) return false;
-        const eMonth = e.date.substring(0, 7);
-        if (!period.months.includes(eMonth)) return false;
-        
-        // Match allocation to company
-        let hasCompanyAlloc = false;
-        if (e.allocationType === 'company') {
-          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
-          hasCompanyAlloc = targets.includes(company.id);
-        } else if (e.allocationType === 'staff') {
-          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [];
-          hasCompanyAlloc = targets.some(sid => {
-            const member = staff.find(st => st.id === sid);
-            return member?.companyId === company.id;
-          });
-        } else if (e.allocationType === 'department') {
-          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
-          const companyDepts = (company.departments || []).map(d => d.name || d);
-          hasCompanyAlloc = targets.some(t => companyDepts.includes(t));
-        }
-        
-        return hasCompanyAlloc;
-      });
-      
-      // Calculate input VAT details
-      const purchaseDetails = contributingExpenses.map(e => {
-        let expenseShare = 0;
-        if (e.allocationType === 'company') {
-          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
-          if (targets.includes(company.id)) {
-            if (e.allocationMode === 'manual' && e.manualAllocationShares) {
-              expenseShare = (e.manualAllocationShares[company.id] || 0) / 100;
-            } else {
-              expenseShare = 1 / Math.max(1, targets.length);
-            }
-          }
-        } else if (e.allocationType === 'staff') {
-          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [];
-          let matchingCount = 0;
-          let matchingManualShare = 0;
-          targets.forEach(sid => {
-            const member = staff.find(st => st.id === sid);
-            if (member?.companyId === company.id) {
-              matchingCount++;
-              if (e.allocationMode === 'manual' && e.manualAllocationShares) {
-                matchingManualShare += (e.manualAllocationShares[sid] || 0) / 100;
-              }
-            }
-          });
-          if (e.allocationMode === 'manual') {
-            expenseShare = matchingManualShare;
-          } else {
-            expenseShare = matchingCount / Math.max(1, targets.length);
-          }
-        } else if (e.allocationType === 'department') {
-          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
-          const companyDepts = (company.departments || []).map(d => d.name || d);
-          const matchingCount = targets.filter(t => companyDepts.includes(t)).length;
-          if (matchingCount > 0) {
-            if (e.allocationMode === 'manual' && e.manualAllocationShares) {
-              let sumShare = 0;
-              targets.forEach(t => {
-                if (companyDepts.includes(t)) {
-                  sumShare += (e.manualAllocationShares[t] || 0) / 100;
-                }
-              });
-              expenseShare = sumShare;
-            } else {
-              expenseShare = matchingCount / Math.max(1, targets.length);
-            }
-          }
-        }
-        
-        const grossVal = (e.amount || 0) * expenseShare;
-        const taxRate = Number(e.taxRate) !== undefined ? Number(e.taxRate) : 20;
-        const vatVal = grossVal * (taxRate / (100 + taxRate));
-        const netVal = grossVal - vatVal;
-        
-        return {
-          id: e.id,
-          type: 'purchase',
-          reference: e.reference || 'Purchase Receipt',
-          payee: e.payee || 'Vendor/Supplier',
-          candidate: e.nominalCode || 'Overhead',
-          date: e.date,
-          net: netVal,
-          vat: vatVal,
-          gross: grossVal,
-          share: expenseShare
-        };
-      });
-      
-      const totalPurchasesNet = purchaseDetails.reduce((sum, item) => sum + item.net, 0);
-      const totalPurchasesVat = purchaseDetails.reduce((sum, item) => sum + item.vat, 0);
-      
-      const netVatDue = totalSalesVat - totalPurchasesVat;
-      
-      results[period.key] = {
-        sales: salesDetails,
-        purchases: purchaseDetails,
-        salesNet: totalSalesNet,
-        salesVat: totalSalesVat,
-        purchasesNet: totalPurchasesNet,
-        purchasesVat: totalPurchasesVat,
-        netVatDue
-      };
-    });
-    
-    return results;
-  }, [vatPeriods, placements, expenses, staff, company.id, company.departments]);
 
   return (
     <div className={`slide-over-overlay ${isOpen ? 'active' : ''}`} onClick={onClose}>

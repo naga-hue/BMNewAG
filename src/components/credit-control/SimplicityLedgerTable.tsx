@@ -15,6 +15,11 @@ interface WeekGroup {
 
 interface SimplicityLedgerTableProps {
   list: any[];
+  partitionedInvoices: {
+    disputedLegal: any[];
+    liveOutstanding: any[];
+    closed: any[];
+  };
   activeColumns: Column[];
   selectedInvoiceIds: Set<string>;
   handleToggleSelectAll: (list: any[]) => void;
@@ -37,6 +42,7 @@ interface SimplicityLedgerTableProps {
 
 export default function SimplicityLedgerTable({
   list,
+  partitionedInvoices,
   activeColumns,
   selectedInvoiceIds,
   handleToggleSelectAll,
@@ -581,7 +587,7 @@ export default function SimplicityLedgerTable({
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
             <thead>
               <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', width: '56px', minWidth: '56px', textAlign: 'center', backgroundColor: 'var(--bg-secondary)', position: 'sticky', left: 0, zIndex: 20 }}>
+                <th style={{ border: '1px solid var(--border-color)', padding: '6px 8px', width: '56px', minWidth: '56px', textAlign: 'center', backgroundColor: 'var(--bg-secondary)', position: 'sticky', left: 0, zIndex: 20 }}>
                   <input 
                     type="checkbox" 
                     checked={list.length > 0 && list.every(inv => selectedInvoiceIds.has(inv.id))}
@@ -605,7 +611,7 @@ export default function SimplicityLedgerTable({
                     style={{ cursor: 'grab' }} 
                     className="table-row-hover"
                   >
-                    <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', width: '56px', minWidth: '56px', textAlign: 'center', position: 'sticky', left: 0, zIndex: 10, backgroundColor: 'var(--bg-card)' }} onClick={(e) => e.stopPropagation()}>
+                    <td style={{ border: '1px solid var(--border-color)', padding: '5px 8px', width: '56px', minWidth: '56px', textAlign: 'center', position: 'sticky', left: 0, zIndex: 10, backgroundColor: 'var(--bg-card)' }} onClick={(e) => e.stopPropagation()}>
                       <input 
                         type="checkbox" 
                         checked={selectedInvoiceIds.has(inv.id)}
@@ -706,64 +712,35 @@ export default function SimplicityLedgerTable({
         </div>
       </div>
 
-      {/* 1. LEGAL / DISPUTED SIMPLICITY RECORDS */}
-      {simplicityLegal.length > 0 && renderSimplicityTable(
+      {/* 1. DISPUTED & LEGAL SIMPLICITY RECORDS */}
+      {renderSimplicityTable(
         "⚠️ Disputed & Legal Simplicity Invoices",
-        simplicityLegal,
+        partitionedInvoices.disputedLegal,
         "rgba(239, 68, 68, 0.04)",
         "var(--danger)",
         "Action Required"
       )}
 
-      {/* 2. OVERDUE SIMPLICITY RECORDS */}
-      {simplicityOverdue.length > 0 && renderSimplicityTable(
-        "⏳ Overdue Simplicity Invoices",
-        simplicityOverdue,
-        "rgba(245, 158, 11, 0.04)",
-        "var(--warning)",
-        "Chaser Pipeline"
+      {/* 2. LIVE OUTSTANDING SIMPLICITY RECORDS */}
+      {renderSimplicityTable(
+        "⏳ Live Outstanding & Overdue Simplicity Invoices",
+        partitionedInvoices.liveOutstanding,
+        "rgba(99, 102, 241, 0.04)",
+        "var(--primary)",
+        "Active Ledger"
       )}
 
-      {/* 3. ACTIVE SIMPLICITY RECORDS GROUPED BY WEEK */}
-      <div>
-        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '12px', letterSpacing: '0.5px' }}>
-          {/* 2b. PRIOR PERIOD SIMPLICITY RECORDS */}
-          {simplicityPriorWeeks.length > 0 && renderSimplicityTable(
-            "⏳ Outstanding Simplicity Invoices (Prior Periods)",
-            simplicityPriorWeeks,
-            "rgba(156, 163, 175, 0.04)",
-            "var(--text-secondary)",
-            "Prior Period Placements"
-          )}
-          <div style={{ height: '12px' }}></div>
-          📅 Active Weekly Pipeline:
-        </span>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {simplicityActiveWeeks.map(week => {
-            return renderSimplicityTable(
-              `📅 Week Ending Friday: ${week.weekDate} (${week.invoices.length} Starters)`,
-              week.invoices,
-              "rgba(99, 102, 241, 0.04)",
-              "var(--primary)",
-              "Drag invoice here to reschedule",
-              true,
-              week.weekDate
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 4. PAID / HISTORICAL SETTLED SIMPLICITY RECORDS */}
-      {simplicityPaid.length > 0 && renderSimplicityTable(
-        "✅ Settled & Paid Simplicity Invoices",
-        simplicityPaid,
+      {/* 3. CLOSED SIMPLICITY RECORDS */}
+      {renderSimplicityTable(
+        "✅ Closed & Historical Settled Simplicity Invoices",
+        partitionedInvoices.closed,
         "rgba(16, 185, 129, 0.04)",
         "var(--success)",
-        "Archived Records"
+        "Archived / Paid"
       )}
 
       {/* fallback empty state */}
-      {simplicityLegal.length === 0 && simplicityOverdue.length === 0 && simplicityActiveWeeks.length === 0 && simplicityPaid.length === 0 && (
+      {partitionedInvoices.disputedLegal.length === 0 && partitionedInvoices.liveOutstanding.length === 0 && partitionedInvoices.closed.length === 0 && (
         <div style={{ padding: '40px', border: '1px dashed var(--border-color)', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted)' }}>
           No simplicity invoice records found matching the active search or filters.
         </div>

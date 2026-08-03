@@ -1085,6 +1085,7 @@ export default function CreditControlDashboard({
       ) : (
         <SimplicityLedgerTable
           list={filteredInvoices}
+          partitionedInvoices={partitionedInvoices}
           activeColumns={activeColumns}
           selectedInvoiceIds={selectedInvoiceIds}
           handleToggleSelectAll={handleToggleSelectAll}

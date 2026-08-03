@@ -554,7 +554,7 @@ export default function DirectLedgerTable({
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
             <thead>
               <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                <th style={{ border: '1px solid var(--border-color)', padding: '8px 10px', width: '56px', minWidth: '56px', textAlign: 'center', backgroundColor: 'var(--bg-secondary)', position: 'sticky', left: 0, zIndex: 20 }}>
+                <th style={{ border: '1px solid var(--border-color)', padding: '6px 8px', width: '56px', minWidth: '56px', textAlign: 'center', backgroundColor: 'var(--bg-secondary)', position: 'sticky', left: 0, zIndex: 20 }}>
                   <input 
                     type="checkbox" 
                     checked={list.length > 0 && list.every(inv => selectedInvoiceIds.has(inv.id))}
@@ -569,7 +569,7 @@ export default function DirectLedgerTable({
               {list.map(inv => {
                 return (
                   <tr key={inv.id} onClick={() => handleOpenDetail(inv)} style={{ cursor: 'pointer' }} className="table-row-hover">
-                    <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', width: '56px', minWidth: '56px', textAlign: 'center', position: 'sticky', left: 0, zIndex: 10, backgroundColor: 'var(--bg-card)' }} onClick={(e) => e.stopPropagation()}>
+                    <td style={{ border: '1px solid var(--border-color)', padding: '5px 8px', width: '56px', minWidth: '56px', textAlign: 'center', position: 'sticky', left: 0, zIndex: 10, backgroundColor: 'var(--bg-card)' }} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
                         <span style={{ cursor: 'grab', color: 'var(--text-muted)', fontSize: '14px', userSelect: 'none' }} title="Drag handle">⠿</span>
                         <input 

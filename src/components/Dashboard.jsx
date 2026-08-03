@@ -798,20 +798,30 @@ export default function Dashboard({
       });
 
     // 3. Holidays
+    const groupedHolidays = [];
+    const holidayKeys = new Set();
     holidays.forEach(h => {
       if (h.date) {
-        const diff = getDaysDiff(h.date);
-        if (diff >= 0 && diff <= 30) {
-          events.push({
-            id: `holiday-${h.id}`,
-            type: 'holiday',
-            title: `🏖️ Public Holiday: ${h.name} (${h.country || 'Global'})`,
-            dateStr: new Date(h.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-            diffDays: diff,
-            dept: '',
-            company: ''
-          });
+        const key = `${h.name}-${h.date}`;
+        if (!holidayKeys.has(key)) {
+          holidayKeys.add(key);
+          groupedHolidays.push(h);
         }
+      }
+    });
+
+    groupedHolidays.forEach(h => {
+      const diff = getDaysDiff(h.date);
+      if (diff >= 0 && diff <= 30) {
+        events.push({
+          id: `holiday-${h.id}`,
+          type: 'holiday',
+          title: `🏖️ Public Holiday: ${h.name}`,
+          dateStr: new Date(h.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+          diffDays: diff,
+          dept: '',
+          company: ''
+        });
       }
     });
 

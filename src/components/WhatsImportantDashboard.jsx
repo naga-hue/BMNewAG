@@ -452,21 +452,50 @@ export default function WhatsImportantDashboard({
     })
     .sort((a, b) => a.startDate.localeCompare(b.startDate));
 
-  const horizonHolidays = holidays
-    .filter(h => isDateInRange(h.date, rangeStart, rangeEnd))
-    .map(h => {
-      const comp = companies.find(c => c.id === h.companyId);
+  const horizonHolidays = React.useMemo(() => {
+    const groupedMap = {};
+    holidays.forEach(h => {
+      if (!isDateInRange(h.date, rangeStart, rangeEnd)) return;
+      const key = `${h.name}-${h.date}`;
+      if (!groupedMap[key]) {
+        groupedMap[key] = {
+          name: h.name,
+          date: h.date,
+          companyIds: []
+        };
+      }
+      if (h.companyId) {
+        groupedMap[key].companyIds.push(h.companyId);
+      }
+    });
+
+    return Object.values(groupedMap).map(gh => {
+      const matchedCompNames = gh.companyIds
+        .map(cid => companies.find(c => c.id === cid)?.name)
+        .filter(Boolean);
+
+      let desc = '';
+      if (matchedCompNames.length === 0) {
+        desc = `Public Holiday on ${gh.date}`;
+      } else if (matchedCompNames.length === companies.length) {
+        desc = `Public Holiday for all group entities on ${gh.date}`;
+      } else if (matchedCompNames.length > 3) {
+        desc = `Public Holiday for ${matchedCompNames.length} entities (including ${matchedCompNames.slice(0, 2).join(', ')}) on ${gh.date}`;
+      } else {
+        desc = `Public Holiday for ${matchedCompNames.join(', ')} on ${gh.date}`;
+      }
+
       return {
-        id: `holiday-${h.id || h.date}`,
+        id: `holiday-${gh.name}-${gh.date}`,
         category: 'absences',
-        title: h.name,
-        desc: `Public Holiday for ${comp ? comp.name : 'all offices'} on ${h.date}`,
+        title: gh.name,
+        desc,
         badge: 'Public Holiday',
         type: 'success',
-        date: h.date
+        date: gh.date
       };
-    })
-    .sort((a, b) => a.date.localeCompare(b.date));
+    }).sort((a, b) => a.date.localeCompare(b.date));
+  }, [holidays, rangeStart, rangeEnd, companies]);
 
   // 2. Statutory Filing Deadlines
   const horizonFilingTasks = companies.flatMap(c => {

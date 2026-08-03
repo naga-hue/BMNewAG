@@ -103,11 +103,11 @@ export default function SimplicityLedgerTable({
         key={col.id}
         style={{ 
           border: '1px solid var(--border-color)', 
-          padding: '8px 10px', 
+          padding: '6px 8px', 
           backgroundColor: 'var(--bg-secondary)', 
           color: 'var(--text-primary)', 
           fontWeight: 700, 
-          fontSize: '11px', 
+          fontSize: '10px', 
           textTransform: 'uppercase', 
           textAlign: isMonetary ? 'right' : 'left', 
           whiteSpace: 'nowrap',
@@ -536,11 +536,11 @@ export default function SimplicityLedgerTable({
         key={col.id}
         style={{ 
           border: '1px solid var(--border-color)', 
-          padding: '6px 10px', 
-          fontSize: '12px',
-          color: 'var(--text-primary)',
-          textAlign: isMonetary ? 'right' : 'left',
-          fontFamily: isMonetary || col.id === 'placementId' || col.id === 'dueDate' ? 'monospace' : 'inherit',
+          padding: '5px 8px', 
+          fontSize: '11px', 
+          color: 'var(--text-primary)', 
+          textAlign: isMonetary ? 'right' : 'left', 
+          fontFamily: isMonetary || col.id === 'placementId' || col.id === 'dueDate' ? 'monospace' : 'inherit', 
           ...stickyStyle
         }}
       >

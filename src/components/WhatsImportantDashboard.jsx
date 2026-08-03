@@ -796,6 +796,7 @@ export default function WhatsImportantDashboard({
     .map(a => a.id)
     .sort()
     .join(',');
+  const criticalAlertsCount = filteredAlerts.filter(a => a.type === 'critical').length;
 
   console.log("[WhatsImportantDashboard] render. criticalAlertIds:", criticalAlertIds || "none");
 
@@ -909,7 +910,7 @@ export default function WhatsImportantDashboard({
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', padding: '8px 14px', borderRadius: '8px', textAlign: 'center' }}>
             <div style={{ fontSize: '16px', fontWeight: 800, color: '#ef4444' }}>
-              {criticalAlertIds.length}
+              {criticalAlertsCount}
             </div>
             <div style={{ fontSize: '10px', fontWeight: 700, color: '#ef4444', textTransform: 'uppercase' }}>
               Loss Risks / Overdue
@@ -917,185 +918,11 @@ export default function WhatsImportantDashboard({
           </div>
           <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '8px 14px', borderRadius: '8px', textAlign: 'center' }}>
             <div style={{ fontSize: '16px', fontWeight: 800, color: '#10b981' }}>
-              {filteredAlerts.length - criticalAlertIds.length}
+              {filteredAlerts.length - criticalAlertsCount}
             </div>
             <div style={{ fontSize: '10px', fontWeight: 700, color: '#10b981', textTransform: 'uppercase' }}>
               Optimized Actions
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Group Cashflow & VAT Obligations Overview */}
-      <div style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border-color)',
-        borderRadius: '12px',
-        padding: '20px',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '20px'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-          <h3 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <TrendingUp size={16} style={{ color: 'var(--primary)' }} />
-            Group Cashflow & VAT Obligations (As On Date)
-          </h3>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Real-time aggregated KPIs</span>
-        </div>
-
-        {/* KPI Cards */}
-        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-          {/* Collections KPI */}
-          <div style={{
-            flex: '1 1 240px',
-            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(16, 185, 129, 0.02) 100%)',
-            border: '1px solid rgba(16, 185, 129, 0.15)',
-            borderRadius: '10px',
-            padding: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '16px'
-          }}>
-            <div style={{
-              background: 'rgba(16, 185, 129, 0.1)',
-              color: '#10b981',
-              borderRadius: '50%',
-              width: '40px',
-              height: '40px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <TrendingUp size={22} />
-            </div>
-            <div>
-              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Group Cash Collections
-              </div>
-              <div style={{ fontSize: '22px', fontWeight: 800, color: '#10b981', margin: '4px 0 2px 0', fontFamily: 'monospace' }}>
-                £{totalCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                Direct invoices paid + Simplicity invoices funded
-              </div>
-            </div>
-          </div>
-
-          {/* Expenses KPI */}
-          <div style={{
-            flex: '1 1 240px',
-            background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.05) 0%, rgba(239, 68, 68, 0.02) 100%)',
-            border: '1px solid rgba(239, 68, 68, 0.15)',
-            borderRadius: '10px',
-            padding: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '16px'
-          }}>
-            <div style={{
-              background: 'rgba(239, 68, 68, 0.1)',
-              color: '#ef4444',
-              borderRadius: '50%',
-              width: '40px',
-              height: '40px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <Receipt size={22} />
-            </div>
-            <div>
-              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Group Overhead Spent
-              </div>
-              <div style={{ fontSize: '22px', fontWeight: 800, color: '#ef4444', margin: '4px 0 2px 0', fontFamily: 'monospace' }}>
-                £{totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                Total approved & reimbursed overhead expenses
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* VAT Deadlines Table */}
-        <div style={{ marginTop: '4px' }}>
-          <h4 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', margin: '0 0 10px 0', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            📅 Active VAT Obligations & Deadlines
-          </h4>
-          <div className="table-container" style={{ margin: 0, overflowX: 'auto', maxHeight: '250px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
-                  <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Company</th>
-                  <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>VAT Period</th>
-                  <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Due Date</th>
-                  <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Filing Status</th>
-                  <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Est. VAT Due</th>
-                  <th style={{ padding: '8px 12px', textAlign: 'center', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', width: '100px' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pendingVatObligations.map(ob => {
-                  const statusColor = ob.isOverdue ? '#ef4444' : (ob.status === 'filed' ? '#f59e0b' : '#3b82f6');
-                  const statusLabel = ob.isOverdue ? 'Overdue' : (ob.status === 'filed' ? 'Filed (Unpaid)' : 'Pending Filing');
-
-                  return (
-                    <tr key={`${ob.companyId}-${ob.periodKey}`} className="table-row-hover" style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '8px 12px', fontSize: '11px', fontWeight: 600 }}>{ob.companyName}</td>
-                      <td style={{ padding: '8px 12px', fontSize: '11px', color: 'var(--text-secondary)' }}>{ob.periodName}</td>
-                      <td style={{ padding: '8px 12px', fontSize: '11px', fontFamily: 'monospace', color: ob.isOverdue ? '#ef4444' : 'var(--text-primary)', fontWeight: ob.isOverdue ? 600 : 'normal' }}>
-                        {ob.dueDate}
-                      </td>
-                      <td style={{ padding: '8px 12px', fontSize: '11px' }}>
-                        <span style={{
-                          backgroundColor: `${statusColor}15`,
-                          color: statusColor,
-                          border: `1px solid ${statusColor}25`,
-                          padding: '2px 6px',
-                          borderRadius: '12px',
-                          fontSize: '9.5px',
-                          fontWeight: 700
-                        }}>
-                          {statusLabel}
-                        </span>
-                      </td>
-                      <td style={{ padding: '8px 12px', fontSize: '11px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: ob.netVatDue >= 0 ? 'var(--text-primary)' : 'var(--success)' }}>
-                        {ob.netVatDue < 0 ? '-' : ''}£{Math.abs(ob.netVatDue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-                      <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                        <button
-                          onClick={() => {
-                            setSelectedCompany(companies.find(c => c.id === ob.companyId));
-                            setActiveTab('directory');
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--primary)',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            padding: 0
-                          }}
-                        >
-                          Go to Entity →
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {pendingVatObligations.length === 0 && (
-                  <tr>
-                    <td colSpan={6} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '11px' }}>
-                      🎉 All group VAT filings and payments are up to date!
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
           </div>
         </div>
       </div>

@@ -30,7 +30,8 @@ export default function Dashboard({
   holidays = [],
   contracts = [],
   vendors = [],
-  placements = []
+  placements = [],
+  expenses = []
 }) {
   // Current date anchor: June 29, 2026
   const CURRENT_DATE = new Date(); CURRENT_DATE.setHours(0, 0, 0, 0);
@@ -38,7 +39,280 @@ export default function Dashboard({
 
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [chartCompanyFilters, setChartCompanyFilters] = useState({ consolidated: true });
-  
+
+  // Group Cashflow & VAT Calculations
+  const { totalCollected, totalSpent, pendingVatObligations } = React.useMemo(() => {
+    // 1. Total Collected
+    let collections = 0;
+    placements.forEach(p => {
+      if (p.invoiceType === 'simplicity') {
+        if (p.simplicityPaid) {
+          collections += (Number(p.grossBillAmount) || 0) * 0.9704;
+        }
+      } else {
+        if (p.paymentStatus === 'paid' || p.clientPaymentStatus === 'paid' || (Number(p.amountPaid) > 0 && p.balanceOutstanding === 0)) {
+          collections += Number(p.totalInvoiceAmount) || 0;
+        }
+      }
+    });
+
+    // 2. Total Spent
+    let spent = 0;
+    expenses.forEach(e => {
+      if (['approved', 'reimbursed', 'paid'].includes(e.status)) {
+        spent += Number(e.amount) || 0;
+      }
+    });
+
+    // 3. VAT Obligations
+    const obligations = [];
+    const todayStr = CURRENT_DATE.toISOString().split('T')[0];
+    const currentYear = CURRENT_DATE.getFullYear();
+
+    companies.forEach(company => {
+      const vatFrequency = company.vatFrequency || 'none';
+      if (vatFrequency === 'none') return;
+
+      const vatStartMonth = company.vatStartMonth || 1;
+      const vatDueDateDays = company.vatDueDateDays || 37;
+
+      // Check current year and previous year for outstanding VAT
+      const years = [currentYear - 1, currentYear];
+      const periods = [];
+
+      years.forEach(yearNum => {
+        if (vatFrequency === 'monthly') {
+          for (let m = 0; m < 12; m++) {
+            const monthStart = new Date(yearNum, m, 1);
+            const monthEnd = new Date(yearNum, m + 1, 0);
+            const due = new Date(monthEnd);
+            due.setDate(due.getDate() + vatDueDateDays);
+            
+            const periodKey = `${yearNum}-${String(m + 1).padStart(2, '0')}`;
+            const name = monthStart.toLocaleString('default', { month: 'long', year: 'numeric' });
+            periods.push({
+              key: periodKey,
+              name,
+              startDate: monthStart.toISOString().split('T')[0],
+              endDate: monthEnd.toISOString().split('T')[0],
+              dueDate: due.toISOString().split('T')[0],
+              months: [periodKey]
+            });
+          }
+        } else if (vatFrequency === 'quarterly') {
+          for (let q = 0; q < 4; q++) {
+            const startMonthIndex = (vatStartMonth - 1 + q * 3) % 12;
+            const endMonthIndex = (vatStartMonth - 1 + q * 3 + 2) % 12;
+            const startYear = yearNum + Math.floor((vatStartMonth - 1 + q * 3) / 12);
+            const endYear = yearNum + Math.floor((vatStartMonth - 1 + q * 3 + 2) / 12);
+            
+            const periodStart = new Date(startYear, startMonthIndex, 1);
+            const periodEnd = new Date(endYear, endMonthIndex + 1, 0);
+            const due = new Date(periodEnd);
+            due.setDate(due.getDate() + vatDueDateDays);
+            
+            const periodKey = `${yearNum}-Q${q + 1}`;
+            const name = `Q${q + 1} (${periodStart.toLocaleString('default', { month: 'short' })} - ${periodEnd.toLocaleString('default', { month: 'short', year: 'numeric' })})`;
+            
+            const months = [];
+            let temp = new Date(periodStart);
+            while (temp <= periodEnd) {
+              months.push(`${temp.getFullYear()}-${String(temp.getMonth() + 1).padStart(2, '0')}`);
+              temp.setMonth(temp.getMonth() + 1);
+            }
+            
+            periods.push({
+              key: periodKey,
+              name,
+              startDate: periodStart.toISOString().split('T')[0],
+              endDate: periodEnd.toISOString().split('T')[0],
+              dueDate: due.toISOString().split('T')[0],
+              months
+            });
+          }
+        } else if (vatFrequency === 'annually') {
+          const periodStart = new Date(yearNum, vatStartMonth - 1, 1);
+          const periodEnd = new Date(yearNum + 1, vatStartMonth - 1, 0);
+          const due = new Date(periodEnd);
+          due.setDate(due.getDate() + vatDueDateDays);
+          
+          const periodKey = `${yearNum}-ANNUAL`;
+          const name = `Annual (${periodStart.toLocaleString('default', { month: 'short', year: 'numeric' })} - ${periodEnd.toLocaleString('default', { month: 'short', year: 'numeric' })})`;
+          
+          const months = [];
+          let temp = new Date(periodStart);
+          while (temp <= periodEnd) {
+            months.push(`${temp.getFullYear()}-${String(temp.getMonth() + 1).padStart(2, '0')}`);
+            temp.setMonth(temp.getMonth() + 1);
+          }
+          
+          periods.push({
+            key: periodKey,
+            name,
+            startDate: periodStart.toISOString().split('T')[0],
+            endDate: periodEnd.toISOString().split('T')[0],
+            dueDate: due.toISOString().split('T')[0],
+            months
+          });
+        }
+      });
+
+      // Filter and compute active VAT obligations
+      periods.forEach(period => {
+        const filing = company.vatFilings?.[period.key];
+        const status = filing?.status || 'unpaid';
+        
+        if (status === 'paid') return; // Skip paid periods
+        if (period.startDate > todayStr) return; // Skip future periods
+
+        // Sales VAT Output
+        const contributingPlacements = placements.filter(p => {
+          if (p.status === 'dns') return false;
+          const pDate = p.invoiceRaisedDate || p.startDate || p.scoredDate;
+          if (!pDate) return false;
+          const pMonth = pDate.substring(0, 7);
+          if (!period.months.includes(pMonth)) return false;
+
+          let hasCompanySplit = false;
+          if (p.splits && p.splits.length > 0) {
+            hasCompanySplit = p.splits.some(s => {
+              const member = staff.find(st => st.id === s.staffId);
+              return member?.companyId === company.id;
+            });
+          } else {
+            const member = staff.find(st => st.id === p.recruiterId);
+            hasCompanySplit = member?.companyId === company.id;
+          }
+          return hasCompanySplit;
+        });
+
+        let totalSalesVat = 0;
+        contributingPlacements.forEach(p => {
+          let companyShare = 0;
+          if (p.splits && p.splits.length > 0) {
+            p.splits.forEach(s => {
+              const member = staff.find(st => st.id === s.staffId);
+              if (member?.companyId === company.id) {
+                companyShare += (s.percentage || 0) / 100;
+              }
+            });
+          } else {
+            const member = staff.find(st => st.id === p.recruiterId);
+            if (member?.companyId === company.id) companyShare = 1;
+          }
+          const grossValue = Number(p.totalInvoiceAmount) || Number(p.netScoreValue) * 1.20;
+          const netValue = Number(p.netScoreValue) || grossValue / 1.20;
+          const vatVal = p.vatAmount !== undefined && p.vatAmount !== null && p.vatAmount !== ''
+            ? Number(p.vatAmount)
+            : netValue * 0.20;
+          totalSalesVat += vatVal * companyShare;
+        });
+
+        // Purchases VAT Input
+        const contributingExpenses = expenses.filter(e => {
+          if (!e.date) return false;
+          const eMonth = e.date.substring(0, 7);
+          if (!period.months.includes(eMonth)) return false;
+
+          let hasCompanyAlloc = false;
+          if (e.allocationType === 'company') {
+            const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
+            hasCompanyAlloc = targets.includes(company.id);
+          } else if (e.allocationType === 'staff') {
+            const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [];
+            hasCompanyAlloc = targets.some(sid => {
+              const member = staff.find(st => st.id === sid);
+              return member?.companyId === company.id;
+            });
+          } else if (e.allocationType === 'department') {
+            const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
+            const companyDepts = (company.departments || []).map(d => d.name || d);
+            hasCompanyAlloc = targets.some(t => companyDepts.includes(t));
+          }
+          return hasCompanyAlloc;
+        });
+
+        let totalPurchasesVat = 0;
+        contributingExpenses.forEach(e => {
+          let expenseShare = 0;
+          if (e.allocationType === 'company') {
+            const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
+            if (targets.includes(company.id)) {
+              if (e.allocationMode === 'manual' && e.manualAllocationShares) {
+                expenseShare = (e.manualAllocationShares[company.id] || 0) / 100;
+              } else {
+                expenseShare = 1 / Math.max(1, targets.length);
+              }
+            }
+          } else if (e.allocationType === 'staff') {
+            const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [];
+            let matchingCount = 0;
+            let matchingManualShare = 0;
+            targets.forEach(sid => {
+              const member = staff.find(st => st.id === sid);
+              if (member?.companyId === company.id) {
+                matchingCount++;
+                if (e.allocationMode === 'manual' && e.manualAllocationShares) {
+                  matchingManualShare += (e.manualAllocationShares[sid] || 0) / 100;
+                }
+              }
+            });
+            expenseShare = e.allocationMode === 'manual' ? matchingManualShare : (matchingCount / Math.max(1, targets.length));
+          } else if (e.allocationType === 'department') {
+            const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
+            const companyDepts = (company.departments || []).map(d => d.name || d);
+            const matchingCount = targets.filter(t => companyDepts.includes(t)).length;
+            if (matchingCount > 0) {
+              if (e.allocationMode === 'manual' && e.manualAllocationShares) {
+                let sumShare = 0;
+                targets.forEach(t => {
+                  if (companyDepts.includes(t)) {
+                    sumShare += (e.manualAllocationShares[t] || 0) / 100;
+                  }
+                });
+                expenseShare = sumShare;
+              } else {
+                expenseShare = matchingCount / Math.max(1, targets.length);
+              }
+            }
+          }
+          const grossVal = (e.amount || 0) * expenseShare;
+          const taxRate = e.taxRate !== undefined ? Number(e.taxRate) : 20;
+          const vatVal = grossVal * (taxRate / (100 + taxRate));
+          totalPurchasesVat += vatVal;
+        });
+
+        const netVatDue = totalSalesVat - totalPurchasesVat;
+        const isOverdue = period.dueDate < todayStr;
+
+        obligations.push({
+          companyId: company.id,
+          companyName: company.name,
+          periodKey: period.key,
+          periodName: period.name,
+          dueDate: period.dueDate,
+          salesVat: totalSalesVat,
+          purchasesVat: totalPurchasesVat,
+          netVatDue: filing?.amount !== undefined ? Number(filing.amount) : netVatDue,
+          status: filing?.status || 'unpaid',
+          isOverdue
+        });
+      });
+    });
+
+    const pendingVat = obligations.sort((a, b) => {
+      if (a.isOverdue && !b.isOverdue) return -1;
+      if (!a.isOverdue && b.isOverdue) return 1;
+      return a.dueDate.localeCompare(b.dueDate);
+    });
+
+    return {
+      totalCollected: collections,
+      totalSpent: spent,
+      pendingVatObligations: pendingVat
+    };
+  }, [companies, placements, staff, expenses]);
+
   const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const companyColors = ['#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
 
@@ -709,6 +983,178 @@ export default function Dashboard({
             <span style={{ fontSize: '10px', fontWeight: 700, backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
               1-Click Optimization Enabled
             </span>
+          </div>
+        </div>
+      </div>
+      {/* Group Cashflow & VAT Obligations Overview */}
+      <div style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-color)',
+        borderRadius: '12px',
+        padding: '20px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '20px'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+          <h3 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <TrendingUp size={16} style={{ color: 'var(--primary)' }} />
+            Group Cashflow & VAT Obligations (As On Date)
+          </h3>
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Real-time aggregated KPIs</span>
+        </div>
+
+        {/* KPI Cards */}
+        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+          {/* Collections KPI */}
+          <div style={{
+            flex: '1 1 240px',
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(16, 185, 129, 0.02) 100%)',
+            border: '1px solid rgba(16, 185, 129, 0.15)',
+            borderRadius: '10px',
+            padding: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px'
+          }}>
+            <div style={{
+              background: 'rgba(16, 185, 129, 0.1)',
+              color: '#10b981',
+              borderRadius: '50%',
+              width: '40px',
+              height: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <TrendingUp size={22} />
+            </div>
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Group Cash Collections
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: '#10b981', margin: '4px 0 2px 0', fontFamily: 'monospace' }}>
+                £{totalCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                Direct invoices paid + Simplicity invoices funded
+              </div>
+            </div>
+          </div>
+
+          {/* Expenses KPI */}
+          <div style={{
+            flex: '1 1 240px',
+            background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.05) 0%, rgba(239, 68, 68, 0.02) 100%)',
+            border: '1px solid rgba(239, 68, 68, 0.15)',
+            borderRadius: '10px',
+            padding: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px'
+          }}>
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.1)',
+              color: '#ef4444',
+              borderRadius: '50%',
+              width: '40px',
+              height: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Receipt size={22} />
+            </div>
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Group Overhead Spent
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: '#ef4444', margin: '4px 0 2px 0', fontFamily: 'monospace' }}>
+                £{totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                Total approved & reimbursed overhead expenses
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* VAT Deadlines Table */}
+        <div style={{ marginTop: '4px' }}>
+          <h4 style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', margin: '0 0 10px 0', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            📅 Active VAT Obligations & Deadlines
+          </h4>
+          <div className="table-container" style={{ margin: 0, overflowX: 'auto', maxHeight: '250px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Company</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>VAT Period</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Due Date</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Filing Status</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'right', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Est. VAT Due</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'center', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', width: '100px' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingVatObligations.map(ob => {
+                  const statusColor = ob.isOverdue ? '#ef4444' : (ob.status === 'filed' ? '#f59e0b' : '#3b82f6');
+                  const statusLabel = ob.isOverdue ? 'Overdue' : (ob.status === 'filed' ? 'Filed (Unpaid)' : 'Pending Filing');
+
+                  return (
+                    <tr key={`${ob.companyId}-${ob.periodKey}`} className="table-row-hover" style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: '8px 12px', fontSize: '11px', fontWeight: 600 }}>{ob.companyName}</td>
+                      <td style={{ padding: '8px 12px', fontSize: '11px', color: 'var(--text-secondary)' }}>{ob.periodName}</td>
+                      <td style={{ padding: '8px 12px', fontSize: '11px', fontFamily: 'monospace', color: ob.isOverdue ? '#ef4444' : 'var(--text-primary)', fontWeight: ob.isOverdue ? 600 : 'normal' }}>
+                        {ob.dueDate}
+                      </td>
+                      <td style={{ padding: '8px 12px', fontSize: '11px' }}>
+                        <span style={{
+                          backgroundColor: `${statusColor}15`,
+                          color: statusColor,
+                          border: `1px solid ${statusColor}25`,
+                          padding: '2px 6px',
+                          borderRadius: '12px',
+                          fontSize: '9.5px',
+                          fontWeight: 700
+                        }}>
+                          {statusLabel}
+                        </span>
+                      </td>
+                      <td style={{ padding: '8px 12px', fontSize: '11px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: ob.netVatDue >= 0 ? 'var(--text-primary)' : 'var(--success)' }}>
+                        {ob.netVatDue < 0 ? '-' : ''}£{Math.abs(ob.netVatDue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                        <button
+                          onClick={() => {
+                            onSelectCompany(companies.find(c => c.id === ob.companyId));
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--primary)',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            padding: 0
+                          }}
+                        >
+                          Go to Entity →
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {pendingVatObligations.length === 0 && (
+                  <tr>
+                    <td colSpan={6} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '11px' }}>
+                      🎉 All group VAT filings and payments are up to date!
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

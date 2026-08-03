@@ -2095,6 +2095,7 @@ export default function App() {
               contracts={contracts}
               vendors={vendors}
               placements={placements}
+              expenses={scopedExpenses}
               setActiveTab={setActiveTab}
               setSelectedCompany={setSelectedCompany}
               setSelectedStaff={setSelectedStaff}
@@ -2112,6 +2113,7 @@ export default function App() {
               contracts={contracts}
               vendors={vendors}
               placements={scopedPlacements}
+              expenses={scopedExpenses}
             />
           )}
 

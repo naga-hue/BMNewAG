@@ -21,6 +21,7 @@ export const PAYMENT_STATUSES: PaymentStatus[] = [
   { value: 'payment-expected', label: 'Payment Expected', color: '#d97706' },
   { value: 'part-paid', label: 'Part Paid', color: '#a855f7' },
   { value: 'paid', label: 'Paid', color: '#10b981' },
+  { value: 'funded', label: 'Funded (Client Pending)', color: '#8b5cf6' },
   { value: 'overdue', label: 'Overdue', color: '#ef4444' },
   { value: 'disputed', label: 'Disputed', color: '#f97316' },
   { value: 'legal', label: 'Legal', color: '#7f1d1d' },

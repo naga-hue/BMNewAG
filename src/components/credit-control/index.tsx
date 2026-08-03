@@ -182,8 +182,11 @@ export default function CreditControlDashboard({
         let finalStatus = p.paymentStatus || 'not-invoiced';
         if (p.clientPaymentStatus === 'paid' || outstanding === 0) {
           finalStatus = 'paid';
+        } else if (p.invoiceType === 'simplicity' && p.simplicityPaid) {
+          finalStatus = 'funded';
         } else if (
           finalStatus !== 'paid' && 
+          finalStatus !== 'funded' && 
           finalStatus !== 'written-off' && 
           finalStatus !== 'dns-rebate' && 
           finalStatus !== 'legal' && 
@@ -261,7 +264,11 @@ export default function CreditControlDashboard({
           departmentName: deptName,
           daysSinceStart,
           simplicityPayoutDate,
-          overridePayoutDate: p.overridePayoutDate || null
+          overridePayoutDate: p.overridePayoutDate || null,
+          simplicityPaid: !!p.simplicityPaid,
+          simplicityPaidDate: p.simplicityPaidDate || null,
+          clientPaymentStatus: p.clientPaymentStatus || 'unpaid',
+          clientPaidDate: p.clientPaidDate || null
         };
       });
   }, [placements, companies, staff, todayStr]);

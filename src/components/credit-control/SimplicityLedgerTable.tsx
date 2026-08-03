@@ -252,7 +252,38 @@ export default function SimplicityLedgerTable({
         );
         break;
       case 'payoutDate':
-        cellContent = inv.overridePayoutDate || inv.simplicityPayoutDate || '—';
+        cellContent = (
+          <input
+            type="date"
+            defaultValue={inv.overridePayoutDate || inv.simplicityPayoutDate || ''}
+            onChange={async (e) => {
+              const val = e.target.value;
+              if (val !== (inv.overridePayoutDate || inv.simplicityPayoutDate)) {
+                const original = placements.find(p => p.id === inv.id);
+                if (original) {
+                  try {
+                    await updatePlacement({ ...original, overridePayoutDate: val || null });
+                    onShowToast(`Updated Payout Date for ${inv.clientCompany} to ${val || 'Default'}`, "success");
+                  } catch (err: any) {
+                    onShowToast(`Failed to update Payout Date: ${err.message}`, "warning");
+                  }
+                }
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '120px',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text-primary)',
+              padding: '2px 4px',
+              borderRadius: '4px',
+              fontSize: '11px',
+              height: '24px',
+              fontFamily: 'monospace'
+            }}
+          />
+        );
         break;
       case 'placementId':
         cellContent = inv.placementId && inv.placementId !== 'NA' ? inv.placementId : (inv.id.startsWith('place-') ? inv.id.substring(6) : inv.id);

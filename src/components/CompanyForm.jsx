@@ -31,6 +31,9 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
   const [registrationDate, setRegistrationDate] = useState('');
   const [vatNumber, setVatNumber] = useState('');
   const [notes, setNotes] = useState('');
+  const [vatFrequency, setVatFrequency] = useState('none');
+  const [vatStartMonth, setVatStartMonth] = useState('1');
+  const [vatDueDateDays, setVatDueDateDays] = useState('37');
 
   // POC state
   const [pocName, setPocName] = useState('');
@@ -62,6 +65,9 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
       setVatNumber(company.vatNumber || '');
       setNotes(company.notes || '');
       setIncludeInConsolidation(company.includeInConsolidation !== false);
+      setVatFrequency(company.vatFrequency || 'none');
+      setVatStartMonth(String(company.vatStartMonth || '1'));
+      setVatDueDateDays(String(company.vatDueDateDays || '37'));
 
       if (company.pointOfContact) {
         setPocName(company.pointOfContact.name || '');
@@ -93,6 +99,9 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
       setRegistrationDate('');
       setVatNumber('');
       setNotes('');
+      setVatFrequency('none');
+      setVatStartMonth('1');
+      setVatDueDateDays('37');
       setPocName('');
       setPocRole('');
       setPocEmail('');
@@ -248,7 +257,10 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
       documents,
       complianceTasks: initialComplianceTasks,
       departments: company ? (company.departments || []) : [],
-      bankAccounts: company ? (company.bankAccounts || []) : []
+      bankAccounts: company ? (company.bankAccounts || []) : [],
+      vatFrequency,
+      vatStartMonth: Number(vatStartMonth) || 1,
+      vatDueDateDays: Number(vatDueDateDays) || 37
     };
 
     onSave(savedCompany);
@@ -407,6 +419,60 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
                     onChange={(e) => setVatNumber(e.target.value)} 
                   />
                 </div>
+
+                <div className="form-group" style={{ marginTop: '16px' }}>
+                  <label className="form-label">VAT Scheme / Filing Frequency</label>
+                  <select 
+                    className="select-filter"
+                    value={vatFrequency}
+                    onChange={(e) => setVatFrequency(e.target.value)}
+                    style={{ width: '100%', padding: '10px' }}
+                  >
+                    <option value="none">No VAT Obligations</option>
+                    <option value="monthly">Monthly VAT Return</option>
+                    <option value="quarterly">Quarterly VAT Return</option>
+                    <option value="annually">Annual VAT Return</option>
+                  </select>
+                </div>
+
+                {vatFrequency !== 'none' && (
+                  <div className="form-group-row" style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label className="form-label">Cycle Start Month</label>
+                      <select
+                        className="select-filter"
+                        value={vatStartMonth}
+                        onChange={(e) => setVatStartMonth(e.target.value)}
+                        style={{ width: '100%', padding: '10px' }}
+                      >
+                        <option value="1">January (Jan/Apr/Jul/Oct)</option>
+                        <option value="2">February (Feb/May/Aug/Nov)</option>
+                        <option value="3">March (Mar/Jun/Sep/Dec)</option>
+                        <option value="4">April (Apr/Jul/Oct/Jan)</option>
+                        <option value="5">May (May/Aug/Nov/Feb)</option>
+                        <option value="6">June (Jun/Sep/Dec/Mar)</option>
+                        <option value="7">July (Jul/Oct/Jan/Apr)</option>
+                        <option value="8">August (Aug/Nov/Feb/May)</option>
+                        <option value="9">September (Sep/Dec/Mar/Jun)</option>
+                        <option value="10">October (Oct/Jan/Apr/Jul)</option>
+                        <option value="11">November (Nov/Feb/May/Aug)</option>
+                        <option value="12">December (Dec/Mar/Jun/Sep)</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label className="form-label">Deadline (Days after period end)</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        placeholder="e.g. 37 for UK HMRC"
+                        value={vatDueDateDays}
+                        onChange={(e) => setVatDueDateDays(e.target.value)}
+                        min="1"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div className="alert-item" style={{ borderLeftColor: 'var(--info)', background: 'var(--info-light)', marginTop: '20px' }}>
                   <ClipboardList size={18} style={{ color: 'var(--info)', flexShrink: 0 }} />

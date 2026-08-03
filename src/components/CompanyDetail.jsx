@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { firebaseService } from '../services/firebase';
 
-export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompany, onShowToast, staff = [] }) {
+export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompany, onShowToast, staff = [], placements = [], expenses = [] }) {
   const [activeTab, setActiveTab] = useState('profile'); // profile or compliance
   const [uploadDocType, setUploadDocType] = useState('registration');
   const [isDragging, setIsDragging] = useState(false);
@@ -36,6 +36,8 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
   const [taskRecurrence, setTaskRecurrence] = useState('one-time');
   const [showAddTaskForm, setShowAddTaskForm] = useState(false);
   const [newDeptName, setNewDeptName] = useState('');
+  const [selectedVatYear, setSelectedVatYear] = useState('2026');
+  const [selectedVatPeriodKey, setSelectedVatPeriodKey] = useState(null);
 
   // New bank account form state
   const [bankName, setBankName] = useState('');
@@ -335,6 +337,56 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
     }
   };
 
+  // Mark a VAT period as filed
+  const handleMarkPeriodFiled = async (periodKey, estimatedVat) => {
+    const filedVal = window.prompt(`Confirm the VAT amount filed for this period:`, estimatedVat.toFixed(2));
+    if (filedVal === null) return;
+    const numericVal = Number(filedVal);
+    if (isNaN(numericVal)) {
+      onShowToast("Invalid number entered.", "warning");
+      return;
+    }
+    
+    const currentFilings = company.vatFilings || {};
+    const updatedCompany = {
+      ...company,
+      vatFilings: {
+        ...currentFilings,
+        [periodKey]: {
+          filedDate: new Date().toISOString().split('T')[0],
+          amount: numericVal,
+          filedBy: "User"
+        }
+      }
+    };
+    
+    try {
+      await onUpdateCompany(updatedCompany);
+      onShowToast(`Period ${periodKey} marked as filed successfully!`, "success");
+    } catch (err) {
+      onShowToast(`Failed to update filing status: ${err.message}`, "warning");
+    }
+  };
+
+  // Reopen/Undo filing for a VAT period
+  const handleUndoPeriodFiling = async (periodKey) => {
+    if (!window.confirm(`Are you sure you want to reopen period ${periodKey}?`)) return;
+    const currentFilings = { ...(company.vatFilings || {}) };
+    delete currentFilings[periodKey];
+    
+    const updatedCompany = {
+      ...company,
+      vatFilings: currentFilings
+    };
+    
+    try {
+      await onUpdateCompany(updatedCompany);
+      onShowToast(`Period ${periodKey} filing has been removed.`, "info");
+    } catch (err) {
+      onShowToast(`Failed to remove filing: ${err.message}`, "warning");
+    }
+  };
+
   // Add a compliance task
   const handleAddComplianceTask = async (e) => {
     e.preventDefault();
@@ -406,6 +458,286 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
     if (diff <= 30) return 'var(--warning)';
     return 'var(--text-secondary)';
   };
+
+  // -------------------------------------------------------------
+  // VAT FILING OBLIGATIONS & LIKELY VAT ESTIMATES
+  // -------------------------------------------------------------
+  const vatFrequency = company.vatFrequency || 'none';
+  const vatStartMonth = company.vatStartMonth || 1;
+  const vatDueDateDays = company.vatDueDateDays || 37;
+
+  // 1. Generate VAT Periods for the selected year
+  const vatPeriods = React.useMemo(() => {
+    if (vatFrequency === 'none') return [];
+    
+    const yearNum = Number(selectedVatYear) || 2026;
+    const periods = [];
+    
+    if (vatFrequency === 'monthly') {
+      for (let m = 0; m < 12; m++) {
+        const monthStart = new Date(yearNum, m, 1);
+        const monthEnd = new Date(yearNum, m + 1, 0);
+        const due = new Date(monthEnd);
+        due.setDate(due.getDate() + vatDueDateDays);
+        
+        const periodKey = `${yearNum}-${String(m + 1).padStart(2, '0')}`;
+        const name = monthStart.toLocaleString('default', { month: 'long', year: 'numeric' });
+        periods.push({
+          key: periodKey,
+          name,
+          startDate: monthStart.toISOString().split('T')[0],
+          endDate: monthEnd.toISOString().split('T')[0],
+          dueDate: due.toISOString().split('T')[0],
+          months: [periodKey]
+        });
+      }
+    } else if (vatFrequency === 'quarterly') {
+      for (let q = 0; q < 4; q++) {
+        const startMonthIndex = (vatStartMonth - 1 + q * 3) % 12;
+        const endMonthIndex = (vatStartMonth - 1 + q * 3 + 2) % 12;
+        
+        const startYear = yearNum + Math.floor((vatStartMonth - 1 + q * 3) / 12);
+        const endYear = yearNum + Math.floor((vatStartMonth - 1 + q * 3 + 2) / 12);
+        
+        const periodStart = new Date(startYear, startMonthIndex, 1);
+        const periodEnd = new Date(endYear, endMonthIndex + 1, 0);
+        
+        const due = new Date(periodEnd);
+        due.setDate(due.getDate() + vatDueDateDays);
+        
+        const periodKey = `${yearNum}-Q${q + 1}`;
+        const name = `Q${q + 1} (${periodStart.toLocaleString('default', { month: 'short' })} - ${periodEnd.toLocaleString('default', { month: 'short', year: 'numeric' })})`;
+        
+        const months = [];
+        let temp = new Date(periodStart);
+        while (temp <= periodEnd) {
+          months.push(`${temp.getFullYear()}-${String(temp.getMonth() + 1).padStart(2, '0')}`);
+          temp.setMonth(temp.getMonth() + 1);
+        }
+        
+        periods.push({
+          key: periodKey,
+          name,
+          startDate: periodStart.toISOString().split('T')[0],
+          endDate: periodEnd.toISOString().split('T')[0],
+          dueDate: due.toISOString().split('T')[0],
+          months
+        });
+      }
+    } else if (vatFrequency === 'annually') {
+      const periodStart = new Date(yearNum, vatStartMonth - 1, 1);
+      const periodEnd = new Date(yearNum + 1, vatStartMonth - 1, 0);
+      
+      const due = new Date(periodEnd);
+      due.setDate(due.getDate() + vatDueDateDays);
+      
+      const periodKey = `${yearNum}-ANNUAL`;
+      const name = `Annual (${periodStart.toLocaleString('default', { month: 'short', year: 'numeric' })} - ${periodEnd.toLocaleString('default', { month: 'short', year: 'numeric' })})`;
+      
+      const months = [];
+      let temp = new Date(periodStart);
+      while (temp <= periodEnd) {
+        months.push(`${temp.getFullYear()}-${String(temp.getMonth() + 1).padStart(2, '0')}`);
+        temp.setMonth(temp.getMonth() + 1);
+      }
+      
+      periods.push({
+        key: periodKey,
+        name,
+        startDate: periodStart.toISOString().split('T')[0],
+        endDate: periodEnd.toISOString().split('T')[0],
+        dueDate: due.toISOString().split('T')[0],
+        months
+      });
+    }
+    
+    return periods;
+  }, [vatFrequency, vatStartMonth, vatDueDateDays, selectedVatYear]);
+
+  // 2. Perform dynamic VAT allocations & calculations for each period
+  const vatCalculations = React.useMemo(() => {
+    if (vatFrequency === 'none') return {};
+    
+    const results = {};
+    
+    vatPeriods.forEach(period => {
+      // Find Placements (Sales) contributing to this period's company share
+      const contributingPlacements = placements.filter(p => {
+        if (p.status === 'dns') return false;
+        
+        // Match months
+        const pDate = p.invoiceRaisedDate || p.startDate || p.scoredDate;
+        if (!pDate) return false;
+        const pMonth = pDate.substring(0, 7);
+        if (!period.months.includes(pMonth)) return false;
+        
+        // Match company splits
+        let hasCompanySplit = false;
+        if (p.splits && p.splits.length > 0) {
+          hasCompanySplit = p.splits.some(s => {
+            const member = staff.find(st => st.id === s.staffId);
+            return member?.companyId === company.id;
+          });
+        } else {
+          const member = staff.find(st => st.id === p.recruiterId);
+          hasCompanySplit = member?.companyId === company.id;
+        }
+        
+        return hasCompanySplit;
+      });
+      
+      // Calculate output VAT details
+      const salesDetails = contributingPlacements.map(p => {
+        let companyShare = 0;
+        if (p.splits && p.splits.length > 0) {
+          p.splits.forEach(s => {
+            const member = staff.find(st => st.id === s.staffId);
+            if (member?.companyId === company.id) {
+              companyShare += (s.percentage || 0) / 100;
+            }
+          });
+        } else {
+          const member = staff.find(st => st.id === p.recruiterId);
+          if (member?.companyId === company.id) {
+            companyShare = 1;
+          }
+        }
+        
+        const grossValue = Number(p.totalInvoiceAmount) || Number(p.netScoreValue) * 1.20;
+        const netValue = Number(p.netScoreValue) || grossValue / 1.20;
+        const vatVal = p.vatAmount !== undefined && p.vatAmount !== null && p.vatAmount !== ''
+          ? Number(p.vatAmount)
+          : netValue * 0.20;
+          
+        return {
+          id: p.id,
+          type: 'sales',
+          reference: p.placementId || 'PL-New',
+          payee: p.clientCompany || 'Client Name',
+          candidate: p.candidateName,
+          date: p.invoiceRaisedDate || p.startDate || p.scoredDate,
+          net: netValue * companyShare,
+          vat: vatVal * companyShare,
+          gross: (netValue + vatVal) * companyShare,
+          share: companyShare
+        };
+      });
+      
+      const totalSalesNet = salesDetails.reduce((sum, item) => sum + item.net, 0);
+      const totalSalesVat = salesDetails.reduce((sum, item) => sum + item.vat, 0);
+      
+      // Find Expenses (Purchases) contributing to this period's company share
+      const contributingExpenses = expenses.filter(e => {
+        if (!e.date) return false;
+        const eMonth = e.date.substring(0, 7);
+        if (!period.months.includes(eMonth)) return false;
+        
+        // Match allocation to company
+        let hasCompanyAlloc = false;
+        if (e.allocationType === 'company') {
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
+          hasCompanyAlloc = targets.includes(company.id);
+        } else if (e.allocationType === 'staff') {
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [];
+          hasCompanyAlloc = targets.some(sid => {
+            const member = staff.find(st => st.id === sid);
+            return member?.companyId === company.id;
+          });
+        } else if (e.allocationType === 'department') {
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
+          const companyDepts = (company.departments || []).map(d => d.name || d);
+          hasCompanyAlloc = targets.some(t => companyDepts.includes(t));
+        }
+        
+        return hasCompanyAlloc;
+      });
+      
+      // Calculate input VAT details
+      const purchaseDetails = contributingExpenses.map(e => {
+        let expenseShare = 0;
+        if (e.allocationType === 'company') {
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
+          if (targets.includes(company.id)) {
+            if (e.allocationMode === 'manual' && e.manualAllocationShares) {
+              expenseShare = (e.manualAllocationShares[company.id] || 0) / 100;
+            } else {
+              expenseShare = 1 / Math.max(1, targets.length);
+            }
+          }
+        } else if (e.allocationType === 'staff') {
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [];
+          let matchingCount = 0;
+          let matchingManualShare = 0;
+          targets.forEach(sid => {
+            const member = staff.find(st => st.id === sid);
+            if (member?.companyId === company.id) {
+              matchingCount++;
+              if (e.allocationMode === 'manual' && e.manualAllocationShares) {
+                matchingManualShare += (e.manualAllocationShares[sid] || 0) / 100;
+              }
+            }
+          });
+          if (e.allocationMode === 'manual') {
+            expenseShare = matchingManualShare;
+          } else {
+            expenseShare = matchingCount / Math.max(1, targets.length);
+          }
+        } else if (e.allocationType === 'department') {
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget];
+          const companyDepts = (company.departments || []).map(d => d.name || d);
+          const matchingCount = targets.filter(t => companyDepts.includes(t)).length;
+          if (matchingCount > 0) {
+            if (e.allocationMode === 'manual' && e.manualAllocationShares) {
+              let sumShare = 0;
+              targets.forEach(t => {
+                if (companyDepts.includes(t)) {
+                  sumShare += (e.manualAllocationShares[t] || 0) / 100;
+                }
+              });
+              expenseShare = sumShare;
+            } else {
+              expenseShare = matchingCount / Math.max(1, targets.length);
+            }
+          }
+        }
+        
+        const grossVal = (e.amount || 0) * expenseShare;
+        const taxRate = Number(e.taxRate) !== undefined ? Number(e.taxRate) : 20;
+        const vatVal = grossVal * (taxRate / (100 + taxRate));
+        const netVal = grossVal - vatVal;
+        
+        return {
+          id: e.id,
+          type: 'purchase',
+          reference: e.reference || 'Purchase Receipt',
+          payee: e.payee || 'Vendor/Supplier',
+          candidate: e.nominalCode || 'Overhead',
+          date: e.date,
+          net: netVal,
+          vat: vatVal,
+          gross: grossVal,
+          share: expenseShare
+        };
+      });
+      
+      const totalPurchasesNet = purchaseDetails.reduce((sum, item) => sum + item.net, 0);
+      const totalPurchasesVat = purchaseDetails.reduce((sum, item) => sum + item.vat, 0);
+      
+      const netVatDue = totalSalesVat - totalPurchasesVat;
+      
+      results[period.key] = {
+        sales: salesDetails,
+        purchases: purchaseDetails,
+        salesNet: totalSalesNet,
+        salesVat: totalSalesVat,
+        purchasesNet: totalPurchasesNet,
+        purchasesVat: totalPurchasesVat,
+        netVatDue
+      };
+    });
+    
+    return results;
+  }, [vatPeriods, placements, expenses, staff, company.id, company.departments]);
 
   return (
     <div className={`slide-over-overlay ${isOpen ? 'active' : ''}`} onClick={onClose}>
@@ -502,6 +834,22 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
             }}>
               {(company.bankAccounts || []).length}
             </span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('vat')}
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: activeTab === 'vat' ? 'var(--accent)' : 'var(--text-secondary)',
+              borderBottom: activeTab === 'vat' ? '2px solid var(--accent)' : '2px solid transparent',
+              padding: '12px 8px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontSize: '14px',
+              transition: 'all var(--transition-fast)'
+            }}
+          >
+            VAT & Filings
           </button>
         </div>
 
@@ -1257,6 +1605,276 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 4: VAT & Filings */}
+          {activeTab === 'vat' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <span className="form-label" style={{ fontSize: '14px', fontWeight: 600 }}>VAT & Indirect Tax Management</span>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    Filing frequency: <strong style={{ textTransform: 'capitalize', color: 'var(--accent)' }}>{vatFrequency}</strong> 
+                    {vatFrequency !== 'none' && ` (Starts Month: ${vatStartMonth}, Deadline offset: ${vatDueDateDays} days)`}
+                  </div>
+                </div>
+
+                {vatFrequency !== 'none' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Tax Year:</span>
+                    <select
+                      className="select-filter"
+                      value={selectedVatYear}
+                      onChange={(e) => {
+                        setSelectedVatYear(e.target.value);
+                        setSelectedVatPeriodKey(null);
+                      }}
+                      style={{ padding: '4px 10px', fontSize: '13px' }}
+                    >
+                      <option value="2025">2025</option>
+                      <option value="2026">2026</option>
+                      <option value="2027">2027</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {vatFrequency === 'none' ? (
+                <div className="alert-item" style={{ borderLeftColor: 'var(--warning)', background: 'var(--warning-light)', margin: 0 }}>
+                  <BadgeAlert size={18} style={{ color: 'var(--warning)', flexShrink: 0 }} />
+                  <div className="alert-content" style={{ fontSize: '13px' }}>
+                    <div className="alert-title" style={{ fontWeight: 600 }}>No VAT Obligations Configured</div>
+                    <div className="alert-desc">
+                      This group entity does not currently have any active VAT schemes configured. 
+                      You can set the VAT scheme (Monthly, Quarterly, or Annual) in the company profile settings to automate due dates and calculations.
+                    </div>
+                  </div>
+                </div>
+              ) : selectedVatPeriodKey && vatCalculations[selectedVatPeriodKey] ? (
+                // Drilldown view for selected period
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', animation: 'fadeIn 0.2s' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => setSelectedVatPeriodKey(null)}
+                      style={{ padding: '6px 12px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      ← Back to Periods
+                    </button>
+                    <span style={{ fontWeight: 700, color: 'var(--accent)', fontSize: '14px' }}>
+                      Audit Details: {vatPeriods.find(p => p.key === selectedVatPeriodKey)?.name}
+                    </span>
+                  </div>
+
+                  {(() => {
+                    const calc = vatCalculations[selectedVatPeriodKey];
+                    const symbol = getCurrencySymbol(company.country);
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        {/* Summary panel */}
+                        <div className="detail-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                          <div className="detail-card" style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Total Sales Net</div>
+                            <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--success)', marginTop: '4px' }}>
+                              {symbol}{calc.salesNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                              Sales VAT (Output): {symbol}{calc.salesVat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          </div>
+
+                          <div className="detail-card" style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Total Purchases Net</div>
+                            <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--danger)', marginTop: '4px' }}>
+                              {symbol}{calc.purchasesNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                              Purchase VAT (Input): {symbol}{calc.purchasesVat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          </div>
+
+                          <div className="detail-card" style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Net VAT Payable / (Reclaim)</div>
+                            <div style={{ fontSize: '20px', fontWeight: 700, color: calc.netVatDue >= 0 ? 'var(--accent)' : 'var(--success)', marginTop: '4px' }}>
+                              {symbol}{calc.netVatDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                              {calc.netVatDue >= 0 ? 'Owed to tax authority' : 'Claimable from tax authority'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Sales Table */}
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            📈 Sales Invoices (Output VAT)
+                          </div>
+                          {calc.sales.length === 0 ? (
+                            <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', background: 'var(--bg-secondary)', borderRadius: '6px' }}>
+                              No contributing sales invoices found in this period.
+                            </div>
+                          ) : (
+                            <div className="table-container" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                              <table className="entity-table dense" style={{ width: '100%' }}>
+                                <thead>
+                                  <tr>
+                                    <th>Date</th>
+                                    <th>Placement ID</th>
+                                    <th>Client Company</th>
+                                    <th>Candidate</th>
+                                    <th style={{ textAlign: 'right' }}>Net Amount</th>
+                                    <th style={{ textAlign: 'right' }}>Company Share</th>
+                                    <th style={{ textAlign: 'right' }}>Sales VAT</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {calc.sales.map((item, idx) => (
+                                    <tr key={idx}>
+                                      <td>{item.date}</td>
+                                      <td style={{ fontFamily: 'monospace' }}>{item.reference}</td>
+                                      <td>{item.payee}</td>
+                                      <td>{item.candidate}</td>
+                                      <td style={{ textAlign: 'right' }}>{symbol}{item.net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td style={{ textAlign: 'right' }}>{Math.round(item.share * 100)}%</td>
+                                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{symbol}{item.vat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Purchases Table */}
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            📉 Purchase Expenses (Input VAT)
+                          </div>
+                          {calc.purchases.length === 0 ? (
+                            <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', background: 'var(--bg-secondary)', borderRadius: '6px' }}>
+                              No contributing purchase expenses found in this period.
+                            </div>
+                          ) : (
+                            <div className="table-container" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                              <table className="entity-table dense" style={{ width: '100%' }}>
+                                <thead>
+                                  <tr>
+                                    <th>Date</th>
+                                    <th>Nominal/Description</th>
+                                    <th>Payee/Supplier</th>
+                                    <th style={{ textAlign: 'right' }}>Gross Amount</th>
+                                    <th style={{ textAlign: 'right' }}>Company Share</th>
+                                    <th style={{ textAlign: 'right' }}>Input VAT</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {calc.purchases.map((item, idx) => (
+                                    <tr key={idx}>
+                                      <td>{item.date}</td>
+                                      <td>{item.candidate} - {item.reference}</td>
+                                      <td>{item.payee}</td>
+                                      <td style={{ textAlign: 'right' }}>{symbol}{item.gross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                      <td style={{ textAlign: 'right' }}>{Math.round(item.share * 100)}%</td>
+                                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{symbol}{item.vat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                // Periods list view
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div className="table-container">
+                    <table className="entity-table dense" style={{ width: '100%' }}>
+                      <thead>
+                        <tr>
+                          <th>VAT Period / Quota</th>
+                          <th>Filing Due Date</th>
+                          <th style={{ textAlign: 'right' }}>Output VAT (Sales)</th>
+                          <th style={{ textAlign: 'right' }}>Input VAT (Purchases)</th>
+                          <th style={{ textAlign: 'right' }}>Estimated Net VAT</th>
+                          <th>Filing Status</th>
+                          <th style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {vatPeriods.map(period => {
+                          const calc = vatCalculations[period.key] || { salesVat: 0, purchasesVat: 0, netVatDue: 0 };
+                          const symbol = getCurrencySymbol(company.country);
+                          const filing = company.vatFilings?.[period.key];
+                          const isFiled = !!filing;
+                          
+                          // Check if overdue
+                          const due = new Date(period.dueDate);
+                          const isOverdue = !isFiled && due < new Date();
+                          
+                          return (
+                            <tr key={period.key} style={{ cursor: 'pointer' }} onClick={() => setSelectedVatPeriodKey(period.key)}>
+                              <td style={{ fontWeight: 600, color: 'var(--accent)' }}>
+                                📁 {period.name}
+                              </td>
+                              <td style={{ color: isOverdue ? 'var(--danger)' : 'var(--text-primary)', fontWeight: isOverdue ? 600 : 400 }}>
+                                {period.dueDate}
+                                {isOverdue && <span style={{ color: 'var(--danger)', fontSize: '10px', marginLeft: '6px', fontWeight: 700 }}>OVERDUE</span>}
+                              </td>
+                              <td style={{ textAlign: 'right', color: 'var(--success)' }}>
+                                {symbol}{calc.salesVat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td style={{ textAlign: 'right', color: 'var(--danger)' }}>
+                                {symbol}{calc.purchasesVat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                                {symbol}{calc.netVatDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td>
+                                {isFiled ? (
+                                  <span className="badge badge-success" style={{ background: 'var(--success-light)', color: 'var(--success)', fontSize: '11px', padding: '2px 8px' }}>
+                                    ✓ Filed ({symbol}{filing.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })})
+                                  </span>
+                                ) : isOverdue ? (
+                                  <span className="badge badge-danger" style={{ background: 'var(--danger-light)', color: 'var(--danger)', fontSize: '11px', padding: '2px 8px' }}>
+                                    ⚠️ Overdue
+                                  </span>
+                                ) : (
+                                  <span className="badge badge-warning" style={{ background: 'var(--warning-light)', color: 'var(--warning)', fontSize: '11px', padding: '2px 8px' }}>
+                                    ⏳ Pending
+                                  </span>
+                                )}
+                              </td>
+                              <td onClick={(e) => e.stopPropagation()} style={{ textAlign: 'right' }}>
+                                {isFiled ? (
+                                  <button
+                                    className="btn-secondary"
+                                    onClick={() => handleUndoPeriodFiling(period.key)}
+                                    style={{ padding: '2px 8px', fontSize: '11px' }}
+                                  >
+                                    Reopen
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="btn-primary"
+                                    onClick={() => handleMarkPeriodFiled(period.key, calc.netVatDue)}
+                                    style={{ padding: '2px 8px', fontSize: '11px' }}
+                                  >
+                                    File Return
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </div>

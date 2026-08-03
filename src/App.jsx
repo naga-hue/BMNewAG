@@ -3053,6 +3053,8 @@ export default function App() {
         onUpdateCompany={handleSaveCompany}
         onShowToast={handleShowToast}
         staff={staff}
+        placements={placements}
+        expenses={expenses}
       />
 
       {/* Register/Edit Multi-step Wizard */}

@@ -7,7 +7,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing candidateId or apiKey parameter' });
   }
 
-  const url = `https://api.recruitly.io/api/candidate/cv?apiKey=${apiKey}&candidateId=${candidateId}`;
+  const url = `https://api.recruitly.io/api/candidatecv/download?apiKey=${apiKey}&candidateId=${candidateId}`;
 
   try {
     https.get(url, (crmRes) => {
@@ -21,7 +21,6 @@ export default async function handler(req, res) {
         }
         crmRes.pipe(res);
       } else {
-        // Return 404/error fallback
         res.status(crmRes.statusCode || 404).json({ error: `Recruitly CV not found (Status ${crmRes.statusCode})` });
       }
     }).on('error', (err) => {

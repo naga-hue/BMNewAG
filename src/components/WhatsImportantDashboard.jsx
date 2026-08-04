@@ -128,34 +128,53 @@ export default function WhatsImportantDashboard({
   const checkBirthdayAnniversary = (dobStr, startStr, rStart, rEnd) => {
     let birthday = false;
     let bdayAge = 0;
+    let bdayDate = null;
     let anniversary = false;
     let annivYears = 0;
+    let annivDate = null;
 
-    const parseBday = dobStr ? new Date(dobStr) : null;
-    const parseStart = startStr ? new Date(startStr) : null;
+    if (!dobStr && !startStr) {
+      return { birthday, bdayAge, bdayDate, anniversary, annivYears, annivDate };
+    }
 
     let cur = new Date(rStart.getTime());
     while (cur <= rEnd) {
-      const month = cur.getMonth();
-      const date = cur.getDate();
+      const year = cur.getFullYear();
+      const mStr = String(cur.getMonth() + 1).padStart(2, '0');
+      const dStr = String(cur.getDate()).padStart(2, '0');
+      const targetMmDd = `${mStr}-${dStr}`;
 
-      if (parseBday && parseBday.getMonth() === month && parseBday.getDate() === date) {
-        birthday = true;
-        bdayAge = cur.getFullYear() - parseBday.getFullYear();
+      if (dobStr && dobStr.length >= 10) {
+        const dobParts = dobStr.split('-');
+        if (dobParts.length === 3) {
+          const dobMmDd = `${dobParts[1]}-${dobParts[2]}`;
+          if (dobMmDd === targetMmDd) {
+            birthday = true;
+            bdayAge = year - parseInt(dobParts[0], 10);
+            bdayDate = new Date(cur.getTime());
+          }
+        }
       }
 
-      if (parseStart && parseStart.getMonth() === month && parseStart.getDate() === date) {
-        const diffYears = cur.getFullYear() - parseStart.getFullYear();
-        if (diffYears > 0) {
-          anniversary = true;
-          annivYears = diffYears;
+      if (startStr && startStr.length >= 10) {
+        const startParts = startStr.split('-');
+        if (startParts.length === 3) {
+          const startMmDd = `${startParts[1]}-${startParts[2]}`;
+          if (startMmDd === targetMmDd) {
+            const diffYears = year - parseInt(startParts[0], 10);
+            if (diffYears > 0) {
+              anniversary = true;
+              annivYears = diffYears;
+              annivDate = new Date(cur.getTime());
+            }
+          }
         }
       }
 
       cur.setDate(cur.getDate() + 1);
     }
 
-    return { birthday, bdayAge, anniversary, annivYears };
+    return { birthday, bdayAge, bdayDate, anniversary, annivYears, annivDate };
   };
 
   // Compile datasets
@@ -558,36 +577,41 @@ export default function WhatsImportantDashboard({
   const horizonCelebrations = staff
     .filter(s => s.status !== 'exited')
     .flatMap(s => {
-      const { birthday, bdayAge, anniversary, annivYears } = checkBirthdayAnniversary(s.dateOfBirth, s.startDate, rangeStart, rangeEnd);
+      const { birthday, bdayAge, bdayDate, anniversary, annivYears, annivDate } = checkBirthdayAnniversary(s.dateOfBirth, s.startDate, rangeStart, rangeEnd);
       const items = [];
 
-      if (birthday) {
+      if (birthday && bdayDate) {
+        const dayLabel = bdayDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
         items.push({
           id: `bday-${s.id}`,
           category: 'celebrations',
-          title: `🎂 Birthday: ${s.fullName}`,
+          title: `🎂 Birthday: ${s.fullName} (${dayLabel})`,
           desc: `Turns ${bdayAge} years old! Show some appreciation.`,
           badge: 'Birthday',
           type: 'pink',
-          staffMember: s
+          staffMember: s,
+          eventDate: bdayDate
         });
       }
 
-      if (anniversary) {
+      if (anniversary && annivDate) {
+        const dayLabel = annivDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
         const ord = annivYears === 1 ? '1st' : annivYears === 2 ? '2nd' : annivYears === 3 ? '3rd' : `${annivYears}th`;
         items.push({
           id: `anniv-${s.id}`,
           category: 'celebrations',
-          title: `👔 Anniversary: ${s.fullName}`,
+          title: `👔 Anniversary: ${s.fullName} (${dayLabel})`,
           desc: `Celebrating ${ord} year anniversary at Humres!`,
           badge: 'Work Anniversary',
           type: 'indigo',
-          staffMember: s
+          staffMember: s,
+          eventDate: annivDate
         });
       }
 
       return items;
-    });
+    })
+    .sort((a, b) => (a.eventDate?.getTime() || 0) - (b.eventDate?.getTime() || 0));
 
   // 5. Candidate Starts
   const horizonPlacementStarts = placements

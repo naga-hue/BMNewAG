@@ -1069,6 +1069,47 @@ export default function App() {
       const isNew = !placements.some(p => p.id === placement.id);
       await firebaseService.savePlacement(placement);
       logActivity("Placements", isNew ? "CREATE" : "UPDATE", `${isNew ? 'Logged' : 'Modified'} placement ID "${placement.placementId}" for candidate "${placement.candidateName}" with client "${placement.clientCompany}"`);
+
+      // Auto-register candidate inside CRM talent pool if synced and not exists
+      if (placement.candidateName) {
+        const crmCandidates = useBoundStore.getState().crmCandidates || [];
+        const candExists = crmCandidates.some(c => c.name.toLowerCase() === placement.candidateName.toLowerCase());
+        if (!candExists) {
+          const newCandidate = {
+            id: `cand-${Date.now()}`,
+            name: placement.candidateName,
+            email: placement.crmJobContactEmail || '',
+            phone: placement.crmJobContactPhone || '',
+            jobTitle: placement.crmJobTitle || '',
+            status: 'placed',
+            cvUrl: '',
+            cvName: '',
+            notes: `Automatically registered via CRM Placement sync (ID: ${placement.placementId}).`
+          };
+          await firebaseService.saveCrmCandidate(newCandidate);
+        }
+      }
+
+      // Auto-register company inside CRM client directory if synced and not exists
+      if (placement.clientCompany) {
+        const crmClientCompanies = useBoundStore.getState().crmClientCompanies || [];
+        const clientExists = crmClientCompanies.some(c => c.name.toLowerCase() === placement.clientCompany.toLowerCase());
+        if (!clientExists) {
+          const newClient = {
+            id: `crm-comp-${Date.now()}`,
+            name: placement.clientCompany,
+            regNumber: '',
+            address: '',
+            contactName: placement.crmJobContactName || '',
+            contactEmail: placement.crmJobContactEmail || '',
+            accountsContactName: placement.crmJobContactName || '',
+            accountsContactEmail: placement.crmJobContactEmail || '',
+            phone: placement.crmCompanyPhone || placement.crmJobContactPhone || '',
+            notes: `Automatically registered via CRM Placement sync (ID: ${placement.placementId}).`
+          };
+          await firebaseService.saveCrmClientCompany(newClient);
+        }
+      }
     } catch (err) {
       console.error("Save placement error:", err);
       handleShowToast(`Error saving placement: ${err.message}`, 'warning');

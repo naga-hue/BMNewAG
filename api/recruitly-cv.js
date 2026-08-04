@@ -12,13 +12,9 @@ export default async function handler(req, res) {
   try {
     https.get(url, (crmRes) => {
       if (crmRes.statusCode === 200) {
-        // Forward content headers
-        res.setHeader('Content-Type', crmRes.headers['content-type'] || 'application/pdf');
-        if (crmRes.headers['content-disposition']) {
-          res.setHeader('Content-Disposition', crmRes.headers['content-disposition']);
-        } else {
-          res.setHeader('Content-Disposition', `attachment; filename="CV_${candidateId}.pdf"`);
-        }
+        // Force PDF content type and inline disposition to render inside browser/iframe
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline');
         crmRes.pipe(res);
       } else {
         res.status(crmRes.statusCode || 404).json({ error: `Recruitly CV not found (Status ${crmRes.statusCode})` });

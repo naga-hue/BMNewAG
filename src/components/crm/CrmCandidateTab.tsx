@@ -451,20 +451,34 @@ export default function CrmCandidateTab({ onShowToast }: CrmCandidateTabProps) {
                 </h5>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px' }}>
                   {selectedCandidate.cvUrl ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(16, 185, 129, 0.05)', padding: '10px 14px', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.15)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '20px' }}>📄</span>
-                        <div style={{ fontSize: '13px' }}>
-                          <div style={{ fontWeight: 600 }}>Curriculum_Vitae.pdf</div>
-                          <a href={selectedCandidate.cvUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline', fontSize: '12px' }}>
-                            Open/Download CV
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(16, 185, 129, 0.05)', padding: '10px 14px', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.15)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '20px' }}>📄</span>
+                          <div style={{ fontSize: '13px' }}>
+                            <div style={{ fontWeight: 600 }}>{selectedCandidate.cvName || 'Curriculum_Vitae.pdf'}</div>
+                            <span style={{ fontSize: '11px', color: '#10b981' }}>Saved in Firebase Storage</span>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <a href={selectedCandidate.cvUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary dense" style={{ margin: 0, padding: '6px 12px', fontSize: '12px', textDecoration: 'none', fontWeight: 600 }}>
+                            Open full size
                           </a>
+                          <label className="btn-secondary dense" style={{ margin: 0, cursor: 'pointer', padding: '6px 12px' }}>
+                            Replace CV
+                            <input type="file" onChange={handleCvUpload} style={{ display: 'none' }} />
+                          </label>
                         </div>
                       </div>
-                      <label className="btn-secondary dense" style={{ margin: 0, cursor: 'pointer', padding: '6px 12px' }}>
-                        Replace CV File
-                        <input type="file" onChange={handleCvUpload} style={{ display: 'none' }} />
-                      </label>
+
+                      {/* Embedded CV PDF Viewer */}
+                      <div style={{ width: '100%', height: '500px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)', backgroundColor: '#333' }}>
+                        <iframe
+                          src={`${selectedCandidate.cvUrl}#toolbar=0`}
+                          style={{ width: '100%', height: '100%', border: 'none' }}
+                          title="CV PDF Preview"
+                        />
+                      </div>
                     </div>
                   ) : selectedCandidate.cvName === 'Recruitly CV' ? (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(59, 130, 246, 0.05)', padding: '10px 14px', borderRadius: '6px', border: '1px solid rgba(59, 130, 246, 0.15)' }}>

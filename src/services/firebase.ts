@@ -1624,7 +1624,11 @@ export const firebaseService: FirebaseServiceInterface = {
   async uploadCandidateCv(candidateId, file) {
     if (isConfigured && storage) {
       const fileRef = ref(storage, `companies/common/candidates/${candidateId}/cv_${file.name}`);
-      const snapshot = await uploadBytes(fileRef, file);
+      const metadata = {
+        contentType: file.type || 'application/pdf',
+        contentDisposition: 'inline'
+      };
+      const snapshot = await uploadBytes(fileRef, file, metadata);
       const url = await getDownloadURL(snapshot.ref);
       return url;
     } else {

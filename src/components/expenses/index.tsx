@@ -21,6 +21,8 @@ export default function ExpensesDashboard({ onShowToast, currentUser }: Expenses
   const [activeSubTab, setActiveSubTab] = useState(isRecruiter ? 'reimbursements' : 'ledger');
   const [showForm, setShowForm] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [showDateSwapModal, setShowDateSwapModal] = useState(false);
+  const [selectedSwapIds, setSelectedSwapIds] = useState<Set<string>>(new Set());
 
   const expenses = useBoundStore(state => state.expenses);
   const staff = useBoundStore(state => state.staff);
@@ -328,9 +330,21 @@ export default function ExpensesDashboard({ onShowToast, currentUser }: Expenses
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '-12px' }}>
         {activeSubTab === 'ledger' && !showForm && (
-          <button type="button" className="btn-primary" onClick={() => setShowForm(true)}>
-            Record Manual Expense Claim
-          </button>
+          <>
+            {!isRecruiter && (
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                onClick={() => setShowDateSwapModal(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', height: '34px', border: '1px solid var(--border-color)' }}
+              >
+                🔧 Date Swap Repair Tool
+              </button>
+            )}
+            <button type="button" className="btn-primary" onClick={() => setShowForm(true)} style={{ fontSize: '13px', height: '34px' }}>
+              Record Manual Expense Claim
+            </button>
+          </>
         )}
       </div>
 
@@ -1139,6 +1153,198 @@ export default function ExpensesDashboard({ onShowToast, currentUser }: Expenses
                 Apply
               </button>
               <button type="button" className="btn-secondary" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setAllocatingRowId(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Date Swap Repair Modal */}
+      {showDateSwapModal && (
+        <div className="modal-overlay" style={{ zIndex: 1100, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="modal-container" style={{ width: '750px', maxWidth: '90%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+            <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px', fontWeight: 700 }}>
+                <span>🔧</span> Expense Date Swap Repair Tool
+              </h3>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setShowDateSwapModal(false);
+                  setSelectedSwapIds(new Set());
+                }} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '20px', cursor: 'pointer', padding: 0 }}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="modal-body" style={{ overflowY: 'auto', flex: 1, padding: '20px' }}>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.5' }}>
+                This tool scans all historical expenses and identifies transaction dates where the month and day are both 12 or less (making them ambiguous, e.g. <code>04/08/YYYY</code> vs <code>08/04/YYYY</code>). You can select the records that were parsed incorrectly and swap their month and day in bulk.
+              </p>
+              
+              {expenses.filter(e => {
+                if (!e.date) return false;
+                const parts = e.date.split('-');
+                if (parts.length !== 3) return false;
+                const m = parseInt(parts[1], 10);
+                const d = parseInt(parts[2], 10);
+                return m <= 12 && d <= 12 && m !== d;
+              }).length === 0 ? (
+                <div style={{ padding: '30px', border: '1px dashed var(--border-color)', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                  🎉 No ambiguous transaction date records (where month and day are both ≤ 12 and not equal) found in the database.
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>
+                      Candidates Found: {
+                        expenses.filter(e => {
+                          if (!e.date) return false;
+                          const parts = e.date.split('-');
+                          if (parts.length !== 3) return false;
+                          const m = parseInt(parts[1], 10);
+                          const d = parseInt(parts[2], 10);
+                          return m <= 12 && d <= 12 && m !== d;
+                        }).length
+                      } records
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button 
+                        type="button" 
+                        className="btn-secondary" 
+                        style={{ padding: '4px 8px', fontSize: '11px', height: '28px' }}
+                        onClick={() => {
+                          const allIds = expenses.filter(e => {
+                            if (!e.date) return false;
+                            const parts = e.date.split('-');
+                            if (parts.length !== 3) return false;
+                            const m = parseInt(parts[1], 10);
+                            const d = parseInt(parts[2], 10);
+                            return m <= 12 && d <= 12 && m !== d;
+                          }).map(e => e.id);
+                          setSelectedSwapIds(new Set(allIds));
+                        }}
+                      >
+                        Select All
+                      </button>
+                      <button 
+                        type="button" 
+                        className="btn-secondary" 
+                        style={{ padding: '4px 8px', fontSize: '11px', height: '28px' }}
+                        onClick={() => setSelectedSwapIds(new Set())}
+                      >
+                        Deselect All
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div style={{ maxHeight: '350px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', position: 'sticky', top: 0, zIndex: 10 }}>
+                          <th style={{ padding: '8px 12px', width: '40px', textAlign: 'center', backgroundColor: 'var(--bg-secondary)' }}></th>
+                          <th style={{ padding: '8px 12px', backgroundColor: 'var(--bg-secondary)' }}>Payee / Description</th>
+                          <th style={{ padding: '8px 12px', backgroundColor: 'var(--bg-secondary)' }}>Category</th>
+                          <th style={{ padding: '8px 12px', width: '90px', textAlign: 'right', backgroundColor: 'var(--bg-secondary)' }}>Amount</th>
+                          <th style={{ padding: '8px 12px', color: 'var(--danger)', backgroundColor: 'var(--bg-secondary)' }}>Current Interpreted</th>
+                          <th style={{ padding: '8px 12px', color: 'var(--success)', backgroundColor: 'var(--bg-secondary)' }}>Swapped Corrected</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {expenses.filter(e => {
+                          if (!e.date) return false;
+                          const parts = e.date.split('-');
+                          if (parts.length !== 3) return false;
+                          const m = parseInt(parts[1], 10);
+                          const d = parseInt(parts[2], 10);
+                          return m <= 12 && d <= 12 && m !== d;
+                        }).map(e => {
+                          const currentFormatted = e.date;
+                          const parts = e.date.split('-');
+                          const swappedFormatted = `${parts[0]}-${parts[2]}-${parts[1]}`;
+                          
+                          const getMonthName = (dateStr: string) => {
+                            const d = new Date(dateStr);
+                            return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                          };
+
+                          return (
+                            <tr key={e.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                              <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                <input 
+                                  type="checkbox"
+                                  checked={selectedSwapIds.has(e.id)}
+                                  onChange={(evt) => {
+                                    const next = new Set(selectedSwapIds);
+                                    if (evt.target.checked) next.add(e.id);
+                                    else next.delete(e.id);
+                                    setSelectedSwapIds(next);
+                                  }}
+                                  style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                                />
+                              </td>
+                              <td style={{ padding: '8px 12px', fontWeight: 600, color: 'var(--text-primary)' }}>{e.payee}</td>
+                              <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{e.category}</td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+                                {toGBP(e.amount, e.currency)}
+                              </td>
+                              <td style={{ padding: '8px 12px', color: 'var(--danger)', fontWeight: 600 }}>
+                                📅 {currentFormatted} ({getMonthName(currentFormatted)})
+                              </td>
+                              <td style={{ padding: '8px 12px', color: 'var(--success)', fontWeight: 700 }}>
+                                ➡️ {swappedFormatted} ({getMonthName(swappedFormatted)})
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="modal-footer" style={{ padding: '16px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                onClick={() => {
+                  setShowDateSwapModal(false);
+                  setSelectedSwapIds(new Set());
+                }}
+                style={{ fontSize: '13px', height: '34px' }}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn-primary" 
+                disabled={selectedSwapIds.size === 0}
+                onClick={async () => {
+                  let successCount = 0;
+                  for (const id of Array.from(selectedSwapIds)) {
+                    const exp = expenses.find(x => x.id === id);
+                    if (exp && exp.date) {
+                      const parts = exp.date.split('-');
+                      const newDate = `${parts[0]}-${parts[2]}-${parts[1]}`;
+                      const newPlMonth = newDate.substring(0, 7);
+                      await updateExpense({
+                        ...exp,
+                        date: newDate,
+                        plMonth: newPlMonth
+                      });
+                      successCount++;
+                    }
+                  }
+                  onShowToast(`Successfully swapped dates and P&L months for ${successCount} expenses!`, 'success');
+                  setShowDateSwapModal(false);
+                  setSelectedSwapIds(new Set());
+                }}
+                style={{ fontSize: '13px', height: '34px' }}
+              >
+                🔄 Swap Selected Dates ({selectedSwapIds.size})
+              </button>
             </div>
           </div>
         </div>

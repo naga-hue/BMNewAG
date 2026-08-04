@@ -49,6 +49,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
 
   const [importStep, setImportStep] = useState(1); // 1: upload, 2: mapping, 3: categorization desk
   const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [dateFormat, setDateFormat] = useState<'UK' | 'US'>('UK');
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<string[][]>([]);
   const [columnMappings, setColumnMappings] = useState<Record<string, string>>({});
@@ -242,7 +243,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       const refVal = refColIdx > -1 ? row[refColIdx] || '' : '';
       const nominalVal = nominalColIdx > -1 ? row[nominalColIdx] || '' : '';
       
-      const standardizedDate = parseAndStandardizeDate(dateVal);
+      const standardizedDate = parseAndStandardizeDate(dateVal, dateFormat);
       const yyyymm = standardizedDate ? standardizedDate.substring(0, 7) : new Date().toISOString().substring(0, 7);
 
       // Auto-detect recipient matching vendor name or staff member name
@@ -550,6 +551,49 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                 </div>
               );
             })}
+          </div>
+
+          {/* Date Format Parser Selection */}
+          <div style={{ 
+            marginTop: '16px', 
+            backgroundColor: 'rgba(99, 102, 241, 0.03)', 
+            padding: '12px', 
+            borderRadius: '6px', 
+            border: '1px solid rgba(99, 102, 241, 0.15)', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '8px' 
+          }}>
+            <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>📅</span> Date Parsing Format Configuration
+            </div>
+            <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0 }}>
+              If your bank statement represents dates with months first (e.g. US style <code>MM/DD/YYYY</code>), change this to US. UK is standard <code>DD/MM/YYYY</code>.
+            </p>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginTop: '4px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                <input 
+                  type="radio" 
+                  name="import-date-format" 
+                  value="UK"
+                  checked={dateFormat === 'UK'} 
+                  onChange={() => setDateFormat('UK')} 
+                  style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                />
+                UK Format (DD/MM/YYYY)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                <input 
+                  type="radio" 
+                  name="import-date-format" 
+                  value="US"
+                  checked={dateFormat === 'US'} 
+                  onChange={() => setDateFormat('US')} 
+                  style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                />
+                US Format (MM/DD/YYYY)
+              </label>
+            </div>
           </div>
 
           {/* Saved Preset Profiles */}

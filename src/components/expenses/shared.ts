@@ -63,7 +63,10 @@ export const getDaysWorkedInMonth = (startDateStr: string | undefined | null, ex
   return diffDays > 0 ? diffDays : 0;
 };
 
-export function parseAndStandardizeDate(dateStr: string | undefined | null): string {
+export function parseAndStandardizeDate(
+  dateStr: string | undefined | null,
+  dateFormat: 'UK' | 'US' = 'UK'
+): string {
   if (!dateStr) return '';
   const cleanStr = dateStr.trim();
   
@@ -85,10 +88,15 @@ export function parseAndStandardizeDate(dateStr: string | undefined | null): str
       monthStr = parts[1];
       day = parts[2];
     } else {
-      // UK formats: DD-MM-YYYY, DD/MM/YYYY, DD-MMM-YY, etc.
-      day = parts[0];
-      monthStr = parts[1];
-      year = parts[2];
+      if (dateFormat === 'US') {
+        monthStr = parts[0];
+        day = parts[1];
+        year = parts[2];
+      } else {
+        day = parts[0];
+        monthStr = parts[1];
+        year = parts[2];
+      }
     }
 
     // Standardize year

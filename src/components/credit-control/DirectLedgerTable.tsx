@@ -599,9 +599,9 @@ export default function DirectLedgerTable({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxHeight: 'calc(100vh - 280px)', overflowY: 'auto', paddingRight: '4px' }}>
       {/* 1. DISPUTED & LEGAL DIRECT INVOICES */}
-      {renderDirectTable(
+      {partitionedInvoices.disputedLegal.length > 0 && renderDirectTable(
         "⚠️ Disputed & Legal Proceedings Invoices",
         partitionedInvoices.disputedLegal,
         "rgba(239, 68, 68, 0.04)",
@@ -610,7 +610,7 @@ export default function DirectLedgerTable({
       )}
 
       {/* 2. LIVE OUTSTANDING DIRECT INVOICES */}
-      {renderDirectTable(
+      {partitionedInvoices.liveOutstanding.length > 0 && renderDirectTable(
         "⏳ Live Outstanding & Overdue Invoices",
         partitionedInvoices.liveOutstanding,
         "rgba(99, 102, 241, 0.04)",
@@ -619,12 +619,20 @@ export default function DirectLedgerTable({
       )}
 
       {/* 3. CLOSED DIRECT INVOICES */}
-      {renderDirectTable(
+      {partitionedInvoices.closed.length > 0 && renderDirectTable(
         "✅ Closed & Historical Settled Invoices",
         partitionedInvoices.closed,
         "rgba(16, 185, 129, 0.04)",
         "var(--success)",
         "Archived / Paid"
+      )}
+
+      {partitionedInvoices.disputedLegal.length === 0 && 
+       partitionedInvoices.liveOutstanding.length === 0 && 
+       partitionedInvoices.closed.length === 0 && (
+        <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+          No matching direct invoice records found.
+        </div>
       )}
     </div>
   );

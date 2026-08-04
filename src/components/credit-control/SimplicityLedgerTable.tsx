@@ -746,7 +746,7 @@ export default function SimplicityLedgerTable({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxHeight: 'calc(100vh - 280px)', overflowY: 'auto', paddingRight: '4px' }}>
       
       {/* Simplicity Upcoming Friday Drop Zones */}
       {showRescheduleDropzones && (

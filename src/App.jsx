@@ -129,6 +129,7 @@ export default function App() {
 
   // Navigation tab: 'dashboard' | 'directory' | 'staff'
   const [activeTab, setActiveTab] = useState('whats_important');
+  const [creditControlSubTab, setCreditControlSubTab] = useState('direct');
 
   // Fallback to allowed activeTab if current tab is not permitted
   useEffect(() => {
@@ -1861,11 +1862,73 @@ export default function App() {
                 <li>
                   <div 
                     className={`nav-item ${activeTab === 'credit_control' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('credit_control')}
+                    onClick={() => {
+                      setActiveTab('credit_control');
+                    }}
                   >
                     <FileText size={18} />
                     <span>Credit Control</span>
                   </div>
+                  {activeTab === 'credit_control' && (
+                    <ul style={{ listStyle: 'none', paddingLeft: '24px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <li>
+                        <div
+                          className={`nav-item sub-nav-item ${creditControlSubTab === 'direct' ? 'active' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCreditControlSubTab('direct');
+                          }}
+                          style={{
+                            fontSize: '13px',
+                            padding: '6px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            color: creditControlSubTab === 'direct' ? 'var(--primary-color)' : 'var(--text-secondary)'
+                          }}
+                        >
+                          <span style={{
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            backgroundColor: creditControlSubTab === 'direct' ? 'var(--primary-color)' : 'transparent',
+                            border: '1px solid var(--text-secondary)'
+                          }}></span>
+                          <span>Direct Invoices</span>
+                        </div>
+                      </li>
+                      <li>
+                        <div
+                          className={`nav-item sub-nav-item ${creditControlSubTab === 'simplicity' ? 'active' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCreditControlSubTab('simplicity');
+                          }}
+                          style={{
+                            fontSize: '13px',
+                            padding: '6px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            color: creditControlSubTab === 'simplicity' ? 'var(--primary-color)' : 'var(--text-secondary)'
+                          }}
+                        >
+                          <span style={{
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            backgroundColor: creditControlSubTab === 'simplicity' ? 'var(--primary-color)' : 'transparent',
+                            border: '1px solid var(--text-secondary)'
+                          }}></span>
+                          <span>Simplicity Invoices</span>
+                        </div>
+                      </li>
+                    </ul>
+                  )}
                 </li>
               )}
 
@@ -3067,6 +3130,8 @@ export default function App() {
               currentUser={currentUser}
               onUpdatePlacement={handleSavePlacement}
               onShowToast={handleShowToast}
+              defaultSubTab={creditControlSubTab}
+              onChangeSubTab={setCreditControlSubTab}
             />
           )}
 

@@ -15,6 +15,8 @@ interface CreditControlDashboardProps {
   currentUser?: any;
   onUpdatePlacement?: (placement: Placement) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
+  defaultSubTab?: 'direct' | 'simplicity';
+  onChangeSubTab?: (tab: 'direct' | 'simplicity') => void;
 }
 
 interface ColumnConfig {
@@ -31,7 +33,9 @@ export default function CreditControlDashboard({
   staff: propStaff,
   currentUser: propCurrentUser,
   onUpdatePlacement: propOnUpdatePlacement,
-  onShowToast
+  onShowToast,
+  defaultSubTab,
+  onChangeSubTab
 }: CreditControlDashboardProps) {
   const storePlacements = useBoundStore(state => state.placements);
   const storeCompanies = useBoundStore(state => state.companies);
@@ -44,7 +48,17 @@ export default function CreditControlDashboard({
   const currentUser = propCurrentUser || EMPTY_USER;
   const onUpdatePlacement = propOnUpdatePlacement || storeUpdatePlacement;
 
-  const [activeSubTab, setActiveSubTab] = useState<'direct' | 'simplicity'>('direct');
+  const [activeSubTab, setActiveSubTab] = useState<'direct' | 'simplicity'>(defaultSubTab || 'direct');
+  
+  React.useEffect(() => {
+    if (defaultSubTab) {
+      setActiveSubTab(defaultSubTab);
+    }
+  }, [defaultSubTab]);
+
+  const [directCardFilter, setDirectCardFilter] = useState<'all-outstanding' | 'disputed' | 'legal' | 'due'>('all-outstanding');
+  const [simplicityCardFilter, setSimplicityCardFilter] = useState<'all' | 'outstanding-overdue' | 'about-to-raise' | 'outstanding' | 'paid-unpaid'>('outstanding');
+
   const [showColConfig, setShowColConfig] = useState(false);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set());
   const [columnsConfig, setColumnsConfig] = useState<ColumnConfig[]>([
@@ -330,6 +344,9 @@ export default function CreditControlDashboard({
   const handleTabChange = (tab: 'direct' | 'simplicity') => {
     setActiveSubTab(tab);
     setSelectedInvoiceIds(new Set());
+    if (onChangeSubTab) {
+      onChangeSubTab(tab);
+    }
   };
 
   const handleSort = (field: string) => {
@@ -592,7 +609,7 @@ export default function CreditControlDashboard({
       simplicityClawbackTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' && inv.balanceOutstanding > 0 && inv.daysSinceStart >= 120).reduce((sum, inv) => sum + inv.balanceOutstanding, 0),
       
       simplicityExpiryList: invoices.filter(inv => inv.invoiceType === 'simplicity' && inv.balanceOutstanding > 0 && inv.daysSinceStart >= 90 && inv.daysSinceStart < 120),
-      simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' && inv.balanceOutstanding > 0 && inv.daysSinceStart >= 90 && inv.daysSinceStart < 120).reduce((sum, inv) => sum + inv.balanceOutstanding, 0),
+simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' && inv.balanceOutstanding > 0 && inv.daysSinceStart >= 90 && inv.daysSinceStart < 120).reduce((sum, inv) => sum + inv.balanceOutstanding, 0),
       
       simplicityFollowupList: invoices.filter(inv => inv.invoiceType === 'simplicity' && inv.balanceOutstanding > 0 && inv.daysSinceStart >= 31 && inv.daysSinceStart < 90),
       simplicityFollowupTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' && inv.balanceOutstanding > 0 && inv.daysSinceStart >= 31 && inv.daysSinceStart < 90).reduce((sum, inv) => sum + inv.balanceOutstanding, 0)
@@ -601,7 +618,37 @@ export default function CreditControlDashboard({
 
   const filteredInvoices = useMemo(() => {
     return invoices.filter(inv => {
-      if (inv.invoiceType !== activeSubTab) return false;
+      const isSimplicity = inv.invoiceType === 'simplicity';
+      const isTabDirect = activeSubTab === 'direct';
+      if (isTabDirect && isSimplicity) return false;
+      if (!isTabDirect && !isSimplicity) return false;
+
+      // Card Filters Integration
+      if (activeSubTab === 'direct') {
+        if (directCardFilter === 'all-outstanding') {
+          if (inv.clientPaymentStatus === 'paid' || inv.outstanding <= 0) return false;
+        } else if (directCardFilter === 'disputed') {
+          if (inv.finalStatus !== 'disputed') return false;
+        } else if (directCardFilter === 'legal') {
+          if (inv.finalStatus !== 'legal') return false;
+        } else if (directCardFilter === 'due') {
+          const isDue = inv.finalStatus === 'overdue' || (inv.dueDate && inv.dueDate < todayStr && inv.clientPaymentStatus !== 'paid');
+          if (!isDue) return false;
+        }
+      } else {
+        if (simplicityCardFilter === 'outstanding') {
+          if (inv.clientPaymentStatus === 'paid' || inv.outstanding <= 0) return false;
+        } else if (simplicityCardFilter === 'outstanding-overdue') {
+          if (inv.finalStatus !== 'overdue') return false;
+        } else if (simplicityCardFilter === 'about-to-raise') {
+          const isAboutToRaise = !inv.invoiceNumber || inv.paymentStatus === 'not-invoiced';
+          if (!isAboutToRaise) return false;
+        } else if (simplicityCardFilter === 'paid-unpaid') {
+          const isRecourse = inv.simplicityPaid && inv.clientPaymentStatus !== 'paid';
+          if (!isRecourse) return false;
+        }
+        // 'all' filter shows all simplicity records
+      }
 
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
@@ -708,7 +755,43 @@ export default function CreditControlDashboard({
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [invoices, activeSubTab, searchQuery, statusFilter, recruiterFilter, dateFilter, sortBy, sortOrder, todayStr, companies]);
+  }, [invoices, activeSubTab, directCardFilter, simplicityCardFilter, searchQuery, statusFilter, recruiterFilter, dateFilter, sortBy, sortOrder, todayStr, companies]);
+
+  const directMetrics = useMemo(() => {
+    const list = invoices.filter(inv => inv.invoiceType !== 'simplicity');
+    const outstandingList = list.filter(inv => inv.clientPaymentStatus !== 'paid' && inv.outstanding > 0);
+    const disputedList = list.filter(inv => inv.finalStatus === 'disputed');
+    const legalList = list.filter(inv => inv.finalStatus === 'legal');
+    const dueList = list.filter(inv => inv.finalStatus === 'overdue' || (inv.dueDate && inv.dueDate < todayStr && inv.clientPaymentStatus !== 'paid'));
+
+    const sumList = (list: any[]) => list.reduce((sum, item) => sum + (Number(item.outstanding) || 0), 0);
+
+    return {
+      outstanding: { count: outstandingList.length, amount: sumList(outstandingList) },
+      disputed: { count: disputedList.length, amount: sumList(disputedList) },
+      legal: { count: legalList.length, amount: sumList(legalList) },
+      due: { count: dueList.length, amount: sumList(dueList) }
+    };
+  }, [invoices, todayStr]);
+
+  const simplicityMetrics = useMemo(() => {
+    const list = invoices.filter(inv => inv.invoiceType === 'simplicity');
+    const overdueList = list.filter(inv => inv.finalStatus === 'overdue');
+    const aboutToRaiseList = list.filter(inv => !inv.invoiceNumber || inv.paymentStatus === 'not-invoiced');
+    const outstandingList = list.filter(inv => inv.clientPaymentStatus !== 'paid' && inv.outstanding > 0);
+    const recourseList = list.filter(inv => inv.simplicityPaid && inv.clientPaymentStatus !== 'paid');
+    const allList = list;
+
+    const sumList = (list: any[]) => list.reduce((sum, item) => sum + (Number(item.outstanding) || 0), 0);
+
+    return {
+      overdue: { count: overdueList.length, amount: sumList(overdueList) },
+      aboutToRaise: { count: aboutToRaiseList.length, amount: aboutToRaiseList.reduce((sum, item) => sum + (Number(item.grossBillAmount) * 1.2 || 0), 0) },
+      outstanding: { count: outstandingList.length, amount: sumList(outstandingList) },
+      recourse: { count: recourseList.length, amount: sumList(recourseList) },
+      all: { count: allList.length, amount: sumList(allList) }
+    };
+  }, [invoices]);
 
   const partitionedInvoices = useMemo(() => {
     const disputedLegal = filteredInvoices.filter(inv => 
@@ -827,60 +910,164 @@ export default function CreditControlDashboard({
     return fridays;
   }, [todayStr]);
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      
-      <CreditControlKPIs
-        dashboardStats={dashboardStats}
-        debtorsOver60={debtorsOver60}
-        collapseAnalytics={collapseAnalytics}
-        setCollapseAnalytics={setCollapseAnalytics}
-        expandDebtors60={expandDebtors60}
-        setExpandDebtors60={setExpandDebtors60}
-        handleOpenDetail={handleOpenDetail}
-      />
+  const renderMetricCard = (
+    title: string,
+    amount: number,
+    count: number,
+    isActive: boolean,
+    onClick: () => void,
+    accentColor: string
+  ) => {
+    return (
+      <div 
+        onClick={onClick}
+        style={{
+          backgroundColor: 'var(--bg-secondary)',
+          border: isActive ? `2px solid ${accentColor}` : '1px solid var(--border-color)',
+          borderRadius: '10px',
+          padding: '10px 14px',
+          cursor: 'pointer',
+          transition: 'all 0.15s ease-in-out',
+          boxShadow: isActive ? `0 4px 10px ${accentColor}20` : 'none',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          flex: 1,
+          minWidth: '135px',
+          position: 'relative'
+        }}
+      >
+        <span style={{ fontSize: '9.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.3px' }}>
+          {title}
+        </span>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
+          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+            £{amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </h3>
+          <span style={{ fontSize: '10px', color: isActive ? '#fff' : accentColor, fontWeight: 700, backgroundColor: isActive ? accentColor : `${accentColor}15`, padding: '1px 5px', borderRadius: '8px' }}>
+            {count}
+          </span>
+        </div>
+      </div>
+    );
+  };
 
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        borderBottom: '1px solid var(--border-color)',
-        marginBottom: '8px',
-        flexWrap: 'wrap',
-        gap: '12px'
-      }}>
-        <div style={{ display: 'flex', gap: '16px' }}>
-          <button 
-            onClick={() => handleTabChange('direct')}
-            style={{ 
-              padding: '12px 20px', 
-              border: 'none', 
-              background: 'none', 
-              fontSize: '14px', 
-              fontWeight: 700, 
-              cursor: 'pointer',
-              borderBottom: activeSubTab === 'direct' ? '3px solid var(--primary)' : '3px solid transparent',
-              color: activeSubTab === 'direct' ? 'var(--primary)' : 'var(--text-secondary)'
-            }}
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      
+      {/* 0. Header Summary */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+        <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>{activeSubTab === 'direct' ? '📁 Direct Invoices Ledger' : '💼 Simplicity Factored Ledger'}</span>
+          <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-muted)', backgroundColor: 'var(--bg-secondary)', padding: '2px 8px', borderRadius: '12px' }}>
+            {activeSubTab === 'direct' ? 'Direct Client Ledger' : 'Factored / Recourse Ledger'}
+          </span>
+        </h2>
+        
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => setCollapseAnalytics(!collapseAnalytics)}
+            className="btn-secondary dense"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', padding: '5px 10px', height: '28px' }}
           >
-            📁 Direct Invoices
-          </button>
-          <button 
-            onClick={() => handleTabChange('simplicity')}
-            style={{ 
-              padding: '12px 20px', 
-              border: 'none', 
-              background: 'none', 
-              fontSize: '14px', 
-              fontWeight: 700, 
-              cursor: 'pointer',
-              borderBottom: activeSubTab === 'simplicity' ? '3px solid var(--primary)' : '3px solid transparent',
-              color: activeSubTab === 'simplicity' ? 'var(--primary)' : 'var(--text-secondary)'
-            }}
-          >
-            💼 Simplicity Invoices
+            <span>{collapseAnalytics ? '📊 Show KPI Analytics' : '📊 Hide KPI Analytics'}</span>
           </button>
         </div>
+      </div>
+
+      {!collapseAnalytics && (
+        <CreditControlKPIs
+          dashboardStats={dashboardStats}
+          debtorsOver60={debtorsOver60}
+          collapseAnalytics={collapseAnalytics}
+          setCollapseAnalytics={setCollapseAnalytics}
+          expandDebtors60={expandDebtors60}
+          setExpandDebtors60={setExpandDebtors60}
+          handleOpenDetail={handleOpenDetail}
+        />
+      )}
+
+      {/* 1. Dynamic Metric Filter Cards (Top 20%) */}
+      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', width: '100%', marginBottom: '4px' }}>
+        {activeSubTab === 'direct' ? (
+          <>
+            {renderMetricCard(
+              "Outstanding Direct Invoices",
+              directMetrics.outstanding.amount,
+              directMetrics.outstanding.count,
+              directCardFilter === 'all-outstanding',
+              () => setDirectCardFilter('all-outstanding'),
+              '#3b82f6'
+            )}
+            {renderMetricCard(
+              "Direct Invoices Due",
+              directMetrics.due.amount,
+              directMetrics.due.count,
+              directCardFilter === 'due',
+              () => setDirectCardFilter('due'),
+              '#eab308'
+            )}
+            {renderMetricCard(
+              "Disputed Direct Invoices",
+              directMetrics.disputed.amount,
+              directMetrics.disputed.count,
+              directCardFilter === 'disputed',
+              () => setDirectCardFilter('disputed'),
+              '#ef4444'
+            )}
+            {renderMetricCard(
+              "Legal Proceedings",
+              directMetrics.legal.amount,
+              directMetrics.legal.count,
+              directCardFilter === 'legal',
+              () => setDirectCardFilter('legal'),
+              '#ec4899'
+            )}
+          </>
+        ) : (
+          <>
+            {renderMetricCard(
+              "Outstanding Overdue",
+              simplicityMetrics.overdue.amount,
+              simplicityMetrics.overdue.count,
+              simplicityCardFilter === 'outstanding-overdue',
+              () => setSimplicityCardFilter('outstanding-overdue'),
+              '#f97316'
+            )}
+            {renderMetricCard(
+              "Invoices to be Raised",
+              simplicityMetrics.aboutToRaise.amount,
+              simplicityMetrics.aboutToRaise.count,
+              simplicityCardFilter === 'about-to-raise',
+              () => setSimplicityCardFilter('about-to-raise'),
+              '#a855f7'
+            )}
+            {renderMetricCard(
+              "Outstanding Simplicity",
+              simplicityMetrics.outstanding.amount,
+              simplicityMetrics.outstanding.count,
+              simplicityCardFilter === 'outstanding',
+              () => setSimplicityCardFilter('outstanding'),
+              '#3b82f6'
+            )}
+            {renderMetricCard(
+              "Recourse Risk (Paid/Unpaid)",
+              simplicityMetrics.recourse.amount,
+              simplicityMetrics.recourse.count,
+              simplicityCardFilter === 'paid-unpaid',
+              () => setSimplicityCardFilter('paid-unpaid'),
+              '#ef4444'
+            )}
+            {renderMetricCard(
+              "All Factored Invoices",
+              simplicityMetrics.all.amount,
+              simplicityMetrics.all.count,
+              simplicityCardFilter === 'all',
+              () => setSimplicityCardFilter('all'),
+              '#6b7280'
+            )}
+          </>
+        )}
       </div>
 
       {!collapseAnalytics && activeSubTab === 'simplicity' && (

@@ -18,10 +18,10 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { placementId, apiKey } = req.body;
+  const { placementId, candidateId, apiKey } = req.body;
 
-  if (!placementId) {
-    return res.status(400).json({ error: 'Missing placementId' });
+  if (!placementId && !candidateId) {
+    return res.status(400).json({ error: 'Missing placementId or candidateId' });
   }
 
   if (!apiKey) {
@@ -29,7 +29,7 @@ export default async function handler(req, res) {
   }
 
   // 1. Mock/Demo Fallback for Testing
-  if (apiKey.startsWith('demo') || placementId.toLowerCase().includes('mock') || apiKey === 'YOUR_API_KEY') {
+  if (apiKey.startsWith('demo') || (placementId && placementId.toLowerCase().includes('mock')) || apiKey === 'YOUR_API_KEY') {
     console.log(`Recruitly Sync [MOCK]: Fetching placement ${placementId}`);
     
     let candidate = "Sarah Jenkins";
@@ -38,13 +38,13 @@ export default async function handler(req, res) {
     let jobTitle = "Senior Operations Director - Finance";
     let salaryVal = 85000;
     
-    if (placementId.includes('2')) {
+    if (placementId && placementId.includes('2')) {
       candidate = "Alex Rivera";
       client = "Humres Contracting";
       fee = 9800;
       jobTitle = "Contract Site Manager - Commercial Flooring";
       salaryVal = 62000;
-    } else if (placementId.includes('3')) {
+    } else if (placementId && placementId.includes('3')) {
       candidate = "Denise Smith";
       client = "Totaco UK";
       fee = 22000;
@@ -72,6 +72,58 @@ export default async function handler(req, res) {
       companyEmail: 'sales@floorform.com',
       companyPhone: '02837517800'
     });
+  }
+
+  // 1B. Direct Candidate Fetch (for in-app background auto-sync)
+  if (candidateId && !placementId) {
+    try {
+      const candidateUrl = `https://api.recruitly.io/api/nova/candidates/${candidateId}?apiKey=${apiKey}`;
+      const candidateResult = await fetchJson(candidateUrl);
+      if (!candidateResult || !candidateResult.success || !candidateResult.data) {
+        return res.status(404).json({ error: `Candidate ID "${candidateId}" not found or API request failed.` });
+      }
+      const candidateData = candidateResult.data;
+      return res.status(200).json({
+        success: true,
+        candidateId,
+        candidateEmail: candidateData.email || '',
+        candidateMobile: candidateData.mobile || '',
+        candidateLocation: candidateData.location || '',
+        candidateHasCv: !!candidateData.hasCv,
+        candidateSkills: candidateData.skills || [],
+        candidateEmploymentHistory: candidateData.employmentHistory || [],
+        candidateEducationHistory: candidateData.educationHistory || [],
+        apiKey
+      });
+    } catch (err) {
+      console.error("Recruitly Sync Candidate API error:", err);
+      return res.status(500).json({ error: err.message || 'Failed to complete Recruitly candidate sync request' });
+    }
+  }
+
+  // 1C. Direct Company Fetch (for in-app background auto-sync)
+  if (companyId && !placementId) {
+    try {
+      const companyUrl = `https://api.recruitly.io/api/nova/companies/${companyId}?apiKey=${apiKey}`;
+      const companyResult = await fetchJson(companyUrl);
+      if (!companyResult || !companyResult.success || !companyResult.data) {
+        return res.status(404).json({ error: `Company ID "${companyId}" not found or API request failed.` });
+      }
+      const companyData = companyResult.data;
+      return res.status(200).json({
+        success: true,
+        companyId,
+        companyName: companyData.name || '',
+        companyEmail: companyData.email || '',
+        companyPhone: companyData.phone || '',
+        companyWebsite: companyData.website || '',
+        companyAddress: companyData.location || '',
+        apiKey
+      });
+    } catch (err) {
+      console.error("Recruitly Sync Company API error:", err);
+      return res.status(500).json({ error: err.message || 'Failed to complete Recruitly company sync request' });
+    }
   }
 
   // 2. Real API Integration

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CrmCandidate, Placement } from '../../types';
 import { useBoundStore } from '../../store/useBoundStore';
 import { firebaseService } from '../../services/firebase';
@@ -35,6 +35,91 @@ export default function CrmCandidateTab({ onShowToast }: CrmCandidateTabProps) {
   const [crmCandidateId, setCrmCandidateId] = useState('');
   const [employmentHistory, setEmploymentHistory] = useState<any[]>([]);
   const [educationHistory, setEducationHistory] = useState<any[]>([]);
+
+  const getCandidateApiKey = (candName: string) => {
+    const p = placements.find(pl => pl.candidateName?.toLowerCase() === candName.toLowerCase());
+    return (p as any)?.crmApiKey || '';
+  };
+
+  useEffect(() => {
+    if (selectedCandidate) {
+      const candAny = selectedCandidate as any;
+      const crmId = candAny.crmCandidateId || selectedCandidate.crmCandidateId;
+      const apiKey = getCandidateApiKey(selectedCandidate.name);
+      
+      if (crmId && apiKey) {
+        const runBackgroundSync = async () => {
+          try {
+            console.log(`[Background Sync] Fetching details for ${selectedCandidate.name} from Recruitly ID ${crmId}...`);
+            const syncRes = await fetch('/api/recruitly-sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                candidateId: crmId,
+                apiKey: apiKey
+              })
+            });
+
+            if (syncRes.ok) {
+              const resData = await syncRes.json();
+              
+              // Now fetch the CV blob and upload it directly to Firebase Storage if not already a Firebase link
+              let firebaseCvUrl = selectedCandidate.cvUrl || '';
+              let firebaseCvName = selectedCandidate.cvName || '';
+              
+              const isNotFirebase = !firebaseCvUrl || firebaseCvUrl.includes('recruitly') || firebaseCvUrl.includes('/api/recruitly-cv');
+              
+              if (resData.candidateHasCv && isNotFirebase) {
+                console.log(`[Background Sync] Fetching CV from Recruitly and uploading to Firebase Storage...`);
+                const cvRes = await fetch(`/api/recruitly-cv?candidateId=${crmId}&apiKey=${apiKey}`);
+                if (cvRes.ok) {
+                  const blob = await cvRes.blob();
+                  const file = new File([blob], "Curriculum_Vitae.pdf", { type: blob.type || "application/pdf" });
+                  const storageUrl = await firebaseService.uploadCandidateCv(selectedCandidate.id, file);
+                  firebaseCvUrl = storageUrl;
+                  firebaseCvName = 'Recruitly CV';
+                  console.log(`[Background Sync] Saved CV to Firebase Storage: ${storageUrl}`);
+                }
+              }
+
+              // Build the updated candidate profile prioritizing live values
+              const updatedCandidate: CrmCandidate = {
+                ...selectedCandidate,
+                email: resData.candidateEmail || selectedCandidate.email || '',
+                phone: resData.candidateMobile || selectedCandidate.phone || '',
+                cvUrl: firebaseCvUrl,
+                cvName: firebaseCvName,
+                notes: selectedCandidate.notes || `Synced from CRM Candidate (ID: ${crmId}).`,
+                ...({
+                  location: resData.candidateLocation || candAny.location || '',
+                  skills: resData.candidateSkills ? resData.candidateSkills.join(', ') : candAny.skills || '',
+                  crmCandidateId: crmId,
+                  employmentHistory: resData.candidateEmploymentHistory || candAny.employmentHistory || [],
+                  educationHistory: resData.candidateEducationHistory || candAny.educationHistory || []
+                } as any)
+              };
+
+              // Save to Firestore if anything changed (or always update to heal database)
+              const hasChanged = 
+                selectedCandidate.email !== updatedCandidate.email ||
+                selectedCandidate.phone !== updatedCandidate.phone ||
+                selectedCandidate.cvUrl !== updatedCandidate.cvUrl ||
+                candAny.location !== (updatedCandidate as any).location;
+
+              if (hasChanged) {
+                await saveCrmCandidate(updatedCandidate);
+                setSelectedCandidate(updatedCandidate);
+                onShowToast(`Profile updated from CRM!`, 'success');
+              }
+            }
+          } catch (err) {
+            console.error("[Background Sync] Failed to update candidate profile:", err);
+          }
+        };
+        runBackgroundSync();
+      }
+    }
+  }, [selectedCandidate?.id]);
 
   const openAddForm = () => {
     setId(crypto.randomUUID());

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CrmClientCompany, Placement } from '../../types';
 import { useBoundStore } from '../../store/useBoundStore';
 
@@ -28,6 +28,62 @@ export default function CrmClientTab({ onShowToast }: CrmClientTabProps) {
   const [accountsContactEmail, setAccountsContactEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
+
+  const getCompanySyncDetails = (compName: string) => {
+    const p = placements.find(pl => pl.clientCompany?.toLowerCase() === compName.toLowerCase());
+    return {
+      crmCompanyId: (p as any)?.crmCompanyId || '',
+      crmApiKey: (p as any)?.crmApiKey || ''
+    };
+  };
+
+  useEffect(() => {
+    if (selectedClient) {
+      const { crmCompanyId, crmApiKey } = getCompanySyncDetails(selectedClient.name);
+      if (crmCompanyId && crmApiKey) {
+        const runBackgroundSync = async () => {
+          try {
+            console.log(`[Background Sync] Fetching details for company ${selectedClient.name} from Recruitly ID ${crmCompanyId}...`);
+            const syncRes = await fetch('/api/recruitly-sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                companyId: crmCompanyId,
+                apiKey: crmApiKey
+              })
+            });
+
+            if (syncRes.ok) {
+              const resData = await syncRes.json();
+              
+              // Build the updated company profile prioritizing live values
+              const updatedClient: CrmClientCompany = {
+                ...selectedClient,
+                address: resData.companyAddress || selectedClient.address || '',
+                phone: resData.companyPhone || selectedClient.phone || '',
+                website: resData.companyWebsite || (selectedClient as any).website || '',
+                notes: selectedClient.notes || `Synced from CRM Company (ID: ${crmCompanyId}).`
+              };
+
+              const hasChanged = 
+                selectedClient.address !== updatedClient.address ||
+                selectedClient.phone !== updatedClient.phone ||
+                (selectedClient as any).website !== (updatedClient as any).website;
+
+              if (hasChanged) {
+                await saveCrmClientCompany(updatedClient);
+                setSelectedClient(updatedClient);
+                onShowToast(`Company profile updated from CRM!`, 'success');
+              }
+            }
+          } catch (err) {
+            console.error("[Background Sync] Failed to update company profile:", err);
+          }
+        };
+        runBackgroundSync();
+      }
+    }
+  }, [selectedClient?.id]);
 
   const openAddForm = () => {
     setId(crypto.randomUUID());

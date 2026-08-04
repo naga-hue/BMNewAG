@@ -10,6 +10,7 @@ const MODULES_LIST = [
   { key: 'placements', label: 'Sales & Placements' },
   { key: 'expenses', label: 'Expense Ledger' },
   { key: 'vendors', label: 'Vendors & Assets' },
+  { key: 'crm', label: 'CRM Recruiting Desk' },
   { key: 'credit_control', label: 'Credit Control Invoices' },
   { key: 'cashflow', label: 'Cashflow Projections' },
   { key: 'logs', label: 'Audit Trail Logs' },
@@ -273,7 +274,7 @@ Yours sincerely,
     const perm = s.permissions || {
       role: s.department === 'Finance' || s.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
       dataScope: s.department === 'Finance' || s.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
-      allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors']
+      allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors', 'crm']
     };
 
     setEditRole(perm.role || 'recruiter');
@@ -403,7 +404,7 @@ Yours sincerely,
               const perm = s.permissions || {
                 role: s.department === 'Finance' || s.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter',
                 dataScope: s.department === 'Finance' || s.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self',
-                allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors']
+                allowedModules: ['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors', 'crm']
               };
 
               const isEditing = editingStaffId === s.id;
@@ -520,7 +521,7 @@ Yours sincerely,
                             onClick={() => {
                               setEditRole('recruiter');
                               setEditScope('self');
-                              setEditModules(['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors']);
+                              setEditModules(['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors', 'crm']);
                             }}
                             style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
                           >
@@ -531,7 +532,7 @@ Yours sincerely,
                             onClick={() => {
                               setEditRole('manager');
                               setEditScope('all');
-                              setEditModules(['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors', 'credit_control', 'cashflow', 'reports']);
+                              setEditModules(['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors', 'crm', 'credit_control', 'cashflow', 'reports']);
                             }}
                             style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--warning)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
                           >

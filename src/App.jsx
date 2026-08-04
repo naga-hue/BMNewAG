@@ -90,7 +90,7 @@ export default function App() {
     if (role === 'manager') {
       return ['whats_important', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'crm', 'expenses', 'reports'];
     }
-    return ['staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses'];
+    return ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors', 'crm'];
   };
 
   const DEFAULT_ADMIN_USER = {
@@ -1750,6 +1750,18 @@ export default function App() {
                 </li>
               )}
 
+              {currentUser.permissions.allowedModules.includes('crm') && (
+                <li>
+                  <div 
+                    className={`nav-item ${activeTab === 'crm' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('crm')}
+                  >
+                    <Briefcase size={18} />
+                    <span>CRM Recruiting</span>
+                  </div>
+                </li>
+              )}
+
               {currentUser.permissions.allowedModules.includes('credit_control') && (
                 <li>
                   <div 
@@ -1911,6 +1923,7 @@ export default function App() {
                activeTab === 'reports' ? 'Profit & Loss / Group Reports' :
                activeTab === 'rbac' ? 'User Access & Roles Control' :
                activeTab === 'placements' ? 'Sales & Placements Dashboard' :
+               activeTab === 'crm' ? 'CRM Recruiting Desk' :
                activeTab === 'credit_control' ? 'Credit Control & Invoices Ledger' :
                activeTab === 'cashflow' ? 'Cashflow Projections & Ledger' : 'Vendors & Asset Management'}
             </h1>

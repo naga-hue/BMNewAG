@@ -16,7 +16,7 @@ import {
   getDownloadURL, 
   deleteObject 
 } from 'firebase/storage';
-import { Company, Staff, Expense, Placement, Vendor, NominalCode, PayrollRecord } from '../types';
+import { Company, Staff, Expense, Placement, Vendor, NominalCode, PayrollRecord, CrmClientCompany, CrmCandidate } from '../types';
 
 export interface FirebaseServiceInterface {
   isConfigured(): boolean;
@@ -73,6 +73,13 @@ export interface FirebaseServiceInterface {
   saveExitSettings(settings: any): Promise<any>;
   subscribeReimbursementClaims(onUpdate: (claims: any[]) => void, fallbackData?: any[]): () => void;
   saveReimbursementClaim(claim: any): Promise<any>;
+  subscribeCrmClientCompanies(onUpdate: (companies: CrmClientCompany[]) => void, fallbackData?: CrmClientCompany[]): () => void;
+  saveCrmClientCompany(company: CrmClientCompany): Promise<CrmClientCompany>;
+  deleteCrmClientCompany(companyId: string): Promise<boolean>;
+  subscribeCrmCandidates(onUpdate: (candidates: CrmCandidate[]) => void, fallbackData?: CrmCandidate[]): () => void;
+  saveCrmCandidate(candidate: CrmCandidate): Promise<CrmCandidate>;
+  deleteCrmCandidate(candidateId: string): Promise<boolean>;
+  uploadCandidateCv(candidateId: string, file: File): Promise<string>;
 }
 
 // Check if Firebase configuration is provided
@@ -1472,6 +1479,159 @@ export const firebaseService: FirebaseServiceInterface = {
         const reader = new FileReader();
         reader.onloadend = () => {
           resolve(reader.result);
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  },
+
+  /* ==========================================
+     CRM CLIENT COMPANIES SERVICES
+     ========================================== */
+  subscribeCrmClientCompanies(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-crm-client-companies');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
+    if (isConfigured && db) {
+      const refCol = collection(db, 'crm_client_companies');
+      return onSnapshot(refCol, (snapshot) => {
+        const list = [];
+        snapshot.forEach((doc) => {
+          list.push(doc.data());
+        });
+        const sorted = list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        localStorage.setItem('bm-crm-client-companies', JSON.stringify(sorted));
+        onUpdate(sorted);
+      }, (error) => {
+        console.error("Firestore CRM client companies snapshot error:", error);
+      });
+    } else {
+      return () => {};
+    }
+  },
+
+  async saveCrmClientCompany(company) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'crm_client_companies', company.id);
+      await setDoc(docRef, company);
+      return company;
+    } else {
+      const local = localStorage.getItem('bm-crm-client-companies');
+      const list = local ? JSON.parse(local) : [];
+      const index = list.findIndex(c => c.id === company.id);
+      if (index > -1) {
+        list[index] = company;
+      } else {
+        list.unshift(company);
+      }
+      const sorted = list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      localStorage.setItem('bm-crm-client-companies', JSON.stringify(sorted));
+      return company;
+    }
+  },
+
+  async deleteCrmClientCompany(companyId) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'crm_client_companies', companyId);
+      await deleteDoc(docRef);
+      return true;
+    } else {
+      const local = localStorage.getItem('bm-crm-client-companies');
+      if (local) {
+        const list = JSON.parse(local).filter(c => c.id !== companyId);
+        localStorage.setItem('bm-crm-client-companies', JSON.stringify(list));
+      }
+      return true;
+    }
+  },
+
+  /* ==========================================
+     CRM CANDIDATES SERVICES
+     ========================================== */
+  subscribeCrmCandidates(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-crm-candidates');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
+    if (isConfigured && db) {
+      const refCol = collection(db, 'crm_candidates');
+      return onSnapshot(refCol, (snapshot) => {
+        const list = [];
+        snapshot.forEach((doc) => {
+          list.push(doc.data());
+        });
+        const sorted = list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        localStorage.setItem('bm-crm-candidates', JSON.stringify(sorted));
+        onUpdate(sorted);
+      }, (error) => {
+        console.error("Firestore CRM candidates snapshot error:", error);
+      });
+    } else {
+      return () => {};
+    }
+  },
+
+  async saveCrmCandidate(candidate) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'crm_candidates', candidate.id);
+      await setDoc(docRef, candidate);
+      return candidate;
+    } else {
+      const local = localStorage.getItem('bm-crm-candidates');
+      const list = local ? JSON.parse(local) : [];
+      const index = list.findIndex(c => c.id === candidate.id);
+      if (index > -1) {
+        list[index] = candidate;
+      } else {
+        list.unshift(candidate);
+      }
+      const sorted = list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      localStorage.setItem('bm-crm-candidates', JSON.stringify(sorted));
+      return candidate;
+    }
+  },
+
+  async deleteCrmCandidate(candidateId) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'crm_candidates', candidateId);
+      await deleteDoc(docRef);
+      return true;
+    } else {
+      const local = localStorage.getItem('bm-crm-candidates');
+      if (local) {
+        const list = JSON.parse(local).filter(c => c.id !== candidateId);
+        localStorage.setItem('bm-crm-candidates', JSON.stringify(list));
+      }
+      return true;
+    }
+  },
+
+  async uploadCandidateCv(candidateId, file) {
+    if (isConfigured && storage) {
+      const fileRef = ref(storage, `candidates/${candidateId}/cv_${file.name}`);
+      const snapshot = await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(snapshot.ref);
+      return url;
+    } else {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          resolve(reader.result as string);
         };
         reader.readAsDataURL(file);
       });

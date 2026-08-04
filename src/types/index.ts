@@ -86,3 +86,28 @@ export interface PayrollRecord {
   notes?: string;
   linkedExpenseId?: string;
 }
+
+export interface CrmClientCompany {
+  id: string;
+  name: string;
+  regNumber: string;
+  address: string;
+  contactName: string;
+  contactEmail: string;
+  accountsContactName: string;
+  accountsContactEmail: string;
+  phone: string;
+  notes?: string;
+}
+
+export interface CrmCandidate {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  jobTitle?: string;
+  skills?: string;
+  cvUrl?: string;
+  cvName?: string;
+  notes?: string;
+}

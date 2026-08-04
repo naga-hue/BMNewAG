@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { firebaseService } from '../services/firebase';
-import { Company, Staff, Expense, Placement, Vendor, NominalCode, PayrollRecord } from '../types';
+import { Company, Staff, Expense, Placement, Vendor, NominalCode, PayrollRecord, CrmClientCompany, CrmCandidate } from '../types';
 
 interface StoreState {
   companies: Company[];
@@ -16,6 +16,8 @@ interface StoreState {
   payrollRecords: PayrollRecord[];
   payrollPolicies: any[];
   reimbursementClaims: any[];
+  crmClientCompanies: CrmClientCompany[];
+  crmCandidates: CrmCandidate[];
 
   initSubscriptions: (initialData?: any) => () => void;
   updatePlacement: (updated: Placement) => Promise<void>;
@@ -28,6 +30,10 @@ interface StoreState {
   saveVendor: (vendor: Vendor) => Promise<void>;
   savePayrollRecord: (record: PayrollRecord) => Promise<void>;
   saveReimbursementClaim: (claim: any) => Promise<void>;
+  saveCrmClientCompany: (company: CrmClientCompany) => Promise<void>;
+  deleteCrmClientCompany: (id: string) => Promise<void>;
+  saveCrmCandidate: (candidate: CrmCandidate) => Promise<void>;
+  deleteCrmCandidate: (id: string) => Promise<void>;
 }
 
 export const useBoundStore = create<StoreState>((set) => ({
@@ -44,6 +50,8 @@ export const useBoundStore = create<StoreState>((set) => ({
   payrollRecords: [],
   payrollPolicies: [],
   reimbursementClaims: [],
+  crmClientCompanies: [],
+  crmCandidates: [],
 
   // Subscriptions Setup
   initSubscriptions: (initialData = {}) => {
@@ -157,6 +165,24 @@ export const useBoundStore = create<StoreState>((set) => ({
       );
     }
 
+    // CRM Client Companies
+    if (firebaseService.subscribeCrmClientCompanies) {
+      unsubscribes.push(
+        firebaseService.subscribeCrmClientCompanies((list: CrmClientCompany[]) => {
+          set({ crmClientCompanies: list });
+        }, initialData.crmClientCompanies || [])
+      );
+    }
+
+    // CRM Candidates
+    if (firebaseService.subscribeCrmCandidates) {
+      unsubscribes.push(
+        firebaseService.subscribeCrmCandidates((list: CrmCandidate[]) => {
+          set({ crmCandidates: list });
+        }, initialData.crmCandidates || [])
+      );
+    }
+
     // Return combined unsubscribe
     return () => {
       unsubscribes.forEach((unsub) => {
@@ -195,5 +221,17 @@ export const useBoundStore = create<StoreState>((set) => ({
   },
   saveReimbursementClaim: async (claim) => {
     await firebaseService.saveReimbursementClaim(claim);
+  },
+  saveCrmClientCompany: async (company) => {
+    await firebaseService.saveCrmClientCompany(company);
+  },
+  deleteCrmClientCompany: async (id) => {
+    await firebaseService.deleteCrmClientCompany(id);
+  },
+  saveCrmCandidate: async (candidate) => {
+    await firebaseService.saveCrmCandidate(candidate);
+  },
+  deleteCrmCandidate: async (id) => {
+    await firebaseService.deleteCrmCandidate(id);
   }
 }));

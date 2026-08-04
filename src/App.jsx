@@ -32,7 +32,8 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
-  Sparkles
+  Sparkles,
+  Mail
 } from 'lucide-react';
 
 import { initialCompanies } from './mockData';
@@ -71,6 +72,7 @@ const LogsDashboard = lazy(() => import('./components/LogsDashboard'));
 const ReportsDashboard = lazy(() => import('./components/ReportsDashboard'));
 const RBACDashboard = lazy(() => import('./components/RBACDashboard'));
 const WhatsImportantDashboard = lazy(() => import('./components/WhatsImportantDashboard'));
+const CrmDashboard = lazy(() => import('./components/crm/CrmDashboard'));
 
 export default function App() {
   // Theme state
@@ -83,10 +85,10 @@ export default function App() {
   // Default Super Admin User configuration
   const getDefaultAllowedModules = (role) => {
     if (role === 'admin') {
-      return ['whats_important', 'dashboard', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors', 'logs', 'reports', 'rbac', 'credit_control', 'cashflow'];
+      return ['whats_important', 'dashboard', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'credit_control', 'cashflow', 'expenses', 'vendors', 'crm', 'logs', 'reports', 'rbac'];
     }
     if (role === 'manager') {
-      return ['whats_important', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'reports'];
+      return ['whats_important', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'crm', 'expenses', 'reports'];
     }
     return ['staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses'];
   };
@@ -2958,6 +2960,11 @@ export default function App() {
               onUpdatePlacement={handleSavePlacement}
               onShowToast={handleShowToast}
             />
+          )}
+
+          {/* TAB 7.5.5: CRM Recruiting Desk */}
+          {activeTab === 'crm' && (
+            <CrmDashboard onShowToast={handleShowToast} />
           )}
 
           {/* TAB 7.6: Cashflow Forecast */}

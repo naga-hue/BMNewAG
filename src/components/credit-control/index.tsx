@@ -1630,6 +1630,7 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
           todayStr={todayStr}
           onShowToast={onShowToast}
           showRescheduleDropzones={showRescheduleDropzones}
+          simplicityCardFilter={simplicityCardFilter}
         />
       )}
 

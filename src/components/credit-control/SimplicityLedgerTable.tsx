@@ -39,6 +39,7 @@ interface SimplicityLedgerTableProps {
   todayStr: string;
   onShowToast: (msg: string, type?: string) => void;
   showRescheduleDropzones: boolean;
+  simplicityCardFilter?: string;
 }
 
 export default function SimplicityLedgerTable({
@@ -62,7 +63,8 @@ export default function SimplicityLedgerTable({
   renderSortIndicator,
   todayStr,
   onShowToast,
-  showRescheduleDropzones
+  showRescheduleDropzones,
+  simplicityCardFilter
 }: SimplicityLedgerTableProps) {
   const placements = useBoundStore(state => state.placements);
   const companies = useBoundStore(state => state.companies);
@@ -803,79 +805,91 @@ export default function SimplicityLedgerTable({
         </div>
       )}
 
-      {/* 1. DISPUTED & LEGAL SIMPLICITY RECORDS */}
-      {simplicityLegal.length > 0 && renderSimplicityTable(
-        "⚠️ Disputed & Legal Simplicity Invoices",
-        simplicityLegal,
-        "rgba(239, 68, 68, 0.04)",
-        "var(--danger)",
-        "Action Required"
-      )}
-
-      {/* 2. OVERDUE SIMPLICITY RECORDS */}
-      {simplicityOverdue.length > 0 && renderSimplicityTable(
-        "⏳ Overdue Simplicity Invoices",
-        simplicityOverdue,
-        "rgba(245, 158, 11, 0.04)",
-        "var(--warning)",
-        "Chaser Pipeline"
-      )}
-
-      {/* 3. ACTIVE SIMPLICITY RECORDS GROUPED BY WEEK */}
-      {(simplicityPriorWeeks.length > 0 || simplicityActiveWeeks.length > 0) && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{ 
-            fontSize: '12px', 
-            fontWeight: 700, 
-            color: 'var(--primary)', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '8px',
-            borderBottom: '2px solid var(--border-color)',
-            paddingBottom: '6px',
-            marginBottom: '4px'
-          }}>
-            <span>📅 Expected Weekly Payout Pipeline & Outstanding Ledger</span>
-          </div>
-
-          {/* 2b. PRIOR PERIOD SIMPLICITY RECORDS */}
-          {simplicityPriorWeeks.length > 0 && renderSimplicityTable(
-            "⏳ Outstanding Simplicity Invoices (Prior Periods)",
-            simplicityPriorWeeks,
-            "rgba(156, 163, 175, 0.04)",
-            "var(--text-secondary)",
-            "Prior Period Placements"
+      {simplicityCardFilter === 'all' ? (
+        renderSimplicityTable(
+          "📋 All Factored Simplicity Invoices",
+          list,
+          "rgba(99, 102, 241, 0.04)",
+          "var(--primary)",
+          "All Factored Invoices Ledger List"
+        )
+      ) : (
+        <>
+          {/* 1. DISPUTED & LEGAL SIMPLICITY RECORDS */}
+          {simplicityLegal.length > 0 && renderSimplicityTable(
+            "⚠️ Disputed & Legal Simplicity Invoices",
+            simplicityLegal,
+            "rgba(239, 68, 68, 0.04)",
+            "var(--danger)",
+            "Action Required"
           )}
 
-          {/* Active Weeks */}
-          {simplicityActiveWeeks.map(week => {
-            return renderSimplicityTable(
-              `📅 Week Ending Friday: ${week.weekDate}`,
-              week.invoices,
-              "rgba(99, 102, 241, 0.04)",
-              "var(--primary)",
-              "Drag invoice row here to reschedule",
-              true,
-              week.weekDate
-            );
-          })}
-        </div>
-      )}
+          {/* 2. OVERDUE SIMPLICITY RECORDS */}
+          {simplicityOverdue.length > 0 && renderSimplicityTable(
+            "⏳ Overdue Simplicity Invoices",
+            simplicityOverdue,
+            "rgba(245, 158, 11, 0.04)",
+            "var(--warning)",
+            "Chaser Pipeline"
+          )}
 
-      {/* 4. PAID / HISTORICAL SETTLED SIMPLICITY RECORDS */}
-      {simplicityPaid.length > 0 && renderSimplicityTable(
-        "✅ Settled & Paid Simplicity Invoices",
-        simplicityPaid,
-        "rgba(16, 185, 129, 0.04)",
-        "var(--success)",
-        "Archived Records"
-      )}
+          {/* 3. ACTIVE SIMPLICITY RECORDS GROUPED BY WEEK */}
+          {(simplicityPriorWeeks.length > 0 || simplicityActiveWeeks.length > 0) && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ 
+                fontSize: '12px', 
+                fontWeight: 700, 
+                color: 'var(--primary)', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '8px',
+                borderBottom: '2px solid var(--border-color)',
+                paddingBottom: '6px',
+                marginBottom: '4px'
+              }}>
+                <span>📅 Expected Weekly Payout Pipeline & Outstanding Ledger</span>
+              </div>
 
-      {/* fallback empty state */}
-      {simplicityLegal.length === 0 && simplicityOverdue.length === 0 && simplicityPriorWeeks.length === 0 && simplicityActiveWeeks.length === 0 && simplicityPaid.length === 0 && (
-        <div style={{ padding: '40px', border: '1px dashed var(--border-color)', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted)' }}>
-          No simplicity invoice records found matching the active search or filters.
-        </div>
+              {/* 2b. PRIOR PERIOD SIMPLICITY RECORDS */}
+              {simplicityPriorWeeks.length > 0 && renderSimplicityTable(
+                "⏳ Outstanding Simplicity Invoices (Prior Periods)",
+                simplicityPriorWeeks,
+                "rgba(156, 163, 175, 0.04)",
+                "var(--text-secondary)",
+                "Prior Period Placements"
+              )}
+
+              {/* Active Weeks */}
+              {simplicityActiveWeeks.map(week => {
+                return renderSimplicityTable(
+                  `📅 Week Ending Friday: ${week.weekDate}`,
+                  week.invoices,
+                  "rgba(99, 102, 241, 0.04)",
+                  "var(--primary)",
+                  "Drag invoice row here to reschedule",
+                  true,
+                  week.weekDate
+                );
+              })}
+            </div>
+          )}
+
+          {/* 4. PAID / HISTORICAL SETTLED SIMPLICITY RECORDS */}
+          {simplicityPaid.length > 0 && renderSimplicityTable(
+            "✅ Settled & Paid Simplicity Invoices",
+            simplicityPaid,
+            "rgba(16, 185, 129, 0.04)",
+            "var(--success)",
+            "Archived Records"
+          )}
+
+          {/* fallback empty state */}
+          {simplicityLegal.length === 0 && simplicityOverdue.length === 0 && simplicityPriorWeeks.length === 0 && simplicityActiveWeeks.length === 0 && simplicityPaid.length === 0 && (
+            <div style={{ padding: '40px', border: '1px dashed var(--border-color)', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              No simplicity invoice records found matching the active search or filters.
+            </div>
+          )}
+        </>
       )}
     </div>
   );

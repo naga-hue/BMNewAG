@@ -84,6 +84,16 @@ export default function PlacementsRegistry({
   const [crmJobContactTitle, setCrmJobContactTitle] = useState('');
   const [crmCompanyEmail, setCrmCompanyEmail] = useState('');
   const [crmCompanyPhone, setCrmCompanyPhone] = useState('');
+  const [crmCompanyWebsite, setCrmCompanyWebsite] = useState('');
+  const [crmCompanyAddress, setCrmCompanyAddress] = useState('');
+  const [crmCandidateId, setCrmCandidateId] = useState('');
+  const [crmCandidateEmail, setCrmCandidateEmail] = useState('');
+  const [crmCandidateMobile, setCrmCandidateMobile] = useState('');
+  const [crmCandidateLocation, setCrmCandidateLocation] = useState('');
+  const [crmCandidateHasCv, setCrmCandidateHasCv] = useState(false);
+  const [crmCandidateSkills, setCrmCandidateSkills] = useState<string[]>([]);
+  const [crmCandidateEmploymentHistory, setCrmCandidateEmploymentHistory] = useState<any[]>([]);
+  const [crmCandidateEducationHistory, setCrmCandidateEducationHistory] = useState<any[]>([]);
 
   // Filtering states
   const [searchQuery, setSearchQuery] = useState('');
@@ -439,6 +449,16 @@ export default function PlacementsRegistry({
     setCrmJobContactTitle(pAny.crmJobContactTitle || '');
     setCrmCompanyEmail(pAny.crmCompanyEmail || '');
     setCrmCompanyPhone(pAny.crmCompanyPhone || '');
+    setCrmCompanyWebsite(pAny.crmCompanyWebsite || '');
+    setCrmCompanyAddress(pAny.crmCompanyAddress || '');
+    setCrmCandidateId(pAny.crmCandidateId || '');
+    setCrmCandidateEmail(pAny.crmCandidateEmail || '');
+    setCrmCandidateMobile(pAny.crmCandidateMobile || '');
+    setCrmCandidateLocation(pAny.crmCandidateLocation || '');
+    setCrmCandidateHasCv(!!pAny.crmCandidateHasCv);
+    setCrmCandidateSkills(pAny.crmCandidateSkills || []);
+    setCrmCandidateEmploymentHistory(pAny.crmCandidateEmploymentHistory || []);
+    setCrmCandidateEducationHistory(pAny.crmCandidateEducationHistory || []);
 
     const terms = String(placement.paymentTermsDays || '30');
     if (['7', '10', '30', '31'].includes(terms)) {
@@ -521,6 +541,16 @@ export default function PlacementsRegistry({
         setCrmJobContactTitle(resData.jobContactTitle || '');
         setCrmCompanyEmail(resData.companyEmail || '');
         setCrmCompanyPhone(resData.companyPhone || '');
+        setCrmCompanyWebsite(resData.companyWebsite || '');
+        setCrmCompanyAddress(resData.companyAddress || '');
+        setCrmCandidateId(resData.candidateId || '');
+        setCrmCandidateEmail(resData.candidateEmail || '');
+        setCrmCandidateMobile(resData.candidateMobile || '');
+        setCrmCandidateLocation(resData.candidateLocation || '');
+        setCrmCandidateHasCv(!!resData.candidateHasCv);
+        setCrmCandidateSkills(resData.candidateSkills || []);
+        setCrmCandidateEmploymentHistory(resData.candidateEmploymentHistory || []);
+        setCrmCandidateEducationHistory(resData.candidateEducationHistory || []);
 
         onShowToast(`Successfully synced placement details from Recruitly CRM!`, "success");
       } else {
@@ -675,7 +705,17 @@ export default function PlacementsRegistry({
       crmJobContactPhone,
       crmJobContactTitle,
       crmCompanyEmail,
-      crmCompanyPhone
+      crmCompanyPhone,
+      crmCompanyWebsite,
+      crmCompanyAddress,
+      crmCandidateId,
+      crmCandidateEmail,
+      crmCandidateMobile,
+      crmCandidateLocation,
+      crmCandidateHasCv,
+      crmCandidateSkills,
+      crmCandidateEmploymentHistory,
+      crmCandidateEducationHistory
     };
 
     setIsSaving(true);
@@ -722,6 +762,16 @@ export default function PlacementsRegistry({
       setCrmJobContactTitle('');
       setCrmCompanyEmail('');
       setCrmCompanyPhone('');
+      setCrmCompanyWebsite('');
+      setCrmCompanyAddress('');
+      setCrmCandidateId('');
+      setCrmCandidateEmail('');
+      setCrmCandidateMobile('');
+      setCrmCandidateLocation('');
+      setCrmCandidateHasCv(false);
+      setCrmCandidateSkills([]);
+      setCrmCandidateEmploymentHistory([]);
+      setCrmCandidateEducationHistory([]);
       setEditingPlacementId(null);
       setShowLogForm(false);
     } catch (err: any) {
@@ -786,6 +836,16 @@ export default function PlacementsRegistry({
     setCrmJobContactTitle('');
     setCrmCompanyEmail('');
     setCrmCompanyPhone('');
+    setCrmCompanyWebsite('');
+    setCrmCompanyAddress('');
+    setCrmCandidateId('');
+    setCrmCandidateEmail('');
+    setCrmCandidateMobile('');
+    setCrmCandidateLocation('');
+    setCrmCandidateHasCv(false);
+    setCrmCandidateSkills([]);
+    setCrmCandidateEmploymentHistory([]);
+    setCrmCandidateEducationHistory([]);
     setEditingPlacementId(null);
     setShowLogForm(false);
   };

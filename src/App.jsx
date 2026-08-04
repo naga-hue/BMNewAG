@@ -1078,13 +1078,19 @@ export default function App() {
           const newCandidate = {
             id: `cand-${Date.now()}`,
             name: placement.candidateName,
-            email: placement.crmJobContactEmail || '',
-            phone: placement.crmJobContactPhone || '',
+            email: placement.crmCandidateEmail || placement.crmJobContactEmail || '',
+            phone: placement.crmCandidateMobile || placement.crmJobContactPhone || '',
             jobTitle: placement.crmJobTitle || '',
             status: 'placed',
             cvUrl: '',
-            cvName: '',
-            notes: `Automatically registered via CRM Placement sync (ID: ${placement.placementId}).`
+            cvName: placement.crmCandidateHasCv ? 'Recruitly CV' : '',
+            notes: `Automatically registered via CRM Placement sync (ID: ${placement.placementId}).`,
+            // Custom timeline and resume fields
+            location: placement.crmCandidateLocation || '',
+            skills: placement.crmCandidateSkills ? placement.crmCandidateSkills.join(', ') : '',
+            crmCandidateId: placement.crmCandidateId || '',
+            employmentHistory: placement.crmCandidateEmploymentHistory || [],
+            educationHistory: placement.crmCandidateEducationHistory || []
           };
           await firebaseService.saveCrmCandidate(newCandidate);
         }
@@ -1099,12 +1105,13 @@ export default function App() {
             id: `crm-comp-${Date.now()}`,
             name: placement.clientCompany,
             regNumber: '',
-            address: '',
+            address: placement.crmCompanyAddress || '',
             contactName: placement.crmJobContactName || '',
             contactEmail: placement.crmJobContactEmail || '',
             accountsContactName: placement.crmJobContactName || '',
             accountsContactEmail: placement.crmJobContactEmail || '',
             phone: placement.crmCompanyPhone || placement.crmJobContactPhone || '',
+            website: placement.crmCompanyWebsite || '',
             notes: `Automatically registered via CRM Placement sync (ID: ${placement.placementId}).`
           };
           await firebaseService.saveCrmClientCompany(newClient);

@@ -282,6 +282,18 @@ export default function CrmCandidateTab({ onShowToast }: CrmCandidateTabProps) {
                     <span style={{ color: 'var(--text-secondary)', display: 'block' }}>Phone</span>
                     <strong>{selectedCandidate.phone || '—'}</strong>
                   </div>
+                  {((selectedCandidate as any).location) && (
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', display: 'block' }}>Location</span>
+                      <strong>{(selectedCandidate as any).location}</strong>
+                    </div>
+                  )}
+                  {(selectedCandidate.jobTitle) && (
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', display: 'block' }}>Recruitly Job Title</span>
+                      <strong>{selectedCandidate.jobTitle}</strong>
+                    </div>
+                  )}
                   <div>
                     <span style={{ color: 'var(--text-secondary)', display: 'block' }}>Current Salary / Rate</span>
                     <strong>{selectedCandidate.currentSalary ? `£${Number(selectedCandidate.currentSalary).toLocaleString()}` : '—'}</strong>
@@ -293,10 +305,31 @@ export default function CrmCandidateTab({ onShowToast }: CrmCandidateTabProps) {
                 </div>
               </div>
 
-              {/* CV Document Card */}
+              {/* Key Skills */}
+              {((selectedCandidate as any).skills) && (
+                <div className="details-card" style={{ padding: '16px', backgroundColor: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '12px', display: 'block', marginBottom: '8px' }}>Key Skills</span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {(selectedCandidate as any).skills.split(',').map((skill: string, sidx: number) => (
+                      <span key={sidx} style={{
+                        backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                        color: '#3b82f6',
+                        padding: '4px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: 600
+                      }}>
+                        {skill.trim()}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* CV Document / Recruitly Card */}
               <div className="details-card" style={{ padding: '16px', backgroundColor: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                 <h5 style={{ fontSize: '14px', fontWeight: 600, margin: '0 0 12px 0', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
-                  Curriculum Vitae (CV) Document
+                  Curriculum Vitae (CV) & Recruitly Profile
                 </h5>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px' }}>
                   {selectedCandidate.cvUrl ? (
@@ -315,18 +348,102 @@ export default function CrmCandidateTab({ onShowToast }: CrmCandidateTabProps) {
                         <input type="file" onChange={handleCvUpload} style={{ display: 'none' }} />
                       </label>
                     </div>
+                  ) : selectedCandidate.cvName === 'Recruitly CV' ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(59, 130, 246, 0.05)', padding: '10px 14px', borderRadius: '6px', border: '1px solid rgba(59, 130, 246, 0.15)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '20px' }}>📄</span>
+                        <div style={{ fontSize: '13px' }}>
+                          <div style={{ fontWeight: 600 }}>Recruitly Profile CV</div>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>CV is synced live from CRM</span>
+                        </div>
+                      </div>
+                      {((selectedCandidate as any).crmCandidateId) && (
+                        <a href={`https://secure.recruitly.io/candidate/${(selectedCandidate as any).crmCandidateId}`} target="_blank" rel="noopener noreferrer" className="btn-primary dense" style={{ margin: 0, padding: '6px 12px', fontSize: '12px', textDecoration: 'none', fontWeight: 600 }}>
+                          View Original CV
+                        </a>
+                      )}
+                    </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '20px', border: '2px dashed var(--border-color)', borderRadius: '6px' }}>
                       <span style={{ fontSize: '24px' }}>📁</span>
                       <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>No CV document uploaded yet.</span>
-                      <label className="btn-primary dense" style={{ margin: 0, cursor: 'pointer' }}>
-                        {uploading ? 'Uploading...' : 'Upload CV File'}
-                        <input type="file" disabled={uploading} onChange={handleCvUpload} style={{ display: 'none' }} />
-                      </label>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <label className="btn-primary dense" style={{ margin: 0, cursor: 'pointer' }}>
+                          {uploading ? 'Uploading...' : 'Upload CV File'}
+                          <input type="file" disabled={uploading} onChange={handleCvUpload} style={{ display: 'none' }} />
+                        </label>
+                        {((selectedCandidate as any).crmCandidateId) && (
+                          <a href={`https://secure.recruitly.io/candidate/${(selectedCandidate as any).crmCandidateId}`} target="_blank" rel="noopener noreferrer" className="btn-secondary dense" style={{ margin: 0, padding: '6px 12px', fontSize: '12px', textDecoration: 'none', fontWeight: 600 }}>
+                            View on Recruitly
+                          </a>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
               </div>
+
+              {/* Synced Resume Timeline */}
+              {(((selectedCandidate as any).employmentHistory && (selectedCandidate as any).employmentHistory.length > 0) || ((selectedCandidate as any).educationHistory && (selectedCandidate as any).educationHistory.length > 0)) && (
+                <div className="details-card" style={{ padding: '16px', backgroundColor: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <h5 style={{ fontSize: '14px', fontWeight: 600, margin: '0 0 16px 0', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', color: 'var(--text-primary)' }}>
+                    Synced Resume / Professional History
+                  </h5>
+                  
+                  {/* Work Experience Timeline */}
+                  {((selectedCandidate as any).employmentHistory && (selectedCandidate as any).employmentHistory.length > 0) && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#3b82f6', display: 'block', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Work Experience</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderLeft: '2px solid var(--border-color)', paddingLeft: '16px', marginLeft: '6px' }}>
+                        {(selectedCandidate as any).employmentHistory.map((job: any, jidx: number) => (
+                          <div key={jidx} style={{ position: 'relative' }}>
+                            <div style={{
+                              position: 'absolute',
+                              left: '-22px',
+                              top: '4px',
+                              width: '10px',
+                              height: '10px',
+                              borderRadius: '50%',
+                              backgroundColor: '#3b82f6',
+                              border: '2px solid var(--bg-primary)'
+                            }} />
+                            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{job.jobTitle}</div>
+                            <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)', marginTop: '2px' }}>{job.companyName}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                              🗓️ {job.startDate ? job.startDate.split(' ')[0] : 'N/A'} — {job.endDate ? job.endDate.split(' ')[0] : 'Present'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Education History */}
+                  {((selectedCandidate as any).educationHistory && (selectedCandidate as any).educationHistory.length > 0) && (
+                    <div>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#10b981', display: 'block', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Education</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderLeft: '2px solid var(--border-color)', paddingLeft: '16px', marginLeft: '6px' }}>
+                        {(selectedCandidate as any).educationHistory.map((edu: any, eidx: number) => (
+                          <div key={eidx} style={{ position: 'relative' }}>
+                            <div style={{
+                              position: 'absolute',
+                              left: '-22px',
+                              top: '4px',
+                              width: '10px',
+                              height: '10px',
+                              borderRadius: '50%',
+                              backgroundColor: '#10b981',
+                              border: '2px solid var(--bg-primary)'
+                            }} />
+                            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{edu.organisation}</div>
+                            {edu.major && <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>{edu.major}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Notes */}
               {selectedCandidate.notes && (

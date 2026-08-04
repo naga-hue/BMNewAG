@@ -128,14 +128,26 @@ export default async function handler(req, res) {
     const companyId = raw.companyId || '';
     const jobId = raw.jobId || '';
     const jobTitle = raw.jobName || '';
+    const candidateId = raw.candidateId || '';
 
-    // Initialize job/contact metadata placeholders
+    // Initialize placeholders
     let jobContactName = '';
     let jobContactEmail = '';
     let jobContactPhone = '';
     let jobContactTitle = '';
+    
     let companyEmail = '';
     let companyPhone = '';
+    let companyWebsite = '';
+    let companyAddress = '';
+
+    let candidateEmail = '';
+    let candidateMobile = '';
+    let candidateLocation = '';
+    let candidateHasCv = false;
+    let candidateSkills = [];
+    let candidateEmploymentHistory = [];
+    let candidateEducationHistory = [];
 
     // A. Sub-fetch Job details
     if (jobId) {
@@ -177,9 +189,31 @@ export default async function handler(req, res) {
           const companyData = companyResult.data;
           companyEmail = companyData.email || '';
           companyPhone = companyData.phone || '';
+          companyWebsite = companyData.website || '';
+          companyAddress = companyData.location || '';
         }
       } catch (err) {
         console.error(`Recruitly Company sub-fetch error for ID ${companyId}:`, err);
+      }
+    }
+
+    // D. Sub-fetch Candidate details
+    if (candidateId) {
+      try {
+        const candidateUrl = `https://api.recruitly.io/api/nova/candidates/${candidateId}?apiKey=${apiKey}`;
+        const candidateResult = await fetchJson(candidateUrl);
+        if (candidateResult && candidateResult.success && candidateResult.data) {
+          const candidateData = candidateResult.data;
+          candidateEmail = candidateData.email || '';
+          candidateMobile = candidateData.mobile || '';
+          candidateLocation = candidateData.location || '';
+          candidateHasCv = !!candidateData.hasCv;
+          candidateSkills = candidateData.skills || [];
+          candidateEmploymentHistory = candidateData.employmentHistory || [];
+          candidateEducationHistory = candidateData.educationHistory || [];
+        }
+      } catch (err) {
+        console.error(`Recruitly Candidate sub-fetch error for ID ${candidateId}:`, err);
       }
     }
 
@@ -201,7 +235,17 @@ export default async function handler(req, res) {
       jobContactPhone,
       jobContactTitle,
       companyEmail,
-      companyPhone
+      companyPhone,
+      companyWebsite,
+      companyAddress,
+      candidateId,
+      candidateEmail,
+      candidateMobile,
+      candidateLocation,
+      candidateHasCv,
+      candidateSkills,
+      candidateEmploymentHistory,
+      candidateEducationHistory
     });
 
   } catch (error) {

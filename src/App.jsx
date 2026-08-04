@@ -1070,11 +1070,11 @@ export default function App() {
       await firebaseService.savePlacement(placement);
       logActivity("Placements", isNew ? "CREATE" : "UPDATE", `${isNew ? 'Logged' : 'Modified'} placement ID "${placement.placementId}" for candidate "${placement.candidateName}" with client "${placement.clientCompany}"`);
 
-      // Auto-register candidate inside CRM talent pool if synced and not exists
+      // Auto-register or update candidate inside CRM talent pool if synced
       if (placement.candidateName) {
         const crmCandidates = useBoundStore.getState().crmCandidates || [];
-        const candExists = crmCandidates.some(c => c.name.toLowerCase() === placement.candidateName.toLowerCase());
-        if (!candExists) {
+        const existingCand = crmCandidates.find(c => c.name.toLowerCase() === placement.candidateName.toLowerCase());
+        if (!existingCand) {
           const newCandidate = {
             id: `cand-${Date.now()}`,
             name: placement.candidateName,
@@ -1093,14 +1093,30 @@ export default function App() {
             educationHistory: placement.crmCandidateEducationHistory || []
           };
           await firebaseService.saveCrmCandidate(newCandidate);
+        } else {
+          // Merge and update existing candidate
+          const updatedCandidate = {
+            ...existingCand,
+            email: existingCand.email || placement.crmCandidateEmail || '',
+            phone: existingCand.phone || placement.crmCandidateMobile || '',
+            jobTitle: existingCand.jobTitle || placement.crmJobTitle || '',
+            cvUrl: existingCand.cvUrl || (placement.crmCandidateHasCv && placement.crmApiKey ? `/api/recruitly-cv?candidateId=${placement.crmCandidateId}&apiKey=${placement.crmApiKey}` : ''),
+            cvName: existingCand.cvName || (placement.crmCandidateHasCv ? 'Recruitly CV' : ''),
+            location: existingCand.location || placement.crmCandidateLocation || '',
+            skills: existingCand.skills || (placement.crmCandidateSkills ? placement.crmCandidateSkills.join(', ') : ''),
+            crmCandidateId: existingCand.crmCandidateId || placement.crmCandidateId || '',
+            employmentHistory: existingCand.employmentHistory?.length ? existingCand.employmentHistory : (placement.crmCandidateEmploymentHistory || []),
+            educationHistory: existingCand.educationHistory?.length ? existingCand.educationHistory : (placement.crmCandidateEducationHistory || [])
+          };
+          await firebaseService.saveCrmCandidate(updatedCandidate);
         }
       }
 
-      // Auto-register company inside CRM client directory if synced and not exists
+      // Auto-register or update company inside CRM client directory if synced
       if (placement.clientCompany) {
         const crmClientCompanies = useBoundStore.getState().crmClientCompanies || [];
-        const clientExists = crmClientCompanies.some(c => c.name.toLowerCase() === placement.clientCompany.toLowerCase());
-        if (!clientExists) {
+        const existingClient = crmClientCompanies.find(c => c.name.toLowerCase() === placement.clientCompany.toLowerCase());
+        if (!existingClient) {
           const newClient = {
             id: `crm-comp-${Date.now()}`,
             name: placement.clientCompany,
@@ -1115,6 +1131,17 @@ export default function App() {
             notes: `Automatically registered via CRM Placement sync (ID: ${placement.placementId}).`
           };
           await firebaseService.saveCrmClientCompany(newClient);
+        } else {
+          // Merge and update existing client
+          const updatedClient = {
+            ...existingClient,
+            address: existingClient.address || placement.crmCompanyAddress || '',
+            contactName: existingClient.contactName || placement.crmJobContactName || '',
+            contactEmail: existingClient.contactEmail || placement.crmJobContactEmail || '',
+            phone: existingClient.phone || placement.crmCompanyPhone || placement.crmJobContactPhone || '',
+            website: existingClient.website || placement.crmCompanyWebsite || ''
+          };
+          await firebaseService.saveCrmClientCompany(updatedClient);
         }
       }
     } catch (err) {

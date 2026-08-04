@@ -906,6 +906,113 @@ export default function ReportsDashboard({
         }
       });
     } else {
+      // 1. Process regular actual expenses for months >= '2026-07'
+      const monthExpenses = expenses.filter(e => e.plMonth === monthKey && e.amortize !== true && !e.nominalCode?.trim().startsWith('9'));
+      monthExpenses.forEach(exp => {
+        currentExpenseContext = exp;
+        const gbpAmt = toGBP(exp.amount, exp.currency);
+        let allocatedGbp = 0;
+
+        if (exp.allocationType === 'company') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+          if (targets.length > 0) {
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(compId => {
+                const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
+                const companyShare = gbpAmt * (percent / 100);
+                const compStaff = groupActiveStaff.filter(st => st.companyId === compId);
+                const compHead = compStaff.length || 1;
+                const perStaffShare = companyShare / compHead;
+                compStaff.forEach(st => {
+                  if (activeStaffIds.includes(st.id)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                });
+              });
+            } else {
+              const eligibleStaff = groupActiveStaff.filter(st => targets.includes(st.companyId));
+              const totalHead = eligibleStaff.length || 1;
+              const perStaffShare = gbpAmt / totalHead;
+              eligibleStaff.forEach(st => {
+                if (activeStaffIds.includes(st.id)) {
+                  allocatedGbp += perStaffShare;
+                }
+              });
+            }
+          }
+        } else if (exp.allocationType === 'department') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+          if (targets.length > 0) {
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(dept => {
+                const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
+                const deptShare = gbpAmt * (percent / 100);
+                const deptStaff = groupActiveStaff.filter(st => st.department === dept);
+                const deptHead = deptStaff.length || 1;
+                const perStaffShare = deptShare / deptHead;
+                deptStaff.forEach(st => {
+                  if (activeStaffIds.includes(st.id)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                });
+              });
+            } else {
+              const eligibleStaff = groupActiveStaff.filter(st => targets.includes(st.department));
+              const totalHead = eligibleStaff.length || 1;
+              const perStaffShare = gbpAmt / totalHead;
+              eligibleStaff.forEach(st => {
+                if (activeStaffIds.includes(st.id)) {
+                  allocatedGbp += perStaffShare;
+                }
+              });
+            }
+          }
+        } else if (exp.allocationType === 'staff') {
+          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
+          if (targets.length > 0) {
+            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+              targets.forEach(staffId => {
+                if (groupActiveStaffIds.includes(staffId)) {
+                  const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
+                  const perStaffShare = gbpAmt * (percent / 100);
+                  if (activeStaffIds.includes(staffId)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                }
+              });
+            } else {
+              const perStaffShare = gbpAmt / targets.length;
+              targets.forEach(staffId => {
+                if (groupActiveStaffIds.includes(staffId)) {
+                  if (activeStaffIds.includes(staffId)) {
+                    allocatedGbp += perStaffShare;
+                  }
+                }
+              });
+            }
+          }
+        } else {
+          const groupHead = groupActiveStaff.length || 1;
+          groupActiveStaff.forEach(st => {
+            if (activeStaffIds.includes(st.id)) {
+              allocatedGbp += gbpAmt / groupHead;
+            }
+          });
+        }
+
+        const matchedKey = Object.keys(breakdown).find(k => k.startsWith(exp.nominalCode) || k === exp.nominalCode);
+        if (matchedKey) {
+          breakdown[matchedKey] = (breakdown[matchedKey] || 0) + allocatedGbp;
+        } else {
+          const defaultSoftwareNominal = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'))?.code || 'Unassigned';
+          if (defaultSoftwareNominal) {
+            breakdown[defaultSoftwareNominal] = (breakdown[defaultSoftwareNominal] || 0) + allocatedGbp;
+          }
+        }
+      });
+      currentExpenseContext = null;
+
+      // 2. Process dynamic projections for staff costs
       groupActiveStaff.forEach(s => {
         currentStaffContext = s;
         const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
@@ -1054,6 +1161,24 @@ export default function ReportsDashboard({
               const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code;
               targetNominal = salaryNominal || '1002 - Salary';
             }
+          }
+
+          // Reconcile dynamic projections: if this staff member already has actual payments under this nominal in this month, skip projections
+          const cleanTarget = targetNominal?.split(' - ')[0]?.trim() || '';
+          const hasActualPayment = monthExpenses.some(e => {
+            const cleanCode = e.nominalCode?.split(' - ')[0]?.trim() || '';
+            if (cleanCode !== cleanTarget) return false;
+
+            const targetStaffIds = Array.isArray(e.allocationTarget) 
+              ? e.allocationTarget 
+              : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
+            const matchesId = targetStaffIds.includes(s.id) || e.recipientId === s.id;
+            const matchesName = e.payee?.toLowerCase().includes(s.fullName.toLowerCase());
+            return matchesId || matchesName;
+          });
+
+          if (hasActualPayment) {
+            return; // Skip adding projected staff cost and dynamic tax/pension for this month!
           }
 
           const matchedKey = Object.keys(breakdown).find(k => k.startsWith(targetNominal) || k === targetNominal) || targetNominal;
@@ -4978,6 +5103,15 @@ export default function ReportsDashboard({
 
             targetMonths.forEach(mKey => {
               if (mKey < '2026-07') return;
+              
+              const monthActualExpenses = (expenses || []).filter(e => {
+                if (e.status === 'dns' || e.status === 'cancelled') return false;
+                if (e.amortize === true) return false;
+                if (e.nominalCode?.trim().startsWith('9')) return false;
+                const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+                return eMonth === mKey;
+              });
+
               const groupActiveStaff = staff.filter(st => {
                 const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
                 return daysWorked >= 10;
@@ -5110,6 +5244,21 @@ export default function ReportsDashboard({
                   const taxNominal = nominalCodes.find(nc => nc.id === '501' || nc.code?.includes('501') || nc.code?.toLowerCase().includes('paye') || nc.code?.toLowerCase().includes('tax') || /\bni\b/i.test(nc.code) || nc.code?.toLowerCase().includes('pension'))?.code || salaryNominal;
 
                   if (!nominalCode || taxNominal === nominalCode || taxNominal.startsWith(nominalCode)) {
+                    // Check if this staff member already has actual payments under salary (1002), freelance (1001), or tax (501)
+                    const cleanTaxCode = taxNominal?.split(' - ')[0]?.trim() || '';
+                    const hasActualPayment = monthActualExpenses.some(e => {
+                      const cleanCode = e.nominalCode?.split(' - ')[0]?.trim() || '';
+                      if (cleanCode !== cleanTaxCode && cleanCode !== '1002' && cleanCode !== '1001') return false;
+
+                      const targetStaffIds = Array.isArray(e.allocationTarget) 
+                        ? e.allocationTarget 
+                        : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
+                      const matchesId = targetStaffIds.includes(s.id) || e.recipientId === s.id;
+                      const matchesName = e.payee?.toLowerCase().includes(s.fullName.toLowerCase());
+                      return matchesId || matchesName;
+                    });
+                    if (hasActualPayment) return;
+
                     let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
                     let proration = 1.0;
                     if (s.startDate && s.startDate.substring(0, 7) === mKey) {
@@ -5168,6 +5317,20 @@ export default function ReportsDashboard({
                   const sPolicy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
                   const isContractor = s.employmentStatus === 'contractor' || s.employmentStatus === 'freelance' || (sPolicy && sPolicy.type === 'freelance');
                   if (isContractor) {
+                    // Check if this contractor has actual payments under 7004 or 1001
+                    const hasActualPayment = monthActualExpenses.some(e => {
+                      const cleanCode = e.nominalCode?.split(' - ')[0]?.trim() || '';
+                      if (cleanCode !== '7004' && cleanCode !== '1001') return false;
+
+                      const targetStaffIds = Array.isArray(e.allocationTarget) 
+                        ? e.allocationTarget 
+                        : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
+                      const matchesId = targetStaffIds.includes(s.id) || e.recipientId === s.id;
+                      const matchesName = e.payee?.toLowerCase().includes(s.fullName.toLowerCase());
+                      return matchesId || matchesName;
+                    });
+                    if (hasActualPayment) return;
+
                     const [yearNum, monthNum] = mKey.split('-').map(Number);
                     const totalDaysInMonth = new Date(yearNum, monthNum, 0).getDate();
                     let totalBusinessDays = 0;
@@ -5335,6 +5498,21 @@ export default function ReportsDashboard({
                     routedNominal = salaryNominal || '1002 - Salary';
                   }
                 }
+
+                // Check if this staff member already has actual payments under routedNominal in this month
+                const cleanTarget = routedNominal?.split(' - ')[0]?.trim() || '';
+                const hasActualPayment = monthActualExpenses.some(e => {
+                  const cleanCode = e.nominalCode?.split(' - ')[0]?.trim() || '';
+                  if (cleanCode !== cleanTarget) return false;
+
+                  const targetStaffIds = Array.isArray(e.allocationTarget) 
+                    ? e.allocationTarget 
+                    : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
+                  const matchesId = targetStaffIds.includes(s.id) || e.recipientId === s.id;
+                  const matchesName = e.payee?.toLowerCase().includes(s.fullName.toLowerCase());
+                  return matchesId || matchesName;
+                });
+                if (hasActualPayment) return;
 
                 // Apply company & department matches
                 if (routedNominal.startsWith('1004') || routedNominal.toLowerCase().includes('shared')) {

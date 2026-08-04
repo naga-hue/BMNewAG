@@ -69,6 +69,10 @@ export default function PlacementsRegistry({
   const [paymentTermsInput, setPaymentTermsInput] = useState('30');
   const [paymentTermsCustomDaysInput, setPaymentTermsCustomDaysInput] = useState('');
 
+  // Recruitly CRM sync states
+  const [selectedCrmCompanyId, setSelectedCrmCompanyId] = useState('');
+  const [isSyncingCrm, setIsSyncingCrm] = useState(false);
+
   // Filtering states
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -423,6 +427,70 @@ export default function PlacementsRegistry({
     setShowLogForm(true);
   };
 
+  // Sync placement from Recruitly CRM
+  const handleSyncFromCrm = async () => {
+    if (!pIdInput.trim()) {
+      onShowToast("Please enter a CRM Placement ID first.", "warning");
+      return;
+    }
+    if (!selectedCrmCompanyId) {
+      onShowToast("Please select a CRM Tenant (Company) first.", "warning");
+      return;
+    }
+
+    const companyObj = companies.find(c => c.id === selectedCrmCompanyId);
+    if (!companyObj) {
+      onShowToast("Selected company tenant not found.", "warning");
+      return;
+    }
+
+    const apiKey = companyObj.recruitlyApiKey;
+    if (!apiKey) {
+      onShowToast(`No Recruitly API Key configured for "${companyObj.name}". Please edit this company in the Company Directory first and save its API key.`, "warning");
+      return;
+    }
+
+    setIsSyncingCrm(true);
+    try {
+      const response = await fetch('/api/recruitly-sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          placementId: pIdInput.trim(),
+          apiKey: apiKey.trim()
+        })
+      });
+
+      const resData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(resData.error || `Server responded with ${response.status}`);
+      }
+
+      if (resData.success) {
+        if (resData.candidateName) setCandidateInput(resData.candidateName);
+        if (resData.clientCompany) setClientInput(resData.clientCompany);
+        if (resData.grossBillAmount) setGrossInput(String(resData.grossBillAmount));
+        if (resData.startDate) {
+          setStartDateInput(resData.startDate);
+          setScoredDateInput(resData.startDate);
+        }
+        if (resData.source) setSourceInput(resData.source);
+
+        onShowToast(`Successfully synced placement details from Recruitly CRM!`, "success");
+      } else {
+        throw new Error("Invalid sync response structure");
+      }
+    } catch (err: any) {
+      console.error("Recruitly CRM Sync failed:", err);
+      onShowToast(`CRM Sync failed: ${err.message}`, "warning");
+    } finally {
+      setIsSyncingCrm(false);
+    }
+  };
+
   // Submit placement form handler
   const handlePlacementSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -590,6 +658,7 @@ export default function PlacementsRegistry({
       setInvoiceTriggerCustomDateInput('');
       setPaymentTermsInput('30');
       setPaymentTermsCustomDaysInput('');
+      setSelectedCrmCompanyId('');
       setEditingPlacementId(null);
       setShowLogForm(false);
     } catch (err: any) {
@@ -643,6 +712,7 @@ export default function PlacementsRegistry({
     setInvoiceTriggerCustomDateInput('');
     setPaymentTermsInput('30');
     setPaymentTermsCustomDaysInput('');
+    setSelectedCrmCompanyId('');
     setEditingPlacementId(null);
     setShowLogForm(false);
   };
@@ -772,15 +842,60 @@ export default function PlacementsRegistry({
             <form onSubmit={handlePlacementSubmit} className="placements-form-content">
               <div className="form-group-row">
                 <div className="form-group">
-                  <label className="form-label">CRM Placement ID <span>*</span></label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    placeholder="e.g. PL-59283"
-                    value={pIdInput}
-                    onChange={(e) => setPIdInput(e.target.value)}
+                  <label className="form-label">Select CRM Tenant (Company) <span>*</span></label>
+                  <select
+                    className="select-filter"
+                    value={selectedCrmCompanyId}
+                    onChange={(e) => setSelectedCrmCompanyId(e.target.value)}
+                    style={{ width: '100%', padding: '10px' }}
                     required
-                  />
+                  >
+                    <option value="">-- Choose Company CRM --</option>
+                    {companies.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.recruitlyApiKey ? '🔑' : '❌ (No API key)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">CRM Placement ID <span>*</span></label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="e.g. PL-59283"
+                      value={pIdInput}
+                      onChange={(e) => setPIdInput(e.target.value)}
+                      required
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={handleSyncFromCrm}
+                      disabled={isSyncingCrm}
+                      style={{ 
+                        padding: '8px 16px', 
+                        fontSize: '12px', 
+                        fontWeight: 600, 
+                        whiteSpace: 'nowrap',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: 'var(--accent)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 'var(--radius-md)',
+                        cursor: 'pointer',
+                        height: '38px',
+                        alignSelf: 'flex-end'
+                      }}
+                    >
+                      {isSyncingCrm ? 'Syncing...' : 'Sync from CRM'}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="form-group">

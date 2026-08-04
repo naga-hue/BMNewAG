@@ -34,6 +34,7 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
   const [vatFrequency, setVatFrequency] = useState('none');
   const [vatStartMonth, setVatStartMonth] = useState('1');
   const [vatDueDateDays, setVatDueDateDays] = useState('37');
+  const [recruitlyApiKey, setRecruitlyApiKey] = useState('');
 
   // POC state
   const [pocName, setPocName] = useState('');
@@ -68,6 +69,7 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
       setVatFrequency(company.vatFrequency || 'none');
       setVatStartMonth(String(company.vatStartMonth || '1'));
       setVatDueDateDays(String(company.vatDueDateDays || '37'));
+      setRecruitlyApiKey(company.recruitlyApiKey || '');
 
       if (company.pointOfContact) {
         setPocName(company.pointOfContact.name || '');
@@ -114,6 +116,7 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
       setInsExpiryDate('');
       setDocuments([]);
       setIncludeInConsolidation(true);
+      setRecruitlyApiKey('');
     }
     setCurrentStep(1);
   }, [company, isOpen]);
@@ -240,6 +243,7 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
       vatNumber,
       notes,
       includeInConsolidation,
+      recruitlyApiKey: recruitlyApiKey.trim(),
       pointOfContact: pocName ? {
         name: pocName,
         role: pocRole,
@@ -383,6 +387,17 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
                     value={notes} 
                     onChange={(e) => setNotes(e.target.value)} 
                     style={{ resize: 'vertical' }}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Recruitly CRM API Key</label>
+                  <input 
+                    type="password" 
+                    className="form-input" 
+                    placeholder="Enter Recruitly API key for this company tenant" 
+                    value={recruitlyApiKey} 
+                    onChange={(e) => setRecruitlyApiKey(e.target.value)} 
                   />
                 </div>
                 

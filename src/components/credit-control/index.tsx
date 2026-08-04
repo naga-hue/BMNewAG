@@ -793,37 +793,7 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
     };
   }, [invoices]);
 
-  const directProjections = useMemo(() => {
-    const list = invoices.filter(inv => inv.invoiceType !== 'simplicity' && inv.clientPaymentStatus !== 'paid' && inv.outstanding > 0);
-    
-    const resolvedInvoices = list.map(inv => {
-      const expectedDate = inv.payoutDate || inv.dueDate || todayStr;
-      return { ...inv, expectedDate };
-    });
 
-    const thisWeekFri = upcomingFridays[0] || todayStr;
-    const nextWeekFri = upcomingFridays[1] || todayStr;
-
-    const thisWeekList = resolvedInvoices.filter(inv => inv.expectedDate <= thisWeekFri);
-    const nextWeekList = resolvedInvoices.filter(inv => inv.expectedDate > thisWeekFri && inv.expectedDate <= nextWeekFri);
-
-    const now = new Date();
-    const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const nextMonthPrefix = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`;
-
-    const thisMonthList = resolvedInvoices.filter(inv => inv.expectedDate.startsWith(currentMonthPrefix));
-    const nextMonthList = resolvedInvoices.filter(inv => inv.expectedDate.startsWith(nextMonthPrefix));
-
-    const sumList = (listList: any[]) => listList.reduce((sum, item) => sum + (Number(item.outstanding) || 0), 0);
-
-    return {
-      thisWeek: sumList(thisWeekList),
-      nextWeek: sumList(nextWeekList),
-      thisMonth: sumList(thisMonthList),
-      nextMonth: sumList(nextMonthList)
-    };
-  }, [invoices, upcomingFridays, todayStr]);
 
   const partitionedInvoices = useMemo(() => {
     const disputedLegal = filteredInvoices.filter(inv => 
@@ -1012,6 +982,38 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
     } catch(e) {}
     return fridays;
   }, [todayStr]);
+
+  const directProjections = useMemo(() => {
+    const list = invoices.filter(inv => inv.invoiceType !== 'simplicity' && inv.clientPaymentStatus !== 'paid' && inv.outstanding > 0);
+    
+    const resolvedInvoices = list.map(inv => {
+      const expectedDate = inv.payoutDate || inv.dueDate || todayStr;
+      return { ...inv, expectedDate };
+    });
+
+    const thisWeekFri = upcomingFridays[0] || todayStr;
+    const nextWeekFri = upcomingFridays[1] || todayStr;
+
+    const thisWeekList = resolvedInvoices.filter(inv => inv.expectedDate <= thisWeekFri);
+    const nextWeekList = resolvedInvoices.filter(inv => inv.expectedDate > thisWeekFri && inv.expectedDate <= nextWeekFri);
+
+    const now = new Date();
+    const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const nextMonthPrefix = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`;
+
+    const thisMonthList = resolvedInvoices.filter(inv => inv.expectedDate.startsWith(currentMonthPrefix));
+    const nextMonthList = resolvedInvoices.filter(inv => inv.expectedDate.startsWith(nextMonthPrefix));
+
+    const sumList = (listList: any[]) => listList.reduce((sum, item) => sum + (Number(item.outstanding) || 0), 0);
+
+    return {
+      thisWeek: sumList(thisWeekList),
+      nextWeek: sumList(nextWeekList),
+      thisMonth: sumList(thisMonthList),
+      nextMonth: sumList(nextMonthList)
+    };
+  }, [invoices, upcomingFridays, todayStr]);
 
   const renderMetricCard = (
     title: string,

@@ -25,6 +25,30 @@ interface ColumnConfig {
   visible: boolean;
 }
 
+const addDays = (dateStr: string, days: number): string => {
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    d.setDate(d.getDate() + days);
+    return d.toISOString().split('T')[0];
+  } catch (e) {
+    return dateStr;
+  }
+};
+
+const getFridayOfWeek = (dateStr: string): string => {
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const day = d.getDay();
+    const daysToFriday = 5 - day;
+    d.setDate(d.getDate() + daysToFriday);
+    return d.toISOString().split('T')[0];
+  } catch (e) {
+    return dateStr;
+  }
+};
+
 const EMPTY_USER = {};
 
 export default function CreditControlDashboard({
@@ -61,6 +85,16 @@ export default function CreditControlDashboard({
 
   const [showColConfig, setShowColConfig] = useState(false);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set());
+  const [selectedPipelineWeeks, setSelectedPipelineWeeks] = useState<Set<string>>(new Set());
+  const handleTogglePipelineWeek = (weekDate: string) => {
+    const newSet = new Set(selectedPipelineWeeks);
+    if (newSet.has(weekDate)) {
+      newSet.delete(weekDate);
+    } else {
+      newSet.add(weekDate);
+    }
+    setSelectedPipelineWeeks(newSet);
+  };
   const [columnsConfig, setColumnsConfig] = useState<ColumnConfig[]>([
     { id: 'placementId', label: 'Placement ID', visible: true },
     { id: 'ems', label: 'EMS', visible: false },
@@ -816,36 +850,13 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
   }, [filteredInvoices]);
 
   const simplicityActiveWeeks = useMemo(() => {
-    const addDays = (dateStr: string, days: number): string => {
-      try {
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return dateStr;
-        d.setDate(d.getDate() + days);
-        return d.toISOString().split('T')[0];
-      } catch (e) {
-        return dateStr;
-      }
-    };
-
-    const getFridayOfWeek = (dateStr: string): string => {
-      try {
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return dateStr;
-        const day = d.getDay();
-        const daysToFriday = 5 - day;
-        d.setDate(d.getDate() + daysToFriday);
-        return d.toISOString().split('T')[0];
-      } catch (e) {
-        return dateStr;
-      }
-    };
-
+    const currentWeekFri = getFridayOfWeek(todayStr);
     const groups: Record<string, any[]> = {};
     const activeInvoices = filteredInvoices.filter(inv => 
       inv.invoiceType === 'simplicity' && 
       !['legal', 'disputed', 'paid', 'written-off', 'dns-rebate', 'overdue'].includes(inv.paymentStatus) &&
       inv.balanceOutstanding > 0 &&
-      ((inv.simplicityPayoutDate && inv.simplicityPayoutDate >= '2026-07-13') || (inv.overridePayoutDate && inv.overridePayoutDate >= '2026-07-13'))
+      ((inv.simplicityPayoutDate && inv.simplicityPayoutDate >= currentWeekFri) || (inv.overridePayoutDate && inv.overridePayoutDate >= currentWeekFri))
     );
 
     const recourseClawbacks: any[] = [];
@@ -921,15 +932,26 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
     return simplicityActiveWeeks.reduce((sum, week) => sum + (week.totalInclVatSum || 0), 0);
   }, [simplicityActiveWeeks]);
 
+  const selectedPipelineTotal = useMemo(() => {
+    let sum = 0;
+    simplicityActiveWeeks.forEach(week => {
+      if (selectedPipelineWeeks.has(week.weekDate)) {
+        sum += (week.totalInclVatSum || 0);
+      }
+    });
+    return sum;
+  }, [selectedPipelineWeeks, simplicityActiveWeeks]);
+
   const simplicityPriorWeeks = useMemo(() => {
+    const currentWeekFri = getFridayOfWeek(todayStr);
     return filteredInvoices.filter(inv => 
       inv.invoiceType === 'simplicity' && 
       !['legal', 'disputed', 'paid', 'written-off', 'dns-rebate', 'overdue'].includes(inv.paymentStatus) &&
       inv.balanceOutstanding > 0 &&
-      (!inv.simplicityPayoutDate || inv.simplicityPayoutDate < '2026-07-13') &&
-      (!inv.overridePayoutDate || inv.overridePayoutDate < '2026-07-13')
+      (!inv.simplicityPayoutDate || inv.simplicityPayoutDate < currentWeekFri) &&
+      (!inv.overridePayoutDate || inv.overridePayoutDate < currentWeekFri)
     );
-  }, [filteredInvoices]);
+  }, [filteredInvoices, todayStr]);
 
   const simplicityLegal = useMemo(() => {
     return filteredInvoices.filter(inv => 
@@ -1248,10 +1270,29 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
             {simplicityActiveWeeks.map((week, widx) => {
               const netTotal = week.totalInclVatSum || 0;
               const isNegative = netTotal < 0;
+              const isSelected = selectedPipelineWeeks.has(week.weekDate);
               return (
-                <div key={widx} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>W/E {week.weekDate}</span>
-                  <span style={{ fontSize: '12px', fontWeight: 800, fontFamily: 'monospace', color: isNegative ? 'var(--danger)' : 'var(--text-primary)' }}>
+                <div 
+                  key={widx} 
+                  onClick={() => handleTogglePipelineWeek(week.weekDate)}
+                  className="pipeline-week-item"
+                  style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: '2px',
+                    cursor: 'pointer',
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    border: isSelected ? '1px solid #6366f1' : '1px solid transparent',
+                    backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.12)' : 'transparent',
+                    transition: 'all 0.15s ease-in-out'
+                  }}
+                  title="Click to toggle/select for pipeline sub-total"
+                >
+                  <span style={{ fontSize: '9.5px', color: isSelected ? '#6366f1' : 'var(--text-muted)', fontWeight: isSelected ? 700 : 500 }}>
+                    W/E {week.weekDate} {isSelected ? '✓' : ''}
+                  </span>
+                  <span style={{ fontSize: '12px', fontWeight: 800, fontFamily: 'monospace', color: isNegative ? 'var(--danger)' : (isSelected ? '#6366f1' : 'var(--text-primary)') }}>
                     {isNegative ? '-' : ''}£{Math.abs(netTotal).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </span>
                 </div>
@@ -1260,12 +1301,36 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
             {simplicityActiveWeeks.length === 0 && (
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No active weekly projections</span>
             )}
+            
+            {/* Net Total Pipeline */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', borderLeft: '1px solid var(--border-color)', paddingLeft: '20px', marginLeft: '4px' }}>
               <span style={{ fontSize: '9.5px', color: '#6366f1', fontWeight: 700 }}>NET TOTAL PIPELINE</span>
               <span style={{ fontSize: '14px', fontWeight: 850, fontFamily: 'monospace', color: simplicityWeeklyTotalProjections < 0 ? 'var(--danger)' : 'var(--success)' }}>
                 {simplicityWeeklyTotalProjections < 0 ? '-' : ''}£{Math.abs(simplicityWeeklyTotalProjections).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </span>
             </div>
+
+            {/* Selected Weeks Total Pipeline */}
+            {selectedPipelineWeeks.size > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', borderLeft: '1px solid var(--border-color)', paddingLeft: '20px', marginLeft: '4px' }}>
+                <span style={{ fontSize: '9.5px', color: '#6366f1', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span>SELECTED ({selectedPipelineWeeks.size} WEEKS)</span>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedPipelineWeeks(new Set());
+                    }} 
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '9px', padding: 0 }}
+                    title="Clear Selection"
+                  >
+                    ✕
+                  </button>
+                </span>
+                <span style={{ fontSize: '14px', fontWeight: 850, fontFamily: 'monospace', color: selectedPipelineTotal < 0 ? 'var(--danger)' : 'var(--success)' }}>
+                  {selectedPipelineTotal < 0 ? '-' : ''}£{Math.abs(selectedPipelineTotal).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}

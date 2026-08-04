@@ -793,6 +793,38 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
     };
   }, [invoices]);
 
+  const directProjections = useMemo(() => {
+    const list = invoices.filter(inv => inv.invoiceType !== 'simplicity' && inv.clientPaymentStatus !== 'paid' && inv.outstanding > 0);
+    
+    const resolvedInvoices = list.map(inv => {
+      const expectedDate = inv.payoutDate || inv.dueDate || todayStr;
+      return { ...inv, expectedDate };
+    });
+
+    const thisWeekFri = upcomingFridays[0] || todayStr;
+    const nextWeekFri = upcomingFridays[1] || todayStr;
+
+    const thisWeekList = resolvedInvoices.filter(inv => inv.expectedDate <= thisWeekFri);
+    const nextWeekList = resolvedInvoices.filter(inv => inv.expectedDate > thisWeekFri && inv.expectedDate <= nextWeekFri);
+
+    const now = new Date();
+    const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const nextMonthPrefix = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`;
+
+    const thisMonthList = resolvedInvoices.filter(inv => inv.expectedDate.startsWith(currentMonthPrefix));
+    const nextMonthList = resolvedInvoices.filter(inv => inv.expectedDate.startsWith(nextMonthPrefix));
+
+    const sumList = (listList: any[]) => listList.reduce((sum, item) => sum + (Number(item.outstanding) || 0), 0);
+
+    return {
+      thisWeek: sumList(thisWeekList),
+      nextWeek: sumList(nextWeekList),
+      thisMonth: sumList(thisMonthList),
+      nextMonth: sumList(nextMonthList)
+    };
+  }, [invoices, upcomingFridays, todayStr]);
+
   const partitionedInvoices = useMemo(() => {
     const disputedLegal = filteredInvoices.filter(inv => 
       ['legal', 'disputed'].includes(inv.paymentStatus)
@@ -814,6 +846,30 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
   }, [filteredInvoices]);
 
   const simplicityActiveWeeks = useMemo(() => {
+    const addDays = (dateStr: string, days: number): string => {
+      try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr;
+        d.setDate(d.getDate() + days);
+        return d.toISOString().split('T')[0];
+      } catch (e) {
+        return dateStr;
+      }
+    };
+
+    const getFridayOfWeek = (dateStr: string): string => {
+      try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr;
+        const day = d.getDay();
+        const daysToFriday = 5 - day;
+        d.setDate(d.getDate() + daysToFriday);
+        return d.toISOString().split('T')[0];
+      } catch (e) {
+        return dateStr;
+      }
+    };
+
     const groups: Record<string, any[]> = {};
     const activeInvoices = filteredInvoices.filter(inv => 
       inv.invoiceType === 'simplicity' && 
@@ -821,6 +877,41 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
       inv.balanceOutstanding > 0 &&
       ((inv.simplicityPayoutDate && inv.simplicityPayoutDate >= '2026-07-13') || (inv.overridePayoutDate && inv.overridePayoutDate >= '2026-07-13'))
     );
+
+    const recourseClawbacks: any[] = [];
+    filteredInvoices.forEach(inv => {
+      if (
+        inv.invoiceType === 'simplicity' &&
+        inv.balanceOutstanding > 0 &&
+        !['paid', 'written-off', 'dns-rebate'].includes(inv.paymentStatus)
+      ) {
+        const raisedDate = inv.invoiceRaisedDate || inv.startDate || inv.scoredDate || todayStr;
+        const dueDate = inv.invoiceDueDate || raisedDate;
+        const overdueDays = calculateDaysOverdue(dueDate, todayStr);
+
+        if (overdueDays >= 60) {
+          const clawbackA = addDays(raisedDate, 120);
+          const clawbackB = addDays(dueDate, 90);
+          const recourseDate = clawbackA < clawbackB ? clawbackA : clawbackB;
+          const clawbackFriday = getFridayOfWeek(recourseDate);
+
+          if (clawbackFriday >= todayStr) {
+            recourseClawbacks.push({
+              ...inv,
+              isClawbackProjection: true,
+              payoutFriday: clawbackFriday,
+              projectedClawbackDate: recourseDate,
+              originalAmount: inv.totalInvoiceAmount || 0,
+              totalInvoiceAmount: -(inv.balanceOutstanding || 0),
+              balanceOutstanding: -(inv.balanceOutstanding || 0),
+              grossBillAmount: -((inv.balanceOutstanding || 0) / 1.2),
+              amountPaid: 0,
+              paymentStatus: 'recourse-clawback'
+            });
+          }
+        }
+      }
+    });
 
     activeInvoices.forEach(inv => {
       const payoutFriday = inv.overridePayoutDate || inv.simplicityPayoutDate || '—';
@@ -830,10 +921,18 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
       groups[payoutFriday].push(inv);
     });
 
+    recourseClawbacks.forEach(claw => {
+      const payoutFriday = claw.payoutFriday;
+      if (!groups[payoutFriday]) {
+        groups[payoutFriday] = [];
+      }
+      groups[payoutFriday].push(claw);
+    });
+
     return Object.keys(groups).sort().map(dateStr => {
       const list = groups[dateStr];
       const netTotalSum = list.reduce((sum, inv) => sum + (Number(inv.grossBillAmount) || 0), 0);
-      const totalToHumresSum = list.reduce((sum, inv) => sum + ((Number(inv.grossBillAmount) || 0) * 0.9704), 0);
+      const totalToHumresSum = list.reduce((sum, inv) => sum + ((Number(inv.grossBillAmount) || 0) * (inv.isClawbackProjection ? 1.0 : 0.9704)), 0);
       const vatSum = totalToHumresSum * 0.20;
       const totalInclVatSum = totalToHumresSum * 1.20;
 
@@ -846,7 +945,11 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
         totalInclVatSum
       };
     });
-  }, [filteredInvoices]);
+  }, [filteredInvoices, todayStr]);
+
+  const simplicityWeeklyTotalProjections = useMemo(() => {
+    return simplicityActiveWeeks.reduce((sum, week) => sum + (week.totalInclVatSum || 0), 0);
+  }, [simplicityActiveWeeks]);
 
   const simplicityPriorWeeks = useMemo(() => {
     return filteredInvoices.filter(inv => 
@@ -1069,6 +1172,101 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
           </>
         )}
       </div>
+
+      {/* 2. Direct Invoices Likely Payment Projections Summary Bar */}
+      {activeSubTab === 'direct' && (
+        <div style={{
+          backgroundColor: 'rgba(59, 130, 246, 0.03)',
+          border: '1px solid rgba(59, 130, 246, 0.15)',
+          borderRadius: '8px',
+          padding: '10px 16px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '16px',
+          flexWrap: 'wrap',
+          marginBottom: '4px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px' }}>📈</span>
+            <strong style={{ fontSize: '12px', color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Direct Invoice Likely Receipt Projections
+            </strong>
+          </div>
+          <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>This Week</span>
+              <span style={{ fontSize: '13px', fontWeight: 800, fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+                £{directProjections.thisWeek.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Next Week</span>
+              <span style={{ fontSize: '13px', fontWeight: 800, fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+                £{directProjections.nextWeek.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>This Month</span>
+              <span style={{ fontSize: '13px', fontWeight: 800, fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+                £{directProjections.thisMonth.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Next Month</span>
+              <span style={{ fontSize: '13px', fontWeight: 800, fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+                £{directProjections.nextMonth.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2b. Simplicity Expected Weekly Payout Pipeline Bar */}
+      {activeSubTab === 'simplicity' && (
+        <div style={{
+          backgroundColor: 'rgba(99, 102, 241, 0.03)',
+          border: '1px solid rgba(99, 102, 241, 0.15)',
+          borderRadius: '8px',
+          padding: '10px 16px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '16px',
+          flexWrap: 'wrap',
+          marginBottom: '4px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px' }}>📅</span>
+            <strong style={{ fontSize: '12px', color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Simplicity Expected Weekly Projections Pipeline
+            </strong>
+          </div>
+          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
+            {simplicityActiveWeeks.map((week, widx) => {
+              const netTotal = week.totalInclVatSum || 0;
+              const isNegative = netTotal < 0;
+              return (
+                <div key={widx} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>W/E {week.weekDate}</span>
+                  <span style={{ fontSize: '12px', fontWeight: 800, fontFamily: 'monospace', color: isNegative ? 'var(--danger)' : 'var(--text-primary)' }}>
+                    {isNegative ? '-' : ''}£{Math.abs(netTotal).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </span>
+                </div>
+              );
+            })}
+            {simplicityActiveWeeks.length === 0 && (
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No active weekly projections</span>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', borderLeft: '1px solid var(--border-color)', paddingLeft: '20px', marginLeft: '4px' }}>
+              <span style={{ fontSize: '9.5px', color: '#6366f1', fontWeight: 700 }}>NET TOTAL PIPELINE</span>
+              <span style={{ fontSize: '14px', fontWeight: 850, fontFamily: 'monospace', color: simplicityWeeklyTotalProjections < 0 ? 'var(--danger)' : 'var(--success)' }}>
+                {simplicityWeeklyTotalProjections < 0 ? '-' : ''}£{Math.abs(simplicityWeeklyTotalProjections).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!collapseAnalytics && activeSubTab === 'simplicity' && (
         <div style={{ 

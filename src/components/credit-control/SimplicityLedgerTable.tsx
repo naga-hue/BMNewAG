@@ -499,95 +499,103 @@ export default function SimplicityLedgerTable({
         cellContent = symbol + (inv.totalInvoiceAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         break;
       case 'status':
-        cellContent = (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '1px 5px', borderRadius: '6px', fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', display: 'inline-block' }}>
-                {statusObj.label}
-              </span>
-            </div>
-            
-            {inv.paymentStatus !== 'paid' && (
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px' }}>
-                {/* 1. Simplicity Payout Received Toggle */}
-                <button
-                  title={inv.simplicityPaid ? "Simplicity Paid us - click to undo" : "Mark as Paid by Simplicity"}
-                  onClick={async () => {
-                    const original = placements.find(p => p.id === inv.id);
-                    if (original) {
-                      try {
-                        const newPaidVal = !original.simplicityPaid;
-                        await updatePlacement({ 
-                          ...original, 
-                          simplicityPaid: newPaidVal,
-                          simplicityPaidDate: newPaidVal ? todayStr : null
-                        });
-                        onShowToast(newPaidVal ? `Marked Simplicity payout received for ${inv.candidateName}` : `Cleared Simplicity payout for ${inv.candidateName}`, "success");
-                      } catch (err: any) {
-                        onShowToast(`Failed: ${err.message}`, "warning");
-                      }
-                    }
-                  }}
-                  style={{
-                    background: inv.simplicityPaid ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-secondary)',
-                    border: `1px solid ${inv.simplicityPaid ? '#10b981' : 'var(--border-color)'}`,
-                    color: inv.simplicityPaid ? '#10b981' : 'var(--text-muted)',
-                    borderRadius: '4px',
-                    fontSize: '9.5px',
-                    padding: '2px 4px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '2px',
-                    fontWeight: 600
-                  }}
-                >
-                  💵 Payout
-                </button>
-
-                {/* 2. Client Payment Settled Toggle */}
-                <button
-                  title="Mark Client Payment as Paid (marks entire invoice as Paid)"
-                  onClick={async () => {
-                    if (window.confirm(`Mark client payment as Paid for ${inv.candidateName}? (This will fully close the invoice)`)) {
+        if (inv.isClawbackProjection) {
+          cellContent = (
+            <span style={{ backgroundColor: 'rgba(239, 68, 68, 0.12)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '2px 6px', borderRadius: '6px', fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', display: 'inline-block' }}>
+              🟥 Recourse Clawback
+            </span>
+          );
+        } else {
+          cellContent = (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '1px 5px', borderRadius: '6px', fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', display: 'inline-block' }}>
+                  {statusObj.label}
+                </span>
+              </div>
+              
+              {inv.paymentStatus !== 'paid' && (
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px' }}>
+                  {/* 1. Simplicity Payout Received Toggle */}
+                  <button
+                    title={inv.simplicityPaid ? "Simplicity Paid us - click to undo" : "Mark as Paid by Simplicity"}
+                    onClick={async () => {
                       const original = placements.find(p => p.id === inv.id);
                       if (original) {
                         try {
+                          const newPaidVal = !original.simplicityPaid;
                           await updatePlacement({ 
                             ...original, 
-                            paymentStatus: 'paid', 
-                            clientPaymentStatus: 'paid',
-                            paymentReceivedDate: todayStr,
-                            clientPaidDate: todayStr,
-                            amountPaid: inv.totalInvoiceAmount
+                            simplicityPaid: newPaidVal,
+                            simplicityPaidDate: newPaidVal ? todayStr : null
                           });
-                          onShowToast(`Marked Client payment as Paid for ${inv.candidateName}`, "success");
+                          onShowToast(newPaidVal ? `Marked Simplicity payout received for ${inv.candidateName}` : `Cleared Simplicity payout for ${inv.candidateName}`, "success");
                         } catch (err: any) {
                           onShowToast(`Failed: ${err.message}`, "warning");
                         }
                       }
-                    }
-                  }}
-                  style={{
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border-color)',
-                    color: 'var(--text-muted)',
-                    borderRadius: '4px',
-                    fontSize: '9.5px',
-                    padding: '2px 4px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '2px',
-                    fontWeight: 600
-                  }}
-                >
-                  👤 Client
-                </button>
-              </div>
-            )}
-          </div>
-        );
+                    }}
+                    style={{
+                      background: inv.simplicityPaid ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-secondary)',
+                      border: `1px solid ${inv.simplicityPaid ? '#10b981' : 'var(--border-color)'}`,
+                      color: inv.simplicityPaid ? '#10b981' : 'var(--text-muted)',
+                      borderRadius: '4px',
+                      fontSize: '9.5px',
+                      padding: '2px 4px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '2px',
+                      fontWeight: 600
+                    }}
+                  >
+                    💵 Payout
+                  </button>
+
+                  {/* 2. Client Payment Settled Toggle */}
+                  <button
+                    title="Mark Client Payment as Paid (marks entire invoice as Paid)"
+                    onClick={async () => {
+                      if (window.confirm(`Mark client payment as Paid for ${inv.candidateName}? (This will fully close the invoice)`)) {
+                        const original = placements.find(p => p.id === inv.id);
+                        if (original) {
+                          try {
+                            await updatePlacement({ 
+                              ...original, 
+                              paymentStatus: 'paid', 
+                              clientPaymentStatus: 'paid',
+                              paymentReceivedDate: todayStr,
+                              clientPaidDate: todayStr,
+                              amountPaid: inv.totalInvoiceAmount
+                            });
+                            onShowToast(`Marked Client payment as Paid for ${inv.candidateName}`, "success");
+                          } catch (err: any) {
+                            onShowToast(`Failed: ${err.message}`, "warning");
+                          }
+                        }
+                      }
+                    }}
+                    style={{
+                      background: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-muted)',
+                      borderRadius: '4px',
+                      fontSize: '9.5px',
+                      padding: '2px 4px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '2px',
+                      fontWeight: 600
+                    }}
+                  >
+                    👤 Client
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        }
         break;
       case 'outstanding':
         cellContent = symbol + (inv.balanceOutstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -620,7 +628,8 @@ export default function SimplicityLedgerTable({
           border: '1px solid var(--border-color)', 
           padding: '5px 8px', 
           fontSize: '11px', 
-          color: 'var(--text-primary)', 
+          color: inv.isClawbackProjection ? 'var(--danger)' : 'var(--text-primary)', 
+          fontWeight: inv.isClawbackProjection ? 'bold' : 'normal',
           textAlign: isMonetary ? 'right' : 'left', 
           fontFamily: isMonetary || col.id === 'placementId' || col.id === 'dueDate' ? 'monospace' : 'inherit', 
           ...stickyStyle
@@ -678,22 +687,26 @@ export default function SimplicityLedgerTable({
               {list.map(inv => {
                 return (
                   <tr 
-                    key={inv.id} 
-                    onClick={() => handleOpenDetail(inv)} 
-                    draggable={true}
-                    onDragStart={(e) => {
+                    key={inv.isClawbackProjection ? `claw-${inv.id}` : inv.id} 
+                    onClick={inv.isClawbackProjection ? undefined : () => handleOpenDetail(inv)} 
+                    draggable={!inv.isClawbackProjection}
+                    onDragStart={inv.isClawbackProjection ? undefined : (e) => {
                       e.dataTransfer.setData("text/plain", inv.id);
                     }}
-                    style={{ cursor: 'grab' }} 
+                    style={{ cursor: inv.isClawbackProjection ? 'default' : 'grab' }} 
                     className="table-row-hover"
                   >
                     <td style={{ border: '1px solid var(--border-color)', padding: '5px 8px', width: '56px', minWidth: '56px', textAlign: 'center', position: 'sticky', left: 0, zIndex: 10, backgroundColor: 'var(--bg-card)' }} onClick={(e) => e.stopPropagation()}>
-                      <input 
-                        type="checkbox" 
-                        checked={selectedInvoiceIds.has(inv.id)}
-                        onChange={(e: any) => handleToggleSelectRow(inv.id, e)}
-                        style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
-                      />
+                      {inv.isClawbackProjection ? (
+                        <span style={{ fontSize: '13px' }} title="Recourse Clawback Outflow Projection">⚠️</span>
+                      ) : (
+                        <input 
+                          type="checkbox" 
+                          checked={selectedInvoiceIds.has(inv.id)}
+                          onChange={(e: any) => handleToggleSelectRow(inv.id, e)}
+                          style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                        />
+                      )}
                     </td>
                     {activeColumns.map(col => renderTableBodyCell(inv, col))}
                   </tr>

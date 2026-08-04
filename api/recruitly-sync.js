@@ -18,10 +18,10 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { placementId, candidateId, apiKey } = req.body;
+  const { placementId, candidateId, companyId, apiKey } = req.body;
 
-  if (!placementId && !candidateId) {
-    return res.status(400).json({ error: 'Missing placementId or candidateId' });
+  if (!placementId && !candidateId && !companyId) {
+    return res.status(400).json({ error: 'Missing placementId, candidateId, or companyId' });
   }
 
   if (!apiKey) {

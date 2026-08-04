@@ -73,6 +73,18 @@ export default function PlacementsRegistry({
   const [selectedCrmCompanyId, setSelectedCrmCompanyId] = useState('');
   const [isSyncingCrm, setIsSyncingCrm] = useState(false);
 
+  // Synced CRM metadata states
+  const [crmCompanyId, setCrmCompanyId] = useState('');
+  const [crmJobTitle, setCrmJobTitle] = useState('');
+  const [crmPlacementDate, setCrmPlacementDate] = useState('');
+  const [crmSalary, setCrmSalary] = useState('');
+  const [crmJobContactName, setCrmJobContactName] = useState('');
+  const [crmJobContactEmail, setCrmJobContactEmail] = useState('');
+  const [crmJobContactPhone, setCrmJobContactPhone] = useState('');
+  const [crmJobContactTitle, setCrmJobContactTitle] = useState('');
+  const [crmCompanyEmail, setCrmCompanyEmail] = useState('');
+  const [crmCompanyPhone, setCrmCompanyPhone] = useState('');
+
   // Filtering states
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -415,6 +427,19 @@ export default function PlacementsRegistry({
     setInvoiceTriggerTypeInput(placement.invoiceTriggerType || 'start-date');
     setInvoiceTriggerCustomDateInput(placement.invoiceTriggerCustomDate || '');
     
+    // Cast/load synced CRM fields if present on placement record
+    const pAny = placement as any;
+    setCrmCompanyId(pAny.crmCompanyId || '');
+    setCrmJobTitle(pAny.crmJobTitle || '');
+    setCrmPlacementDate(pAny.crmPlacementDate || '');
+    setCrmSalary(pAny.crmSalary ? String(pAny.crmSalary) : '');
+    setCrmJobContactName(pAny.crmJobContactName || '');
+    setCrmJobContactEmail(pAny.crmJobContactEmail || '');
+    setCrmJobContactPhone(pAny.crmJobContactPhone || '');
+    setCrmJobContactTitle(pAny.crmJobContactTitle || '');
+    setCrmCompanyEmail(pAny.crmCompanyEmail || '');
+    setCrmCompanyPhone(pAny.crmCompanyPhone || '');
+
     const terms = String(placement.paymentTermsDays || '30');
     if (['7', '10', '30', '31'].includes(terms)) {
       setPaymentTermsInput(terms);
@@ -484,6 +509,18 @@ export default function PlacementsRegistry({
             setSplitsInput([{ staffId: matched.id, percentage: 100 }]);
           }
         }
+
+        // Set Synced CRM contact and metadata states
+        setCrmCompanyId(resData.companyId || '');
+        setCrmJobTitle(resData.jobTitle || '');
+        setCrmPlacementDate(resData.placementDate || '');
+        setCrmSalary(resData.salary ? String(resData.salary) : '');
+        setCrmJobContactName(resData.jobContactName || '');
+        setCrmJobContactEmail(resData.jobContactEmail || '');
+        setCrmJobContactPhone(resData.jobContactPhone || '');
+        setCrmJobContactTitle(resData.jobContactTitle || '');
+        setCrmCompanyEmail(resData.companyEmail || '');
+        setCrmCompanyPhone(resData.companyPhone || '');
 
         onShowToast(`Successfully synced placement details from Recruitly CRM!`, "success");
       } else {
@@ -628,7 +665,17 @@ export default function PlacementsRegistry({
       nextChaseDate: (existingPlacement as any)?.nextChaseDate || '',
       disputeReason: (existingPlacement as any)?.disputeReason || '',
       disputeDate: (existingPlacement as any)?.disputeDate || '',
-      disputeOwner: (existingPlacement as any)?.disputeOwner || ''
+      disputeOwner: (existingPlacement as any)?.disputeOwner || '',
+      crmCompanyId,
+      crmJobTitle,
+      crmPlacementDate,
+      crmSalary: Number(crmSalary) || null,
+      crmJobContactName,
+      crmJobContactEmail,
+      crmJobContactPhone,
+      crmJobContactTitle,
+      crmCompanyEmail,
+      crmCompanyPhone
     };
 
     setIsSaving(true);
@@ -665,6 +712,16 @@ export default function PlacementsRegistry({
       setPaymentTermsInput('30');
       setPaymentTermsCustomDaysInput('');
       setSelectedCrmCompanyId('');
+      setCrmCompanyId('');
+      setCrmJobTitle('');
+      setCrmPlacementDate('');
+      setCrmSalary('');
+      setCrmJobContactName('');
+      setCrmJobContactEmail('');
+      setCrmJobContactPhone('');
+      setCrmJobContactTitle('');
+      setCrmCompanyEmail('');
+      setCrmCompanyPhone('');
       setEditingPlacementId(null);
       setShowLogForm(false);
     } catch (err: any) {
@@ -719,6 +776,16 @@ export default function PlacementsRegistry({
     setPaymentTermsInput('30');
     setPaymentTermsCustomDaysInput('');
     setSelectedCrmCompanyId('');
+    setCrmCompanyId('');
+    setCrmJobTitle('');
+    setCrmPlacementDate('');
+    setCrmSalary('');
+    setCrmJobContactName('');
+    setCrmJobContactEmail('');
+    setCrmJobContactPhone('');
+    setCrmJobContactTitle('');
+    setCrmCompanyEmail('');
+    setCrmCompanyPhone('');
     setEditingPlacementId(null);
     setShowLogForm(false);
   };
@@ -1389,6 +1456,53 @@ export default function PlacementsRegistry({
                   ))}
                 </div>
               </div>
+
+              {crmCompanyId && (
+                <div style={{ marginTop: '16px', borderTop: '1px dashed var(--border-color)', paddingTop: '16px' }}>
+                  <h4 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent)', marginBottom: '10px' }}>
+                    Synced CRM Contact & Job Details
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '12px', backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Job Title:</span> <span style={{ color: 'var(--text-main)' }}>{crmJobTitle || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Placement Date:</span> <span style={{ color: 'var(--text-main)' }}>{crmPlacementDate || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Annual Salary:</span> <span style={{ color: 'var(--text-main)' }}>{crmSalary ? `£${Number(crmSalary).toLocaleString()}` : 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Company ID (CRM):</span> <span style={{ color: 'var(--text-main)' }}>{crmCompanyId || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Hiring Contact:</span> <span style={{ color: 'var(--text-main)', fontWeight: 500 }}>{crmJobContactName || 'N/A'}</span> {crmJobContactTitle ? `(${crmJobContactTitle})` : ''}
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Contact Email:</span> {crmJobContactEmail ? <a href={`mailto:${crmJobContactEmail}`} style={{ color: 'var(--primary)', textDecoration: 'underline' }}>{crmJobContactEmail}</a> : 'N/A'}
+                    </div>
+                    {crmJobContactPhone && (
+                      <div>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Contact Phone:</span> <span style={{ color: 'var(--text-main)' }}>{crmJobContactPhone}</span>
+                      </div>
+                    )}
+                    {(crmCompanyEmail || crmCompanyPhone) && (
+                      <div style={{ gridColumn: 'span 2', borderTop: '1px solid var(--border-color)', paddingTop: '8px', marginTop: '4px', display: 'flex', gap: '20px' }}>
+                        {crmCompanyEmail && (
+                          <div>
+                            <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Company Email:</span> <a href={`mailto:${crmCompanyEmail}`} style={{ color: 'var(--primary)', textDecoration: 'underline' }}>{crmCompanyEmail}</a>
+                          </div>
+                        )}
+                        {crmCompanyPhone && (
+                          <div>
+                            <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Company Phone:</span> <span style={{ color: 'var(--text-main)' }}>{crmCompanyPhone}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="placements-form-footer">
                 <button type="button" className="btn-secondary" disabled={isSaving} onClick={handleCancelForm}>

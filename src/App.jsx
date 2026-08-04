@@ -1078,11 +1078,11 @@ export default function App() {
           const newCandidate = {
             id: `cand-${Date.now()}`,
             name: placement.candidateName,
-            email: placement.crmCandidateEmail || placement.crmJobContactEmail || '',
-            phone: placement.crmCandidateMobile || placement.crmJobContactPhone || '',
+            email: placement.crmCandidateEmail || '',
+            phone: placement.crmCandidateMobile || '',
             jobTitle: placement.crmJobTitle || '',
             status: 'placed',
-            cvUrl: '',
+            cvUrl: placement.crmCandidateHasCv && placement.crmApiKey ? `/api/recruitly-cv?candidateId=${placement.crmCandidateId}&apiKey=${placement.crmApiKey}` : '',
             cvName: placement.crmCandidateHasCv ? 'Recruitly CV' : '',
             notes: `Automatically registered via CRM Placement sync (ID: ${placement.placementId}).`,
             // Custom timeline and resume fields

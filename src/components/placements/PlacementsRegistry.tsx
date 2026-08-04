@@ -94,6 +94,7 @@ export default function PlacementsRegistry({
   const [crmCandidateSkills, setCrmCandidateSkills] = useState<string[]>([]);
   const [crmCandidateEmploymentHistory, setCrmCandidateEmploymentHistory] = useState<any[]>([]);
   const [crmCandidateEducationHistory, setCrmCandidateEducationHistory] = useState<any[]>([]);
+  const [crmApiKey, setCrmApiKey] = useState('');
 
   // Filtering states
   const [searchQuery, setSearchQuery] = useState('');
@@ -459,6 +460,7 @@ export default function PlacementsRegistry({
     setCrmCandidateSkills(pAny.crmCandidateSkills || []);
     setCrmCandidateEmploymentHistory(pAny.crmCandidateEmploymentHistory || []);
     setCrmCandidateEducationHistory(pAny.crmCandidateEducationHistory || []);
+    setCrmApiKey(pAny.crmApiKey || '');
 
     const terms = String(placement.paymentTermsDays || '30');
     if (['7', '10', '30', '31'].includes(terms)) {
@@ -550,7 +552,8 @@ export default function PlacementsRegistry({
         setCrmCandidateHasCv(!!resData.candidateHasCv);
         setCrmCandidateSkills(resData.candidateSkills || []);
         setCrmCandidateEmploymentHistory(resData.candidateEmploymentHistory || []);
-        setCrmCandidateEducationHistory(resData.candidateEducationHistory || []);
+        setCrmCandidateEducationHistory(resData.educationHistory || resData.candidateEducationHistory || []);
+        setCrmApiKey(resData.apiKey || '');
 
         onShowToast(`Successfully synced placement details from Recruitly CRM!`, "success");
       } else {
@@ -715,7 +718,8 @@ export default function PlacementsRegistry({
       crmCandidateHasCv,
       crmCandidateSkills,
       crmCandidateEmploymentHistory,
-      crmCandidateEducationHistory
+      crmCandidateEducationHistory,
+      crmApiKey
     };
 
     setIsSaving(true);
@@ -772,6 +776,7 @@ export default function PlacementsRegistry({
       setCrmCandidateSkills([]);
       setCrmCandidateEmploymentHistory([]);
       setCrmCandidateEducationHistory([]);
+      setCrmApiKey('');
       setEditingPlacementId(null);
       setShowLogForm(false);
     } catch (err: any) {
@@ -846,6 +851,7 @@ export default function PlacementsRegistry({
     setCrmCandidateSkills([]);
     setCrmCandidateEmploymentHistory([]);
     setCrmCandidateEducationHistory([]);
+    setCrmApiKey('');
     setEditingPlacementId(null);
     setShowLogForm(false);
   };

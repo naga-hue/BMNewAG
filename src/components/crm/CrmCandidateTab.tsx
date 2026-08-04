@@ -28,6 +28,13 @@ export default function CrmCandidateTab({ onShowToast }: CrmCandidateTabProps) {
   const [desiredSalary, setDesiredSalary] = useState<number | ''>('');
   const [notes, setNotes] = useState('');
   const [cvUrl, setCvUrl] = useState('');
+  const [location, setLocation] = useState('');
+  const [cvName, setCvName] = useState('');
+  const [jobTitle, setJobTitle] = useState('');
+  const [skills, setSkills] = useState('');
+  const [crmCandidateId, setCrmCandidateId] = useState('');
+  const [employmentHistory, setEmploymentHistory] = useState<any[]>([]);
+  const [educationHistory, setEducationHistory] = useState<any[]>([]);
 
   const openAddForm = () => {
     setId(crypto.randomUUID());
@@ -38,11 +45,19 @@ export default function CrmCandidateTab({ onShowToast }: CrmCandidateTabProps) {
     setDesiredSalary('');
     setNotes('');
     setCvUrl('');
+    setLocation('');
+    setCvName('');
+    setJobTitle('');
+    setSkills('');
+    setCrmCandidateId('');
+    setEmploymentHistory([]);
+    setEducationHistory([]);
     setIsAdding(true);
     setIsEditing(false);
   };
 
   const openEditForm = (cand: CrmCandidate) => {
+    const candAny = cand as any;
     setId(cand.id);
     setName(cand.name);
     setEmail(cand.email || '');
@@ -51,6 +66,13 @@ export default function CrmCandidateTab({ onShowToast }: CrmCandidateTabProps) {
     setDesiredSalary(cand.desiredSalary ?? '');
     setNotes(cand.notes || '');
     setCvUrl(cand.cvUrl || '');
+    setLocation(candAny.location || '');
+    setCvName(cand.cvName || '');
+    setJobTitle(cand.jobTitle || '');
+    setSkills(candAny.skills || '');
+    setCrmCandidateId(candAny.crmCandidateId || '');
+    setEmploymentHistory(candAny.employmentHistory || []);
+    setEducationHistory(candAny.educationHistory || []);
     setIsEditing(true);
     setIsAdding(false);
   };
@@ -70,7 +92,16 @@ export default function CrmCandidateTab({ onShowToast }: CrmCandidateTabProps) {
       currentSalary: currentSalary === '' ? undefined : Number(currentSalary),
       desiredSalary: desiredSalary === '' ? undefined : Number(desiredSalary),
       notes: notes.trim(),
-      cvUrl
+      cvUrl,
+      cvName,
+      jobTitle,
+      ...({
+        location: location.trim(),
+        skills,
+        crmCandidateId,
+        employmentHistory,
+        educationHistory
+      } as any)
     };
 
     try {
@@ -163,6 +194,7 @@ export default function CrmCandidateTab({ onShowToast }: CrmCandidateTabProps) {
               <th>Candidate Name</th>
               <th>Email</th>
               <th>Phone</th>
+              <th>Address</th>
               <th style={{ textAlign: 'right' }}>Current Salary / Rate</th>
               <th style={{ textAlign: 'right' }}>Desired Salary / Rate</th>
               <th style={{ textAlign: 'center' }}>CV Status</th>
@@ -173,7 +205,7 @@ export default function CrmCandidateTab({ onShowToast }: CrmCandidateTabProps) {
           <tbody>
             {filteredCandidates.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '24px' }}>
+                <td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '24px' }}>
                   No candidates found matching your search.
                 </td>
               </tr>
@@ -199,6 +231,7 @@ export default function CrmCandidateTab({ onShowToast }: CrmCandidateTabProps) {
                       )}
                     </td>
                     <td>{cand.phone || '—'}</td>
+                    <td style={{ color: 'var(--text-secondary)' }}>{(cand as any).location || '—'}</td>
                     <td style={{ textAlign: 'right' }}>
                       {cand.currentSalary ? `£${Number(cand.currentSalary).toLocaleString()}` : '—'}
                     </td>
@@ -578,6 +611,16 @@ export default function CrmCandidateTab({ onShowToast }: CrmCandidateTabProps) {
                     onChange={(e) => setPhone(e.target.value)}
                   />
                 </div>
+              </div>
+
+              <div className="form-group">
+                <label>Candidate Address / Location</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Aylesbury, England"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                />
               </div>
 
               <div className="form-group-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>

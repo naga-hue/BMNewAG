@@ -148,6 +148,7 @@ export default function CrmClientTab({ onShowToast }: CrmClientTabProps) {
             <tr>
               <th>Company Name</th>
               <th>Reg Number</th>
+              <th>Address</th>
               <th>Primary Contact</th>
               <th>Accounts Contact</th>
               <th>Phone</th>
@@ -159,7 +160,7 @@ export default function CrmClientTab({ onShowToast }: CrmClientTabProps) {
           <tbody>
             {filteredClients.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '24px' }}>
+                <td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '24px' }}>
                   No client companies found matching your search.
                 </td>
               </tr>
@@ -177,6 +178,9 @@ export default function CrmClientTab({ onShowToast }: CrmClientTabProps) {
                   >
                     <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{client.name}</td>
                     <td style={{ color: 'var(--text-secondary)' }}>{client.regNumber || '—'}</td>
+                    <td style={{ color: 'var(--text-secondary)', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={client.address || '—'}>
+                      {client.address || '—'}
+                    </td>
                     <td>
                       <div>{client.contactName || '—'}</div>
                       <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{client.contactEmail}</div>

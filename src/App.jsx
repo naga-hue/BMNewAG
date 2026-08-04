@@ -1074,6 +1074,26 @@ export default function App() {
       if (placement.candidateName) {
         const crmCandidates = useBoundStore.getState().crmCandidates || [];
         const existingCand = crmCandidates.find(c => c.name.toLowerCase() === placement.candidateName.toLowerCase());
+
+        // Fetch CV from Recruitly and upload it to Firebase Storage
+        let cvUrl = '';
+        let cvName = '';
+        if (placement.crmCandidateHasCv && placement.crmCandidateId && placement.crmApiKey) {
+          try {
+            const cvRes = await fetch(`/api/recruitly-cv?candidateId=${placement.crmCandidateId}&apiKey=${placement.crmApiKey}`);
+            if (cvRes.ok) {
+              const blob = await cvRes.blob();
+              const file = new File([blob], "Curriculum_Vitae.pdf", { type: blob.type || "application/pdf" });
+              const storageUrl = await firebaseService.uploadCandidateCv(placement.crmCandidateId, file);
+              cvUrl = storageUrl;
+              cvName = 'Recruitly CV';
+              console.log("Successfully uploaded CV from CRM to Firebase Storage:", cvUrl);
+            }
+          } catch (err) {
+            console.error("Failed to download/upload CV from CRM:", err);
+          }
+        }
+
         if (!existingCand) {
           const newCandidate = {
             id: `cand-${Date.now()}`,
@@ -1082,8 +1102,8 @@ export default function App() {
             phone: placement.crmCandidateMobile || '',
             jobTitle: placement.crmJobTitle || '',
             status: 'placed',
-            cvUrl: placement.crmCandidateHasCv && placement.crmApiKey ? `/api/recruitly-cv?candidateId=${placement.crmCandidateId}&apiKey=${placement.crmApiKey}` : '',
-            cvName: placement.crmCandidateHasCv ? 'Recruitly CV' : '',
+            cvUrl: cvUrl || '',
+            cvName: cvName || '',
             notes: `Automatically registered via CRM Placement sync (ID: ${placement.placementId}).`,
             // Custom timeline and resume fields
             location: placement.crmCandidateLocation || '',
@@ -1094,19 +1114,19 @@ export default function App() {
           };
           await firebaseService.saveCrmCandidate(newCandidate);
         } else {
-          // Merge and update existing candidate
+          // Merge and update existing candidate (prioritizing new synced values!)
           const updatedCandidate = {
             ...existingCand,
-            email: existingCand.email || placement.crmCandidateEmail || '',
-            phone: existingCand.phone || placement.crmCandidateMobile || '',
-            jobTitle: existingCand.jobTitle || placement.crmJobTitle || '',
-            cvUrl: existingCand.cvUrl || (placement.crmCandidateHasCv && placement.crmApiKey ? `/api/recruitly-cv?candidateId=${placement.crmCandidateId}&apiKey=${placement.crmApiKey}` : ''),
-            cvName: existingCand.cvName || (placement.crmCandidateHasCv ? 'Recruitly CV' : ''),
-            location: existingCand.location || placement.crmCandidateLocation || '',
-            skills: existingCand.skills || (placement.crmCandidateSkills ? placement.crmCandidateSkills.join(', ') : ''),
-            crmCandidateId: existingCand.crmCandidateId || placement.crmCandidateId || '',
-            employmentHistory: existingCand.employmentHistory?.length ? existingCand.employmentHistory : (placement.crmCandidateEmploymentHistory || []),
-            educationHistory: existingCand.educationHistory?.length ? existingCand.educationHistory : (placement.crmCandidateEducationHistory || [])
+            email: placement.crmCandidateEmail || existingCand.email || '',
+            phone: placement.crmCandidateMobile || existingCand.phone || '',
+            jobTitle: placement.crmJobTitle || existingCand.jobTitle || '',
+            cvUrl: cvUrl || existingCand.cvUrl || '',
+            cvName: cvName || existingCand.cvName || '',
+            location: placement.crmCandidateLocation || existingCand.location || '',
+            skills: (placement.crmCandidateSkills ? placement.crmCandidateSkills.join(', ') : '') || existingCand.skills || '',
+            crmCandidateId: placement.crmCandidateId || existingCand.crmCandidateId || '',
+            employmentHistory: (placement.crmCandidateEmploymentHistory && placement.crmCandidateEmploymentHistory.length) ? placement.crmCandidateEmploymentHistory : (existingCand.employmentHistory || []),
+            educationHistory: (placement.crmCandidateEducationHistory && placement.crmCandidateEducationHistory.length) ? placement.crmCandidateEducationHistory : (existingCand.educationHistory || [])
           };
           await firebaseService.saveCrmCandidate(updatedCandidate);
         }
@@ -1132,14 +1152,14 @@ export default function App() {
           };
           await firebaseService.saveCrmClientCompany(newClient);
         } else {
-          // Merge and update existing client
+          // Merge and update existing client (prioritizing new synced values!)
           const updatedClient = {
             ...existingClient,
-            address: existingClient.address || placement.crmCompanyAddress || '',
-            contactName: existingClient.contactName || placement.crmJobContactName || '',
-            contactEmail: existingClient.contactEmail || placement.crmJobContactEmail || '',
-            phone: existingClient.phone || placement.crmCompanyPhone || placement.crmJobContactPhone || '',
-            website: existingClient.website || placement.crmCompanyWebsite || ''
+            address: placement.crmCompanyAddress || existingClient.address || '',
+            contactName: placement.crmJobContactName || existingClient.contactName || '',
+            contactEmail: placement.crmJobContactEmail || existingClient.contactEmail || '',
+            phone: placement.crmCompanyPhone || placement.crmJobContactPhone || existingClient.phone || '',
+            website: placement.crmCompanyWebsite || existingClient.website || ''
           };
           await firebaseService.saveCrmClientCompany(updatedClient);
         }

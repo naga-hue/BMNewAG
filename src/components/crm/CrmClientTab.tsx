@@ -178,7 +178,7 @@ export default function CrmClientTab({ onShowToast }: CrmClientTabProps) {
                   >
                     <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{client.name}</td>
                     <td style={{ color: 'var(--text-secondary)' }}>{client.regNumber || '—'}</td>
-                    <td style={{ color: 'var(--text-secondary)', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={client.address || '—'}>
+                    <td style={{ color: 'var(--text-secondary)' }}>
                       {client.address || '—'}
                     </td>
                     <td>

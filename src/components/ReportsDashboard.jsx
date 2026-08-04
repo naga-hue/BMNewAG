@@ -12,7 +12,8 @@ import {
   Info, 
   Globe, 
   PieChart, 
-  Coins 
+  Coins,
+  Printer
 } from 'lucide-react';
 
 const formatGBP = (val) => {
@@ -1666,6 +1667,227 @@ export default function ReportsDashboard({
         const totalProfit = rowData.reduce((acc, row) => acc + (row.netProfit || 0), 0);
         const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
+        const handlePrintPnl = () => {
+          const printWindow = window.open('', '_blank');
+          if (!printWindow) {
+            alert("Please allow popups to print/save the P&L report.");
+            return;
+          }
+
+          const title = `Consolidated Profit & Loss (P&L) Report`;
+          const sub = `Model: ${pnlVersion === 'v1' ? 'v1 - Standard Projections' : 'v2 - 3-Month Running Average'}`;
+          const range = `Period: ${new Date(startMonth + '-02').toLocaleDateString(undefined, { month: 'long', year: 'numeric' })} - ${new Date(endMonth + '-02').toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}`;
+
+          let tableHeadersHtml = `<th>P&L Account Line Items (GBP)</th>`;
+          monthsList.forEach(m => {
+            const label = new Date(m + '-02').toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+            tableHeadersHtml += `<th style="text-align: right;">${label}</th>`;
+          });
+          tableHeadersHtml += `<th style="text-align: right; background-color: #f1f5f9;">Period Total</th>`;
+
+          // Row helper inside print
+          const makeRowHtml = (label, dataKey, isBold = false, indent = 0) => {
+            let html = `<tr style="${isBold ? 'font-weight: bold; background-color: #f8fafc;' : ''}">`;
+            html += `<td style="padding-left: ${indent}px;">${label}</td>`;
+            let total = 0;
+            rowData.forEach(row => {
+              const val = row[dataKey] || 0;
+              total += val;
+              html += `<td style="text-align: right;">${formatGBP(val)}</td>`;
+            });
+            html += `<td style="text-align: right; font-weight: bold; background-color: #f1f5f9;">${formatGBP(total)}</td>`;
+            html += `</tr>`;
+            return html;
+          };
+
+          // Construct nominal code breakdowns
+          let overheadsDetailHtml = '';
+          const codeKeys = Array.from(new Set(
+            rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
+          )).sort();
+
+          codeKeys.forEach(code => {
+            const total = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
+            overheadsDetailHtml += `<tr style="font-size: 11px; color: #475569;">`;
+            overheadsDetailHtml += `<td style="padding-left: 32px; font-style: italic;">↳ ${code}</td>`;
+            rowData.forEach(row => {
+              const val = row.nominalBreakdown?.[code] || 0;
+              overheadsDetailHtml += `<td style="text-align: right; opacity: ${val > 0 ? 1 : 0.4};">${formatGBP(val)}</td>`;
+            });
+            overheadsDetailHtml += `<td style="text-align: right; font-weight: bold; background-color: #f1f5f9;">${formatGBP(total)}</td>`;
+            overheadsDetailHtml += `</tr>`;
+          });
+
+          // Construct balance sheet breakdowns
+          let balanceSheetDetailHtml = '';
+          const bsCodeKeys = Array.from(new Set(
+            rowData.flatMap(r => Object.keys(r.balanceSheetBreakdown || {}))
+          )).sort();
+
+          bsCodeKeys.forEach(code => {
+            const total = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0);
+            balanceSheetDetailHtml += `<tr style="font-size: 11px; color: #475569;">`;
+            balanceSheetDetailHtml += `<td style="padding-left: 32px; font-style: italic;">↳ ${code}</td>`;
+            rowData.forEach(row => {
+              const val = row.balanceSheetBreakdown?.[code] || 0;
+              balanceSheetDetailHtml += `<td style="text-align: right; opacity: ${val > 0 ? 1 : 0.4};">${val > 0 ? formatGBP(val) : '—'}</td>`;
+            });
+            balanceSheetDetailHtml += `<td style="text-align: right; font-weight: bold; background-color: #f1f5f9;">${formatGBP(total)}</td>`;
+            balanceSheetDetailHtml += `</tr>`;
+          });
+
+          // Calculate EBITDA row
+          let ebitdaHtml = `<tr style="font-weight: bold; background-color: #f0fdf4; font-size: 13px;">`;
+          ebitdaHtml += `<td style="color: #15803d;">EBITDA Net Profit Margin</td>`;
+          let ebitdaTotal = 0;
+          rowData.forEach(row => {
+            ebitdaTotal += row.netProfit;
+            ebitdaHtml += `<td style="text-align: right; color: ${row.netProfit >= 0 ? '#15803d' : '#b91c1c'};">${formatGBP(row.netProfit)}</td>`;
+          });
+          ebitdaHtml += `<td style="text-align: right; color: ${ebitdaTotal >= 0 ? '#15803d' : '#b91c1c'}; background-color: #e2e8f0;">${formatGBP(ebitdaTotal)}</td>`;
+          ebitdaHtml += `</tr>`;
+
+          // Carry forward row
+          let carryForwardHtml = `<tr style="font-weight: bold; background-color: #eff6ff; font-size: 13px; border-top: 1px dashed #3b82f6;">`;
+          carryForwardHtml += `<td style="color: #1d4ed8;">📈 Cumulative Carry-Forward P&L</td>`;
+          let cumulativePnl = 0;
+          rowData.forEach(row => {
+            cumulativePnl += row.netProfit;
+            carryForwardHtml += `<td style="text-align: right; color: ${cumulativePnl >= 0 ? '#15803d' : '#b91c1c'};">${formatGBP(cumulativePnl)}</td>`;
+          });
+          carryForwardHtml += `<td style="text-align: right; color: ${cumulativePnl >= 0 ? '#15803d' : '#b91c1c'}; background-color: #e2e8f0;">${formatGBP(cumulativePnl)}</td>`;
+          carryForwardHtml += `</tr>`;
+
+          // Staff headcount row
+          let staffCountHtml = `<tr style="color: #64748b; font-size: 11px;">`;
+          staffCountHtml += `<td>Staff Count in Apportionment</td>`;
+          rowData.forEach(row => {
+            staffCountHtml += `<td style="text-align: right;">${row.headcount} active</td>`;
+          });
+          staffCountHtml += `<td style="text-align: right; background-color: #f1f5f9;">—</td>`;
+          staffCountHtml += `</tr>`;
+
+          const htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <title>${title}</title>
+              <style>
+                body {
+                  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                  color: #1e293b;
+                  padding: 30px;
+                  margin: 0;
+                }
+                .header {
+                  margin-bottom: 25px;
+                  border-bottom: 2px solid #e2e8f0;
+                  padding-bottom: 15px;
+                }
+                .header h1 {
+                  margin: 0 0 5px 0;
+                  font-size: 22px;
+                  font-weight: 800;
+                  color: #0f172a;
+                }
+                .header .meta {
+                  font-size: 12px;
+                  color: #64748b;
+                  display: flex;
+                  justify-content: space-between;
+                }
+                table {
+                  width: 100%;
+                  border-collapse: collapse;
+                  font-size: 12px;
+                  margin-bottom: 20px;
+                }
+                th {
+                  background-color: #f8fafc;
+                  color: #475569;
+                  font-weight: 700;
+                  padding: 8px 10px;
+                  border-bottom: 2px solid #e2e8f0;
+                }
+                td {
+                  padding: 8px 10px;
+                  border-bottom: 1px solid #f1f5f9;
+                }
+                .section-header {
+                  font-weight: bold;
+                  background-color: #f8fafc;
+                }
+                .print-btn {
+                  background-color: #4f46e5;
+                  color: white;
+                  border: none;
+                  padding: 8px 16px;
+                  font-size: 12px;
+                  font-weight: 600;
+                  border-radius: 6px;
+                  cursor: pointer;
+                  margin-bottom: 20px;
+                }
+                @media print {
+                  .print-btn { display: none; }
+                  body { padding: 0; }
+                }
+              </style>
+            </head>
+            <body>
+              <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+              <div class="header">
+                <h1>${title}</h1>
+                <div class="meta">
+                  <span>${sub}</span>
+                  <span>${range}</span>
+                  <span>Generated on: ${new Date().toLocaleDateString()}</span>
+                </div>
+              </div>
+              <table>
+                <thead>
+                  <tr>${tableHeadersHtml}</tr>
+                </thead>
+                <tbody>
+                  <tr class="section-header">
+                    <td colspan="${monthsList.length + 2}">Revenue stream credits</td>
+                  </tr>
+                  ${makeRowHtml('Net Placements Fee Billings', 'revenue', false, 16)}
+
+                  <tr class="section-header">
+                    <td colspan="${monthsList.length + 2}">Direct cost (Recruiter Commissions)</td>
+                  </tr>
+                  ${makeRowHtml('Accrued Recruiter Commissions', 'commissions', false, 16)}
+
+                  ${makeRowHtml('Gross Profit Margin', 'grossProfit', true)}
+
+                  <tr class="section-header">
+                    <td colspan="${monthsList.length + 2}">Overheads & Staff Expenses</td>
+                  </tr>
+                  ${makeRowHtml('Apportioned Overheads & SaaS', 'overheadsExpenses', false, 16)}
+                  ${overheadsDetailHtml}
+                  ${makeRowHtml('Total Indirect Overheads', 'totalOverheads', true)}
+
+                  ${ebitdaHtml}
+                  ${carryForwardHtml}
+
+                  <tr class="section-header">
+                    <td colspan="${monthsList.length + 2}">Non-P&L Balance Sheet Items (Cash Flow Only)</td>
+                  </tr>
+                  ${makeRowHtml('Refundable Deposits & Prepayments', 'balanceSheetTotal', false, 16)}
+                  ${balanceSheetDetailHtml}
+
+                  ${staffCountHtml}
+                </tbody>
+              </table>
+            </body>
+            </html>
+          `;
+
+          printWindow.document.write(htmlContent);
+          printWindow.document.close();
+        };
+
         // Recruiter Ratios calculations for Overall compensation to billings gauge
         const recruiterRatios = staff.map(rec => {
           if (!companyFilter.includes('all') && !companyFilter.includes(rec.companyId)) return null;
@@ -1892,23 +2114,42 @@ export default function ReportsDashboard({
                 <span style={{ fontSize: '16px' }}>📊</span>
                 <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>P&L Performance Summary Dashboard</span>
               </div>
-              <button 
-                type="button"
-                onClick={() => setShowPnlDashboard(!showPnlDashboard)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--accent)',
-                  fontWeight: 700,
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                {showPnlDashboard ? '🙈 Hide Chart Analytics' : '👁️ Show Chart Analytics'}
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <button
+                  type="button"
+                  onClick={handlePrintPnl}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--success)',
+                    fontWeight: 700,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <Printer size={14} /> Print PDF
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setShowPnlDashboard(!showPnlDashboard)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--accent)',
+                    fontWeight: 700,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {showPnlDashboard ? '🙈 Hide Chart Analytics' : '👁️ Show Chart Analytics'}
+                </button>
+              </div>
             </div>
 
             {/* Visual Analytics dashboard */}

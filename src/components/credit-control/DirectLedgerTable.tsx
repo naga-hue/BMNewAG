@@ -599,7 +599,7 @@ export default function DirectLedgerTable({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxHeight: 'calc(100vh - 280px)', overflowY: 'auto', paddingRight: '4px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', paddingRight: '4px' }}>
       {/* 1. DISPUTED & LEGAL DIRECT INVOICES */}
       {partitionedInvoices.disputedLegal.length > 0 && renderDirectTable(
         "⚠️ Disputed & Legal Proceedings Invoices",

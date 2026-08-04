@@ -660,7 +660,7 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
       // Card Filters Integration
       if (activeSubTab === 'direct') {
         if (directCardFilter === 'all-outstanding') {
-          if (inv.clientPaymentStatus === 'paid' || inv.balanceOutstanding <= 0) return false;
+          // Keep closed invoices in direct tab so the bottom closed table renders by default
         } else if (directCardFilter === 'disputed') {
           if (inv.paymentStatus !== 'disputed') return false;
         } else if (directCardFilter === 'legal') {
@@ -671,7 +671,7 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
         }
       } else {
         if (simplicityCardFilter === 'outstanding') {
-          if (inv.clientPaymentStatus === 'paid' || inv.balanceOutstanding <= 0) return false;
+          // Keep closed invoices in simplicity tab so the bottom closed table renders by default
         } else if (simplicityCardFilter === 'outstanding-overdue') {
           if (inv.paymentStatus !== 'overdue') return false;
         } else if (simplicityCardFilter === 'about-to-raise') {

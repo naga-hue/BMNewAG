@@ -88,7 +88,9 @@ export default async function handler(req, res) {
       });
     }
 
-    const raw = result.data;
+    const envelope = result.data || {};
+    const raw = envelope.data || envelope;
+    
     // Map fields dynamically based on common Recruitly Nova structures
     const candidateName = raw.candidate?.fullName || 
                          (raw.candidate?.firstName && raw.candidate?.lastName ? `${raw.candidate.firstName} ${raw.candidate.lastName}` : null) || 
@@ -96,7 +98,8 @@ export default async function handler(req, res) {
                          raw.candidate?.name || 
                          'Unknown Candidate';
 
-    const clientCompany = raw.organisation?.name || 
+    const clientCompany = raw.companyName ||
+                         raw.organisation?.name || 
                          raw.client?.companyName || 
                          raw.clientCompany || 
                          raw.company?.name || 
@@ -104,12 +107,31 @@ export default async function handler(req, res) {
 
     const grossBillAmount = Number(raw.fee || raw.salary || raw.grossBillAmount || raw.value || 0);
 
-    const startDate = raw.startDate?.split('T')[0] || 
-                      raw.actualStartDate?.split('T')[0] || 
-                      raw.startDate || 
-                      '';
+    // Date parsing helper to handle DD/MM/YYYY and YYYY-MM-DD
+    const formatToISODate = (dateStr) => {
+      if (!dateStr) return '';
+      if (dateStr.includes('T')) {
+        return dateStr.split('T')[0];
+      }
+      const dateOnly = dateStr.split(' ')[0];
+      if (dateOnly.includes('/')) {
+        const parts = dateOnly.split('/');
+        if (parts.length === 3) {
+          const day = parts[0].padStart(2, '0');
+          const month = parts[1].padStart(2, '0');
+          const year = parts[2];
+          if (year.length === 4) {
+            return `${year}-${month}-${day}`;
+          }
+        }
+      }
+      return dateOnly;
+    };
+
+    const startDate = formatToISODate(raw.startDate || raw.actualStartDate);
 
     const source = raw.source || 'Recruitly';
+    const recruiterName = raw.ownerName || raw.recruiterName || raw.user?.name || '';
 
     return res.status(200).json({
       success: true,
@@ -118,7 +140,8 @@ export default async function handler(req, res) {
       clientCompany,
       grossBillAmount,
       startDate,
-      source
+      source,
+      recruiterName
     });
 
   } catch (error) {

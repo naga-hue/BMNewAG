@@ -478,6 +478,12 @@ export default function PlacementsRegistry({
           setScoredDateInput(resData.startDate);
         }
         if (resData.source) setSourceInput(resData.source);
+        if (resData.recruiterName) {
+          const matched = staff.find(s => s.fullName.toLowerCase() === resData.recruiterName.toLowerCase());
+          if (matched) {
+            setSplitsInput([{ staffId: matched.id, percentage: 100 }]);
+          }
+        }
 
         onShowToast(`Successfully synced placement details from Recruitly CRM!`, "success");
       } else {

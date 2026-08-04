@@ -48,6 +48,13 @@ export default function InvoiceDetailDrawer({
   const [uploadedFileUrl, setUploadedFileUrl] = useState('');
   const [uploadedFileName, setUploadedFileName] = useState('');
 
+  // Editable Placement Fields
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editCandidateName, setEditCandidateName] = useState('');
+  const [editClientCompany, setEditClientCompany] = useState('');
+  const [editSimplicityPaid, setEditSimplicityPaid] = useState(false);
+  const [editClientPaymentStatus, setEditClientPaymentStatus] = useState('unpaid');
+
   // Synchronize internal state with selected invoice
   useEffect(() => {
     if (selectedInvoice) {
@@ -67,6 +74,12 @@ export default function InvoiceDetailDrawer({
       setUploadedFileUrl(selectedInvoice.invoiceFileUrl || '');
       setUploadedFileName(selectedInvoice.invoiceFileName || '');
       setNewNote('');
+
+      setEditStartDate(selectedInvoice.startDate || '');
+      setEditCandidateName(selectedInvoice.candidateName || '');
+      setEditClientCompany(selectedInvoice.clientCompany || '');
+      setEditSimplicityPaid(selectedInvoice.simplicityPaid || false);
+      setEditClientPaymentStatus(selectedInvoice.clientPaymentStatus || 'unpaid');
 
       const terms = selectedInvoice.paymentTermsDays || '30';
       if (['7', '10', '30', '31'].includes(String(terms))) {
@@ -126,32 +139,75 @@ export default function InvoiceDetailDrawer({
       return rDate;
     };
 
-    const dueDate = calculateDueDate(editRaisedDate, termsDays);
-    const paid = Number(editAmountPaid) || 0;
-    const outstanding = Math.max(0, total - paid);
-
-    let finalStatus = editStatus;
-    if (paid >= total && total > 0) {
-      finalStatus = 'paid';
-    } else if (
-      finalStatus !== 'paid' && 
-      finalStatus !== 'written-off' && 
-      finalStatus !== 'dns-rebate' && 
-      finalStatus !== 'legal' && 
-      finalStatus !== 'disputed' && 
-      dueDate < todayStr
-    ) {
-      finalStatus = 'overdue';
-    }
-
     const originalPlacement = placements.find(p => p.id === selectedInvoice.id);
     if (!originalPlacement) {
       onShowToast("Associated placement not found in store", "danger");
       return;
     }
 
+    const dueDate = calculateDueDate(editRaisedDate, termsDays);
+    
+    let finalStatus = editStatus;
+    let clientPaymentStatus = finalStatus === 'paid' ? 'paid' : 'unpaid';
+    let paid = Number(editAmountPaid) || 0;
+    let outstanding = Math.max(0, total - paid);
+    let simplicityPaid = editSimplicityPaid;
+    let simplicityPaidDate = simplicityPaid ? (originalPlacement.simplicityPaidDate || todayStr) : null;
+    let clientPaidDate = originalPlacement.clientPaidDate || null;
+    let paymentReceivedDate = originalPlacement.paymentReceivedDate || null;
+
+    if (originalPlacement.invoiceType === 'simplicity') {
+      if (editClientPaymentStatus === 'paid') {
+        finalStatus = 'paid';
+        clientPaymentStatus = 'paid';
+        paid = total;
+        outstanding = 0;
+        clientPaidDate = clientPaidDate || todayStr;
+        paymentReceivedDate = paymentReceivedDate || todayStr;
+      } else {
+        clientPaymentStatus = 'unpaid';
+        clientPaidDate = null;
+        paymentReceivedDate = null;
+        if (editSimplicityPaid) {
+          finalStatus = 'funded';
+        } else {
+          if (
+            finalStatus !== 'written-off' &&
+            finalStatus !== 'dns-rebate' &&
+            finalStatus !== 'legal' &&
+            finalStatus !== 'disputed' &&
+            dueDate < todayStr
+          ) {
+            finalStatus = 'overdue';
+          } else {
+            finalStatus = 'unpaid';
+          }
+        }
+      }
+    } else {
+      // Direct Invoice
+      if (paid >= total && total > 0) {
+        finalStatus = 'paid';
+        clientPaymentStatus = 'paid';
+        clientPaidDate = editReceivedDate || todayStr;
+        paymentReceivedDate = editReceivedDate || todayStr;
+      } else if (
+        finalStatus !== 'paid' && 
+        finalStatus !== 'written-off' && 
+        finalStatus !== 'dns-rebate' && 
+        finalStatus !== 'legal' && 
+        finalStatus !== 'disputed' && 
+        dueDate < todayStr
+      ) {
+        finalStatus = 'overdue';
+      }
+    }
+
     const updatedPlacement = {
       ...originalPlacement,
+      candidateName: editCandidateName.trim() || originalPlacement.candidateName,
+      clientCompany: editClientCompany.trim() || originalPlacement.clientCompany,
+      startDate: editStartDate || originalPlacement.startDate,
       invoiceNumber: editInvoiceNumber.trim() || null,
       simplicityClientNo: editSimplicityClientNo.trim() || null,
       simplicityCreditLimit: editSimplicityCreditLimit.trim() || null,
@@ -164,9 +220,11 @@ export default function InvoiceDetailDrawer({
       paymentStatus: finalStatus,
       amountPaid: paid,
       balanceOutstanding: outstanding,
-      clientPaymentStatus: finalStatus === 'paid' ? 'paid' : 'unpaid',
-      clientPaidDate: finalStatus === 'paid' ? (editReceivedDate || todayStr) : null,
-      paymentReceivedDate: finalStatus === 'paid' ? (editReceivedDate || todayStr) : null,
+      simplicityPaid,
+      simplicityPaidDate,
+      clientPaymentStatus,
+      clientPaidDate,
+      paymentReceivedDate,
       nextChaseDate: editNextChaseDate,
       disputeReason: finalStatus === 'disputed' ? editDisputeReason : '',
       disputeDate: finalStatus === 'disputed' ? editDisputeDate : '',
@@ -375,14 +433,59 @@ export default function InvoiceDetailDrawer({
         {/* Scrollable Body split into details + chasers */}
         <div className="wizard-content" style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           
-          {/* 1. Placement Reference Info Box */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px 16px', fontSize: '12px' }}>
-            <div>👨‍💼 <strong>Candidate:</strong> {selectedInvoice.candidateName}</div>
-            <div>🏢 <strong>Client:</strong> {selectedInvoice.clientCompany}</div>
-            <div>📅 <strong>Start Date:</strong> {selectedInvoice.startDate}</div>
-            <div>🧑‍💼 <strong>Consultant:</strong> {selectedInvoice.recruiterNames} ({selectedInvoice.departmentName || 'Recruitment'})</div>
-            <div>📂 <strong>Billing Route:</strong> {selectedInvoice.invoiceType === 'direct' ? 'Direct Invoice' : 'Simplicity Invoice'}</div>
-            <div>🔑 <strong>Placement ID:</strong> {selectedInvoice.placementId || selectedInvoice.id}</div>
+          {/* 1. Placement Reference Info Box (Editable) */}
+          <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px', backgroundColor: 'var(--bg-secondary)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <h4 style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent)', margin: 0, textTransform: 'uppercase' }}>
+              Placement Details (Editable)
+            </h4>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: '10.5px' }}>👨‍💼 Candidate Name</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={editCandidateName} 
+                  onChange={(e) => setEditCandidateName(e.target.value)} 
+                  style={{ padding: '8px 10px', fontSize: '11.5px' }}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: '10.5px' }}>🏢 Client Company</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={editClientCompany} 
+                  onChange={(e) => setEditClientCompany(e.target.value)} 
+                  style={{ padding: '8px 10px', fontSize: '11.5px' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1fr', gap: '12px' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: '10.5px' }}>📅 Work Start Date</label>
+                <input 
+                  type="date" 
+                  className="form-input" 
+                  value={editStartDate} 
+                  onChange={(e) => setEditStartDate(e.target.value)} 
+                  style={{ padding: '8px 10px', fontSize: '11.5px' }}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: '10.5px' }}>📂 Billing Route</label>
+                <div style={{ padding: '8px 10px', fontSize: '11.5px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  {selectedInvoice.invoiceType === 'direct' ? 'Direct Invoice' : 'Simplicity Invoice'}
+                </div>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: '10.5px' }}>🧑‍💼 Consultant</label>
+                <div style={{ padding: '8px 10px', fontSize: '11.5px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={selectedInvoice.recruiterNames}>
+                  {selectedInvoice.recruiterNames}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Simplicity Factoring & Recourse Risk Meter */}
@@ -616,6 +719,48 @@ export default function InvoiceDetailDrawer({
                 />
               </div>
             </div>
+
+            {selectedInvoice.invoiceType === 'simplicity' && (
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: '1fr 1fr', 
+                gap: '16px', 
+                padding: '12px', 
+                backgroundColor: 'rgba(99, 102, 241, 0.04)', 
+                border: '1px solid var(--border-color)', 
+                borderRadius: '8px', 
+                marginTop: '4px',
+                alignItems: 'center'
+              }}>
+                <div className="form-group" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    id="edit-simplicity-paid-checkbox"
+                    checked={editSimplicityPaid}
+                    onChange={(e) => setEditSimplicityPaid(e.target.checked)}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="edit-simplicity-paid-checkbox" style={{ fontWeight: 600, fontSize: '11.5px', cursor: 'pointer', userSelect: 'none', color: 'var(--text-primary)' }}>
+                    💵 Simplicity Payout Received
+                  </label>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '10.5px', fontWeight: 600, marginBottom: '4px', display: 'block' }}>
+                    👤 Client Paid Simplicity
+                  </label>
+                  <select
+                    className="select-filter"
+                    value={editClientPaymentStatus}
+                    onChange={(e) => setEditClientPaymentStatus(e.target.value)}
+                    style={{ width: '100%', padding: '6px 10px', fontSize: '12px' }}
+                  >
+                    <option value="unpaid">Unpaid / Pending</option>
+                    <option value="paid">Paid / Settled</option>
+                  </select>
+                </div>
+              </div>
+            )}
 
             {editStatus === 'paid' ? (
               <div className="form-group" style={{ marginBottom: 0, animation: 'fadeIn 0.2s' }}>

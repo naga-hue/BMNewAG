@@ -626,20 +626,20 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
       // Card Filters Integration
       if (activeSubTab === 'direct') {
         if (directCardFilter === 'all-outstanding') {
-          if (inv.clientPaymentStatus === 'paid' || inv.outstanding <= 0) return false;
+          if (inv.clientPaymentStatus === 'paid' || inv.balanceOutstanding <= 0) return false;
         } else if (directCardFilter === 'disputed') {
-          if (inv.finalStatus !== 'disputed') return false;
+          if (inv.paymentStatus !== 'disputed') return false;
         } else if (directCardFilter === 'legal') {
-          if (inv.finalStatus !== 'legal') return false;
+          if (inv.paymentStatus !== 'legal') return false;
         } else if (directCardFilter === 'due') {
-          const isDue = inv.finalStatus === 'overdue' || (inv.dueDate && inv.dueDate < todayStr && inv.clientPaymentStatus !== 'paid');
+          const isDue = inv.paymentStatus === 'overdue' || (inv.invoiceDueDate && inv.invoiceDueDate < todayStr && inv.clientPaymentStatus !== 'paid');
           if (!isDue) return false;
         }
       } else {
         if (simplicityCardFilter === 'outstanding') {
-          if (inv.clientPaymentStatus === 'paid' || inv.outstanding <= 0) return false;
+          if (inv.clientPaymentStatus === 'paid' || inv.balanceOutstanding <= 0) return false;
         } else if (simplicityCardFilter === 'outstanding-overdue') {
-          if (inv.finalStatus !== 'overdue') return false;
+          if (inv.paymentStatus !== 'overdue') return false;
         } else if (simplicityCardFilter === 'about-to-raise') {
           const isAboutToRaise = !inv.invoiceNumber || inv.paymentStatus === 'not-invoiced';
           if (!isAboutToRaise) return false;
@@ -759,12 +759,12 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
 
   const directMetrics = useMemo(() => {
     const list = invoices.filter(inv => inv.invoiceType !== 'simplicity');
-    const outstandingList = list.filter(inv => inv.clientPaymentStatus !== 'paid' && inv.outstanding > 0);
-    const disputedList = list.filter(inv => inv.finalStatus === 'disputed');
-    const legalList = list.filter(inv => inv.finalStatus === 'legal');
-    const dueList = list.filter(inv => inv.finalStatus === 'overdue' || (inv.dueDate && inv.dueDate < todayStr && inv.clientPaymentStatus !== 'paid'));
+    const outstandingList = list.filter(inv => inv.clientPaymentStatus !== 'paid' && inv.balanceOutstanding > 0);
+    const disputedList = list.filter(inv => inv.paymentStatus === 'disputed');
+    const legalList = list.filter(inv => inv.paymentStatus === 'legal');
+    const dueList = list.filter(inv => inv.paymentStatus === 'overdue' || (inv.invoiceDueDate && inv.invoiceDueDate < todayStr && inv.clientPaymentStatus !== 'paid'));
 
-    const sumList = (list: any[]) => list.reduce((sum, item) => sum + (Number(item.outstanding) || 0), 0);
+    const sumList = (list: any[]) => list.reduce((sum, item) => sum + (Number(item.balanceOutstanding) || 0), 0);
 
     return {
       outstanding: { count: outstandingList.length, amount: sumList(outstandingList) },
@@ -776,13 +776,13 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
 
   const simplicityMetrics = useMemo(() => {
     const list = invoices.filter(inv => inv.invoiceType === 'simplicity');
-    const overdueList = list.filter(inv => inv.finalStatus === 'overdue');
+    const overdueList = list.filter(inv => inv.paymentStatus === 'overdue');
     const aboutToRaiseList = list.filter(inv => !inv.invoiceNumber || inv.paymentStatus === 'not-invoiced');
-    const outstandingList = list.filter(inv => inv.clientPaymentStatus !== 'paid' && inv.outstanding > 0);
+    const outstandingList = list.filter(inv => inv.clientPaymentStatus !== 'paid' && inv.balanceOutstanding > 0);
     const recourseList = list.filter(inv => inv.simplicityPaid && inv.clientPaymentStatus !== 'paid');
     const allList = list;
 
-    const sumList = (list: any[]) => list.reduce((sum, item) => sum + (Number(item.outstanding) || 0), 0);
+    const sumList = (list: any[]) => list.reduce((sum, item) => sum + (Number(item.balanceOutstanding) || 0), 0);
 
     return {
       overdue: { count: overdueList.length, amount: sumList(overdueList) },
@@ -984,10 +984,10 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
   }, [todayStr]);
 
   const directProjections = useMemo(() => {
-    const list = invoices.filter(inv => inv.invoiceType !== 'simplicity' && inv.clientPaymentStatus !== 'paid' && inv.outstanding > 0);
+    const list = invoices.filter(inv => inv.invoiceType !== 'simplicity' && inv.clientPaymentStatus !== 'paid' && inv.balanceOutstanding > 0);
     
     const resolvedInvoices = list.map(inv => {
-      const expectedDate = inv.payoutDate || inv.dueDate || todayStr;
+      const expectedDate = inv.payoutDate || inv.invoiceDueDate || todayStr;
       return { ...inv, expectedDate };
     });
 
@@ -1005,7 +1005,7 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
     const thisMonthList = resolvedInvoices.filter(inv => inv.expectedDate.startsWith(currentMonthPrefix));
     const nextMonthList = resolvedInvoices.filter(inv => inv.expectedDate.startsWith(nextMonthPrefix));
 
-    const sumList = (listList: any[]) => listList.reduce((sum, item) => sum + (Number(item.outstanding) || 0), 0);
+    const sumList = (listList: any[]) => listList.reduce((sum, item) => sum + (Number(item.balanceOutstanding) || 0), 0);
 
     return {
       thisWeek: sumList(thisWeekList),

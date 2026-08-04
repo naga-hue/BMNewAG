@@ -185,10 +185,30 @@ export default function AiChatbot({ assetAssignments = [] }) {
       }
     });
 
+    const expensesByPayeeSummary = {};
+    const expensesByNominalSummary = {};
+
+    transactions.forEach(t => {
+      const payeeKey = t.payee || 'Unknown Payee';
+      const nominalKey = t.nominalCode || 'Unassigned';
+
+      expensesByPayeeSummary[payeeKey] = (expensesByPayeeSummary[payeeKey] || 0) + t.shareAmount;
+      expensesByNominalSummary[nominalKey] = (expensesByNominalSummary[nominalKey] || 0) + t.shareAmount;
+    });
+
+    Object.keys(expensesByPayeeSummary).forEach(k => {
+      expensesByPayeeSummary[k] = Number(expensesByPayeeSummary[k].toFixed(2));
+    });
+    Object.keys(expensesByNominalSummary).forEach(k => {
+      expensesByNominalSummary[k] = Number(expensesByNominalSummary[k].toFixed(2));
+    });
+
     return {
       directExpenses: Number(directTotal.toFixed(2)),
       indirectExpenses: Number(indirectTotal.toFixed(2)),
       totalExpenses: Number((directTotal + indirectTotal).toFixed(2)),
+      expensesByPayeeSummary,
+      expensesByNominalSummary,
       transactions
     };
   };
@@ -313,6 +333,8 @@ export default function AiChatbot({ assetAssignments = [] }) {
         directExpenses: expensesBreakdown.directExpenses,
         indirectExpenses: expensesBreakdown.indirectExpenses,
         totalExpenses: expensesBreakdown.totalExpenses,
+        expensesByPayeeSummary: expensesBreakdown.expensesByPayeeSummary,
+        expensesByNominalSummary: expensesBreakdown.expensesByNominalSummary,
         expensesTransactionsList: expensesBreakdown.transactions,
         revenueGeneratedNet: revenueBreakdown.revenueNet,
         revenueGeneratedGross: revenueBreakdown.revenueGross,
@@ -475,6 +497,32 @@ export default function AiChatbot({ assetAssignments = [] }) {
       companyId: h.companyId
     }));
 
+    const recruiterToClientsMap = {};
+    const clientToRecruitersMap = {};
+
+    placementsSummary.forEach(p => {
+      const client = p.client;
+      if (!client) return;
+
+      const recruiters = (p.splits || []).map(s => s.recruiterName).filter(Boolean);
+
+      recruiters.forEach(recruiter => {
+        if (!recruiterToClientsMap[recruiter]) {
+          recruiterToClientsMap[recruiter] = [];
+        }
+        if (!recruiterToClientsMap[recruiter].includes(client)) {
+          recruiterToClientsMap[recruiter].push(client);
+        }
+
+        if (!clientToRecruitersMap[client]) {
+          clientToRecruitersMap[client] = [];
+        }
+        if (!clientToRecruitersMap[client].includes(recruiter)) {
+          clientToRecruitersMap[client].push(recruiter);
+        }
+      });
+    });
+
     return {
       currentDate: todayStr,
       activeLeavesToday: activeLeaves,
@@ -483,6 +531,8 @@ export default function AiChatbot({ assetAssignments = [] }) {
       unreconciledExpenses: unreconciledExpenses,
       staff: staffSummary,
       placements: placementsSummary,
+      recruiterToClientsMap,
+      clientToRecruitersMap,
       companies: companiesSummary,
       leavePolicies: leavePolicies,
       holidays: holidaysSummary,

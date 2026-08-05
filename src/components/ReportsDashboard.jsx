@@ -1354,16 +1354,29 @@ export default function ReportsDashboard({
           const expMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
           if (expMonth !== monthKey) return false;
 
+          // 1. Explicit link
           if (e.linkedVendorCellId) {
             const parts = e.linkedVendorCellId.split(',').map((s) => s.trim()).filter(Boolean);
-            return parts.some(part => {
+            const matches = parts.some(part => {
               const cid = part.split('_')[0];
               return vendorContractsIds.includes(cid);
             });
+            if (matches) return true;
           }
           if (e.linkedContractId && vendorContractsIds.includes(e.linkedContractId)) {
             return true;
           }
+
+          // 2. Payee name match
+          if (matchedVendor && matchedVendor.name && e.payee && e.payee.toLowerCase().includes(matchedVendor.name.toLowerCase())) {
+            return true;
+          }
+
+          // 3. Recipient type match
+          if (e.recipientType === 'vendor' && (e.recipientId === contract.vendorId || (matchedVendor && e.recipientId === matchedVendor.id))) {
+            return true;
+          }
+
           return false;
         });
 
@@ -5155,16 +5168,29 @@ export default function ReportsDashboard({
                   const expMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
                   if (expMonth !== mKey) return false;
 
+                  // 1. Explicit link
                   if (e.linkedVendorCellId) {
                     const parts = e.linkedVendorCellId.split(',').map((s) => s.trim()).filter(Boolean);
-                    return parts.some(part => {
+                    const matches = parts.some(part => {
                       const cid = part.split('_')[0];
                       return vendorContractsIds.includes(cid);
                     });
+                    if (matches) return true;
                   }
                   if (e.linkedContractId && vendorContractsIds.includes(e.linkedContractId)) {
                     return true;
                   }
+
+                  // 2. Payee name match
+                  if (matchedVendor && matchedVendor.name && e.payee && e.payee.toLowerCase().includes(matchedVendor.name.toLowerCase())) {
+                    return true;
+                  }
+
+                  // 3. Recipient type match
+                  if (e.recipientType === 'vendor' && (e.recipientId === contract.vendorId || (matchedVendor && e.recipientId === matchedVendor.id))) {
+                    return true;
+                  }
+
                   return false;
                 });
 

@@ -87,6 +87,9 @@ export default function ExpensesTable({
     actions: true
   });
 
+  // Multi-Selection State
+  const [selectedExpenseIds, setSelectedExpenseIds] = useState<string[]>([]);
+
   // Reconciliation states for mapping modal
   const [reconcilingExpense, setReconcilingExpense] = useState<any | null>(null);
   const [targetType, setTargetType] = useState('unreconciled');
@@ -238,9 +241,6 @@ export default function ExpensesTable({
   // Sorting State
   const [sortBy, setSortBy] = useState('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-
-  // Multi-Selection State
-  const [selectedExpenseIds, setSelectedExpenseIds] = useState<string[]>([]);
 
   // High Risk Action Confirmation Modal states
   const [showHighRiskModal, setShowHighRiskModal] = useState(false);

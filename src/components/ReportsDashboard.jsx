@@ -1345,6 +1345,30 @@ export default function ReportsDashboard({
         const startM = contract.startDate.substring(0, 7);
         const endM = contract.endDate.substring(0, 7);
 
+        const matchedVendor = vendors.find(v => v.id === contract.vendorId || (v.name && contract.vendorName && v.name.toLowerCase() === contract.vendorName.toLowerCase()));
+        const vendorContracts = contracts.filter(con => con.vendorId === contract.vendorId || (matchedVendor && con.vendorId === matchedVendor.id));
+        const vendorContractsIds = vendorContracts.map(vc => vc.id);
+
+        const vendorHasReconciledInMonth = (expenses || []).some(e => {
+          if (e.status === 'dns' || e.status === 'cancelled') return false;
+          const expMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+          if (expMonth !== monthKey) return false;
+
+          if (e.linkedVendorCellId) {
+            const parts = e.linkedVendorCellId.split(',').map((s) => s.trim()).filter(Boolean);
+            return parts.some(part => {
+              const cid = part.split('_')[0];
+              return vendorContractsIds.includes(cid);
+            });
+          }
+          if (e.linkedContractId && vendorContractsIds.includes(e.linkedContractId)) {
+            return true;
+          }
+          return false;
+        });
+
+        if (vendorHasReconciledInMonth) return;
+
         if (monthKey >= startM && monthKey <= endM) {
           const totalSeats = contract.quantityPurchased || 1;
           let unitMonthlyCost = Number(contract.unitCost || 0);
@@ -5121,6 +5145,31 @@ export default function ReportsDashboard({
                 if (!contract.startDate || !contract.endDate) return;
                 const startM = contract.startDate.substring(0, 7);
                 const endM = contract.endDate.substring(0, 7);
+
+                const matchedVendor = vendors.find(v => v.id === contract.vendorId || (v.name && contract.vendorName && v.name.toLowerCase() === contract.vendorName.toLowerCase()));
+                const vendorContracts = contracts.filter(con => con.vendorId === contract.vendorId || (matchedVendor && con.vendorId === matchedVendor.id));
+                const vendorContractsIds = vendorContracts.map(vc => vc.id);
+
+                const vendorHasReconciledInMonth = (expenses || []).some(e => {
+                  if (e.status === 'dns' || e.status === 'cancelled') return false;
+                  const expMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+                  if (expMonth !== mKey) return false;
+
+                  if (e.linkedVendorCellId) {
+                    const parts = e.linkedVendorCellId.split(',').map((s) => s.trim()).filter(Boolean);
+                    return parts.some(part => {
+                      const cid = part.split('_')[0];
+                      return vendorContractsIds.includes(cid);
+                    });
+                  }
+                  if (e.linkedContractId && vendorContractsIds.includes(e.linkedContractId)) {
+                    return true;
+                  }
+                  return false;
+                });
+
+                if (vendorHasReconciledInMonth) return;
+
                 if (mKey >= startM && mKey <= endM) {
                   const totalSeats = contract.quantityPurchased || 1;
                   let unitMonthlyCost = Number(contract.unitCost || 0);

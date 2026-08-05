@@ -105,12 +105,29 @@ export default function ExpensesTable({
   useEffect(() => {
     if (reconcilingExpense) {
       const exp = reconcilingExpense;
-      let monthVal = exp.plMonth || (exp.date ? exp.date.substring(0, 7) : new Date().toISOString().substring(0, 7));
+
+      const getExpMonth = (e: any) => {
+        if (e.plMonth) return e.plMonth;
+        if (e.date && e.date !== 'Bulk Selection') {
+          const parts = e.date.split('-');
+          if (parts.length === 3) {
+            if (parts[0].length === 4) return `${parts[0]}-${parts[1]}`;
+            if (parts[2].length === 4) return `${parts[2]}-${parts[1]}`;
+          }
+          const clean = e.date.substring(0, 7);
+          if (/^\d{4}-\d{2}$/.test(clean)) return clean;
+        }
+        return '';
+      };
+
+      let monthVal = getExpMonth(exp);
       if (exp.id === 'bulk') {
         const firstId = selectedExpenseIds[0];
         const firstExp = expenses.find(e => e.id === firstId);
         if (firstExp) {
-          monthVal = firstExp.plMonth || (firstExp.date ? firstExp.date.substring(0, 7) : new Date().toISOString().substring(0, 7));
+          monthVal = getExpMonth(firstExp);
+        } else {
+          monthVal = '';
         }
       }
       setTargetMonth(monthVal);
@@ -182,7 +199,7 @@ export default function ExpensesTable({
         }
       }
     }
-  }, [reconcilingExpense, contracts, vendors, staff]);
+  }, [reconcilingExpense, contracts, vendors, staff, expenses, selectedExpenseIds]);
 
   // Column Widths for resizing
   const [colWidths, setColWidths] = useState<Record<string, number>>({
@@ -2490,7 +2507,8 @@ export default function ExpensesTable({
                         if (!originalExp) continue;
 
                         const updated = { ...originalExp };
-                        const tMonth = targetMonth || updated.plMonth || (updated.date ? updated.date.substring(0, 7) : '');
+                        const cleanTargetMonth = (targetMonth && targetMonth !== 'Bulk Selection' && targetMonth !== 'Bulk Se') ? targetMonth : '';
+                        const tMonth = cleanTargetMonth || updated.plMonth || (updated.date ? (updated.date.split('-').length === 3 ? (updated.date.split('-')[0].length === 4 ? `${updated.date.split('-')[0]}-${updated.date.split('-')[1]}` : `${updated.date.split('-')[2]}-${updated.date.split('-')[1]}`) : updated.date.substring(0, 7)) : '');
                         if (!tMonth && targetType !== 'unreconciled') {
                           onShowToast(`Transaction date/month for ${updated.payee} is missing. Please select a Target Month in the form.`, 'error');
                           return;

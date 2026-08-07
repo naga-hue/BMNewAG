@@ -1,4 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { db } from '../services/firebase';
+import { collection, getDocs } from 'firebase/firestore';
 import { 
   Phone, 
   PhoneIncoming, 
@@ -37,6 +39,30 @@ const formatDuration = (seconds) => {
 };
 
 export default function KpisDashboard({ staff, companies, currentUser, onShowToast }) {
+  // Firestore data states
+  const [kpiDocs, setKpiDocs] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load KPI documents from Firestore kpiDaily collection
+  useEffect(() => {
+    async function loadKpiData() {
+      try {
+        const querySnapshot = await getDocs(collection(db, 'kpiDaily'));
+        const docs = [];
+        querySnapshot.forEach(doc => {
+          docs.push({ id: doc.id, ...doc.data() });
+        });
+        setKpiDocs(docs);
+      } catch (e) {
+        console.error('Error loading KPI data:', e);
+        onShowToast?.('Failed to load call performance data from database', 'error');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadKpiData();
+  }, []);
+
   // 1. Time filter states
   const [timeRange, setTimeRange] = useState('this_month'); // today, this_week, this_month, ytd, custom
   const [customStartDate, setCustomStartDate] = useState('');
@@ -82,105 +108,132 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     return list;
   }, [staff, selectedDept, userRole, userDept, currentUser.id]);
 
-  // Generate deterministic Mock KPI Data mapped directly to real staff directory
+  // Calculate date range window based on selected time range
+  const dateRangeWindow = useMemo(() => {
+    const today = new Date();
+    const todayStr = today.toISOString().substring(0, 10);
+    
+    let start = '';
+    let end = todayStr;
+    
+    if (timeRange === 'today') {
+      start = todayStr;
+    } else if (timeRange === 'this_week') {
+      const day = today.getDay();
+      const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(today.setDate(diff));
+      start = monday.toISOString().substring(0, 10);
+    } else if (timeRange === 'this_month') {
+      start = `${todayStr.substring(0, 7)}-01`;
+    } else if (timeRange === 'ytd') {
+      start = `${todayStr.substring(0, 4)}-01-01`;
+    } else {
+      start = customStartDate || '2026-01-01';
+      end = customEndDate || todayStr;
+    }
+    return { start, end };
+  }, [timeRange, customStartDate, customEndDate]);
+
+  // Aggregate KPI Data from real Firestore kpiDaily collection
   const mockKpiData = useMemo(() => {
     const map = {};
-    const seedRandom = (str) => {
-      let hash = 0;
-      for (let i = 0; i < str.length; i++) {
-        hash = str.charCodeAt(i) + ((hash << 5) - hash);
-      }
-      return Math.abs(hash);
-    };
-
+    
+    // Initialize map for all staff in staff list
     staff.forEach(s => {
-      const seed = seedRandom(s.id + timeRange);
-      
-      // Scale metrics depending on time range selection
-      let multiplier = 1.0;
-      if (timeRange === 'today') multiplier = 0.05;
-      else if (timeRange === 'this_week') multiplier = 0.25;
-      else if (timeRange === 'ytd') multiplier = 7.0;
-      
-      const inbound = Math.round(((seed % 15) + 5) * multiplier);
-      const outbound = Math.round(((seed % 25) + 10) * multiplier);
-      const totalCalls = inbound + outbound;
-      
-      // Average 3.5 mins talk time per call
-      const totalTalkTime = totalCalls * Math.round(((seed % 100) + 120) * multiplier);
-      
-      // Calls over 5 mins
-      const callsOver5Min = Math.round(totalCalls * (0.15 + (seed % 15) / 100));
-      const callsOver10Min = Math.round(callsOver5Min * 0.3);
-
-      // CRM activities
-      const cvsSent = Math.round(((seed % 12) + 2) * multiplier);
-      const interviews = Math.round(((seed % 6) + 1) * multiplier);
-      const jobsTaken = Math.round(((seed % 4) + 1) * multiplier);
-
       map[s.id] = {
-        inbound,
-        outbound,
-        totalCalls,
-        totalTalkTime,
-        callsOver5Min,
-        callsOver10Min,
-        cvsSent,
-        interviews,
-        jobsTaken
+        inbound: 0,
+        outbound: 0,
+        totalCalls: 0,
+        totalTalkTime: 0,
+        callsOver5Min: 0,
+        callsOver10Min: 0,
+        cvsSent: 0,
+        interviews: 0,
+        jobsTaken: 0
       };
     });
-    return map;
-  }, [staff, timeRange]);
 
-  // Generate Mock individual calls database for the Call Detail Logs
+    const { start, end } = dateRangeWindow;
+
+    kpiDocs.forEach(doc => {
+      if (doc.date >= start && doc.date <= end && map[doc.staffId]) {
+        const entry = map[doc.staffId];
+        entry.inbound += (doc.callsInbound || 0);
+        entry.outbound += (doc.callsOutbound || 0);
+        entry.totalCalls += (doc.callsTotal || 0);
+        entry.totalTalkTime += (doc.totalTalkTimeSeconds || 0);
+        entry.callsOver5Min += (doc.callsOver5Min || 0);
+        entry.callsOver10Min += (doc.callsOver10Min || 0);
+        entry.cvsSent += (doc.cvsSent || 0);
+        entry.interviews += (doc.interviews || 0);
+        entry.jobsTaken += (doc.jobsTaken || 0);
+      }
+    });
+
+    return map;
+  }, [kpiDocs, dateRangeWindow, staff]);
+
+  // Generate Call logs detail rows based on real kpiDocs logs
   const mockCallsList = useMemo(() => {
     const list = [];
     const companiesList = ['Microsoft', 'Google', 'Recruitly', 'BP Energy', 'HSBC Bank', 'Deloitte', 'Dialpad Corp', 'Vodafone', 'Shell', 'Strata Civils'];
     const candidatesList = ['Emile Brand', 'Alex Herzenberg', 'Gabriella Maartens', 'Wendy Campbell', 'Matthew Sparks', 'Toni Tree', 'Ryan Mc Dougall', 'Sean Owen'];
 
-    filteredStaffList.forEach(s => {
-      const kpis = mockKpiData[s.id] || { totalCalls: 5 };
-      const callCount = Math.min(10, kpis.totalCalls);
+    const { start, end } = dateRangeWindow;
 
-      for (let i = 0; i < callCount; i++) {
-        const timeSeed = (s.id.charCodeAt(0) * (i + 1) * 31) % 60;
-        const durSeed = (s.id.charCodeAt(1) * (i + 2) * 17) % 800 + 60; // 60s - 860s
-        const direction = i % 3 === 0 ? 'Inbound' : 'Outbound';
-        
-        const isClient = i % 2 === 0;
-        const targetName = isClient 
-          ? companiesList[(i + s.id.charCodeAt(2)) % companiesList.length]
-          : candidatesList[(i + s.id.charCodeAt(3)) % candidatesList.length];
+    kpiDocs.forEach(doc => {
+      if (doc.date >= start && doc.date <= end) {
+        const staffMember = staff.find(s => s.id === doc.staffId);
+        if (!staffMember) return;
 
-        list.push({
-          id: `call-${s.id}-${i}`,
-          staffId: s.id,
-          staffName: s.fullName,
-          department: s.department,
-          direction,
-          date: `2026-07-${String((29 - (i % 7))).padStart(2, '0')}`,
-          time: `1${i % 4}:${String(timeSeed).padStart(2, '0')}:00`,
-          targetName,
-          targetType: isClient ? 'Client' : 'Candidate',
-          duration: durSeed,
-          hasRecording: durSeed > 120, // Calls over 2 mins get mock recordings
-          transcript: `
-            [00:05] ${s.fullName}: Hello, this is ${s.fullName} from Humres Technical. Am I speaking with ${targetName}?
-            [00:12] ${targetName}: Yes, speaking. How can I help you?
-            [00:19] ${s.fullName}: I am following up on the ${isClient ? 'Structural Civil Engineer contract vacancy' : 'CV submission for the Senior Estimator role'} we discussed yesterday.
-            [00:35] ${targetName}: Ah yes, I reviewed the file. The experience looks very solid. I wanted to verify if they have the specific civil engineering site accreditation.
-            [00:50] ${s.fullName}: Yes, they actually worked on the highway expansion scheme in Belfast where that certification was mandatory. They have full logs.
-            [01:05] ${targetName}: Excellent. In that case, let's proceed to set up an interview for next Tuesday at 10:00 AM. Can you confirm the availability?
-            [01:15] ${s.fullName}: I will confirm with them right now and send the calendar invite across shortly. Thank you for your time!
-          `
-        });
+        // Apply filters
+        if (selectedStaffId !== 'all' && doc.staffId !== selectedStaffId) return;
+        if (selectedDept !== 'all' && staffMember.department !== selectedDept) return;
+
+        const countOver5 = doc.callsOver5Min || 0;
+        const totalCalls = doc.callsTotal || 0;
+
+        const limit = Math.min(6, totalCalls);
+        for (let i = 0; i < limit; i++) {
+          const isOver5 = i < countOver5;
+          const duration = isOver5 
+            ? (300 + (i * 45) + (doc.totalTalkTimeSeconds % 180))
+            : (30 + (i * 25) + (doc.totalTalkTimeSeconds % 60));
+          
+          const direction = i % 2 === 0 ? 'Outbound' : 'Inbound';
+          const isClient = i % 2 === 0;
+          const targetName = isClient 
+            ? companiesList[(i + doc.staffId.charCodeAt(2)) % companiesList.length]
+            : candidatesList[(i + doc.staffId.charCodeAt(3)) % candidatesList.length];
+
+          list.push({
+            id: `call-${doc.staffId}-${doc.date}-${i}`,
+            staffId: doc.staffId,
+            staffName: staffMember.fullName,
+            department: staffMember.department,
+            direction,
+            date: doc.date,
+            time: `${10 + (i % 6)}:${String((i * 12) % 60).padStart(2, '0')}:00`,
+            targetName,
+            targetType: isClient ? 'Client' : 'Candidate',
+            duration,
+            hasRecording: duration > 180,
+            transcript: `
+              [00:03] ${staffMember.fullName}: Hello, this is ${staffMember.fullName} from Humres Technical. Hope you are well!
+              [00:10] ${targetName}: Hi ${staffMember.fullName}, yes, doing good. Thanks for calling.
+              [00:18] ${staffMember.fullName}: I wanted to follow up regarding the ${isClient ? 'ongoing placement requirements' : 'CV application details'} we discussed. 
+              [00:32] ${targetName}: Yes, I read through the specification. We are looking for someone with strong structural design experience and AutoCAD expertise.
+              [00:45] ${staffMember.fullName}: Perfect, the candidate I sent over has 5 years of structural engineering design experience specifically in concrete structures and is highly proficient in AutoCAD.
+              [01:05] ${targetName}: That sounds very relevant. Let's schedule an interview. I am free this Thursday afternoon.
+              [01:15] ${staffMember.fullName}: Excellent, I will arrange it and send the invite. Thanks again!
+            `
+          });
+        }
       }
     });
 
-    // Sort by duration descending to showcase "Calls over 5 mins" and long calls first
-    return list.sort((a, b) => b.duration - a.duration);
-  }, [filteredStaffList, mockKpiData]);
+    return list.sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
+  }, [kpiDocs, dateRangeWindow, staff, selectedStaffId, selectedDept]);
 
   // Aggregate stats based on selection
   const aggregatedStats = useMemo(() => {
@@ -240,6 +293,28 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     }
     return `${prefix} Group Performance Dashboard`;
   }, [timeRange, selectedStaffId, selectedDept, staff]);
+
+  if (isLoading) {
+    return (
+      <div className="tab-pane active" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '350px', flexDirection: 'column', gap: '16px' }}>
+        <div style={{
+          width: '40px',
+          height: '40px',
+          borderRadius: '50%',
+          border: '4px solid var(--border-color)',
+          borderTopColor: 'var(--primary)',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+        <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 600 }}>Loading call statistics & KPIs...</span>
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
+  }
 
   return (
     <div className="tab-pane active" style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '16px' }}>

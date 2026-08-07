@@ -98,7 +98,7 @@ const isConfigured = !!(
 );
 
 let app: any = null;
-let db: any = null;
+export let db: any = null;
 let storage: any = null;
 
 if (isConfigured) {

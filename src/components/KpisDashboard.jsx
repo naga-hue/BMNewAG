@@ -41,18 +41,28 @@ const formatDuration = (seconds) => {
 export default function KpisDashboard({ staff, companies, currentUser, onShowToast }) {
   // Firestore data states
   const [kpiDocs, setKpiDocs] = useState([]);
+  const [liveCalls, setLiveCalls] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load KPI documents from Firestore kpiDaily collection
+  // Load KPI documents from Firestore collections
   useEffect(() => {
     async function loadKpiData() {
       try {
-        const querySnapshot = await getDocs(collection(db, 'kpiDaily'));
-        const docs = [];
-        querySnapshot.forEach(doc => {
-          docs.push({ id: doc.id, ...doc.data() });
+        // Fetch Daily aggregates
+        const kpiSnapshot = await getDocs(collection(db, 'kpiDaily'));
+        const kpiList = [];
+        kpiSnapshot.forEach(doc => {
+          kpiList.push({ id: doc.id, ...doc.data() });
         });
-        setKpiDocs(docs);
+        setKpiDocs(kpiList);
+
+        // Fetch Live webhook calls
+        const callsSnapshot = await getDocs(collection(db, 'dialpad_calls'));
+        const callsList = [];
+        callsSnapshot.forEach(doc => {
+          callsList.push({ id: doc.id, ...doc.data() });
+        });
+        setLiveCalls(callsList);
       } catch (e) {
         console.error('Error loading KPI data:', e);
         onShowToast?.('Failed to load call performance data from database', 'error');
@@ -234,6 +244,50 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
     return list.sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
   }, [kpiDocs, dateRangeWindow, staff, selectedStaffId, selectedDept]);
+
+  // Format the raw live calls from the webhook database
+  const formattedLiveCalls = useMemo(() => {
+    const { start, end } = dateRangeWindow;
+
+    return liveCalls
+      .map(call => {
+        const dateVal = call.dateStarted ? call.dateStarted.substring(0, 10) : '';
+        const timeVal = call.dateStarted ? call.dateStarted.substring(11, 19) : '';
+
+        const targetTypeVal = (call.target?.type || 'external').toLowerCase().trim() === 'user' 
+          ? 'Candidate' 
+          : 'Client';
+
+        return {
+          id: call.id || call.conversationId,
+          staffId: call.handlerId,
+          staffName: call.handlerName,
+          department: call.department || '',
+          direction: call.direction === 'inbound' ? 'Inbound' : 'Outbound',
+          date: dateVal,
+          time: timeVal,
+          targetName: call.externalName || call.externalNumber || 'Unknown',
+          targetType: targetTypeVal,
+          duration: call.durationSeconds || 0,
+          hasRecording: call.wasRecorded,
+          recordingUrl: call.recordingUrl,
+          transcript: call.transcript || 'No transcript generated yet.'
+        };
+      })
+      .filter(call => {
+        if (call.date && (call.date < start || call.date > end)) return false;
+        if (selectedStaffId !== 'all' && call.staffId !== selectedStaffId) return false;
+        if (selectedDept !== 'all' && call.department !== selectedDept) return false;
+        return true;
+      });
+  }, [liveCalls, dateRangeWindow, selectedStaffId, selectedDept]);
+
+  const displayCallsList = useMemo(() => {
+    if (formattedLiveCalls.length > 0) {
+      return formattedLiveCalls;
+    }
+    return mockCallsList;
+  }, [formattedLiveCalls, mockCallsList]);
 
   // Aggregate stats based on selection
   const aggregatedStats = useMemo(() => {
@@ -543,9 +597,18 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       {/* 5. CALL RECORDINGS & TRANSCRIPT AUDIT LOGS TABLE */}
       <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
             <Phone size={18} color="var(--primary)" />
             <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>Dialpad Call detail logs & Recordings</h4>
+            {formattedLiveCalls.length > 0 ? (
+              <span style={{ fontSize: '10px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                🟢 LIVE WEBHOOK DATA
+              </span>
+            ) : (
+              <span style={{ fontSize: '10px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                💡 DEMO MODE (WAITING FOR WEBHOOK EVENT)
+              </span>
+            )}
           </div>
           <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>🎥 Shows recordings for calls &gt; 2 mins</span>
         </div>
@@ -564,12 +627,8 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
               </tr>
             </thead>
             <tbody>
-              {mockCallsList
-                .filter(call => {
-                  if (selectedStaffId !== 'all' && call.staffId !== selectedStaffId) return false;
-                  return true;
-                })
-                .slice(0, 8) // Limit to top 8 calls for clean UI
+              {displayCallsList
+                .slice(0, 10) // Limit to top 10 calls for clean UI
                 .map(call => (
                   <tr key={call.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <td style={{ padding: '12px 10px', fontSize: '12px' }}>

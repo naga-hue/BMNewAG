@@ -84,10 +84,8 @@ function initFirestore() {
         });
         console.log('[Firestore] Admin SDK initialized with service account credentials.');
       } else {
-        initializeApp({
-          projectId
-        });
-        console.log('[Firestore] Admin SDK initialized using project ID fallback.');
+        console.error('[Firestore] FIREBASE_CLIENT_EMAIL or FIREBASE_PRIVATE_KEY is missing.');
+        throw new Error('Firebase credentials are not configured. Please set FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY in Vercel environment variables.');
       }
     }
     db = getFirestore();

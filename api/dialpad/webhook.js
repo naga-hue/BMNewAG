@@ -145,11 +145,20 @@ function initFirestore() {
       }
 
       if (clientEmail && privateKey) {
+        const formattedKey = formatPrivateKey(privateKey);
+        console.log(`[Diagnostic] clientEmail: "${clientEmail}"`);
+        console.log(`[Diagnostic] raw privateKey length: ${privateKey.length}`);
+        console.log(`[Diagnostic] raw privateKey startsWith: "${privateKey.substring(0, 40)}"`);
+        console.log(`[Diagnostic] raw privateKey endsWith: "${privateKey.substring(privateKey.length - 40)}"`);
+        console.log(`[Diagnostic] formattedKey length: ${formattedKey.length}`);
+        console.log(`[Diagnostic] formattedKey startsWith: "${formattedKey.substring(0, 40)}"`);
+        console.log(`[Diagnostic] formattedKey endsWith: "${formattedKey.substring(formattedKey.length - 40)}"`);
+
         initializeApp({
           credential: cert({
             projectId,
             clientEmail,
-            privateKey: formatPrivateKey(privateKey),
+            privateKey: formattedKey,
           })
         });
         console.log('[Firestore] Admin SDK initialized with service account credentials.');

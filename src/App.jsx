@@ -33,7 +33,8 @@ import {
   ChevronRight,
   FileText,
   Sparkles,
-  Mail
+  Mail,
+  BarChart2
 } from 'lucide-react';
 
 import { initialCompanies } from './mockData';
@@ -73,6 +74,7 @@ const ReportsDashboard = lazy(() => import('./components/ReportsDashboard'));
 const RBACDashboard = lazy(() => import('./components/RBACDashboard'));
 const WhatsImportantDashboard = lazy(() => import('./components/WhatsImportantDashboard'));
 const CrmDashboard = lazy(() => import('./components/crm/CrmDashboard'));
+const KpisDashboard = lazy(() => import('./components/KpisDashboard'));
 
 export default function App() {
   // Theme state
@@ -1858,6 +1860,16 @@ export default function App() {
                 </li>
               )}
 
+              <li>
+                <div 
+                  className={`nav-item ${activeTab === 'kpis' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('kpis')}
+                >
+                  <BarChart2 size={18} />
+                  <span>KPIs</span>
+                </div>
+              </li>
+
               {currentUser.permissions.allowedModules.includes('credit_control') && (
                 <li>
                   <div 
@@ -2082,6 +2094,7 @@ export default function App() {
                activeTab === 'rbac' ? 'User Access & Roles Control' :
                activeTab === 'placements' ? 'Sales & Placements Dashboard' :
                activeTab === 'crm' ? 'CRM Recruiting Desk' :
+               activeTab === 'kpis' ? 'KPI Monitoring Dashboard' :
                activeTab === 'credit_control' ? 'Credit Control & Invoices Ledger' :
                activeTab === 'cashflow' ? 'Cashflow Projections & Ledger' : 'Vendors & Asset Management'}
             </h1>
@@ -3220,6 +3233,16 @@ export default function App() {
               onUpdateCompany={handleSaveCompany}
               exitSettings={exitSettings}
               onSaveExitSettings={handleSaveExitSettings}
+            />
+          )}
+
+          {/* TAB 12: KPI Monitoring Dashboard */}
+          {activeTab === 'kpis' && (
+            <KpisDashboard 
+              staff={staff}
+              companies={companies}
+              currentUser={currentUser}
+              onShowToast={handleShowToast}
             />
           )}
           </Suspense>

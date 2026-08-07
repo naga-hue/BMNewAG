@@ -79,7 +79,16 @@ function initFirestore() {
           credential: cert({
             projectId,
             clientEmail,
-            privateKey: privateKey.replace(/\\n/g, '\n'),
+            privateKey: (() => {
+              let key = privateKey.trim();
+              if (key.startsWith('"') && key.endsWith('"')) {
+                key = key.slice(1, -1);
+              }
+              if (key.startsWith("'") && key.endsWith("'")) {
+                key = key.slice(1, -1);
+              }
+              return key.replace(/\\n/g, '\n');
+            })(),
           })
         });
         console.log('[Firestore] Admin SDK initialized with service account credentials.');

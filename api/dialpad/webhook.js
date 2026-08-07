@@ -70,6 +70,18 @@ function formatPrivateKey(rawKey) {
   if (!rawKey) return '';
   let key = rawKey.trim();
   
+  // If the user pasted the entire JSON service account file into this variable, parse it!
+  if (key.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(key);
+      if (parsed.private_key) {
+        key = parsed.private_key.trim();
+      }
+    } catch (e) {
+      console.error('[Firestore] Failed to parse private key as JSON:', e);
+    }
+  }
+
   if (key.startsWith('"') && key.endsWith('"')) {
     key = key.slice(1, -1);
   }
@@ -110,8 +122,27 @@ function initFirestore() {
   if (!db) {
     if (!getApps().length) {
       const projectId = process.env.FIREBASE_PROJECT_ID || 'humres-management-hub';
-      const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-      const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+      let clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+      let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+
+      // Extract from JSON if they pasted the whole JSON file into either variable
+      if (privateKey && privateKey.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(privateKey.trim());
+          if (parsed.private_key) privateKey = parsed.private_key;
+          if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
+        } catch (e) {
+          console.error('[Firestore] Failed to parse privateKey environment variable as JSON:', e);
+        }
+      }
+      if (clientEmail && clientEmail.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(clientEmail.trim());
+          if (parsed.client_email) clientEmail = parsed.client_email;
+        } catch (e) {
+          console.error('[Firestore] Failed to parse clientEmail environment variable as JSON:', e);
+        }
+      }
 
       if (clientEmail && privateKey) {
         initializeApp({

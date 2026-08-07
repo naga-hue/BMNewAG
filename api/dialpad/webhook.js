@@ -65,6 +65,45 @@ function verifyDialpadJwt(jwtToken, secret) {
   }
 }
 
+// Robust PEM private key formatter to handle double quotes, spaces, single lines, and escaped newlines
+function formatPrivateKey(rawKey) {
+  if (!rawKey) return '';
+  let key = rawKey.trim();
+  
+  if (key.startsWith('"') && key.endsWith('"')) {
+    key = key.slice(1, -1);
+  }
+  if (key.startsWith("'") && key.endsWith("'")) {
+    key = key.slice(1, -1);
+  }
+  
+  key = key.replace(/\\n/g, '\n');
+  
+  if (!key.includes('\n')) {
+    const header = '-----BEGIN PRIVATE KEY-----';
+    const footer = '-----END PRIVATE KEY-----';
+    
+    let base64Body = key;
+    if (base64Body.startsWith(header)) {
+      base64Body = base64Body.substring(header.length);
+    }
+    if (base64Body.endsWith(footer)) {
+      base64Body = base64Body.substring(0, base64Body.length - footer.length);
+    }
+    
+    base64Body = base64Body.replace(/\s+/g, '');
+    
+    const lines = [];
+    for (let i = 0; i < base64Body.length; i += 64) {
+      lines.push(base64Body.substring(i, i + 64));
+    }
+    
+    key = `${header}\n${lines.join('\n')}\n${footer}\n`;
+  }
+  
+  return key;
+}
+
 // Initialize Firestore Admin SDK on-demand
 let db = null;
 function initFirestore() {
@@ -79,16 +118,7 @@ function initFirestore() {
           credential: cert({
             projectId,
             clientEmail,
-            privateKey: (() => {
-              let key = privateKey.trim();
-              if (key.startsWith('"') && key.endsWith('"')) {
-                key = key.slice(1, -1);
-              }
-              if (key.startsWith("'") && key.endsWith("'")) {
-                key = key.slice(1, -1);
-              }
-              return key.replace(/\\n/g, '\n');
-            })(),
+            privateKey: formatPrivateKey(privateKey),
           })
         });
         console.log('[Firestore] Admin SDK initialized with service account credentials.');

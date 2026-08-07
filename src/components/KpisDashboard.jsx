@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../services/firebase';
 import { collection, getDocs } from 'firebase/firestore';
+import { useBoundStore } from '../store/useBoundStore';
 import { 
   Phone, 
   PhoneIncoming, 
@@ -43,6 +44,40 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   const [kpiDocs, setKpiDocs] = useState([]);
   const [liveCalls, setLiveCalls] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Dashboard view states
+  const [activeSubTab, setActiveSubTab] = useState('performance'); // 'performance' | 'mapping'
+
+  // Call Logs search & pagination states
+  const [callLogsSearch, setCallLogsSearch] = useState('');
+  const [callLogsDirection, setCallLogsDirection] = useState('all'); // 'all' | 'inbound' | 'outbound'
+  const [callLogsPage, setCallLogsPage] = useState(1);
+  const callLogsPageSize = 10;
+
+  // Recruiter Mapping edit states
+  const [mappingSearch, setMappingSearch] = useState('');
+  const [editingStaffId, setEditingStaffId] = useState(null);
+  const [editingAliases, setEditingAliases] = useState('');
+
+  // Action to save recruiter matching aliases to Firestore via Zustand store
+  const handleSaveAliases = async (staffId) => {
+    try {
+      const staffMember = staff.find(s => s.id === staffId);
+      if (!staffMember) return;
+
+      const updated = {
+        ...staffMember,
+        additionalEmails: editingAliases.trim()
+      };
+
+      await useBoundStore.getState().updateStaff(updated);
+      onShowToast?.(`Matching aliases updated for ${staffMember.fullName}`, 'success');
+      setEditingStaffId(null);
+    } catch (e) {
+      console.error('Error updating matching aliases:', e);
+      onShowToast?.('Failed to update matching aliases', 'error');
+    }
+  };
 
   // Load KPI documents from Firestore collections
   useEffect(() => {
@@ -289,6 +324,41 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     return mockCallsList;
   }, [formattedLiveCalls, mockCallsList]);
 
+  // Filter and search call logs list based on user search and direction controls
+  const filteredAndSearchedCalls = useMemo(() => {
+    const list = displayCallsList;
+    const query = callLogsSearch.toLowerCase().trim();
+
+    return list.filter(call => {
+      // 1. Direction Filter
+      if (callLogsDirection !== 'all' && call.direction.toLowerCase() !== callLogsDirection) return false;
+
+      // 2. Text Search Query Filter
+      if (query) {
+        const callerMatch = (call.staffName || '').toLowerCase().includes(query);
+        const recipientMatch = (call.targetName || '').toLowerCase().includes(query);
+        const numberMatch = (call.externalNumber || '').toLowerCase().includes(query);
+        if (!callerMatch && !recipientMatch && !numberMatch) return false;
+      }
+      return true;
+    });
+  }, [displayCallsList, callLogsSearch, callLogsDirection]);
+
+  // Paginated chunk to display
+  const displayCallsChunk = useMemo(() => {
+    const startIdx = (callLogsPage - 1) * callLogsPageSize;
+    return filteredAndSearchedCalls.slice(startIdx, startIdx + callLogsPageSize);
+  }, [filteredAndSearchedCalls, callLogsPage]);
+
+  const totalCallLogsPages = useMemo(() => {
+    return Math.max(1, Math.ceil(filteredAndSearchedCalls.length / callLogsPageSize));
+  }, [filteredAndSearchedCalls]);
+
+  // Reset page when search filters change
+  useEffect(() => {
+    setCallLogsPage(1);
+  }, [callLogsSearch, callLogsDirection]);
+
   // Aggregate stats based on selection
   const aggregatedStats = useMemo(() => {
     let inbound = 0;
@@ -373,7 +443,54 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   return (
     <div className="tab-pane active" style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '16px' }}>
       
-      {/* 1. TOP HEADER & PERFORMANCE ALERTS */}
+      {/* 0. SUB-TAB TOGGLE NAVIGATION */}
+      <div style={{
+        display: 'flex',
+        gap: '12px',
+        borderBottom: '1px solid var(--border-color)',
+        paddingBottom: '14px',
+        marginBottom: '4px'
+      }}>
+        <button
+          onClick={() => setActiveSubTab('performance')}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontWeight: 700,
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: activeSubTab === 'performance' ? 'var(--primary)' : 'var(--bg-secondary)',
+            color: activeSubTab === 'performance' ? '#fff' : 'var(--text-secondary)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          }}
+        >
+          📈 Performance Scorecard
+        </button>
+        <button
+          onClick={() => {
+            setActiveSubTab('mapping');
+            setEditingStaffId(null);
+          }}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontWeight: 700,
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: activeSubTab === 'mapping' ? 'var(--primary)' : 'var(--bg-secondary)',
+            color: activeSubTab === 'mapping' ? '#fff' : 'var(--text-secondary)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          }}
+        >
+          🔗 Recruiter Dialpad Mapping
+        </button>
+      </div>
+
+      {activeSubTab === 'performance' ? (
+        <>
+          {/* 1. TOP HEADER & PERFORMANCE ALERTS */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>Performance & Activity Scorecard</h2>
@@ -596,7 +713,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
       {/* 5. CALL RECORDINGS & TRANSCRIPT AUDIT LOGS TABLE */}
       <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
             <Phone size={18} color="var(--primary)" />
             <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>Dialpad Call detail logs & Recordings</h4>
@@ -613,6 +730,42 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>🎥 Shows recordings for calls &gt; 2 mins</span>
         </div>
 
+        {/* Search & Direction controls */}
+        <div style={{
+          display: 'flex',
+          gap: '12px',
+          marginBottom: '16px',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          paddingBottom: '12px',
+          borderBottom: '1px solid var(--border-color)'
+        }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
+            <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }} />
+            <input
+              type="text"
+              placeholder="Search by caller, recipient, or number..."
+              value={callLogsSearch}
+              onChange={(e) => setCallLogsSearch(e.target.value)}
+              className="form-input"
+              style={{ paddingLeft: '32px', width: '100%', fontSize: '12px', height: '34px' }}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>Direction:</span>
+            <select
+              value={callLogsDirection}
+              onChange={(e) => setCallLogsDirection(e.target.value)}
+              className="form-input"
+              style={{ fontSize: '12px', width: '130px', height: '34px', padding: '0 8px' }}
+            >
+              <option value="all">All Directions</option>
+              <option value="inbound">⬇️ Inbound</option>
+              <option value="outbound">⬆️ Outbound</option>
+            </select>
+          </div>
+        </div>
+
         <div style={{ overflowX: 'auto' }}>
           <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -627,9 +780,8 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
               </tr>
             </thead>
             <tbody>
-              {displayCallsList
-                .slice(0, 10) // Limit to top 10 calls for clean UI
-                .map(call => (
+              {displayCallsChunk.length > 0 ? (
+                displayCallsChunk.map(call => (
                   <tr key={call.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <td style={{ padding: '12px 10px', fontSize: '12px' }}>
                       <span style={{ display: 'block', fontWeight: 600 }}>{call.date}</span>
@@ -682,11 +834,195 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                       </button>
                     </td>
                   </tr>
-                ))}
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                    No call logs match the active filter criteria.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginTop: '16px',
+          paddingTop: '12px',
+          borderTop: '1px solid var(--border-color)',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}>
+          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+            Showing {filteredAndSearchedCalls.length > 0 ? (callLogsPage - 1) * callLogsPageSize + 1 : 0} to {Math.min(filteredAndSearchedCalls.length, callLogsPage * callLogsPageSize)} of {filteredAndSearchedCalls.length} calls
+          </span>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button
+              onClick={() => setCallLogsPage(p => Math.max(1, p - 1))}
+              disabled={callLogsPage === 1}
+              className="btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '12px', opacity: callLogsPage === 1 ? 0.5 : 1, cursor: callLogsPage === 1 ? 'not-allowed' : 'pointer' }}
+            >
+              ◀ Previous
+            </button>
+            <span style={{ display: 'flex', alignItems: 'center', px: '8px', fontSize: '12px', fontWeight: 600 }}>
+              Page {callLogsPage} of {totalCallLogsPages}
+            </span>
+            <button
+              onClick={() => setCallLogsPage(p => Math.min(totalCallLogsPages, p + 1))}
+              disabled={callLogsPage === totalCallLogsPages}
+              className="btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '12px', opacity: callLogsPage === totalCallLogsPages ? 0.5 : 1, cursor: callLogsPage === totalCallLogsPages ? 'not-allowed' : 'pointer' }}
+            >
+              Next ▶
+            </button>
+          </div>
+        </div>
       </div>
+      </>
+      ) : (
+        /* Recruiter Dialpad Mapping View */
+        <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+          <div style={{ marginBottom: '16px' }}>
+            <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruiter Dialpad Integration Map</h4>
+            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+              Configure matching email addresses for each recruiter. Webhook calls and activities are mapped automatically by matching Dialpad email addresses to these aliases.
+            </p>
+          </div>
+
+          <div style={{ position: 'relative', marginBottom: '16px', maxWidth: '380px' }}>
+            <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }} />
+            <input
+              type="text"
+              placeholder="Search recruiters by name..."
+              value={mappingSearch}
+              onChange={(e) => setMappingSearch(e.target.value)}
+              className="form-input"
+              style={{ paddingLeft: '32px', fontSize: '12px', height: '34px' }}
+            />
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
+                  <th style={{ padding: '10px' }}>Recruiter</th>
+                  <th>Primary Email</th>
+                  <th>Dialpad Match Aliases</th>
+                  <th style={{ textAlign: 'center' }}>Integration Status</th>
+                  <th style={{ textAlign: 'center' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {staff
+                  .filter(s => {
+                    if (mappingSearch) {
+                      return s.fullName.toLowerCase().includes(mappingSearch.toLowerCase());
+                    }
+                    return true;
+                  })
+                  .map(s => {
+                    const aliases = (s.additionalEmails || '').split(',').map(e => e.trim()).filter(Boolean);
+                    const isMapped = !!s.businessEmail || aliases.length > 0;
+                    const isEditing = editingStaffId === s.id;
+
+                    return (
+                      <tr key={s.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '12px 10px' }}>
+                          <span style={{ fontWeight: 600, display: 'block' }}>👤 {s.fullName}</span>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{s.department || 'No department'}</span>
+                        </td>
+                        <td>
+                          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{s.businessEmail || s.personalEmail || '-'}</span>
+                        </td>
+                        <td>
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              className="form-input"
+                              value={editingAliases}
+                              onChange={(e) => setEditingAliases(e.target.value)}
+                              placeholder="e.g. a.moore@humres.co.uk, amoore@stratass.com"
+                              style={{ width: '100%', fontSize: '12px', height: '32px' }}
+                            />
+                          ) : (
+                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                              {aliases.length > 0 ? (
+                                aliases.map((alias, idx) => (
+                                  <span key={idx} style={{
+                                    padding: '2px 6px',
+                                    borderRadius: '12px',
+                                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                    color: 'var(--primary)',
+                                    fontSize: '11px',
+                                    fontWeight: 600
+                                  }}>
+                                    {alias}
+                                  </span>
+                                ))
+                              ) : (
+                                <span style={{ fontSize: '11px', color: 'var(--warning)', fontStyle: 'italic' }}>
+                                  ⚠️ No additional matching aliases set
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span style={{
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            backgroundColor: isMapped ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                            color: isMapped ? 'var(--success)' : 'var(--warning)'
+                          }}>
+                            {isMapped ? 'Mapped' : 'Unmapped'}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {isEditing ? (
+                            <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                              <button
+                                onClick={() => handleSaveAliases(s.id)}
+                                className="btn-secondary"
+                                style={{ padding: '4px 8px', fontSize: '11px', backgroundColor: 'var(--success)', color: '#fff', border: 'none' }}
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingStaffId(null)}
+                                className="btn-secondary"
+                                style={{ padding: '4px 8px', fontSize: '11px' }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setEditingStaffId(s.id);
+                                setEditingAliases(s.additionalEmails || '');
+                              }}
+                              className="btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '11px' }}
+                            >
+                              ⚙️ Edit Aliases
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* 6. CALL DETAIL AUDIO PLAYBACK & TRANSCRIPT MODAL */}
       {activeCallDetail && (

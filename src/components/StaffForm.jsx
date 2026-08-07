@@ -71,6 +71,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
   // Step 4: Business contact details state
   const [businessEmail, setBusinessEmail] = useState('');
   const [businessPhone, setBusinessPhone] = useState('');
+  const [additionalEmails, setAdditionalEmails] = useState('');
 
   // Step 5: Documents list state
   const [documents, setDocuments] = useState([]);
@@ -145,6 +146,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       
       setBusinessEmail(staffMember.businessEmail || '');
       setBusinessPhone(staffMember.businessPhone || '');
+      setAdditionalEmails(staffMember.additionalEmails || '');
       
       setDocuments(staffMember.documents || []);
     } else {
@@ -188,6 +190,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       
       setBusinessEmail('');
       setBusinessPhone('');
+      setAdditionalEmails('');
       
       setDocuments([]);
     }
@@ -339,6 +342,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       attendanceRate: attendanceRate ? Number(attendanceRate) : '',
       businessEmail,
       businessPhone,
+      additionalEmails,
       reportingManagerId,
       leavePolicyId,
       commissionPolicyId,
@@ -821,6 +825,17 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                     value={businessEmail}
                     onChange={(e) => setBusinessEmail(e.target.value)}
                     required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Additional KPI Match Emails (Comma separated)</label>
+                  <input 
+                    type="text" 
+                    className="form-input"
+                    placeholder="e.g. a.moore@humres.co.uk, amoore@stratass.com"
+                    value={additionalEmails}
+                    onChange={(e) => setAdditionalEmails(e.target.value)}
                   />
                 </div>
 

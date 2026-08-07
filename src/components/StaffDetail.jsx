@@ -1413,6 +1413,14 @@ Yours sincerely,
                       {staffMember.businessPhone}
                     </a>
                   </div>
+                  {staffMember.additionalEmails && (
+                    <div className="detail-item">
+                      <span className="detail-label">KPI Match Emails</span>
+                      <span className="detail-value" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        {staffMember.additionalEmails}
+                      </span>
+                    </div>
+                  )}
                   <div className="detail-item">
                     <span className="detail-label">Personal Email</span>
                     <a href={`mailto:${staffMember.personalEmail}`} className="detail-value" style={{ color: 'var(--text-secondary)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}>

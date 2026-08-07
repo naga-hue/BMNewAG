@@ -64,6 +64,13 @@ async function run() {
       const norm = normalizeEmail(s.personalEmail);
       emailToStaffMap[norm] = s;
     }
+    if (s.additionalEmails) {
+      const extraList = s.additionalEmails.split(',').map(e => e.trim()).filter(Boolean);
+      extraList.forEach(e => {
+        const norm = normalizeEmail(e);
+        emailToStaffMap[norm] = s;
+      });
+    }
   });
 
   const csvPath = './import-data/dialpad_calls.csv';

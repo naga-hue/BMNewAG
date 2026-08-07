@@ -90,21 +90,23 @@ function formatPrivateKey(rawKey) {
   }
   
   key = key.replace(/\\n/g, '\n');
-  
-  if (!key.includes('\n')) {
-    const header = '-----BEGIN PRIVATE KEY-----';
-    const footer = '-----END PRIVATE KEY-----';
-    
+
+  // Strip leading "n" which was part of "\n" copied from raw JSON fields
+  if (key.startsWith('nMII')) {
+    key = key.substring(1);
+  }
+
+  const header = '-----BEGIN PRIVATE KEY-----';
+  const footer = '-----END PRIVATE KEY-----';
+
+  if (!key.includes(header)) {
     let base64Body = key;
-    if (base64Body.startsWith(header)) {
-      base64Body = base64Body.substring(header.length);
+    if (base64Body.includes(footer)) {
+      base64Body = base64Body.split(footer)[0];
     }
-    if (base64Body.endsWith(footer)) {
-      base64Body = base64Body.substring(0, base64Body.length - footer.length);
-    }
-    
-    base64Body = base64Body.replace(/\s+/g, '');
-    
+    // Remove all non-base64 characters
+    base64Body = base64Body.replace(/[^A-Za-z0-9+/=]/g, '');
+
     const lines = [];
     for (let i = 0; i < base64Body.length; i += 64) {
       lines.push(base64Body.substring(i, i + 64));

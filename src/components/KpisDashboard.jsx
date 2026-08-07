@@ -286,8 +286,31 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
     return liveCalls
       .map(call => {
-        const dateVal = call.dateStarted ? call.dateStarted.substring(0, 10) : '';
-        const timeVal = call.dateStarted ? call.dateStarted.substring(11, 19) : '';
+        let dateVal = '';
+        let timeVal = '';
+        if (call.dateStarted) {
+          let dateObj = null;
+          if (typeof call.dateStarted === 'string') {
+            if (call.dateStarted.includes('-') && call.dateStarted.length >= 10) {
+              dateVal = call.dateStarted.substring(0, 10);
+              timeVal = call.dateStarted.substring(11, 19);
+            } else {
+              dateObj = new Date(call.dateStarted);
+            }
+          } else if (typeof call.dateStarted === 'number') {
+            const ms = call.dateStarted < 9999999999 ? call.dateStarted * 1000 : call.dateStarted;
+            dateObj = new Date(ms);
+          } else if (call.dateStarted.seconds) {
+            dateObj = new Date(call.dateStarted.seconds * 1000);
+          } else if (call.dateStarted instanceof Date) {
+            dateObj = call.dateStarted;
+          }
+
+          if (dateObj && !isNaN(dateObj.getTime())) {
+            dateVal = dateObj.toISOString().substring(0, 10);
+            timeVal = dateObj.toISOString().substring(11, 19);
+          }
+        }
 
         const targetTypeVal = (call.target?.type || 'external').toLowerCase().trim() === 'user' 
           ? 'Candidate' 

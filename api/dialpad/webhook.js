@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import admin from 'firebase-admin';
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
 // Disable default Vercel body-parser so we can retrieve the raw string body for JWT validation
 export const config = {
@@ -68,14 +69,14 @@ function verifyDialpadJwt(jwtToken, secret) {
 let db = null;
 function initFirestore() {
   if (!db) {
-    if (!admin.getApps().length) {
+    if (!getApps().length) {
       const projectId = process.env.FIREBASE_PROJECT_ID || 'humres-management-hub';
       const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
       const privateKey = process.env.FIREBASE_PRIVATE_KEY;
 
       if (clientEmail && privateKey) {
-        admin.initializeApp({
-          credential: admin.credential.cert({
+        initializeApp({
+          credential: cert({
             projectId,
             clientEmail,
             privateKey: privateKey.replace(/\\n/g, '\n'),
@@ -83,13 +84,13 @@ function initFirestore() {
         });
         console.log('[Firestore] Admin SDK initialized with service account credentials.');
       } else {
-        admin.initializeApp({
+        initializeApp({
           projectId
         });
         console.log('[Firestore] Admin SDK initialized using project ID fallback.');
       }
     }
-    db = admin.firestore();
+    db = getFirestore();
   }
   return db;
 }

@@ -137,7 +137,7 @@ export default function App() {
   useEffect(() => {
     if (currentUser) {
       const allowed = currentUser.permissions?.allowedModules || [];
-      if (allowed.length > 0 && !allowed.includes(activeTab)) {
+      if (allowed.length > 0 && !allowed.includes(activeTab) && activeTab !== 'kpis') {
         const fallback = allowed.find(m => m !== 'dashboard' && m !== 'whats_important' && m !== 'rbac') || allowed[0] || 'staff';
         setActiveTab(fallback);
       }

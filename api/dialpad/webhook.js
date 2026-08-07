@@ -68,7 +68,7 @@ function verifyDialpadJwt(jwtToken, secret) {
 let db = null;
 function initFirestore() {
   if (!db) {
-    if (!admin.apps.length) {
+    if (!admin.getApps().length) {
       const projectId = process.env.FIREBASE_PROJECT_ID || 'humres-management-hub';
       const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
       const privateKey = process.env.FIREBASE_PRIVATE_KEY;

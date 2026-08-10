@@ -284,7 +284,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       }
     }
     loadKpiData();
-  }, [dateRangeWindow]);
+  }, [dateRangeWindow.start, dateRangeWindow.end]);
 
   // Load Dialpad calls dynamically with real-time updates when callsDateRangeWindow changes (for the dedicated Dialpad Calls Tab)
   useEffect(() => {
@@ -352,7 +352,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     return () => {
       isMounted = false;
     };
-  }, [callsDateRangeWindow, onShowToast]);
+  }, [callsDateRangeWindow.start, callsDateRangeWindow.end]);
 
   // Aggregate KPI Data from real Firestore kpiDaily collection
   const mockKpiData = useMemo(() => {

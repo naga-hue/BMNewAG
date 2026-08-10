@@ -71,6 +71,15 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
   // Call Logs search & pagination states
   const [callLogsSearch, setCallLogsSearch] = useState('');
+  const [debouncedCallLogsSearch, setDebouncedCallLogsSearch] = useState('');
+  
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedCallLogsSearch(callLogsSearch);
+    }, 200);
+    return () => clearTimeout(handler);
+  }, [callLogsSearch]);
+
   const [callLogsDirection, setCallLogsDirection] = useState('all'); // 'all' | 'inbound' | 'outbound'
   const [callLogsPage, setCallLogsPage] = useState(1);
   const callLogsPageSize = 10;
@@ -766,7 +775,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   // Filter, search and sort call logs list based on user controls and sorting states
   const filteredAndSearchedCalls = useMemo(() => {
     const list = displayCallsList;
-    const query = callLogsSearch.toLowerCase().trim();
+    const query = debouncedCallLogsSearch.toLowerCase().trim();
 
     const filtered = list.filter(call => {
       // 1. Direction Filter
@@ -809,7 +818,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       const cmp = strA.localeCompare(strB);
       return callLogsSortDirection === 'asc' ? cmp : -cmp;
     });
-  }, [displayCallsList, callLogsSearch, callLogsDirection, callLogsSortField, callLogsSortDirection]);
+  }, [displayCallsList, debouncedCallLogsSearch, callLogsDirection, callLogsSortField, callLogsSortDirection]);
 
   // Paginated chunk to display
   const displayCallsChunk = useMemo(() => {

@@ -580,6 +580,25 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         </button>
         <button
           onClick={() => {
+            setActiveSubTab('calls');
+            setCallLogsPage(1);
+          }}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontWeight: 700,
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: activeSubTab === 'calls' ? 'var(--primary)' : 'var(--bg-secondary)',
+            color: activeSubTab === 'calls' ? '#fff' : 'var(--text-secondary)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          }}
+        >
+          📞 Dialpad Call Logs
+        </button>
+        <button
+          onClick={() => {
             setActiveSubTab('mapping');
             setEditingStaffId(null);
           }}
@@ -609,29 +628,53 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         </div>
 
         {/* Global Time Filter Controls */}
-        <div style={{ display: 'flex', gap: '6px', backgroundColor: 'var(--bg-secondary)', padding: '4px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-          {[
-            { id: 'today', label: 'Today' },
-            { id: 'this_week', label: 'This Week' },
-            { id: 'this_month', label: 'This Month' },
-            { id: 'ytd', label: 'Year to Date' }
-          ].map(btn => (
-            <button
-              key={btn.id}
-              onClick={() => setTimeRange(btn.id)}
-              className="btn-secondary"
-              style={{
-                padding: '6px 12px',
-                fontSize: '11px',
-                border: 'none',
-                backgroundColor: timeRange === btn.id ? 'var(--primary)' : 'transparent',
-                color: timeRange === btn.id ? 'white' : 'var(--text-secondary)',
-                fontWeight: 600
-              }}
-            >
-              {btn.label}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '6px', backgroundColor: 'var(--bg-secondary)', padding: '4px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+            {[
+              { id: 'today', label: 'Today' },
+              { id: 'this_week', label: 'This Week' },
+              { id: 'this_month', label: 'This Month' },
+              { id: 'ytd', label: 'Year to Date' },
+              { id: 'custom', label: 'Custom' }
+            ].map(btn => (
+              <button
+                key={btn.id}
+                onClick={() => setTimeRange(btn.id)}
+                className="btn-secondary"
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '11px',
+                  border: 'none',
+                  backgroundColor: timeRange === btn.id ? 'var(--primary)' : 'transparent',
+                  color: timeRange === btn.id ? 'white' : 'var(--text-secondary)',
+                  fontWeight: 600,
+                  borderRadius: '4px'
+                }}
+              >
+                {btn.label}
+              </button>
+            ))}
+          </div>
+
+          {timeRange === 'custom' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--bg-secondary)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="form-input"
+                style={{ fontSize: '11px', height: '24px', padding: '2px 4px', width: '110px' }}
+              />
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>to</span>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="form-input"
+                style={{ fontSize: '11px', height: '24px', padding: '2px 4px', width: '110px' }}
+              />
+            </div>
+          )}
         </div>
       </div>
 

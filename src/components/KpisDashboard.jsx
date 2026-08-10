@@ -45,6 +45,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   const [liveCalls, setLiveCalls] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingCalls, setIsLoadingCalls] = useState(false);
+  const [hasRealCalls, setHasRealCalls] = useState(false);
 
   // Dashboard view states
   const [activeSubTab, setActiveSubTab] = useState('performance'); // 'performance' | 'calls' | 'mapping'
@@ -186,6 +187,22 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     }
     return { start, end };
   }, [callsTimeRange, callsCustomStartDate, callsCustomEndDate]);
+
+  // Check if there are any real Dialpad call logs in the database on mount
+  useEffect(() => {
+    async function checkRealCalls() {
+      try {
+        const q = query(collection(db, 'dialpad_calls'), limit(1));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          setHasRealCalls(true);
+        }
+      } catch (e) {
+        console.error('Error checking for real call logs:', e);
+      }
+    }
+    checkRealCalls();
+  }, []);
 
   // Load KPI documents from Firestore collections filtered by active date range (instantly aggregates in millisecond speeds)
   useEffect(() => {
@@ -429,11 +446,11 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   }, [liveCalls, callsDateRangeWindow, selectedStaffId, selectedDept]);
 
   const displayCallsList = useMemo(() => {
-    if (liveCalls.length > 0) {
+    if (hasRealCalls) {
       return formattedLiveCalls;
     }
     return mockCallsList;
-  }, [liveCalls, formattedLiveCalls, mockCallsList]);
+  }, [hasRealCalls, formattedLiveCalls, mockCallsList]);
 
   // Filter and search call logs list based on user search and direction controls
   const filteredAndSearchedCalls = useMemo(() => {
@@ -874,9 +891,9 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                 🎥 Browse, filter, listen to recordings, and view transcripts for recruiter phone calls.
               </span>
             </div>
-            {formattedLiveCalls.length > 0 ? (
+            {hasRealCalls ? (
               <span style={{ fontSize: '11px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>
-                🟢 LIVE WEBHOOK DATA ({liveCalls.length} logs loaded)
+                🟢 LIVE WEBHOOK DATA
               </span>
             ) : (
               <span style={{ fontSize: '11px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)', padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>

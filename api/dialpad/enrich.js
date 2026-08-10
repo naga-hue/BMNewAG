@@ -213,6 +213,44 @@ export default async function handler(req, res) {
       }
     }
 
+    // Call Details API Fallback (for historical CSV calls that were marked as recorded but have no local recording info)
+    const isRecordedInDb = callData.wasRecorded || callData.hasRecording;
+    if ((!adminRecordingUrls || adminRecordingUrls.length === 0) && isRecordedInDb && !callData.recordingUrl) {
+      console.log(`[Enrich] Call was recorded but adminRecordingUrls is empty. Fetching call details from Dialpad API...`);
+      try {
+        const callDetailsRes = await fetch(`https://dialpad.com/api/v2/calls/${primaryCallId}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          }
+        });
+
+        if (callDetailsRes.status === 200) {
+          const detailsData = await callDetailsRes.json();
+          // Try to extract from admin_recording_urls
+          let urls = detailsData.admin_recording_urls || [];
+          // Also try to extract from recording_details
+          if ((!urls || urls.length === 0) && Array.isArray(detailsData.recording_details)) {
+            urls = detailsData.recording_details
+              .filter(rec => rec.url)
+              .map(rec => rec.url);
+          }
+
+          if (urls && urls.length > 0) {
+            adminRecordingUrls = urls;
+            updates.adminRecordingUrls = urls;
+            needsUpdate = true;
+            console.log(`[Enrich] Retrieved adminRecordingUrls from Dialpad call details API:`, urls);
+          }
+        } else {
+          console.error(`[Enrich] Dialpad call details API returned status ${callDetailsRes.status}`);
+        }
+      } catch (err) {
+        console.error(`[Enrich] Error calling Dialpad call details API:`, err);
+      }
+    }
+
     const hasPrivateRecording = Array.isArray(adminRecordingUrls) && adminRecordingUrls.length > 0;
     const hasPublicRecordingUrl = callData.recordingUrl && callData.recordingUrl.startsWith('http') && !callData.recordingUrl.includes('dialpad.com/blob/');
 

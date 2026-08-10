@@ -40,6 +40,94 @@ const formatDuration = (seconds) => {
 };
 
 export default function KpisDashboard({ staff, companies, currentUser, onShowToast }) {
+  // Helper to determine if a staff member is tracked in KPIs
+  const isStaffDialpadTracked = (s) => {
+    if (s.dialpadTracked === false) return false;
+    if (s.dialpadTracked === true) return true;
+    const email = (s.businessEmail || s.personalEmail || '').toLowerCase();
+    if (email.includes('@talent-h.com') || email.includes('@totaco.net')) {
+      return false;
+    }
+    return true;
+  };
+
+  // Calculate target multiplier based on number of working days in dateRangeWindow
+  const targetMultiplier = useMemo(() => {
+    const { start, end } = dateRangeWindow || {};
+    if (!start || !end) return 1;
+    
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    
+    // Count days in range
+    const diffTime = Math.abs(endDate - startDate);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    
+    // Count only working days (Monday to Friday)
+    let workDays = 0;
+    let current = new Date(startDate);
+    for (let i = 0; i < diffDays; i++) {
+      const day = current.getDay();
+      if (day !== 0 && day !== 6) { // Exclude Sunday (0) and Saturday (6)
+        workDays++;
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    
+    return Math.max(1, workDays);
+  }, [dateRangeWindow]);
+
+  // Helper to render KPI values against custom targets
+  const renderMetricWithTarget = (actual, dailyTarget, multiplier, isDuration = false) => {
+    const target = dailyTarget ? Math.round(dailyTarget * multiplier) : 0;
+    
+    let formattedActual = isDuration ? formatDuration(actual) : actual;
+    let formattedTarget = isDuration ? formatDuration(target * 60) : target; // target talk time is in minutes
+    
+    if (!target) {
+      return (
+        <div style={{ textAlign: 'center' }}>
+          <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{formattedActual}</span>
+        </div>
+      );
+    }
+    
+    const targetValueToCompare = isDuration ? target * 60 : target;
+    const pct = Math.round((actual / (targetValueToCompare || 1)) * 100);
+    
+    let color = 'var(--text-secondary)';
+    let bgColor = 'rgba(107, 114, 128, 0.1)';
+    if (pct >= 100) {
+      color = 'var(--success)';
+      bgColor = 'rgba(16, 185, 129, 0.1)';
+    } else if (pct >= 70) {
+      color = 'var(--warning)';
+      bgColor = 'rgba(245, 158, 11, 0.1)';
+    } else {
+      color = '#ef4444'; // Red
+      bgColor = 'rgba(239, 68, 68, 0.1)';
+    }
+    
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{formattedActual}</span>
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>/ {formattedTarget}</span>
+        </div>
+        <span style={{
+          padding: '1px 5px',
+          borderRadius: '4px',
+          backgroundColor: bgColor,
+          color: color,
+          fontSize: '9px',
+          fontWeight: 700
+        }}>
+          {pct}%
+        </span>
+      </div>
+    );
+  };
+
   // Firestore data states
   const [kpiDocs, setKpiDocs] = useState([]);
   const [liveCalls, setLiveCalls] = useState([]);
@@ -83,6 +171,63 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   const [mappingSearch, setMappingSearch] = useState('');
   const [editingStaffId, setEditingStaffId] = useState(null);
   const [editingAliases, setEditingAliases] = useState('');
+
+  // KPI Targets edit states
+  const [editingTargetsStaffId, setEditingTargetsStaffId] = useState(null);
+  const [targetCalls, setTargetCalls] = useState(0);
+  const [targetTalkTimeMin, setTargetTalkTimeMin] = useState(0);
+  const [targetCvsSent, setTargetCvsSent] = useState(0);
+  const [targetSpeculativeCvs, setTargetSpeculativeCvs] = useState(0);
+  const [targetJobsTaken, setTargetJobsTaken] = useState(0);
+  const [targetInterviews, setTargetInterviews] = useState(0);
+  const [targetPlacements, setTargetPlacements] = useState(0);
+  const [targetPlacementValue, setTargetPlacementValue] = useState(0);
+
+  // Recruiter Comparison Bench states
+  const [compareRecruiterA, setCompareRecruiterA] = useState('');
+  const [compareRecruiterB, setCompareRecruiterB] = useState('');
+  const [compareRecruiterC, setCompareRecruiterC] = useState('');
+
+  const handleOpenTargetsEditor = (s) => {
+    setEditingTargetsStaffId(s.id);
+    const targets = s.kpiTargets || {};
+    setTargetCalls(targets.calls || 40);
+    setTargetTalkTimeMin(targets.talkTimeMin || 60);
+    setTargetCvsSent(targets.cvsSent || 5);
+    setTargetSpeculativeCvs(targets.speculativeCvs || 2);
+    setTargetJobsTaken(targets.jobsTaken || 1);
+    setTargetInterviews(targets.interviews || 2);
+    setTargetPlacements(targets.placements || 4);
+    setTargetPlacementValue(targets.placementValue || 15000);
+  };
+
+  const handleSaveTargets = async () => {
+    try {
+      const staffMember = staff.find(s => s.id === editingTargetsStaffId);
+      if (!staffMember) return;
+
+      const updated = {
+        ...staffMember,
+        kpiTargets: {
+          calls: Number(targetCalls || 0),
+          talkTimeMin: Number(targetTalkTimeMin || 0),
+          cvsSent: Number(targetCvsSent || 0),
+          speculativeCvs: Number(targetSpeculativeCvs || 0),
+          jobsTaken: Number(targetJobsTaken || 0),
+          interviews: Number(targetInterviews || 0),
+          placements: Number(targetPlacements || 0),
+          placementValue: Number(targetPlacementValue || 0)
+        }
+      };
+
+      await useBoundStore.getState().updateStaff(updated);
+      onShowToast?.(`KPI targets updated for ${staffMember.fullName}`, 'success');
+      setEditingTargetsStaffId(null);
+    } catch (e) {
+      console.error('Error saving KPI targets:', e);
+      onShowToast?.('Failed to save KPI targets', 'error');
+    }
+  };
 
   // Action to save recruiter matching aliases to Firestore via Zustand store
   const handleSaveAliases = async (staffId) => {
@@ -191,16 +336,15 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
   // List of staff filtered by selected department (if not recruiter)
   const filteredStaffList = useMemo(() => {
-    if (userRole === 'recruiter') {
-      return staff.filter(s => s.id === currentUser.id);
-    }
     let list = staff;
-    if (userRole === 'manager') {
+    if (userRole === 'recruiter') {
+      list = staff.filter(s => s.id === currentUser.id);
+    } else if (userRole === 'manager') {
       list = staff.filter(s => s.department === userDept);
     } else if (selectedDept !== 'all') {
       list = staff.filter(s => s.department === selectedDept);
     }
-    return list;
+    return list.filter(isStaffDialpadTracked);
   }, [staff, selectedDept, userRole, userDept, currentUser.id]);
 
   // Calculate date range window based on selected time range
@@ -774,7 +918,26 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
           }}
         >
-          🔗 Recruiter Dialpad Mapping
+          🔗 Recruiter & Dialpad Mapping
+        </button>
+        <button
+          onClick={() => {
+            setActiveSubTab('settings');
+            setEditingStaffId(null);
+          }}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontWeight: 700,
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: activeSubTab === 'settings' ? 'var(--primary)' : 'var(--bg-secondary)',
+            color: activeSubTab === 'settings' ? '#fff' : 'var(--text-secondary)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          }}
+        >
+          ⚙️ KPI Target Settings
         </button>
       </div>
 
@@ -971,7 +1134,8 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
       {/* 4. LEADERBOARD AND TEAM COMPARISON SECTION */}
       {userRole !== 'recruiter' && (
-        <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+        <>
+          <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Users size={18} color="var(--primary)" />
@@ -1001,29 +1165,219 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                     kpi: mockKpiData[s.id] || { totalCalls: 0, totalTalkTime: 0, callsOver5Min: 0, cvsSent: 0, interviews: 0, jobsTaken: 0 }
                   }))
                   .sort((a, b) => b.kpi.totalCalls - a.kpi.totalCalls)
-                  .map(({ staff: s, kpi }) => (
-                    <tr key={s.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '12px 10px', fontWeight: 600 }}>👤 {s.fullName}</td>
-                      <td>
-                        <span style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)', fontSize: '11px', fontWeight: 600 }}>
-                          {s.department}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: 'center', fontWeight: 700 }}>{kpi.totalCalls}</td>
-                      <td style={{ textAlign: 'center' }}>{formatDuration(kpi.totalTalkTime)}</td>
-                      <td style={{ textAlign: 'center', color: kpi.callsOver5Min > 5 ? 'var(--success)' : 'var(--text-secondary)' }}>
-                        {kpi.callsOver5Min}
-                      </td>
-                      <td style={{ textAlign: 'center', fontWeight: 600 }}>{kpi.cvsSent}</td>
-                      <td style={{ textAlign: 'center' }}>{kpi.interviews}</td>
-                      <td style={{ textAlign: 'center' }}>{kpi.jobsTaken}</td>
-                    </tr>
-                  ))}
+                  .map(({ staff: s, kpi }) => {
+                    const targets = s.kpiTargets || {};
+                    return (
+                      <tr key={s.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '12px 10px', fontWeight: 600 }}>👤 {s.fullName}</td>
+                        <td>
+                          <span style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)', fontSize: '11px', fontWeight: 600 }}>
+                            {s.department}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {renderMetricWithTarget(kpi.totalCalls, targets.calls, targetMultiplier, false)}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {renderMetricWithTarget(kpi.totalTalkTime, targets.talkTimeMin, targetMultiplier, true)}
+                        </td>
+                        <td style={{ textAlign: 'center', color: kpi.callsOver5Min > 5 ? 'var(--success)' : 'var(--text-secondary)' }}>
+                          {kpi.callsOver5Min}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {renderMetricWithTarget(kpi.cvsSent, targets.cvsSent, targetMultiplier, false)}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {renderMetricWithTarget(kpi.interviews, targets.interviews, targetMultiplier, false)}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {renderMetricWithTarget(kpi.jobsTaken, targets.jobsTaken, targetMultiplier, false)}
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
         </div>
-      )}      </>
+
+        {/* 5. RECRUITER COMPARISON BENCH */}
+        <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)', marginTop: '20px' }}>
+          <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Users size={18} color="var(--primary)" />
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>👥 Recruiter Comparison Bench</h4>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '6px' }}>Compare up to 3 recruiters side-by-side</span>
+          </div>
+
+          {/* Selection Dropdowns Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
+            <div className="form-group">
+              <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px', fontWeight: 600 }}>Recruiter A:</label>
+              <select
+                value={compareRecruiterA}
+                onChange={(e) => setCompareRecruiterA(e.target.value)}
+                className="select-filter"
+                style={{ width: '100%', padding: '6px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+              >
+                <option value="">-- Choose Recruiter A --</option>
+                {filteredStaffList.map(s => (
+                  <option key={s.id} value={s.id} disabled={s.id === compareRecruiterB || s.id === compareRecruiterC}>{s.fullName}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px', fontWeight: 600 }}>Recruiter B:</label>
+              <select
+                value={compareRecruiterB}
+                onChange={(e) => setCompareRecruiterB(e.target.value)}
+                className="select-filter"
+                style={{ width: '100%', padding: '6px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+              >
+                <option value="">-- Choose Recruiter B --</option>
+                {filteredStaffList.map(s => (
+                  <option key={s.id} value={s.id} disabled={s.id === compareRecruiterA || s.id === compareRecruiterC}>{s.fullName}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px', fontWeight: 600 }}>Recruiter C:</label>
+              <select
+                value={compareRecruiterC}
+                onChange={(e) => setCompareRecruiterC(e.target.value)}
+                className="select-filter"
+                style={{ width: '100%', padding: '6px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+              >
+                <option value="">-- Choose Recruiter C --</option>
+                {filteredStaffList.map(s => (
+                  <option key={s.id} value={s.id} disabled={s.id === compareRecruiterA || s.id === compareRecruiterB}>{s.fullName}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Side-by-side comparison tables/cards */}
+          {(!compareRecruiterA && !compareRecruiterB && !compareRecruiterC) ? (
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', border: '1px dashed var(--border-color)', borderRadius: '6px' }}>
+              💡 Select one or more recruiters above to compare their call activities and CRM results.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+              {[
+                { key: 'A', id: compareRecruiterA, label: 'Recruiter A' },
+                { key: 'B', id: compareRecruiterB, label: 'Recruiter B' },
+                { key: 'C', id: compareRecruiterC, label: 'Recruiter C' }
+              ].map(col => {
+                if (!col.id) {
+                  return (
+                    <div key={col.key} style={{ padding: '20px', border: '1px dashed var(--border-color)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '11px', minHeight: '200px' }}>
+                      Slot Empty
+                    </div>
+                  );
+                }
+
+                const sMember = staff.find(s => s.id === col.id);
+                const kpi = mockKpiData[col.id] || { totalCalls: 0, totalTalkTime: 0, callsOver5Min: 0, cvsSent: 0, interviews: 0, jobsTaken: 0 };
+                const targets = sMember?.kpiTargets || {};
+
+                // Calculate rates/splits
+                const avgTalkTime = kpi.totalCalls ? Math.round(kpi.totalTalkTime / kpi.totalCalls) : 0;
+                const outRatio = kpi.totalCalls ? Math.round((kpi.outbound / kpi.totalCalls) * 100) : 0;
+
+                return (
+                  <div key={col.key} style={{ padding: '16px', border: '1px solid var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-secondary)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{col.label}</span>
+                      <h5 style={{ margin: '2px 0 0 0', fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>👤 {sMember?.fullName}</h5>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{sMember?.department || 'General'}</span>
+                    </div>
+
+                    {/* Stats lines */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
+                      
+                      {/* 1. Dialer Calls */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Dialer Calls:</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                          <span style={{ fontWeight: 700 }}>{kpi.totalCalls} calls</span>
+                          {targets.calls ? (
+                            <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>Target: {targets.calls * targetMultiplier}</span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {/* 2. Talk Time */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Talk Time:</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                          <span style={{ fontWeight: 700 }}>{formatDuration(kpi.totalTalkTime)}</span>
+                          {targets.talkTimeMin ? (
+                            <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>Target: {targets.talkTimeMin * targetMultiplier}m</span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {/* 3. Avg Call Duration */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Avg Call Duration:</span>
+                        <span style={{ fontWeight: 600 }}>{formatDuration(avgTalkTime)}</span>
+                      </div>
+
+                      {/* 4. Outbound Ratio */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Outbound Split:</span>
+                        <span style={{ fontWeight: 600 }}>{outRatio}% ({kpi.outbound} / {kpi.totalCalls})</span>
+                      </div>
+
+                      {/* 5. Quality Calls */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Quality Calls (&gt;5m):</span>
+                        <span style={{ fontWeight: 600 }}>{kpi.callsOver5Min} calls</span>
+                      </div>
+
+                      {/* 6. CVs Sent */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed var(--border-color)', paddingTop: '6px', marginTop: '2px' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>CVs Sent:</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                          <span style={{ fontWeight: 700 }}>{kpi.cvsSent} CVs</span>
+                          {targets.cvsSent ? (
+                            <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>Target: {targets.cvsSent * targetMultiplier}</span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {/* 7. Interviews */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Interviews Organized:</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                          <span style={{ fontWeight: 700 }}>{kpi.interviews}</span>
+                          {targets.interviews ? (
+                            <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>Target: {targets.interviews * targetMultiplier}</span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {/* 8. Jobs Taken */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Jobs Taken Over:</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                          <span style={{ fontWeight: 700 }}>{kpi.jobsTaken}</span>
+                          {targets.jobsTaken ? (
+                            <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>Target: {targets.jobsTaken * targetMultiplier}</span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </>
+    )}</>
       ) : activeSubTab === 'calls' ? (
         <>
           {/* 1. HEADER */}
@@ -1403,7 +1757,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             )}
           </div>
         </>
-      ) : (
+      ) : activeSubTab === 'mapping' ? (
         /* Recruiter Dialpad Mapping View */
         <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
           <div style={{ marginBottom: '16px' }}>
@@ -1432,6 +1786,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                   <th style={{ padding: '10px' }}>Recruiter</th>
                   <th>Primary Email</th>
                   <th>Dialpad Match Aliases</th>
+                  <th style={{ textAlign: 'center' }}>KPI Tracking</th>
                   <th style={{ textAlign: 'center' }}>Integration Status</th>
                   <th style={{ textAlign: 'center' }}>Actions</th>
                 </tr>
@@ -1492,6 +1847,32 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                           )}
                         </td>
                         <td style={{ textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={isStaffDialpadTracked(s)}
+                            onChange={async (e) => {
+                              try {
+                                const updated = {
+                                  ...s,
+                                  dialpadTracked: e.target.checked
+                                };
+                                await useBoundStore.getState().updateStaff(updated);
+                                onShowToast?.(`Updated KPI tracking status for ${s.fullName}`, 'success');
+                              } catch (err) {
+                                console.error("Error updating tracking status:", err);
+                                onShowToast?.('Failed to update tracking status', 'error');
+                              }
+                            }}
+                            style={{ 
+                              width: '16px', 
+                              height: '16px', 
+                              cursor: 'pointer',
+                              accentColor: 'var(--primary)'
+                            }}
+                            title={`Toggle KPI Tracking for ${s.fullName}`}
+                          />
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
                           <span style={{
                             padding: '4px 8px',
                             borderRadius: '4px',
@@ -1541,7 +1922,291 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             </table>
           </div>
         </div>
+      ) : (
+        /* KPI Targets Settings View */
+        <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+          <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruiter KPI Targets Settings</h4>
+              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                Set custom benchmark targets for tracked recruiters. Performance scorecards and leaderboards will compare real-time progress against these values.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ position: 'relative', marginBottom: '16px', maxWidth: '380px' }}>
+            <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }} />
+            <input
+              type="text"
+              placeholder="Search tracked recruiters..."
+              value={mappingSearch}
+              onChange={(e) => setMappingSearch(e.target.value)}
+              className="form-input"
+              style={{ paddingLeft: '32px', fontSize: '12px', height: '34px' }}
+            />
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
+                  <th style={{ padding: '10px' }}>Recruiter</th>
+                  <th>Department</th>
+                  <th style={{ textAlign: 'center' }}>Daily Phone Targets</th>
+                  <th style={{ textAlign: 'center' }}>Daily CRM Targets</th>
+                  <th style={{ textAlign: 'center' }}>Monthly Targets</th>
+                  <th style={{ textAlign: 'center' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {staff
+                  .filter(isStaffDialpadTracked)
+                  .filter(s => {
+                    if (mappingSearch) {
+                      return s.fullName.toLowerCase().includes(mappingSearch.toLowerCase());
+                    }
+                    return true;
+                  })
+                  .map(s => {
+                    const targets = s.kpiTargets || {};
+                    return (
+                      <tr key={s.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '12px 10px', fontWeight: 600 }}>👤 {s.fullName}</td>
+                        <td>
+                          <span style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)', fontSize: '11px', fontWeight: 600 }}>
+                            {s.department || 'General'}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          📞 {targets.calls || 40} calls / ⏱️ {targets.talkTimeMin || 60} mins
+                        </td>
+                        <td style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          📄 {targets.cvsSent || 5} CVs / 💼 {targets.interviews || 2} Int
+                        </td>
+                        <td style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          🏆 {targets.placements || 4} Placements / £{Number(targets.placementValue || 15000).toLocaleString()}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            onClick={() => handleOpenTargetsEditor(s)}
+                            className="btn-secondary"
+                            style={{ padding: '6px 12px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            🎯 Set Targets
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
+
+      {/* KPI TARGETS EDITOR MODAL */}
+      {editingTargetsStaffId && (() => {
+        const targetStaff = staff.find(s => s.id === editingTargetsStaffId);
+        return (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px',
+            backdropFilter: 'blur(3px)'
+          }}>
+            <div style={{
+              backgroundColor: 'var(--bg-primary)',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '560px',
+              border: '1px solid var(--border-color)',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              {/* Modal Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                backgroundColor: 'var(--bg-secondary)'
+              }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    🎯 Configure KPI Benchmarks
+                  </h3>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Setting target benchmarks for **{targetStaff?.fullName}**
+                  </span>
+                </div>
+                <button
+                  onClick={() => setEditingTargetsStaffId(null)}
+                  style={{
+                    border: 'none',
+                    background: 'none',
+                    fontSize: '18px',
+                    cursor: 'pointer',
+                    color: 'var(--text-muted)'
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div style={{ padding: '20px', maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                
+                {/* 1. Daily Phone Targets */}
+                <div>
+                  <h5 style={{ margin: '0 0 10px 0', fontSize: '12px', color: 'var(--primary)', fontWeight: 700, borderBottom: '1px solid var(--border-color)', paddingBottom: '4px' }}>
+                    📞 Daily Phone System Benchmarks
+                  </h5>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Daily Call Target:</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={targetCalls}
+                        onChange={(e) => setTargetCalls(Number(e.target.value))}
+                        style={{ width: '100%', fontSize: '12px', height: '34px' }}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Daily Talk Time (mins) Target:</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={targetTalkTimeMin}
+                        onChange={(e) => setTargetTalkTimeMin(Number(e.target.value))}
+                        style={{ width: '100%', fontSize: '12px', height: '34px' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Daily CRM Targets */}
+                <div>
+                  <h5 style={{ margin: '0 0 10px 0', fontSize: '12px', color: 'var(--primary)', fontWeight: 700, borderBottom: '1px solid var(--border-color)', paddingBottom: '4px' }}>
+                    📄 Daily CRM Action Benchmarks
+                  </h5>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Daily CVs Sent Target:</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={targetCvsSent}
+                        onChange={(e) => setTargetCvsSent(Number(e.target.value))}
+                        style={{ width: '100%', fontSize: '12px', height: '34px' }}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Daily Speculative CVs Target:</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={targetSpeculativeCvs}
+                        onChange={(e) => setTargetSpeculativeCvs(Number(e.target.value))}
+                        style={{ width: '100%', fontSize: '12px', height: '34px' }}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Daily Jobs Taken Target:</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={targetJobsTaken}
+                        onChange={(e) => setTargetJobsTaken(Number(e.target.value))}
+                        style={{ width: '100%', fontSize: '12px', height: '34px' }}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Daily Interviews Target:</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={targetInterviews}
+                        onChange={(e) => setTargetInterviews(Number(e.target.value))}
+                        style={{ width: '100%', fontSize: '12px', height: '34px' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Monthly Targets */}
+                <div>
+                  <h5 style={{ margin: '0 0 10px 0', fontSize: '12px', color: 'var(--primary)', fontWeight: 700, borderBottom: '1px solid var(--border-color)', paddingBottom: '4px' }}>
+                    🏆 Monthly Financial Benchmarks
+                  </h5>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Monthly Placements Count:</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={targetPlacements}
+                        onChange={(e) => setTargetPlacements(Number(e.target.value))}
+                        style={{ width: '100%', fontSize: '12px', height: '34px' }}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Monthly Placement Value (£):</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={targetPlacementValue}
+                        onChange={(e) => setTargetPlacementValue(Number(e.target.value))}
+                        style={{ width: '100%', fontSize: '12px', height: '34px' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Modal Footer */}
+              <div style={{
+                padding: '12px 20px',
+                borderTop: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '8px',
+                backgroundColor: 'var(--bg-secondary)'
+              }}>
+                <button
+                  onClick={() => setEditingTargetsStaffId(null)}
+                  className="btn-secondary"
+                  style={{ padding: '6px 14px', fontSize: '12px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveTargets}
+                  className="btn-secondary"
+                  style={{ padding: '6px 14px', fontSize: '12px', backgroundColor: 'var(--primary)', color: '#fff', border: 'none' }}
+                >
+                  Save Benchmarks
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 6. CALL DETAIL AUDIO PLAYBACK & TRANSCRIPT MODAL */}
       {activeCallDetail && (

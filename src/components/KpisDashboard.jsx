@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../services/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where, limit, orderBy } from 'firebase/firestore';
 import { useBoundStore } from '../store/useBoundStore';
 import { 
   Phone, 
@@ -79,34 +79,6 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     }
   };
 
-  // Load KPI documents from Firestore collections
-  useEffect(() => {
-    async function loadKpiData() {
-      try {
-        // Fetch Daily aggregates
-        const kpiSnapshot = await getDocs(collection(db, 'kpiDaily'));
-        const kpiList = [];
-        kpiSnapshot.forEach(doc => {
-          kpiList.push({ id: doc.id, ...doc.data() });
-        });
-        setKpiDocs(kpiList);
-
-        // Fetch Live webhook calls
-        const callsSnapshot = await getDocs(collection(db, 'dialpad_calls'));
-        const callsList = [];
-        callsSnapshot.forEach(doc => {
-          callsList.push({ id: doc.id, ...doc.data() });
-        });
-        setLiveCalls(callsList);
-      } catch (e) {
-        console.error('Error loading KPI data:', e);
-        onShowToast?.('Failed to load call performance data from database', 'error');
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    loadKpiData();
-  }, []);
 
   // 1. Time filter states
   const [timeRange, setTimeRange] = useState('this_month'); // today, this_week, this_month, ytd, custom
@@ -178,6 +150,60 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     }
     return { start, end };
   }, [timeRange, customStartDate, customEndDate]);
+
+  // Load KPI documents from Firestore collections filtered by active date range (instantly aggregates in millisecond speeds)
+  useEffect(() => {
+    async function loadKpiData() {
+      setIsLoading(true);
+      try {
+        const { start, end } = dateRangeWindow;
+        
+        // 1. Fetch Daily aggregates matching the active date range
+        const kpiQuery = query(
+          collection(db, 'kpiDaily'),
+          where('date', '>=', start),
+          where('date', '<=', end)
+        );
+        const kpiSnapshot = await getDocs(kpiQuery);
+        const kpiList = [];
+        kpiSnapshot.forEach(doc => {
+          kpiList.push({ id: doc.id, ...doc.data() });
+        });
+        setKpiDocs(kpiList);
+
+        // 2. Fetch Live webhook calls (limit to latest 300 to keep loading instantaneous)
+        const callsQuery = query(
+          collection(db, 'dialpad_calls'),
+          orderBy('dateStarted', 'desc'),
+          limit(300)
+        );
+        const callsSnapshot = await getDocs(callsQuery);
+        const callsList = [];
+        callsSnapshot.forEach(doc => {
+          callsList.push({ id: doc.id, ...doc.data() });
+        });
+        setLiveCalls(callsList);
+      } catch (e) {
+        console.error('Error loading KPI data:', e);
+        // Fallback: if orderBy dateStarted fails because of missing index, try index-free limit query
+        try {
+          const callsQueryFallback = query(collection(db, 'dialpad_calls'), limit(300));
+          const callsSnapshot = await getDocs(callsQueryFallback);
+          const callsList = [];
+          callsSnapshot.forEach(doc => {
+            callsList.push({ id: doc.id, ...doc.data() });
+          });
+          setLiveCalls(callsList);
+        } catch (errFallback) {
+          console.error('Fallback query also failed:', errFallback);
+          onShowToast?.('Failed to load call performance data from database', 'error');
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadKpiData();
+  }, [dateRangeWindow]);
 
   // Aggregate KPI Data from real Firestore kpiDaily collection
   const mockKpiData = useMemo(() => {

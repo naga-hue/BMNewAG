@@ -614,9 +614,8 @@ async function updateKpiDaily(firestore, handlerId, dateStarted) {
     if (!staffDoc.exists) return;
     const staff = staffDoc.data();
 
-    // Query all calls by this handler on this day from dialpad_calls
+    // Query all calls on this day from dialpad_calls and filter by handlerId in-memory to bypass composite index constraints
     const dayCallsSnap = await firestore.collection('dialpad_calls')
-      .where('handlerId', '==', handlerId)
       .where('dateStarted', '>=', `${dateKey}T00:00:00`)
       .where('dateStarted', '<=', `${dateKey}T23:59:59.999Z`)
       .get();
@@ -630,6 +629,8 @@ async function updateKpiDaily(firestore, handlerId, dateStarted) {
 
     dayCallsSnap.forEach(docSnap => {
       const call = docSnap.data();
+      if (call.handlerId !== handlerId) return; // Filter by recruiter in-memory
+
       callsTotal++;
       if ((call.direction || '').toLowerCase() === 'inbound') {
         callsInbound++;

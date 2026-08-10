@@ -288,29 +288,34 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
   // Load Dialpad calls dynamically with real-time updates when callsDateRangeWindow changes (for the dedicated Dialpad Calls Tab)
   useEffect(() => {
-    let unsubscribe = () => {};
+    let isMounted = true;
     
-    function setupCallsListener() {
+    async function loadCallsData() {
       setIsLoadingCalls(true);
       const { start, end } = callsDateRangeWindow;
       
-      const callsQuery = query(
-        collection(db, 'dialpad_calls'),
-        where('dateStarted', '>=', start),
-        where('dateStarted', '<=', end + 'T23:59:59Z'),
-        orderBy('dateStarted', 'desc'),
-        limit(500)
-      );
+      try {
+        console.log(`[Calls] Querying call history from ${start} to ${end}...`);
+        const callsQuery = query(
+          collection(db, 'dialpad_calls'),
+          where('dateStarted', '>=', start),
+          where('dateStarted', '<=', end + 'T23:59:59Z'),
+          orderBy('dateStarted', 'desc'),
+          limit(500)
+        );
 
-      unsubscribe = onSnapshot(callsQuery, (snapshot) => {
+        const snapshot = await getDocs(callsQuery);
+        if (!isMounted) return;
+
         const callsList = [];
         snapshot.forEach(doc => {
           callsList.push({ id: doc.id, ...doc.data() });
         });
         setLiveCalls(callsList);
         setIsLoadingCalls(false);
-      }, (error) => {
-        console.error('Error loading Dialpad calls in real-time:', error);
+      } catch (error) {
+        console.error('Error loading Dialpad calls:', error);
+        if (!isMounted) return;
         
         // Fallback: if index is missing, query without orderBy
         try {
@@ -321,33 +326,31 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             limit(500)
           );
           
-          // Re-subscribe with fallback query
-          unsubscribe();
-          unsubscribe = onSnapshot(callsQueryFallback, (fallbackSnapshot) => {
-            const callsList = [];
-            fallbackSnapshot.forEach(doc => {
-              callsList.push({ id: doc.id, ...doc.data() });
-            });
-            // Sort client-side
-            callsList.sort((a, b) => b.dateStarted.localeCompare(a.dateStarted));
-            setLiveCalls(callsList);
-            setIsLoadingCalls(false);
-          }, (fallbackError) => {
-            console.error('Fallback real-time listener failed:', fallbackError);
-            onShowToast?.('Failed to listen to live call logs', 'error');
-            setIsLoadingCalls(false);
+          const fallbackSnapshot = await getDocs(callsQueryFallback);
+          if (!isMounted) return;
+
+          const callsList = [];
+          fallbackSnapshot.forEach(doc => {
+            callsList.push({ id: doc.id, ...doc.data() });
           });
-        } catch (errFallback) {
-          console.error('Fallback subscription setup failed:', errFallback);
+          // Sort client-side
+          callsList.sort((a, b) => b.dateStarted.localeCompare(a.dateStarted));
+          setLiveCalls(callsList);
           setIsLoadingCalls(false);
+        } catch (fallbackError) {
+          console.error('Fallback calls fetch failed:', fallbackError);
+          if (isMounted) {
+            onShowToast?.('Failed to load call logs', 'error');
+            setIsLoadingCalls(false);
+          }
         }
-      });
+      }
     }
 
-    setupCallsListener();
+    loadCallsData();
 
     return () => {
-      unsubscribe();
+      isMounted = false;
     };
   }, [callsDateRangeWindow, onShowToast]);
 

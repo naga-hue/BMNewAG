@@ -292,7 +292,11 @@ export default async function handler(req, res) {
       duration: Number(payload.duration || 0),
       totalDuration: Number(payload.total_duration || 0),
       talkTime: Number(payload.talk_time || 0),
-      callDispositions: payload.dispositions || payload.call_dispositions || [],
+      callDispositions: Array.isArray(payload.dispositions)
+        ? payload.dispositions
+        : (payload.call_dispositions
+          ? [payload.call_dispositions]
+          : (payload.dispositions ? [payload.dispositions] : [])),
       recapSummary: payload.recap_summary || '',
       recapOutcome: payload.recap_outcome || '',
       callRecordingIds: payload.call_recording_ids || [],

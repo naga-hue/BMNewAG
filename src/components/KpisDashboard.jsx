@@ -42,6 +42,7 @@ const formatDuration = (seconds) => {
 export default function KpisDashboard({ staff, companies, currentUser, onShowToast }) {
   // Helper to determine if a staff member is tracked in KPIs
   const isStaffDialpadTracked = (s) => {
+    if (s.status === 'exited') return false; // Filter out exited employees
     if (s.dialpadTracked === false) return false;
     if (s.dialpadTracked === true) return true;
     const email = (s.businessEmail || s.personalEmail || '').toLowerCase();
@@ -75,8 +76,15 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   const callLogsPageSize = 10;
   
   // Call Logs sorting states
-  const [callLogsSortField, setCallLogsSortField] = useState('date'); // 'date' | 'staffName' | 'direction' | 'targetName' | 'targetType' | 'duration'
+  const [callLogsSortField, setCallLogsSortField] = useState('date'); // 'date' | 'staffName' | 'direction' | 'targetName' | 'targetType' | 'duration' | 'disposition' | 'benchmark'
   const [callLogsSortDirection, setCallLogsSortDirection] = useState('desc'); // 'asc' | 'desc'
+
+  // Performance Scorecard sorting states
+  const [perfSortField, setPerfSortField] = useState('totalCalls'); // 'recruiter' | 'division' | 'totalCalls' | 'totalTalkTime' | 'callsOver5Min' | 'cvsSent' | 'interviews' | 'jobsTaken'
+  const [perfSortDirection, setPerfSortDirection] = useState('desc'); // 'asc' | 'desc'
+
+  // Multi-select KPI target assignment states
+  const [selectedStaffIds, setSelectedStaffIds] = useState([]); // Array of staff IDs for bulk target setting
 
   const handleSort = (field) => {
     if (callLogsSortField === field) {
@@ -90,6 +98,20 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   const renderSortIndicator = (field) => {
     if (callLogsSortField !== field) return null;
     return callLogsSortDirection === 'asc' ? ' ▲' : ' ▼';
+  };
+
+  const handlePerfSort = (field) => {
+    if (perfSortField === field) {
+      setPerfSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setPerfSortField(field);
+      setPerfSortDirection('desc');
+    }
+  };
+
+  const renderPerfSortIndicator = (field) => {
+    if (perfSortField !== field) return null;
+    return perfSortDirection === 'asc' ? ' ▲' : ' ▼';
   };
 
   // Recruiter Mapping edit states
@@ -128,25 +150,52 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
   const handleSaveTargets = async () => {
     try {
-      const staffMember = staff.find(s => s.id === editingTargetsStaffId);
-      if (!staffMember) return;
-
-      const updated = {
-        ...staffMember,
-        kpiTargets: {
-          calls: Number(targetCalls || 0),
-          talkTimeMin: Number(targetTalkTimeMin || 0),
-          cvsSent: Number(targetCvsSent || 0),
-          speculativeCvs: Number(targetSpeculativeCvs || 0),
-          jobsTaken: Number(targetJobsTaken || 0),
-          interviews: Number(targetInterviews || 0),
-          placements: Number(targetPlacements || 0),
-          placementValue: Number(targetPlacementValue || 0)
+      if (editingTargetsStaffId === 'bulk') {
+        if (selectedStaffIds.length === 0) return;
+        
+        for (const staffId of selectedStaffIds) {
+          const staffMember = staff.find(s => s.id === staffId);
+          if (!staffMember) continue;
+          
+          const updated = {
+            ...staffMember,
+            kpiTargets: {
+              calls: Number(targetCalls || 0),
+              talkTimeMin: Number(targetTalkTimeMin || 0),
+              cvsSent: Number(targetCvsSent || 0),
+              speculativeCvs: Number(targetSpeculativeCvs || 0),
+              jobsTaken: Number(targetJobsTaken || 0),
+              interviews: Number(targetInterviews || 0),
+              placements: Number(targetPlacements || 0),
+              placementValue: Number(targetPlacementValue || 0)
+            }
+          };
+          await useBoundStore.getState().updateStaff(updated);
         }
-      };
+        
+        onShowToast?.(`KPI targets updated for ${selectedStaffIds.length} recruiters`, 'success');
+        setSelectedStaffIds([]); // Clear selection
+      } else {
+        const staffMember = staff.find(s => s.id === editingTargetsStaffId);
+        if (!staffMember) return;
 
-      await useBoundStore.getState().updateStaff(updated);
-      onShowToast?.(`KPI targets updated for ${staffMember.fullName}`, 'success');
+        const updated = {
+          ...staffMember,
+          kpiTargets: {
+            calls: Number(targetCalls || 0),
+            talkTimeMin: Number(targetTalkTimeMin || 0),
+            cvsSent: Number(targetCvsSent || 0),
+            speculativeCvs: Number(targetSpeculativeCvs || 0),
+            jobsTaken: Number(targetJobsTaken || 0),
+            interviews: Number(targetInterviews || 0),
+            placements: Number(targetPlacements || 0),
+            placementValue: Number(targetPlacementValue || 0)
+          }
+        };
+
+        await useBoundStore.getState().updateStaff(updated);
+        onShowToast?.(`KPI targets updated for ${staffMember.fullName}`, 'success');
+      }
       setEditingTargetsStaffId(null);
     } catch (e) {
       console.error('Error saving KPI targets:', e);
@@ -602,6 +651,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             targetType: isClient ? 'Client' : 'Candidate',
             duration,
             hasRecording: duration > 180,
+            disposition: i % 3 === 0 ? 'Connected' : i % 3 === 1 ? 'Left Message' : 'Connected',
             transcript: `
               [00:03] ${staffMember.fullName}: Hello, this is ${staffMember.fullName} from Humres Technical. Hope you are well!
               [00:10] ${targetName}: Hi ${staffMember.fullName}, yes, doing good. Thanks for calling.
@@ -1143,21 +1193,77 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
               <Users size={18} color="var(--primary)" />
               <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>Recruiter Activity Leaderboard</h4>
             </div>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Sorted by Total Dialer Calls</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Click column headers to sort</span>
           </div>
 
           <div style={{ overflowX: 'auto' }}>
             <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
-                  <th style={{ padding: '10px' }}>Recruiter</th>
-                  <th>Division</th>
-                  <th style={{ textAlign: 'center' }}>Total Calls</th>
-                  <th style={{ textAlign: 'center' }}>Talk Time</th>
-                  <th style={{ textAlign: 'center' }}>Calls &gt; 5m</th>
-                  <th style={{ textAlign: 'center' }}>CVs Sent</th>
-                  <th style={{ textAlign: 'center' }}>Interviews</th>
-                  <th style={{ textAlign: 'center' }}>New Jobs Taken</th>
+                <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)', userSelect: 'none' }}>
+                  <th 
+                    onClick={() => handlePerfSort('recruiter')} 
+                    style={{ padding: '10px', cursor: 'pointer', transition: 'color 0.2s' }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                  >
+                    Recruiter{renderPerfSortIndicator('recruiter')}
+                  </th>
+                  <th 
+                    onClick={() => handlePerfSort('division')} 
+                    style={{ cursor: 'pointer', transition: 'color 0.2s' }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                  >
+                    Division{renderPerfSortIndicator('division')}
+                  </th>
+                  <th 
+                    onClick={() => handlePerfSort('totalCalls')} 
+                    style={{ textAlign: 'center', cursor: 'pointer', transition: 'color 0.2s' }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                  >
+                    Total Calls{renderPerfSortIndicator('totalCalls')}
+                  </th>
+                  <th 
+                    onClick={() => handlePerfSort('totalTalkTime')} 
+                    style={{ textAlign: 'center', cursor: 'pointer', transition: 'color 0.2s' }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                  >
+                    Talk Time{renderPerfSortIndicator('totalTalkTime')}
+                  </th>
+                  <th 
+                    onClick={() => handlePerfSort('callsOver5Min')} 
+                    style={{ textAlign: 'center', cursor: 'pointer', transition: 'color 0.2s' }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                  >
+                    Calls &gt; 5m{renderPerfSortIndicator('callsOver5Min')}
+                  </th>
+                  <th 
+                    onClick={() => handlePerfSort('cvsSent')} 
+                    style={{ textAlign: 'center', cursor: 'pointer', transition: 'color 0.2s' }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                  >
+                    CVs Sent{renderPerfSortIndicator('cvsSent')}
+                  </th>
+                  <th 
+                    onClick={() => handlePerfSort('interviews')} 
+                    style={{ textAlign: 'center', cursor: 'pointer', transition: 'color 0.2s' }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                  >
+                    Interviews{renderPerfSortIndicator('interviews')}
+                  </th>
+                  <th 
+                    onClick={() => handlePerfSort('jobsTaken')} 
+                    style={{ textAlign: 'center', cursor: 'pointer', transition: 'color 0.2s' }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                  >
+                    New Jobs Taken{renderPerfSortIndicator('jobsTaken')}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1166,7 +1272,24 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                     staff: s,
                     kpi: mockKpiData[s.id] || { totalCalls: 0, totalTalkTime: 0, callsOver5Min: 0, cvsSent: 0, interviews: 0, jobsTaken: 0 }
                   }))
-                  .sort((a, b) => b.kpi.totalCalls - a.kpi.totalCalls)
+                  .sort((a, b) => {
+                    let valA = 0;
+                    let valB = 0;
+                    if (perfSortField === 'recruiter') {
+                      valA = a.staff.fullName;
+                      valB = b.staff.fullName;
+                    } else if (perfSortField === 'division') {
+                      valA = a.staff.department || '';
+                      valB = b.staff.department || '';
+                    } else {
+                      valA = a.kpi[perfSortField] || 0;
+                      valB = b.kpi[perfSortField] || 0;
+                    }
+
+                    if (valA < valB) return perfSortDirection === 'asc' ? -1 : 1;
+                    if (valA > valB) return perfSortDirection === 'asc' ? 1 : -1;
+                    return 0;
+                  })
                   .map(({ staff: s, kpi }) => {
                     const targets = s.kpiTargets || {};
                     return (
@@ -1635,6 +1758,16 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                         >
                           Duration{renderSortIndicator('duration')}
                         </th>
+                        <th 
+                          onClick={() => handleSort('disposition')}
+                          style={{ padding: '10px 0', textAlign: 'center', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                          title="Sort by Disposition"
+                        >
+                          Disposition{renderSortIndicator('disposition')}
+                        </th>
+                        <th style={{ padding: '10px 0', textAlign: 'center' }}>Benchmark</th>
                         <th style={{ padding: '10px 0', textAlign: 'center' }}>Recording</th>
                         <th style={{ padding: '10px 0', textAlign: 'center' }}>Transcript</th>
                       </tr>
@@ -1678,6 +1811,45 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                               </span>
                             </td>
                             <td style={{ textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>{formatDuration(call.duration)}</td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span style={{
+                                padding: '3px 8px',
+                                borderRadius: '4px',
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                backgroundColor: (call.disposition || 'Connected').toLowerCase() === 'connected' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                                color: (call.disposition || 'Connected').toLowerCase() === 'connected' ? 'var(--success)' : 'var(--warning)'
+                              }}>
+                                {call.disposition || 'Connected'}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              {call.duration >= 600 ? (
+                                <span style={{
+                                  padding: '3px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '10px',
+                                  fontWeight: 700,
+                                  backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                                  color: 'rgb(139, 92, 246)'
+                                }}>
+                                  ⚡ &gt; 10m
+                                </span>
+                              ) : call.duration >= 300 ? (
+                                <span style={{
+                                  padding: '3px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '10px',
+                                  fontWeight: 700,
+                                  backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                                  color: 'var(--primary)'
+                                }}>
+                                  ⚡ &gt; 5m
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>—</span>
+                              )}
+                            </td>
                             <td style={{ textAlign: 'center' }}>
                               {call.hasRecording ? (
                                 <button 
@@ -1795,6 +1967,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
               </thead>
               <tbody>
                 {staff
+                  .filter(s => s.status !== 'exited')
                   .filter(s => {
                     if (mappingSearch) {
                       return s.fullName.toLowerCase().includes(mappingSearch.toLowerCase());
@@ -1934,6 +2107,37 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                 Set custom benchmark targets for tracked recruiters. Performance scorecards and leaderboards will compare real-time progress against these values.
               </p>
             </div>
+            
+            {/* Bulk set button */}
+            {selectedStaffIds.length > 0 && (
+              <button
+                onClick={() => {
+                  setEditingTargetsStaffId('bulk');
+                  setTargetCalls(40);
+                  setTargetTalkTimeMin(60);
+                  setTargetCvsSent(5);
+                  setTargetSpeculativeCvs(2);
+                  setTargetJobsTaken(1);
+                  setTargetInterviews(2);
+                  setTargetPlacements(4);
+                  setTargetPlacementValue(15000);
+                }}
+                className="btn-secondary"
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: 'var(--primary)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                }}
+              >
+                🎯 Bulk Set Targets ({selectedStaffIds.length})
+              </button>
+            )}
           </div>
 
           <div style={{ position: 'relative', marginBottom: '16px', maxWidth: '380px' }}>
@@ -1952,6 +2156,39 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
+                  <th style={{ padding: '10px 0', width: '40px', textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={
+                        staff.filter(isStaffDialpadTracked).filter(s => {
+                          if (mappingSearch) {
+                            return s.fullName.toLowerCase().includes(mappingSearch.toLowerCase());
+                          }
+                          return true;
+                        }).length > 0 &&
+                        staff.filter(isStaffDialpadTracked).filter(s => {
+                          if (mappingSearch) {
+                            return s.fullName.toLowerCase().includes(mappingSearch.toLowerCase());
+                          }
+                          return true;
+                        }).every(s => selectedStaffIds.includes(s.id))
+                      }
+                      onChange={(e) => {
+                        const list = staff.filter(isStaffDialpadTracked).filter(s => {
+                          if (mappingSearch) {
+                            return s.fullName.toLowerCase().includes(mappingSearch.toLowerCase());
+                          }
+                          return true;
+                        });
+                        if (e.target.checked) {
+                          setSelectedStaffIds(list.map(s => s.id));
+                        } else {
+                          setSelectedStaffIds([]);
+                        }
+                      }}
+                      style={{ cursor: 'pointer', width: '15px', height: '15px' }}
+                    />
+                  </th>
                   <th style={{ padding: '10px' }}>Recruiter</th>
                   <th>Department</th>
                   <th style={{ textAlign: 'center' }}>Daily Phone Targets</th>
@@ -1973,6 +2210,20 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                     const targets = s.kpiTargets || {};
                     return (
                       <tr key={s.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ textAlign: 'center', padding: '10px 0' }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedStaffIds.includes(s.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedStaffIds(prev => [...prev, s.id]);
+                              } else {
+                                setSelectedStaffIds(prev => prev.filter(id => id !== s.id));
+                              }
+                            }}
+                            style={{ cursor: 'pointer', width: '15px', height: '15px' }}
+                          />
+                        </td>
                         <td style={{ padding: '12px 10px', fontWeight: 600 }}>👤 {s.fullName}</td>
                         <td>
                           <span style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)', fontSize: '11px', fontWeight: 600 }}>
@@ -2049,7 +2300,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                     🎯 Configure KPI Benchmarks
                   </h3>
                   <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    Setting target benchmarks for **{targetStaff?.fullName}**
+                    Setting target benchmarks for **{editingTargetsStaffId === 'bulk' ? `${selectedStaffIds.length} Selected Recruiters` : targetStaff?.fullName}**
                   </span>
                 </div>
                 <button

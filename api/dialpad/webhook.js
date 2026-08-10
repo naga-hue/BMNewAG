@@ -308,6 +308,8 @@ export default async function handler(req, res) {
     await firestore.collection('dialpad_events').doc(eventDocId).set(rawEventData);
     console.log(`[Webhook] Raw event written to database: ${eventDocId}`);
 
+    let oldConversationIdToDelete = null;
+
     // 5. Merge Call Leg into dialpad_call_legs
     const legRef = firestore.collection('dialpad_call_legs').doc(callId);
     await firestore.runTransaction(async (transaction) => {
@@ -315,6 +317,10 @@ export default async function handler(req, res) {
       let existingData = null;
       if (legSnap.exists) {
         existingData = legSnap.data();
+      }
+
+      if (existingData && existingData.conversationId && existingData.conversationId !== conversationId) {
+        oldConversationIdToDelete = existingData.conversationId;
       }
 
       // Check event timestamp to ensure out of order events do not overwrite newer information
@@ -568,6 +574,15 @@ export default async function handler(req, res) {
 
     await callDocRef.set(finalCallData);
     console.log(`[Webhook] Consolidated logical call saved successfully: ${conversationId}`);
+
+    if (oldConversationIdToDelete) {
+      const oldCallRef = firestore.collection('dialpad_calls').doc(oldConversationIdToDelete);
+      const oldCallSnap = await oldCallRef.get();
+      if (oldCallSnap.exists) {
+        await oldCallRef.delete();
+        console.log(`[Webhook] Cleaned up stale logical call document: ${oldConversationIdToDelete}`);
+      }
+    }
 
     return res.status(200).json({ success: true, conversationId, callId: primaryLeg.callId });
   } catch (error) {

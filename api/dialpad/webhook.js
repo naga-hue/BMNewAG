@@ -263,7 +263,7 @@ export default async function handler(req, res) {
     const eventTimestamp = Number(payload.event_timestamp || Date.now());
 
     // Logical root conversation identifier
-    const conversationId = masterCallId || entryPointCallId || callId;
+    const conversationId = masterCallId || entryPointCallId || operatorCallId || callId;
 
     console.log(`[Webhook] Processing event: State="${state}" | Call ID="${callId}" | Conv ID="${conversationId}"`);
 

@@ -502,6 +502,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         };
       })
       .filter(call => {
+        if (!call.staffId) return false; // Filter out system/routing/unmapped call legs
         if (call.date && (call.date < start || call.date > end)) return false;
         if (selectedStaffId !== 'all' && call.staffId !== selectedStaffId) return false;
         if (selectedDept !== 'all' && call.department !== selectedDept) return false;

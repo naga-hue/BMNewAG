@@ -575,6 +575,11 @@ export default async function handler(req, res) {
     await callDocRef.set(finalCallData);
     console.log(`[Webhook] Consolidated logical call saved successfully: ${conversationId}`);
 
+    // Update daily recruiter KPIs in real time
+    if (handlerId) {
+      await updateKpiDaily(firestore, handlerId, finalCallData.dateStarted);
+    }
+
     if (oldConversationIdToDelete) {
       const oldCallRef = firestore.collection('dialpad_calls').doc(oldConversationIdToDelete);
       const oldCallSnap = await oldCallRef.get();
@@ -588,5 +593,74 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error('[Webhook] Failed to process Dialpad webhook event:', error);
     return res.status(500).json({ error: error.message || 'Internal Server Error' });
+  }
+}
+
+/**
+ * Recalculate daily KPI totals for a specific recruiter/date and write to kpiDaily.
+ */
+async function updateKpiDaily(firestore, handlerId, dateStarted) {
+  if (!handlerId || !dateStarted) return;
+  const dateKey = dateStarted.substring(0, 10); // "YYYY-MM-DD"
+  const docId = `${handlerId}_${dateKey}`;
+
+  console.log(`[KPI] Recalculating daily aggregate for recruiter ${handlerId} on ${dateKey}...`);
+  try {
+    const staffDoc = await firestore.collection('staff').doc(handlerId).get();
+    if (!staffDoc.exists) return;
+    const staff = staffDoc.data();
+
+    // Query all calls by this handler on this day from dialpad_calls
+    const dayCallsSnap = await firestore.collection('dialpad_calls')
+      .where('handlerId', '==', handlerId)
+      .where('dateStarted', '>=', `${dateKey}T00:00:00`)
+      .where('dateStarted', '<=', `${dateKey}T23:59:59.999Z`)
+      .get();
+
+    let callsInbound = 0;
+    let callsOutbound = 0;
+    let callsTotal = 0;
+    let totalTalkTimeSeconds = 0;
+    let callsOver5Min = 0;
+    let callsOver10Min = 0;
+
+    dayCallsSnap.forEach(docSnap => {
+      const call = docSnap.data();
+      callsTotal++;
+      if ((call.direction || '').toLowerCase() === 'inbound') {
+        callsInbound++;
+      } else {
+        callsOutbound++;
+      }
+      
+      const duration = Number(call.durationSeconds || call.talkTimeSeconds || 0);
+      totalTalkTimeSeconds += duration;
+      if (duration >= 300) {
+        callsOver5Min++;
+      }
+      if (duration >= 600) {
+        callsOver10Min++;
+      }
+    });
+
+    const kpiData = {
+      staffId: handlerId,
+      staffName: staff.fullName || '',
+      department: staff.department || '',
+      email: staff.businessEmail || staff.personalEmail || '',
+      date: dateKey,
+      callsInbound,
+      callsOutbound,
+      callsTotal,
+      totalTalkTimeSeconds,
+      callsOver5Min,
+      callsOver10Min,
+      lastUpdated: new Date().toISOString()
+    };
+
+    await firestore.collection('kpiDaily').doc(docId).set(kpiData, { merge: true });
+    console.log(`[KPI] Updated kpiDaily document ${docId}`);
+  } catch (err) {
+    console.error(`[KPI] Error updating daily aggregates for ${handlerId} on ${dateKey}:`, err);
   }
 }

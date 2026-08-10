@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../services/firebase';
-import { collection, getDocs, query, where, limit, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, where, limit, orderBy, onSnapshot } from 'firebase/firestore';
 import { useBoundStore } from '../store/useBoundStore';
 import { 
   Phone, 
@@ -283,56 +283,70 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     loadKpiData();
   }, [dateRangeWindow]);
 
-  // Load Dialpad calls dynamically when callsDateRangeWindow changes (for the dedicated Dialpad Calls Tab)
+  // Load Dialpad calls dynamically with real-time updates when callsDateRangeWindow changes (for the dedicated Dialpad Calls Tab)
   useEffect(() => {
-    async function loadCalls() {
+    let unsubscribe = () => {};
+    
+    function setupCallsListener() {
       setIsLoadingCalls(true);
-      try {
-        const { start, end } = callsDateRangeWindow;
-        
-        // Query dialpad_calls between start and end (using string boundaries)
-        const callsQuery = query(
-          collection(db, 'dialpad_calls'),
-          where('dateStarted', '>=', start),
-          where('dateStarted', '<=', end + 'T23:59:59Z'),
-          orderBy('dateStarted', 'desc'),
-          limit(500)
-        );
-        const callsSnapshot = await getDocs(callsQuery);
+      const { start, end } = callsDateRangeWindow;
+      
+      const callsQuery = query(
+        collection(db, 'dialpad_calls'),
+        where('dateStarted', '>=', start),
+        where('dateStarted', '<=', end + 'T23:59:59Z'),
+        orderBy('dateStarted', 'desc'),
+        limit(500)
+      );
+
+      unsubscribe = onSnapshot(callsQuery, (snapshot) => {
         const callsList = [];
-        callsSnapshot.forEach(doc => {
+        snapshot.forEach(doc => {
           callsList.push({ id: doc.id, ...doc.data() });
         });
         setLiveCalls(callsList);
-      } catch (e) {
-        console.error('Error loading Dialpad calls:', e);
+        setIsLoadingCalls(false);
+      }, (error) => {
+        console.error('Error loading Dialpad calls in real-time:', error);
+        
         // Fallback: if index is missing, query without orderBy
         try {
-          const { start, end } = callsDateRangeWindow;
           const callsQueryFallback = query(
             collection(db, 'dialpad_calls'),
             where('dateStarted', '>=', start),
             where('dateStarted', '<=', end + 'T23:59:59Z'),
             limit(500)
           );
-          const callsSnapshot = await getDocs(callsQueryFallback);
-          const callsList = [];
-          callsSnapshot.forEach(doc => {
-            callsList.push({ id: doc.id, ...doc.data() });
+          
+          // Re-subscribe with fallback query
+          unsubscribe();
+          unsubscribe = onSnapshot(callsQueryFallback, (fallbackSnapshot) => {
+            const callsList = [];
+            fallbackSnapshot.forEach(doc => {
+              callsList.push({ id: doc.id, ...doc.data() });
+            });
+            // Sort client-side
+            callsList.sort((a, b) => b.dateStarted.localeCompare(a.dateStarted));
+            setLiveCalls(callsList);
+            setIsLoadingCalls(false);
+          }, (fallbackError) => {
+            console.error('Fallback real-time listener failed:', fallbackError);
+            onShowToast?.('Failed to listen to live call logs', 'error');
+            setIsLoadingCalls(false);
           });
-          // Sort client-side in fallback
-          callsList.sort((a, b) => b.dateStarted.localeCompare(a.dateStarted));
-          setLiveCalls(callsList);
         } catch (errFallback) {
-          console.error('Fallback query failed:', errFallback);
-          onShowToast?.('Failed to load Dialpad call logs from database', 'error');
+          console.error('Fallback subscription setup failed:', errFallback);
+          setIsLoadingCalls(false);
         }
-      } finally {
-        setIsLoadingCalls(false);
-      }
+      });
     }
-    loadCalls();
-  }, [callsDateRangeWindow]);
+
+    setupCallsListener();
+
+    return () => {
+      unsubscribe();
+    };
+  }, [callsDateRangeWindow, onShowToast]);
 
   // Aggregate KPI Data from real Firestore kpiDaily collection
   const mockKpiData = useMemo(() => {

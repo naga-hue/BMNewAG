@@ -60,6 +60,24 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   const [callLogsDirection, setCallLogsDirection] = useState('all'); // 'all' | 'inbound' | 'outbound'
   const [callLogsPage, setCallLogsPage] = useState(1);
   const callLogsPageSize = 10;
+  
+  // Call Logs sorting states
+  const [callLogsSortField, setCallLogsSortField] = useState('date'); // 'date' | 'staffName' | 'direction' | 'targetName' | 'targetType' | 'duration'
+  const [callLogsSortDirection, setCallLogsSortDirection] = useState('desc'); // 'asc' | 'desc'
+
+  const handleSort = (field) => {
+    if (callLogsSortField === field) {
+      setCallLogsSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setCallLogsSortField(field);
+      setCallLogsSortDirection('desc');
+    }
+  };
+
+  const renderSortIndicator = (field) => {
+    if (callLogsSortField !== field) return null;
+    return callLogsSortDirection === 'asc' ? ' ▲' : ' ▼';
+  };
 
   // Recruiter Mapping edit states
   const [mappingSearch, setMappingSearch] = useState('');
@@ -527,11 +545,12 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   }, [hasRealCalls, formattedLiveCalls, mockCallsList]);
 
   // Filter and search call logs list based on user search and direction controls
+  // Filter, search and sort call logs list based on user controls and sorting states
   const filteredAndSearchedCalls = useMemo(() => {
     const list = displayCallsList;
     const query = callLogsSearch.toLowerCase().trim();
 
-    return list.filter(call => {
+    const filtered = list.filter(call => {
       // 1. Direction Filter
       if (callLogsDirection !== 'all' && call.direction.toLowerCase() !== callLogsDirection) return false;
 
@@ -544,7 +563,35 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       }
       return true;
     });
-  }, [displayCallsList, callLogsSearch, callLogsDirection]);
+
+    // Sort calls client-side
+    return filtered.sort((a, b) => {
+      let valA = a[callLogsSortField];
+      let valB = b[callLogsSortField];
+
+      if (callLogsSortField === 'date') {
+        // Sort chronologically using date + time strings combined
+        valA = `${a.date}T${a.time}`;
+        valB = `${b.date}T${b.time}`;
+      }
+
+      // Check if they are numbers (or numeric strings)
+      const isNumA = typeof valA === 'number' || (valA && !isNaN(valA) && !isNaN(parseFloat(valA)));
+      const isNumB = typeof valB === 'number' || (valB && !isNaN(valB) && !isNaN(parseFloat(valB)));
+
+      if (isNumA && isNumB) {
+        const numA = Number(valA || 0);
+        const numB = Number(valB || 0);
+        return callLogsSortDirection === 'asc' ? numA - numB : numB - numA;
+      }
+
+      // Default case: Compare as case-insensitive strings
+      const strA = String(valA || '').toLowerCase();
+      const strB = String(valB || '').toLowerCase();
+      const cmp = strA.localeCompare(strB);
+      return callLogsSortDirection === 'asc' ? cmp : -cmp;
+    });
+  }, [displayCallsList, callLogsSearch, callLogsDirection, callLogsSortField, callLogsSortDirection]);
 
   // Paginated chunk to display
   const displayCallsChunk = useMemo(() => {
@@ -1156,14 +1203,62 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                   <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
-                        <th style={{ padding: '10px' }}>Time & Date</th>
-                        <th>Recruiter</th>
-                        <th>Direction</th>
-                        <th>Party Name / Number</th>
-                        <th>Party Type</th>
-                        <th style={{ textAlign: 'center' }}>Duration</th>
-                        <th style={{ textAlign: 'center' }}>Recording</th>
-                        <th style={{ textAlign: 'center' }}>Transcript</th>
+                        <th 
+                          onClick={() => handleSort('date')}
+                          style={{ padding: '10px 10px', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                          title="Sort by Time & Date"
+                        >
+                          Time & Date{renderSortIndicator('date')}
+                        </th>
+                        <th 
+                          onClick={() => handleSort('staffName')}
+                          style={{ padding: '10px 0', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                          title="Sort by Recruiter"
+                        >
+                          Recruiter{renderSortIndicator('staffName')}
+                        </th>
+                        <th 
+                          onClick={() => handleSort('direction')}
+                          style={{ padding: '10px 0', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                          title="Sort by Direction"
+                        >
+                          Direction{renderSortIndicator('direction')}
+                        </th>
+                        <th 
+                          onClick={() => handleSort('targetName')}
+                          style={{ padding: '10px 0', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                          title="Sort by Party Name / Number"
+                        >
+                          Party Name / Number{renderSortIndicator('targetName')}
+                        </th>
+                        <th 
+                          onClick={() => handleSort('targetType')}
+                          style={{ padding: '10px 0', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                          title="Sort by Party Type"
+                        >
+                          Party Type{renderSortIndicator('targetType')}
+                        </th>
+                        <th 
+                          onClick={() => handleSort('duration')}
+                          style={{ padding: '10px 0', textAlign: 'center', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                          title="Sort by Duration"
+                        >
+                          Duration{renderSortIndicator('duration')}
+                        </th>
+                        <th style={{ padding: '10px 0', textAlign: 'center' }}>Recording</th>
+                        <th style={{ padding: '10px 0', textAlign: 'center' }}>Transcript</th>
                       </tr>
                     </thead>
                     <tbody>

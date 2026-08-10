@@ -132,7 +132,10 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             ...activeCallDetail,
             recordingUrl: data.recordingUrl || activeCallDetail.recordingUrl,
             hasRecording: data.wasRecorded || activeCallDetail.hasRecording,
-            transcript: data.transcript || activeCallDetail.transcript
+            transcript: data.transcript || activeCallDetail.transcript,
+            disposition: data.disposition || activeCallDetail.disposition || '',
+            recapSummary: data.recapSummary || activeCallDetail.recapSummary || '',
+            recapOutcome: data.recapOutcome || activeCallDetail.recapOutcome || ''
           };
           setActiveCallDetail(updatedDetail);
           
@@ -498,7 +501,10 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           duration: call.durationSeconds || 0,
           hasRecording: call.wasRecorded,
           recordingUrl: call.recordingUrl,
-          transcript: call.transcript || 'No transcript generated yet.'
+          transcript: call.transcript || 'No transcript generated yet.',
+          disposition: call.disposition || '',
+          recapSummary: call.recapSummary || '',
+          recapOutcome: call.recapOutcome || ''
         };
       })
       .filter(call => {
@@ -1496,6 +1502,45 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '8px 0', color: 'var(--text-muted)', fontSize: '11px' }}>
                       <span className="loading-spinner" style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
                       <span>Generating secure recording playback link...</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Disposition Badge */}
+              {activeCallDetail.disposition && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>🏷️ Recruiter Disposition:</span>
+                  <span style={{ backgroundColor: 'rgba(79, 70, 229, 0.15)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: 600, border: '1px solid rgba(79, 70, 229, 0.3)' }}>
+                    {activeCallDetail.disposition}
+                  </span>
+                </div>
+              )}
+
+              {/* AI Call Recap */}
+              {(activeCallDetail.recapSummary || activeCallDetail.recapOutcome) && (
+                <div style={{
+                  padding: '12px',
+                  borderRadius: '6px',
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: '1px dashed var(--border-color)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px'
+                }}>
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    ✨ Dialpad AI Call Recap
+                  </span>
+                  {activeCallDetail.recapSummary && (
+                    <div>
+                      <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Summary</span>
+                      <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-primary)', lineHeight: '1.5' }}>{activeCallDetail.recapSummary}</p>
+                    </div>
+                  )}
+                  {activeCallDetail.recapOutcome && (
+                    <div style={{ marginTop: '4px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Outcome</span>
+                      <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-primary)', lineHeight: '1.5' }}>{activeCallDetail.recapOutcome}</p>
                     </div>
                   )}
                 </div>

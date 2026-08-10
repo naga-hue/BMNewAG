@@ -39,6 +39,65 @@ const formatDuration = (seconds) => {
   return `${secs}s`;
 };
 
+// Formats raw Dialpad dispositions (e.g. "Candidate~NoAnswer") into pretty styled pills
+const renderDispositionBadges = (dispositionStr) => {
+  const disp = dispositionStr || '';
+  if (!disp || disp.toLowerCase() === 'connected' || disp.toLowerCase() === 'undefined') {
+    return (
+      <span style={{
+        padding: '3px 8px',
+        borderRadius: '4px',
+        fontSize: '10px',
+        fontWeight: 700,
+        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        color: 'var(--success)'
+      }}>
+        Connected
+      </span>
+    );
+  }
+
+  const items = disp.split(',').map(s => s.trim()).filter(Boolean);
+  return (
+    <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '4px', justifyContent: 'center' }}>
+      {items.map((item, idx) => {
+        const formatted = item.replace(/~/g, ' — ');
+        let bgColor = 'rgba(245, 158, 11, 0.1)';
+        let color = 'var(--warning)';
+        const lower = item.toLowerCase();
+        
+        if (lower.includes('interview')) {
+          bgColor = 'rgba(139, 92, 246, 0.15)';
+          color = 'rgb(139, 92, 246)';
+        } else if (lower.includes('vc') || lower.includes('video')) {
+          bgColor = 'rgba(59, 130, 246, 0.15)';
+          color = 'var(--primary)';
+        } else if (lower.includes('pq') || lower.includes('qualify')) {
+          bgColor = 'rgba(16, 185, 129, 0.15)';
+          color = 'var(--success)';
+        } else if (lower.includes('noanswer') || lower.includes('missed') || lower.includes('voicemail')) {
+          bgColor = 'rgba(239, 68, 68, 0.1)';
+          color = '#ef4444';
+        }
+        
+        return (
+          <span key={idx} style={{
+            padding: '3px 8px',
+            borderRadius: '4px',
+            fontSize: '10px',
+            fontWeight: 700,
+            backgroundColor: bgColor,
+            color: color,
+            whiteSpace: 'nowrap'
+          }}>
+            {formatted}
+          </span>
+        );
+      })}
+    </div>
+  );
+};
+
 export default function KpisDashboard({ staff, companies, currentUser, onShowToast }) {
   // Helper to determine if a staff member is tracked in KPIs
   const isStaffDialpadTracked = (s) => {
@@ -1821,16 +1880,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                             </td>
                             <td style={{ textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>{formatDuration(call.duration)}</td>
                             <td style={{ textAlign: 'center' }}>
-                              <span style={{
-                                padding: '3px 8px',
-                                borderRadius: '4px',
-                                fontSize: '10px',
-                                fontWeight: 700,
-                                backgroundColor: (call.disposition || 'Connected').toLowerCase() === 'connected' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                                color: (call.disposition || 'Connected').toLowerCase() === 'connected' ? 'var(--success)' : 'var(--warning)'
-                              }}>
-                                {call.disposition || 'Connected'}
-                              </span>
+                              {renderDispositionBadges(call.disposition)}
                             </td>
                             <td style={{ textAlign: 'center' }}>
                               {call.duration >= 600 ? (

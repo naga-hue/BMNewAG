@@ -319,7 +319,7 @@ export default async function handler(req, res) {
     await firestore.collection('dialpad_events').doc(eventDocId).set(rawEventData);
     console.log(`[Webhook] Raw event written to database: ${eventDocId}`);
 
-    let oldConversationIdToDelete = null;
+    let finalConversationId = conversationId;
 
     // 5. Merge Call Leg into dialpad_call_legs
     const legRef = firestore.collection('dialpad_call_legs').doc(callId);
@@ -330,8 +330,8 @@ export default async function handler(req, res) {
         existingData = legSnap.data();
       }
 
-      if (existingData && existingData.conversationId && existingData.conversationId !== conversationId) {
-        oldConversationIdToDelete = existingData.conversationId;
+      if (existingData && existingData.conversationId) {
+        finalConversationId = existingData.conversationId;
       }
 
       // Check event timestamp to ensure out of order events do not overwrite newer information
@@ -356,7 +356,7 @@ export default async function handler(req, res) {
         masterCallId,
         entryPointCallId,
         operatorCallId,
-        conversationId,
+        conversationId: finalConversationId,
         state: rawEventData.state || existingData?.state || '',
         direction: rawEventData.direction || existingData?.direction || '',
         externalNumber: rawEventData.externalNumber || existingData?.externalNumber || '',
@@ -406,7 +406,7 @@ export default async function handler(req, res) {
 
     // 6. Consolidate Legs & Update dialpad_calls
     const legsSnap = await firestore.collection('dialpad_call_legs')
-      .where('conversationId', '==', conversationId)
+      .where('conversationId', '==', finalConversationId)
       .get();
 
     const relatedLegs = [];
@@ -414,7 +414,7 @@ export default async function handler(req, res) {
       relatedLegs.push(snap.data());
     });
 
-    console.log(`[Webhook] Found ${relatedLegs.length} related legs for conversationId ${conversationId}`);
+    console.log(`[Webhook] Found ${relatedLegs.length} related legs for conversationId ${finalConversationId}`);
 
     // Identify user-facing primary leg (target.type === 'user')
     // Exclude group routing legs (target.type !== 'user' or operator call segments without entry-point markers)
@@ -522,14 +522,14 @@ export default async function handler(req, res) {
     }
 
     // Build the final Logical Call document
-    const callDocRef = firestore.collection('dialpad_calls').doc(conversationId);
+    const callDocRef = firestore.collection('dialpad_calls').doc(finalConversationId);
     
     // Load existing logical call doc to preserve transcript status/API data
     const existingCallSnap = await callDocRef.get();
     const existingCallData = existingCallSnap.exists ? existingCallSnap.data() : null;
 
     const finalCallData = {
-      conversationId,
+      conversationId: finalConversationId,
       primaryCallId: primaryLeg.callId,
       relatedCallIds,
       masterCallId: primaryLeg.masterCallId || '',
@@ -584,23 +584,14 @@ export default async function handler(req, res) {
     };
 
     await callDocRef.set(finalCallData);
-    console.log(`[Webhook] Consolidated logical call saved successfully: ${conversationId}`);
+    console.log(`[Webhook] Consolidated logical call saved successfully: ${finalConversationId}`);
 
     // Update daily recruiter KPIs in real time
     if (handlerId) {
       await updateKpiDaily(firestore, handlerId, finalCallData.dateStarted);
     }
 
-    if (oldConversationIdToDelete) {
-      const oldCallRef = firestore.collection('dialpad_calls').doc(oldConversationIdToDelete);
-      const oldCallSnap = await oldCallRef.get();
-      if (oldCallSnap.exists) {
-        await oldCallRef.delete();
-        console.log(`[Webhook] Cleaned up stale logical call document: ${oldConversationIdToDelete}`);
-      }
-    }
-
-    return res.status(200).json({ success: true, conversationId, callId: primaryLeg.callId });
+    return res.status(200).json({ success: true, conversationId: finalConversationId, callId: primaryLeg.callId });
   } catch (error) {
     console.error('[Webhook] Failed to process Dialpad webhook event:', error);
     return res.status(500).json({ error: error.message || 'Internal Server Error' });

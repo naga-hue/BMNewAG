@@ -185,11 +185,39 @@ export default async function handler(req, res) {
 
     // 3. Resolve Public Recording Link if call was recorded but has no public link
     // The adminRecordingUrls typically hold private links like https://dialpad.com/blob/adminrecording/5762892484714496.mp3
-    const hasPrivateRecording = Array.isArray(callData.adminRecordingUrls) && callData.adminRecordingUrls.length > 0;
+    let adminRecordingUrls = callData.adminRecordingUrls || [];
+    if ((!adminRecordingUrls || adminRecordingUrls.length === 0) && !callData.recordingUrl) {
+      console.log(`[Enrich] adminRecordingUrls missing from logical call. Checking dialpad_call_legs...`);
+      try {
+        const legsSnap = await firestore.collection('dialpad_call_legs')
+          .where('conversationId', '==', String(conversationId))
+          .get();
+        
+        const collected = [];
+        legsSnap.forEach(legDoc => {
+          const legData = legDoc.data();
+          if (Array.isArray(legData.adminRecordingUrls)) {
+            legData.adminRecordingUrls.forEach(url => {
+              if (url && !collected.includes(url)) collected.push(url);
+            });
+          }
+        });
+        if (collected.length > 0) {
+          adminRecordingUrls = collected;
+          updates.adminRecordingUrls = collected;
+          needsUpdate = true;
+          console.log(`[Enrich] Found ${collected.length} admin recording URLs from call legs.`);
+        }
+      } catch (err) {
+        console.error(`[Enrich] Error fetching call legs:`, err);
+      }
+    }
+
+    const hasPrivateRecording = Array.isArray(adminRecordingUrls) && adminRecordingUrls.length > 0;
     const hasPublicRecordingUrl = callData.recordingUrl && callData.recordingUrl.startsWith('http') && !callData.recordingUrl.includes('dialpad.com/blob/');
 
     if (hasPrivateRecording && !hasPublicRecordingUrl) {
-      const privateUrl = callData.adminRecordingUrls[0];
+      const privateUrl = adminRecordingUrls[0];
       console.log(`[Enrich] Private recording URL found: ${privateUrl}. Fetching public share link...`);
       
       const match = privateUrl.match(/\/(\d+)\.mp3/);

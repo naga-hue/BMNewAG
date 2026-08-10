@@ -44,9 +44,15 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   const [kpiDocs, setKpiDocs] = useState([]);
   const [liveCalls, setLiveCalls] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingCalls, setIsLoadingCalls] = useState(false);
 
   // Dashboard view states
-  const [activeSubTab, setActiveSubTab] = useState('performance'); // 'performance' | 'mapping'
+  const [activeSubTab, setActiveSubTab] = useState('performance'); // 'performance' | 'calls' | 'mapping'
+
+  // Call Logs time filtering states
+  const [callsTimeRange, setCallsTimeRange] = useState('today'); // today, yesterday, this_week, this_month, custom
+  const [callsCustomStartDate, setCallsCustomStartDate] = useState('');
+  const [callsCustomEndDate, setCallsCustomEndDate] = useState('');
 
   // Call Logs search & pagination states
   const [callLogsSearch, setCallLogsSearch] = useState('');
@@ -151,6 +157,36 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     return { start, end };
   }, [timeRange, customStartDate, customEndDate]);
 
+  // Calculate date range window specifically for the Dialpad Calls Tab
+  const callsDateRangeWindow = useMemo(() => {
+    const today = new Date();
+    const todayStr = today.toISOString().substring(0, 10);
+    
+    let start = '';
+    let end = todayStr;
+    
+    if (callsTimeRange === 'today') {
+      start = todayStr;
+    } else if (callsTimeRange === 'yesterday') {
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().substring(0, 10);
+      start = yesterdayStr;
+      end = yesterdayStr;
+    } else if (callsTimeRange === 'this_week') {
+      const day = today.getDay();
+      const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(today.setDate(diff));
+      start = monday.toISOString().substring(0, 10);
+    } else if (callsTimeRange === 'this_month') {
+      start = `${todayStr.substring(0, 7)}-01`;
+    } else {
+      start = callsCustomStartDate || '2026-01-01';
+      end = callsCustomEndDate || todayStr;
+    }
+    return { start, end };
+  }, [callsTimeRange, callsCustomStartDate, callsCustomEndDate]);
+
   // Load KPI documents from Firestore collections filtered by active date range (instantly aggregates in millisecond speeds)
   useEffect(() => {
     async function loadKpiData() {
@@ -158,7 +194,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       try {
         const { start, end } = dateRangeWindow;
         
-        // 1. Fetch Daily aggregates matching the active date range
+        // Fetch Daily aggregates matching the active date range
         const kpiQuery = query(
           collection(db, 'kpiDaily'),
           where('date', '>=', start),
@@ -170,12 +206,30 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           kpiList.push({ id: doc.id, ...doc.data() });
         });
         setKpiDocs(kpiList);
+      } catch (e) {
+        console.error('Error loading KPI data:', e);
+        onShowToast?.('Failed to load call performance data from database', 'error');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadKpiData();
+  }, [dateRangeWindow]);
 
-        // 2. Fetch Live webhook calls (limit to latest 300 to keep loading instantaneous)
+  // Load Dialpad calls dynamically when callsDateRangeWindow changes (for the dedicated Dialpad Calls Tab)
+  useEffect(() => {
+    async function loadCalls() {
+      setIsLoadingCalls(true);
+      try {
+        const { start, end } = callsDateRangeWindow;
+        
+        // Query dialpad_calls between start and end (using string boundaries)
         const callsQuery = query(
           collection(db, 'dialpad_calls'),
+          where('dateStarted', '>=', start),
+          where('dateStarted', '<=', end + 'T23:59:59Z'),
           orderBy('dateStarted', 'desc'),
-          limit(300)
+          limit(500)
         );
         const callsSnapshot = await getDocs(callsQuery);
         const callsList = [];
@@ -184,26 +238,34 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         });
         setLiveCalls(callsList);
       } catch (e) {
-        console.error('Error loading KPI data:', e);
-        // Fallback: if orderBy dateStarted fails because of missing index, try index-free limit query
+        console.error('Error loading Dialpad calls:', e);
+        // Fallback: if index is missing, query without orderBy
         try {
-          const callsQueryFallback = query(collection(db, 'dialpad_calls'), limit(300));
+          const { start, end } = callsDateRangeWindow;
+          const callsQueryFallback = query(
+            collection(db, 'dialpad_calls'),
+            where('dateStarted', '>=', start),
+            where('dateStarted', '<=', end + 'T23:59:59Z'),
+            limit(500)
+          );
           const callsSnapshot = await getDocs(callsQueryFallback);
           const callsList = [];
           callsSnapshot.forEach(doc => {
             callsList.push({ id: doc.id, ...doc.data() });
           });
+          // Sort client-side in fallback
+          callsList.sort((a, b) => b.dateStarted.localeCompare(a.dateStarted));
           setLiveCalls(callsList);
         } catch (errFallback) {
-          console.error('Fallback query also failed:', errFallback);
-          onShowToast?.('Failed to load call performance data from database', 'error');
+          console.error('Fallback query failed:', errFallback);
+          onShowToast?.('Failed to load Dialpad call logs from database', 'error');
         }
       } finally {
-        setIsLoading(false);
+        setIsLoadingCalls(false);
       }
     }
-    loadKpiData();
-  }, [dateRangeWindow]);
+    loadCalls();
+  }, [callsDateRangeWindow]);
 
   // Aggregate KPI Data from real Firestore kpiDaily collection
   const mockKpiData = useMemo(() => {
@@ -308,7 +370,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
   // Format the raw live calls from the webhook database
   const formattedLiveCalls = useMemo(() => {
-    const { start, end } = dateRangeWindow;
+    const { start, end } = callsDateRangeWindow;
 
     return liveCalls
       .map(call => {
@@ -364,14 +426,14 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         if (selectedDept !== 'all' && call.department !== selectedDept) return false;
         return true;
       });
-  }, [liveCalls, dateRangeWindow, selectedStaffId, selectedDept]);
+  }, [liveCalls, callsDateRangeWindow, selectedStaffId, selectedDept]);
 
   const displayCallsList = useMemo(() => {
-    if (formattedLiveCalls.length > 0) {
+    if (liveCalls.length > 0) {
       return formattedLiveCalls;
     }
     return mockCallsList;
-  }, [formattedLiveCalls, mockCallsList]);
+  }, [liveCalls, formattedLiveCalls, mockCallsList]);
 
   // Filter and search call logs list based on user search and direction controls
   const filteredAndSearchedCalls = useMemo(() => {
@@ -758,181 +820,338 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             </table>
           </div>
         </div>
-      )}
-
-      {/* 5. CALL RECORDINGS & TRANSCRIPT AUDIT LOGS TABLE */}
-      <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-            <Phone size={18} color="var(--primary)" />
-            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>Dialpad Call detail logs & Recordings</h4>
+      )}      </>
+      ) : activeSubTab === 'calls' ? (
+        <>
+          {/* 1. HEADER */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>Dialpad Call logs & Recordings</h2>
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                🎥 Browse, filter, listen to recordings, and view transcripts for recruiter phone calls.
+              </span>
+            </div>
             {formattedLiveCalls.length > 0 ? (
-              <span style={{ fontSize: '10px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
-                🟢 LIVE WEBHOOK DATA
+              <span style={{ fontSize: '11px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>
+                🟢 LIVE WEBHOOK DATA ({liveCalls.length} logs loaded)
               </span>
             ) : (
-              <span style={{ fontSize: '10px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
+              <span style={{ fontSize: '11px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)', padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>
                 💡 DEMO MODE (WAITING FOR WEBHOOK EVENT)
               </span>
             )}
           </div>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>🎥 Shows recordings for calls &gt; 2 mins</span>
-        </div>
 
-        {/* Search & Direction controls */}
-        <div style={{
-          display: 'flex',
-          gap: '12px',
-          marginBottom: '16px',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          paddingBottom: '12px',
-          borderBottom: '1px solid var(--border-color)'
-        }}>
-          <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
-            <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }} />
-            <input
-              type="text"
-              placeholder="Search by caller, recipient, or number..."
-              value={callLogsSearch}
-              onChange={(e) => setCallLogsSearch(e.target.value)}
-              className="form-input"
-              style={{ paddingLeft: '32px', width: '100%', fontSize: '12px', height: '34px' }}
-            />
-          </div>
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>Direction:</span>
-            <select
-              value={callLogsDirection}
-              onChange={(e) => setCallLogsDirection(e.target.value)}
-              className="form-input"
-              style={{ fontSize: '12px', width: '130px', height: '34px', padding: '0 8px' }}
-            >
-              <option value="all">All Directions</option>
-              <option value="inbound">⬇️ Inbound</option>
-              <option value="outbound">⬆️ Outbound</option>
-            </select>
-          </div>
-        </div>
+          {/* 2. FILTERS PANEL */}
+          <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {/* Date range filters row */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Calendar size={16} color="var(--primary)" />
+                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Date Range:</span>
+              </div>
+              
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {[
+                  { id: 'today', label: 'Today' },
+                  { id: 'yesterday', label: 'Yesterday' },
+                  { id: 'this_week', label: 'This Week' },
+                  { id: 'this_month', label: 'This Month' },
+                  { id: 'custom', label: 'Custom Range' }
+                ].map(btn => (
+                  <button
+                    key={btn.id}
+                    onClick={() => {
+                      setCallsTimeRange(btn.id);
+                      setCallLogsPage(1);
+                    }}
+                    className="btn-secondary"
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: '11px',
+                      border: 'none',
+                      backgroundColor: callsTimeRange === btn.id ? 'var(--primary)' : 'var(--bg-secondary)',
+                      color: callsTimeRange === btn.id ? 'white' : 'var(--text-secondary)',
+                      fontWeight: 600,
+                      borderRadius: '4px'
+                    }}
+                  >
+                    {btn.label}
+                  </button>
+                ))}
 
-        <div style={{ overflowX: 'auto' }}>
-          <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
-                <th style={{ padding: '10px' }}>Time & Date</th>
-                <th>Caller (Staff)</th>
-                <th>Direction</th>
-                <th>Recipient (Client / Candidate)</th>
-                <th>Duration</th>
-                <th style={{ textAlign: 'center' }}>Recording</th>
-                <th style={{ textAlign: 'center' }}>Transcript</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayCallsChunk.length > 0 ? (
-                displayCallsChunk.map(call => (
-                  <tr key={call.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '12px 10px', fontSize: '12px' }}>
-                      <span style={{ display: 'block', fontWeight: 600 }}>{call.date}</span>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{call.time}</span>
-                    </td>
-                    <td style={{ fontWeight: 600 }}>{call.staffName}</td>
-                    <td>
-                      <span style={{ 
-                        padding: '2px 6px', 
-                        borderRadius: '4px', 
-                        fontSize: '10px', 
-                        fontWeight: 700,
-                        backgroundColor: call.direction === 'Inbound' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
-                        color: call.direction === 'Inbound' ? 'var(--success)' : 'var(--primary)'
-                      }}>
-                        {call.direction === 'Inbound' ? '⬇️ Inbound' : '⬆️ Outbound'}
-                      </span>
-                    </td>
-                    <td>
-                      <span style={{ fontWeight: 600 }}>{call.targetName}</span>
-                      <span style={{ display: 'block', fontSize: '10px', color: 'var(--text-muted)' }}>{call.targetType}</span>
-                    </td>
-                    <td style={{ fontWeight: 700 }}>{formatDuration(call.duration)}</td>
-                    <td style={{ textAlign: 'center' }}>
-                      {call.hasRecording ? (
-                        <button 
-                          className="btn-secondary" 
-                          onClick={() => {
-                            setActiveCallDetail(call);
-                            setIsPlaying(true);
-                          }}
-                          style={{ padding: '4px 8px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                        >
-                          <Volume2 size={12} color="var(--primary)" /> Listen
-                        </button>
-                      ) : (
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>No Audio</span>
-                      )}
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <button 
-                        className="btn-secondary"
-                        onClick={() => {
-                          setActiveCallDetail(call);
-                          setIsPlaying(false);
-                        }}
-                        style={{ padding: '4px 8px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        <FileText size={12} color="var(--primary)" /> View
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-                    No call logs match the active filter criteria.
-                  </td>
-                </tr>
+                {callsTimeRange === 'custom' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '10px' }}>
+                    <input
+                      type="date"
+                      value={callsCustomStartDate}
+                      onChange={(e) => {
+                        setCallsCustomStartDate(e.target.value);
+                        setCallLogsPage(1);
+                      }}
+                      className="form-input"
+                      style={{ fontSize: '11px', height: '28px', padding: '2px 6px', width: '120px' }}
+                    />
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>to</span>
+                    <input
+                      type="date"
+                      value={callsCustomEndDate}
+                      onChange={(e) => {
+                        setCallsCustomEndDate(e.target.value);
+                        setCallLogsPage(1);
+                      }}
+                      className="form-input"
+                      style={{ fontSize: '11px', height: '28px', padding: '2px 6px', width: '120px' }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Department/Staff/Search row */}
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+              
+              {/* Search text input */}
+              <div className="form-group" style={{ flex: 1.5, minWidth: '220px' }}>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                  Search by caller, recipient, or number:
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }} />
+                  <input
+                    type="text"
+                    placeholder="Type to search..."
+                    value={callLogsSearch}
+                    onChange={(e) => {
+                      setCallLogsSearch(e.target.value);
+                      setCallLogsPage(1);
+                    }}
+                    className="form-input"
+                    style={{ paddingLeft: '32px', fontSize: '12px', height: '34px' }}
+                  />
+                </div>
+              </div>
+
+              {/* Department selection */}
+              {userRole === 'admin' && (
+                <div className="form-group" style={{ flex: 1, minWidth: '160px' }}>
+                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                    Department Division:
+                  </label>
+                  <select
+                    value={selectedDept}
+                    onChange={(e) => {
+                      setSelectedDept(e.target.value);
+                      setSelectedStaffId('all');
+                      setCallLogsPage(1);
+                    }}
+                    className="select-filter"
+                    style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                  >
+                    <option value="all">-- All Departments --</option>
+                    {departments.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
 
-        {/* Pagination Controls */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: '16px',
-          paddingTop: '12px',
-          borderTop: '1px solid var(--border-color)',
-          flexWrap: 'wrap',
-          gap: '12px'
-        }}>
-          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-            Showing {filteredAndSearchedCalls.length > 0 ? (callLogsPage - 1) * callLogsPageSize + 1 : 0} to {Math.min(filteredAndSearchedCalls.length, callLogsPage * callLogsPageSize)} of {filteredAndSearchedCalls.length} calls
-          </span>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <button
-              onClick={() => setCallLogsPage(p => Math.max(1, p - 1))}
-              disabled={callLogsPage === 1}
-              className="btn-secondary"
-              style={{ padding: '6px 12px', fontSize: '12px', opacity: callLogsPage === 1 ? 0.5 : 1, cursor: callLogsPage === 1 ? 'not-allowed' : 'pointer' }}
-            >
-              ◀ Previous
-            </button>
-            <span style={{ display: 'flex', alignItems: 'center', px: '8px', fontSize: '12px', fontWeight: 600 }}>
-              Page {callLogsPage} of {totalCallLogsPages}
-            </span>
-            <button
-              onClick={() => setCallLogsPage(p => Math.min(totalCallLogsPages, p + 1))}
-              disabled={callLogsPage === totalCallLogsPages}
-              className="btn-secondary"
-              style={{ padding: '6px 12px', fontSize: '12px', opacity: callLogsPage === totalCallLogsPages ? 0.5 : 1, cursor: callLogsPage === totalCallLogsPages ? 'not-allowed' : 'pointer' }}
-            >
-              Next ▶
-            </button>
+              {/* Staff Recruiter selection */}
+              {userRole !== 'recruiter' && (
+                <div className="form-group" style={{ flex: 1, minWidth: '160px' }}>
+                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                    Recruiter Profile:
+                  </label>
+                  <select
+                    value={selectedStaffId}
+                    onChange={(e) => {
+                      setSelectedStaffId(e.target.value);
+                      setCallLogsPage(1);
+                    }}
+                    className="select-filter"
+                    style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                  >
+                    <option value="all">-- All Recruiters --</option>
+                    {filteredStaffList.map(s => (
+                      <option key={s.id} value={s.id}>{s.fullName}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Direction selector */}
+              <div className="form-group" style={{ flex: 0.8, minWidth: '130px' }}>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                  Call Direction:
+                </label>
+                <select
+                  value={callLogsDirection}
+                  onChange={(e) => {
+                    setCallLogsDirection(e.target.value);
+                    setCallLogsPage(1);
+                  }}
+                  className="select-filter"
+                  style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                >
+                  <option value="all">All Directions</option>
+                  <option value="inbound">Inbound</option>
+                  <option value="outbound">Outbound</option>
+                </select>
+              </div>
+
+            </div>
           </div>
-        </div>
-      </div>
-      </>
+
+          {/* 3. TABLE CARD */}
+          <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            {isLoadingCalls ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px', flexDirection: 'column', gap: '12px' }}>
+                <div style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '50%',
+                  border: '3px solid var(--border-color)',
+                  borderTopColor: 'var(--primary)',
+                  animation: 'spin 1s linear infinite'
+                }}></div>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>Querying call history...</span>
+              </div>
+            ) : (
+              <>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
+                        <th style={{ padding: '10px' }}>Time & Date</th>
+                        <th>Recruiter</th>
+                        <th>Direction</th>
+                        <th>Party Name / Number</th>
+                        <th>Party Type</th>
+                        <th style={{ textAlign: 'center' }}>Duration</th>
+                        <th style={{ textAlign: 'center' }}>Recording</th>
+                        <th style={{ textAlign: 'center' }}>Transcript</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayCallsChunk.length > 0 ? (
+                        displayCallsChunk.map(call => (
+                          <tr key={call.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                            <td style={{ padding: '12px 10px', fontSize: '12px' }}>
+                              <span style={{ display: 'block', fontWeight: 600 }}>📅 {call.date}</span>
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>⏱️ {call.time}</span>
+                            </td>
+                            <td style={{ fontWeight: 600 }}>👤 {call.staffName}</td>
+                            <td>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '3px 8px',
+                                borderRadius: '12px',
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                backgroundColor: call.direction === 'Inbound' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+                                color: call.direction === 'Inbound' ? 'var(--success)' : 'var(--primary)'
+                              }}>
+                                {call.direction === 'Inbound' ? <PhoneIncoming size={10} /> : <PhoneOutgoing size={10} />}
+                                {call.direction}
+                              </span>
+                            </td>
+                            <td style={{ fontSize: '12px', fontWeight: 600 }}>📞 {call.targetName}</td>
+                            <td>
+                              <span style={{
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                fontSize: '10px',
+                                fontWeight: 600,
+                                backgroundColor: call.targetType === 'Candidate' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                                color: call.targetType === 'Candidate' ? 'rgb(139, 92, 246)' : 'rgb(245, 158, 11)'
+                              }}>
+                                {call.targetType}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>{formatDuration(call.duration)}</td>
+                            <td style={{ textAlign: 'center' }}>
+                              {call.hasRecording && call.recordingUrl ? (
+                                <button 
+                                  className="btn-secondary" 
+                                  onClick={() => {
+                                    setActiveCallDetail(call);
+                                    setIsPlaying(true);
+                                  }}
+                                  style={{ padding: '4px 8px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                  <Volume2 size={12} color="var(--primary)" /> Listen
+                                </button>
+                              ) : (
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>No Audio</span>
+                              )}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button 
+                                className="btn-secondary"
+                                onClick={() => {
+                                  setActiveCallDetail(call);
+                                  setIsPlaying(false);
+                                }}
+                                style={{ padding: '4px 8px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              >
+                                <FileText size={12} color="var(--primary)" /> View
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                            No call logs found in the selected date range.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginTop: '16px',
+                  paddingTop: '12px',
+                  borderTop: '1px solid var(--border-color)',
+                  flexWrap: 'wrap',
+                  gap: '12px'
+                }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Showing {filteredAndSearchedCalls.length > 0 ? (callLogsPage - 1) * callLogsPageSize + 1 : 0} to {Math.min(filteredAndSearchedCalls.length, callLogsPage * callLogsPageSize)} of {filteredAndSearchedCalls.length} calls
+                  </span>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      onClick={() => setCallLogsPage(p => Math.max(1, p - 1))}
+                      disabled={callLogsPage === 1}
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: '12px', opacity: callLogsPage === 1 ? 0.5 : 1, cursor: callLogsPage === 1 ? 'not-allowed' : 'pointer' }}
+                    >
+                      ◀ Previous
+                    </button>
+                    <span style={{ display: 'flex', alignItems: 'center', px: '8px', fontSize: '12px', fontWeight: 600 }}>
+                      Page {callLogsPage} of {totalCallLogsPages}
+                    </span>
+                    <button
+                      onClick={() => setCallLogsPage(p => Math.min(totalCallLogsPages, p + 1))}
+                      disabled={callLogsPage === totalCallLogsPages}
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: '12px', opacity: callLogsPage === totalCallLogsPages ? 0.5 : 1, cursor: callLogsPage === totalCallLogsPages ? 'not-allowed' : 'pointer' }}
+                    >
+                      Next ▶
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </>
       ) : (
         /* Recruiter Dialpad Mapping View */
         <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>

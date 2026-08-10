@@ -484,12 +484,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         if (call.dateStarted) {
           let dateObj = null;
           if (typeof call.dateStarted === 'string') {
-            if (call.dateStarted.includes('-') && call.dateStarted.length >= 10) {
-              dateVal = call.dateStarted.substring(0, 10);
-              timeVal = call.dateStarted.substring(11, 19);
-            } else {
-              dateObj = new Date(call.dateStarted);
-            }
+            dateObj = new Date(call.dateStarted);
           } else if (typeof call.dateStarted === 'number') {
             const ms = call.dateStarted < 9999999999 ? call.dateStarted * 1000 : call.dateStarted;
             dateObj = new Date(ms);
@@ -500,8 +495,35 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           }
 
           if (dateObj && !isNaN(dateObj.getTime())) {
-            dateVal = dateObj.toISOString().substring(0, 10);
-            timeVal = dateObj.toISOString().substring(11, 19);
+            try {
+              // Format to Europe/London timezone for consistent UK local business hours
+              const dTF = new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Europe/London',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+              });
+              dateVal = dTF.format(dateObj);
+
+              const tTF = new Intl.DateTimeFormat('en-GB', {
+                timeZone: 'Europe/London',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+              });
+              timeVal = tTF.format(dateObj);
+            } catch (errFormat) {
+              const year = dateObj.getFullYear();
+              const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+              const day = String(dateObj.getDate()).padStart(2, '0');
+              dateVal = `${year}-${month}-${day}`;
+              
+              const hours = String(dateObj.getHours()).padStart(2, '0');
+              const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+              const seconds = String(dateObj.getSeconds()).padStart(2, '0');
+              timeVal = `${hours}:${minutes}:${seconds}`;
+            }
           }
         }
 

@@ -89,6 +89,8 @@ async function run() {
   let lineCount = 0;
   const aggregates = {};
 
+  const sampleCalls = [];
+
   for await (const line of rl) {
     lineCount++;
     if (lineCount === 1) continue; // Skip header
@@ -99,6 +101,10 @@ async function run() {
     const emailRaw = parts[15] || '';
     const email = normalizeEmail(emailRaw);
     const talkDurationMin = parseFloat(parts[44] || '0');
+    const externalNumber = parts[2] || '';
+    const externalName = parts[1] || '';
+    const wasRecorded = parts[27] ? parts[27].toLowerCase().trim() === 'true' : false;
+    const recordingUrl = parts[28] || '';
 
     // Filter: only process 2026 calls and recruiters mapped by email
     if (dateStartedRaw.startsWith('2026-') && email && emailToStaffMap[email]) {
@@ -135,6 +141,22 @@ async function run() {
         if (talkDurationMin >= 5.0) agg.callsOver5Min++;
         if (talkDurationMin >= 10.0) agg.callsOver10Min++;
       }
+
+      // Collect sample detail calls
+      sampleCalls.push({
+        id: `csv_${lineCount}`,
+        handlerId: staffMember.id,
+        handlerName: staffMember.fullName,
+        department: staffMember.department || '',
+        direction: direction,
+        dateStarted: dateStartedRaw,
+        externalNumber: externalNumber,
+        externalName: externalName || externalNumber,
+        wasRecorded: wasRecorded,
+        recordingUrl: recordingUrl,
+        durationSeconds: Math.round(talkDurationMin * 60),
+        transcript: 'This is a historical call imported from the Dialpad CSV database backup.'
+      });
     }
   }
 
@@ -179,6 +201,38 @@ async function run() {
   }
 
   console.log(`\n🎉 Success! Successfully imported ${totalUploaded} historical daily KPI documents to Firestore.`);
+
+  // Upload recent detail calls to dialpad_calls
+  console.log('\n4. Uploading recent individual call detail logs to dialpad_calls...');
+  sampleCalls.sort((a, b) => b.dateStarted.localeCompare(a.dateStarted));
+  const callsToUpload = sampleCalls.slice(0, 200); // Upload latest 200 calls
+
+  batch = writeBatch(db);
+  operationCount = 0;
+  let callsUploaded = 0;
+
+  for (const call of callsToUpload) {
+    const docRef = doc(db, 'dialpad_calls', call.id);
+    batch.set(docRef, {
+      ...call,
+      lastUpdated: new Date().toISOString()
+    }, { merge: true });
+
+    operationCount++;
+    callsUploaded++;
+
+    if (operationCount >= batchSize) {
+      await batch.commit();
+      batch = writeBatch(db);
+      operationCount = 0;
+    }
+  }
+
+  if (operationCount > 0) {
+    await batch.commit();
+  }
+
+  console.log(`Successfully uploaded ${callsUploaded} recent calls to dialpad_calls.`);
 }
 
 run().catch(console.error);

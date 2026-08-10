@@ -359,9 +359,9 @@ export default async function handler(req, res) {
         recapSummary: rawEventData.recapSummary || existingData?.recapSummary || '',
         recapOutcome: rawEventData.recapOutcome || existingData?.recapOutcome || '',
         callRecordingIds: mergedRecordings,
-        recordingUrl: rawEventData.recordingUrl || existingData?.recordingUrl || '',
+        recordingUrl: rawEventData.recordingUrl || rawEventData.adminRecordingUrls?.[0] || existingData?.recordingUrl || existingData?.adminRecordingUrls?.[0] || '',
         adminRecordingUrls: rawEventData.adminRecordingUrls || existingData?.adminRecordingUrls || [],
-        wasRecorded: !!(rawEventData.recordingUrl || existingData?.recordingUrl),
+        wasRecorded: !!(rawEventData.recordingUrl || rawEventData.adminRecordingUrls?.length > 0 || existingData?.recordingUrl || existingData?.adminRecordingUrls?.length > 0),
         voicemailLink: rawEventData.voicemailLink || existingData?.voicemailLink || '',
         transcriptionText: rawEventData.transcriptionText || existingData?.transcriptionText || '',
         lastEventTimestamp: eventTimestamp
@@ -550,6 +550,7 @@ export default async function handler(req, res) {
       recordingUrl: enrichedRecordingUrl,
       recordingUrls: enrichedRecordingUrl ? [enrichedRecordingUrl] : [],
       wasRecorded: !!enrichedRecordingUrl,
+      adminRecordingUrls: Array.from(new Set(relatedLegs.flatMap(l => l.adminRecordingUrls || []))),
       voicemailLink: enrichedVoicemailLink,
       
       target: primaryLeg.target || null,

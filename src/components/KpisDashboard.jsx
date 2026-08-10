@@ -108,6 +108,56 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   const [activeCallDetail, setActiveCallDetail] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playProgress, setPlayProgress] = useState(35); // mock percent
+  const [isEnriching, setIsEnriching] = useState(false);
+
+  useEffect(() => {
+    if (!activeCallDetail || activeCallDetail.id.startsWith('call-')) return;
+    
+    // Check if it's already enriched
+    const hasTranscript = activeCallDetail.transcript && activeCallDetail.transcript !== 'No transcript generated yet.' && activeCallDetail.transcript !== 'Transcript is empty';
+    const hasPublicRecording = !activeCallDetail.hasRecording || (activeCallDetail.recordingUrl && activeCallDetail.recordingUrl.startsWith('http') && !activeCallDetail.recordingUrl.includes('dialpad.com/blob/'));
+    
+    if (hasTranscript && hasPublicRecording) return; // already enriched!
+
+    let isMounted = true;
+    async function enrichCall() {
+      setIsEnriching(true);
+      try {
+        const res = await fetch(`/api/dialpad/enrich?conversationId=${activeCallDetail.id}`);
+        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+        const data = await res.json();
+        
+        if (isMounted && data && data.enriched) {
+          const updatedDetail = {
+            ...activeCallDetail,
+            recordingUrl: data.recordingUrl || activeCallDetail.recordingUrl,
+            hasRecording: data.wasRecorded || activeCallDetail.hasRecording,
+            transcript: data.transcript || activeCallDetail.transcript
+          };
+          setActiveCallDetail(updatedDetail);
+          
+          // Also update the liveCalls list state so it stays updated in the main table list!
+          setLiveCalls(prevCalls => 
+            prevCalls.map(c => 
+              (c.id === activeCallDetail.id || c.conversationId === activeCallDetail.id)
+                ? { ...c, ...data } 
+                : c
+            )
+          );
+        }
+      } catch (err) {
+        console.error("Failed to enrich call:", err);
+      } finally {
+        if (isMounted) setIsEnriching(false);
+      }
+    }
+
+    enrichCall();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeCallDetail?.id]);
 
   // List of departments from staff
   const departments = useMemo(() => {
@@ -1407,7 +1457,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             {/* Modal Body */}
             <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               
-              {/* Audio Playback Controls (Mock Player) */}
+              {/* Audio Playback Controls */}
               {activeCallDetail.hasRecording && (
                 <div style={{
                   padding: '12px',
@@ -1420,43 +1470,19 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                 }}>
                   <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)' }}>🔊 Dialpad Call Recording Playback</span>
                   
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <button 
-                      onClick={() => setIsPlaying(!isPlaying)}
-                      className="btn-primary"
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '50%',
-                        display: 'flex',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        padding: 0
-                      }}
-                    >
-                      {isPlaying ? <Pause size={14} /> : <Play size={14} />}
-                    </button>
-
-                    {/* Progress slider bar */}
-                    <div style={{ flex: 1 }}>
-                      <div style={{ height: '4px', backgroundColor: 'var(--border-color)', borderRadius: '2px', position: 'relative' }}>
-                        <div style={{ width: `${playProgress}%`, height: '100%', backgroundColor: 'var(--primary)', borderRadius: '2px' }}></div>
-                        <div style={{
-                          width: '10px',
-                          height: '10px',
-                          borderRadius: '50%',
-                          backgroundColor: 'var(--primary)',
-                          position: 'absolute',
-                          top: '-3px',
-                          left: `calc(${playProgress}% - 5px)`
-                        }}></div>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        <span>0:42</span>
-                        <span>{formatDuration(activeCallDetail.duration)}</span>
-                      </div>
+                  {activeCallDetail.recordingUrl && activeCallDetail.recordingUrl.startsWith('http') && !activeCallDetail.recordingUrl.includes('dialpad.com/blob/') ? (
+                    <audio 
+                      src={activeCallDetail.recordingUrl} 
+                      controls 
+                      autoPlay={isPlaying}
+                      style={{ width: '100%', borderRadius: '4px' }} 
+                    />
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '8px 0', color: 'var(--text-muted)', fontSize: '11px' }}>
+                      <span className="loading-spinner" style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
+                      <span>Generating secure recording playback link...</span>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
 
@@ -1478,7 +1504,14 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                   lineHeight: '1.6',
                   color: 'var(--text-primary)'
                 }}>
-                  {activeCallDetail.transcript.trim()}
+                  {isEnriching ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '16px', color: 'var(--text-secondary)' }}>
+                      <span className="loading-spinner" style={{ display: 'inline-block', width: '14px', height: '14px', border: '2px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
+                      <span>Retrieving Dialpad transcript...</span>
+                    </div>
+                  ) : (
+                    activeCallDetail.transcript.trim()
+                  )}
                 </div>
               </div>
 

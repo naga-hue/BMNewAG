@@ -51,82 +51,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     return true;
   };
 
-  // Calculate target multiplier based on number of working days in dateRangeWindow
-  const targetMultiplier = useMemo(() => {
-    const { start, end } = dateRangeWindow || {};
-    if (!start || !end) return 1;
-    
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    
-    // Count days in range
-    const diffTime = Math.abs(endDate - startDate);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    
-    // Count only working days (Monday to Friday)
-    let workDays = 0;
-    let current = new Date(startDate);
-    for (let i = 0; i < diffDays; i++) {
-      const day = current.getDay();
-      if (day !== 0 && day !== 6) { // Exclude Sunday (0) and Saturday (6)
-        workDays++;
-      }
-      current.setDate(current.getDate() + 1);
-    }
-    
-    return Math.max(1, workDays);
-  }, [dateRangeWindow]);
 
-  // Helper to render KPI values against custom targets
-  const renderMetricWithTarget = (actual, dailyTarget, multiplier, isDuration = false) => {
-    const target = dailyTarget ? Math.round(dailyTarget * multiplier) : 0;
-    
-    let formattedActual = isDuration ? formatDuration(actual) : actual;
-    let formattedTarget = isDuration ? formatDuration(target * 60) : target; // target talk time is in minutes
-    
-    if (!target) {
-      return (
-        <div style={{ textAlign: 'center' }}>
-          <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{formattedActual}</span>
-        </div>
-      );
-    }
-    
-    const targetValueToCompare = isDuration ? target * 60 : target;
-    const pct = Math.round((actual / (targetValueToCompare || 1)) * 100);
-    
-    let color = 'var(--text-secondary)';
-    let bgColor = 'rgba(107, 114, 128, 0.1)';
-    if (pct >= 100) {
-      color = 'var(--success)';
-      bgColor = 'rgba(16, 185, 129, 0.1)';
-    } else if (pct >= 70) {
-      color = 'var(--warning)';
-      bgColor = 'rgba(245, 158, 11, 0.1)';
-    } else {
-      color = '#ef4444'; // Red
-      bgColor = 'rgba(239, 68, 68, 0.1)';
-    }
-    
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{formattedActual}</span>
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>/ {formattedTarget}</span>
-        </div>
-        <span style={{
-          padding: '1px 5px',
-          borderRadius: '4px',
-          backgroundColor: bgColor,
-          color: color,
-          fontSize: '9px',
-          fontWeight: 700
-        }}>
-          {pct}%
-        </span>
-      </div>
-    );
-  };
 
   // Firestore data states
   const [kpiDocs, setKpiDocs] = useState([]);
@@ -372,6 +297,83 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     }
     return { start, end };
   }, [timeRange, customStartDate, customEndDate]);
+
+  // Calculate target multiplier based on number of working days in dateRangeWindow
+  const targetMultiplier = useMemo(() => {
+    const { start, end } = dateRangeWindow || {};
+    if (!start || !end) return 1;
+    
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    
+    // Count days in range
+    const diffTime = Math.abs(endDate - startDate);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    
+    // Count only working days (Monday to Friday)
+    let workDays = 0;
+    let current = new Date(startDate);
+    for (let i = 0; i < diffDays; i++) {
+      const day = current.getDay();
+      if (day !== 0 && day !== 6) { // Exclude Sunday (0) and Saturday (6)
+        workDays++;
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    
+    return Math.max(1, workDays);
+  }, [dateRangeWindow]);
+
+  // Helper to render KPI values against custom targets
+  const renderMetricWithTarget = (actual, dailyTarget, multiplier, isDuration = false) => {
+    const target = dailyTarget ? Math.round(dailyTarget * multiplier) : 0;
+    
+    let formattedActual = isDuration ? formatDuration(actual) : actual;
+    let formattedTarget = isDuration ? formatDuration(target * 60) : target; // target talk time is in minutes
+    
+    if (!target) {
+      return (
+        <div style={{ textAlign: 'center' }}>
+          <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{formattedActual}</span>
+        </div>
+      );
+    }
+    
+    const targetValueToCompare = isDuration ? target * 60 : target;
+    const pct = Math.round((actual / (targetValueToCompare || 1)) * 100);
+    
+    let color = 'var(--text-secondary)';
+    let bgColor = 'rgba(107, 114, 128, 0.1)';
+    if (pct >= 100) {
+      color = 'var(--success)';
+      bgColor = 'rgba(16, 185, 129, 0.1)';
+    } else if (pct >= 70) {
+      color = 'var(--warning)';
+      bgColor = 'rgba(245, 158, 11, 0.1)';
+    } else {
+      color = '#ef4444'; // Red
+      bgColor = 'rgba(239, 68, 68, 0.1)';
+    }
+    
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{formattedActual}</span>
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>/ {formattedTarget}</span>
+        </div>
+        <span style={{
+          padding: '1px 5px',
+          borderRadius: '4px',
+          backgroundColor: bgColor,
+          color: color,
+          fontSize: '9px',
+          fontWeight: 700
+        }}>
+          {pct}%
+        </span>
+      </div>
+    );
+  };
 
   // Calculate date range window specifically for the Dialpad Calls Tab
   const callsDateRangeWindow = useMemo(() => {

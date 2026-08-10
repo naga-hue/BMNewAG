@@ -65,6 +65,15 @@ function verifyDialpadJwt(jwtToken, secret) {
   }
 }
 
+// Helper to normalize Dialpad milliseconds epoch timestamps to ISO date strings
+function formatDialpadDate(val) {
+  if (!val) return '';
+  const num = Number(val);
+  if (isNaN(num)) return String(val);
+  const dateObj = new Date(num);
+  return !isNaN(dateObj.getTime()) ? dateObj.toISOString() : String(val);
+}
+
 // Robust PEM private key formatter to handle double quotes, spaces, single lines, and escaped newlines
 function formatPrivateKey(rawKey) {
   if (!rawKey) return '';
@@ -276,10 +285,10 @@ export default async function handler(req, res) {
       internalNumber: payload.internal_number || '',
       target: payload.target || null,
       contact: payload.contact || null,
-      dateStarted: payload.date_started || '',
-      dateRang: payload.date_rang || '',
-      dateConnected: payload.date_connected || '',
-      dateEnded: payload.date_ended || '',
+      dateStarted: formatDialpadDate(payload.date_started),
+      dateRang: formatDialpadDate(payload.date_rang),
+      dateConnected: formatDialpadDate(payload.date_connected),
+      dateEnded: formatDialpadDate(payload.date_ended),
       duration: Number(payload.duration || 0),
       totalDuration: Number(payload.total_duration || 0),
       talkTime: Number(payload.talk_time || 0),

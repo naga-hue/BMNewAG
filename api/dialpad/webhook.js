@@ -292,11 +292,18 @@ export default async function handler(req, res) {
       duration: Number(payload.duration || 0),
       totalDuration: Number(payload.total_duration || 0),
       talkTime: Number(payload.talk_time || 0),
-      callDispositions: Array.isArray(payload.dispositions)
-        ? payload.dispositions
-        : (payload.call_dispositions
-          ? [payload.call_dispositions]
-          : (payload.dispositions ? [payload.dispositions] : [])),
+      callDispositions: (() => {
+        const rawDisp = payload.dispositions || payload.call_dispositions;
+        if (!rawDisp) return [];
+        const arr = Array.isArray(rawDisp) ? rawDisp : [rawDisp];
+        return arr.map(item => {
+          if (typeof item === 'string') return item;
+          if (item && typeof item === 'object') {
+            return item.name || item.disposition || item.label || JSON.stringify(item);
+          }
+          return String(item);
+        }).filter(Boolean);
+      })(),
       recapSummary: payload.recap_summary || '',
       recapOutcome: payload.recap_outcome || '',
       callRecordingIds: payload.call_recording_ids || [],

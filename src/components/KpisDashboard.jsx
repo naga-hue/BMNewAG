@@ -1197,7 +1197,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                             </td>
                             <td style={{ textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>{formatDuration(call.duration)}</td>
                             <td style={{ textAlign: 'center' }}>
-                              {call.hasRecording && call.recordingUrl ? (
+                              {call.hasRecording ? (
                                 <button 
                                   className="btn-secondary" 
                                   onClick={() => {

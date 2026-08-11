@@ -2,6 +2,15 @@ import crypto from 'crypto';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
+// Normalize email local-part by removing dots
+function normalizeEmail(emailStr) {
+  if (!emailStr) return '';
+  const parts = emailStr.toLowerCase().trim().split('@');
+  if (parts.length !== 2) return emailStr.toLowerCase().trim();
+  const localPart = parts[0].replace(/\./g, '');
+  return `${localPart}@${parts[1]}`;
+}
+
 // Disable default Vercel body-parser so we can retrieve the raw string body for JWT validation
 export const config = {
   api: {
@@ -503,16 +512,16 @@ export default async function handler(req, res) {
 
       const targetEmail = primaryLeg.target?.email || '';
       if (targetEmail) {
-        const normTargetEmail = targetEmail.toLowerCase().trim();
+        const normTargetEmail = normalizeEmail(targetEmail);
         let matchedStaff = null;
         staffList.forEach(staffData => {
-          const busEmail = (staffData.businessEmail || '').toLowerCase().trim();
-          const persEmail = (staffData.personalEmail || '').toLowerCase().trim();
+          const busEmail = normalizeEmail(staffData.businessEmail);
+          const persEmail = normalizeEmail(staffData.personalEmail);
           
           if (busEmail === normTargetEmail || persEmail === normTargetEmail) {
             matchedStaff = staffData;
           } else if (staffData.additionalEmails) {
-            const extraList = staffData.additionalEmails.split(',').map(e => e.toLowerCase().trim()).filter(Boolean);
+            const extraList = staffData.additionalEmails.split(',').map(e => normalizeEmail(e)).filter(Boolean);
             if (extraList.includes(normTargetEmail)) {
               matchedStaff = staffData;
             }

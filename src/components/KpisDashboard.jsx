@@ -1113,6 +1113,38 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     checkRealCalls();
   }, []);
 
+  // Auto-sync Dialpad and Qandle on dashboard mount (debounced to once every 30 minutes)
+  useEffect(() => {
+    async function triggerSilentSync() {
+      try {
+        const lastSyncKey = 'last_silent_sync_timestamp';
+        const lastSync = localStorage.getItem(lastSyncKey);
+        const now = Date.now();
+        
+        // Debounce: only sync if last sync was > 30 minutes ago
+        if (!lastSync || (now - Number(lastSync)) > 30 * 60 * 1000) {
+          console.log('[Sync] Triggering background synchronization for Dialpad and Qandle...');
+          localStorage.setItem(lastSyncKey, String(now));
+          
+          const secret = 'qandle-talent-kpi-hub-key-2026';
+          
+          // Trigger Dialpad Call Recovery silently
+          fetch(`/api/dialpad/sync-recent-calls?secret=${secret}`).catch(e => {
+            console.error('[Sync] Silent Dialpad sync error:', e);
+          });
+          
+          // Trigger Qandle Attendance Sync silently
+          fetch(`/api/qandle/sync?secret=${secret}`).catch(e => {
+            console.error('[Sync] Silent Qandle sync error:', e);
+          });
+        }
+      } catch (err) {
+        console.error('[Sync] Silent sync trigger failed:', err);
+      }
+    }
+    triggerSilentSync();
+  }, []);
+
   // Load KPI documents from Firestore collections filtered by active date range (instantly aggregates in millisecond speeds)
   useEffect(() => {
     async function loadKpiData() {

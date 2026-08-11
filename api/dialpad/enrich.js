@@ -213,12 +213,15 @@ export default async function handler(req, res) {
       }
     }
 
-    // Call Details API Fallback (for historical CSV calls that were marked as recorded but have no local recording info)
+    // 2.5. Fetch Call Details from Dialpad API to self-heal duration/recordings if they are zero or missing
+    const needsDurationHeal = !callData.durationSeconds || callData.durationSeconds === 0;
     const isRecordedInDb = callData.wasRecorded || callData.hasRecording;
-    if ((!adminRecordingUrls || adminRecordingUrls.length === 0) && isRecordedInDb && !callData.recordingUrl) {
-      console.log(`[Enrich] Call was recorded but adminRecordingUrls is empty. Fetching call details from Dialpad API...`);
+    const needsRecordingHeal = (!adminRecordingUrls || adminRecordingUrls.length === 0) && isRecordedInDb && !callData.recordingUrl;
+
+    if (needsDurationHeal || needsRecordingHeal) {
+      console.log(`[Enrich] Call needs enrichment/self-healing. durationSeconds: ${callData.durationSeconds || 0}, needsRecordingHeal: ${needsRecordingHeal}. Fetching call details from Dialpad API...`);
       try {
-        const callDetailsRes = await fetch(`https://dialpad.com/api/v2/calls/${primaryCallId}`, {
+        const callDetailsRes = await fetch(`https://dialpad.com/api/v2/call/${primaryCallId}`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -228,20 +231,48 @@ export default async function handler(req, res) {
 
         if (callDetailsRes.status === 200) {
           const detailsData = await callDetailsRes.json();
-          // Try to extract from admin_recording_urls
-          let urls = detailsData.admin_recording_urls || [];
-          // Also try to extract from recording_details
-          if ((!urls || urls.length === 0) && Array.isArray(detailsData.recording_details)) {
-            urls = detailsData.recording_details
-              .filter(rec => rec.url)
-              .map(rec => rec.url);
-          }
+          if (detailsData) {
+            console.log(`[Enrich] Retrieved call details from Dialpad: state="${detailsData.state}", duration=${detailsData.duration}ms`);
+            
+            // Self-heal duration fields
+            const durationMs = Number(detailsData.duration || 0);
+            const durationSeconds = Math.round(durationMs / 1000);
+            const talkTimeMs = Number(detailsData.talk_time || 0);
+            const talkTimeSeconds = Math.round(talkTimeMs / 1000);
+            const totalDurationMs = Number(detailsData.total_duration || 0);
 
-          if (urls && urls.length > 0) {
-            adminRecordingUrls = urls;
-            updates.adminRecordingUrls = urls;
-            needsUpdate = true;
-            console.log(`[Enrich] Retrieved adminRecordingUrls from Dialpad call details API:`, urls);
+            if (needsDurationHeal && durationSeconds > 0) {
+              updates.durationMs = durationMs;
+              updates.durationSeconds = durationSeconds;
+              updates.talkTimeMs = talkTimeMs;
+              updates.talkTimeSeconds = talkTimeSeconds;
+              updates.totalDurationMs = totalDurationMs;
+              
+              if (detailsData.date_ended) {
+                const epochEnded = Number(detailsData.date_ended);
+                updates.dateEnded = !isNaN(epochEnded) ? new Date(epochEnded).toISOString() : String(detailsData.date_ended);
+              }
+              if (detailsData.date_connected) {
+                const epochConn = Number(detailsData.date_connected);
+                updates.dateConnected = !isNaN(epochConn) ? new Date(epochConn).toISOString() : String(detailsData.date_connected);
+              }
+              updates.connected = detailsData.state === 'connected' || durationSeconds > 0;
+              needsUpdate = true;
+              console.log(`[Enrich] Self-healed call duration to ${durationSeconds}s, talkTime to ${talkTimeSeconds}s`);
+            }
+
+            // Self-heal recording URLs
+            let urls = detailsData.admin_recording_urls || [];
+            if ((!urls || urls.length === 0) && Array.isArray(detailsData.recording_details)) {
+              urls = detailsData.recording_details.filter(rec => rec.url).map(rec => rec.url);
+            }
+            if (urls && urls.length > 0) {
+              adminRecordingUrls = urls;
+              updates.adminRecordingUrls = urls;
+              updates.wasRecorded = true;
+              needsUpdate = true;
+              console.log(`[Enrich] Self-healed adminRecordingUrls:`, urls);
+            }
           }
         } else {
           console.error(`[Enrich] Dialpad call details API returned status ${callDetailsRes.status}`);
@@ -299,11 +330,86 @@ export default async function handler(req, res) {
       await callRef.update(updates);
       finalCallData = { ...callData, ...updates };
       console.log(`[Enrich] Firestore document updated for conversationId ${conversationId}`);
+
+      // If call duration has been self-healed, trigger daily KPI recalculation
+      if (updates.durationSeconds && finalCallData.handlerId && finalCallData.dateStarted) {
+        await updateKpiDaily(firestore, finalCallData.handlerId, finalCallData.dateStarted);
+      }
     }
 
     return res.status(200).json({ ...finalCallData, enriched: true });
   } catch (error) {
     console.error(`[Enrich] Exception caught:`, error);
     return res.status(500).json({ error: error.message || 'Internal Server Error' });
+  }
+}
+
+/**
+ * Recalculate daily KPI totals for a specific recruiter/date and write to kpiDaily.
+ */
+async function updateKpiDaily(firestore, handlerId, dateStarted) {
+  if (!handlerId || !dateStarted) return;
+  const dateKey = dateStarted.substring(0, 10); // "YYYY-MM-DD"
+  const docId = `${handlerId}_${dateKey}`;
+
+  console.log(`[KPI Enrich] Recalculating daily aggregate for recruiter ${handlerId} on ${dateKey}...`);
+  try {
+    const staffDoc = await firestore.collection('staff').doc(handlerId).get();
+    if (!staffDoc.exists) return;
+    const staff = staffDoc.data();
+
+    // Query all calls on this day from dialpad_calls and filter by handlerId in-memory to bypass composite index constraints
+    const dayCallsSnap = await firestore.collection('dialpad_calls')
+      .where('dateStarted', '>=', `${dateKey}T00:00:00`)
+      .where('dateStarted', '<=', `${dateKey}T23:59:59.999Z`)
+      .get();
+
+    let callsInbound = 0;
+    let callsOutbound = 0;
+    let callsTotal = 0;
+    let totalTalkTimeSeconds = 0;
+    let callsOver5Min = 0;
+    let callsOver10Min = 0;
+
+    dayCallsSnap.forEach(docSnap => {
+      const call = docSnap.data();
+      if (call.handlerId !== handlerId) return; // Filter by recruiter in-memory
+
+      callsTotal++;
+      if ((call.direction || '').toLowerCase() === 'inbound') {
+        callsInbound++;
+      } else {
+        callsOutbound++;
+      }
+      
+      const duration = Number(call.durationSeconds || call.talkTimeSeconds || 0);
+      totalTalkTimeSeconds += duration;
+      if (duration >= 300) {
+        callsOver5Min++;
+      }
+      if (duration >= 600) {
+        callsOver10Min++;
+      }
+    });
+
+    const kpiData = {
+      staffId: handlerId,
+      staffName: staff.fullName || '',
+      department: staff.department || '',
+      email: staff.businessEmail || staff.personalEmail || '',
+      date: dateKey,
+      callsInbound,
+      callsOutbound,
+      callsTotal,
+      totalTalkTimeSeconds,
+      callsOver5Min,
+      callsOver10Min,
+      lastUpdated: new Date().toISOString()
+    };
+
+    await firestore.collection('kpiDaily').doc(docId).set(kpiData, { merge: true });
+    console.log(`[KPI Enrich] Updated kpiDaily document ${docId}`);
+  } catch (err) {
+    console.error(`[KPI Enrich] Error updating daily aggregates for ${handlerId} on ${dateKey}:`, err);
   }
 }

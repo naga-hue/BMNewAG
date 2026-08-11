@@ -20,7 +20,8 @@ import {
   Briefcase,
   Sliders,
   ChevronRight,
-  Filter
+  Filter,
+  RefreshCw
 } from 'lucide-react';
 
 // Formats seconds to a readable string (e.g. 2h 15m or 4m 12s)
@@ -264,6 +265,10 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   const [qandleTimeRange, setQandleTimeRange] = useState('today');
   const [qandleCustomStartDate, setQandleCustomStartDate] = useState('');
   const [qandleCustomEndDate, setQandleCustomEndDate] = useState('');
+  const [qandleRefreshTrigger, setQandleRefreshTrigger] = useState(0);
+  const [isSyncingQandle, setIsSyncingQandle] = useState(false);
+  const [syncQandleError, setSyncQandleError] = useState('');
+  const [syncQandleSuccess, setSyncQandleSuccess] = useState('');
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -278,6 +283,30 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
   // Multi-select KPI target assignment states
   const [selectedStaffIds, setSelectedStaffIds] = useState([]); // Array of staff IDs for bulk target setting
+
+  const handleSyncQandle = async () => {
+    setIsSyncingQandle(true);
+    setSyncQandleError('');
+    setSyncQandleSuccess('');
+    try {
+      const secret = 'qandle-talent-kpi-hub-key-2026';
+      const res = await fetch(`/api/qandle/sync?secret=${secret}&bypassTimecheck=true`);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSyncQandleSuccess(data.message || 'Sync completed successfully!');
+        setQandleRefreshTrigger(prev => prev + 1);
+        setTimeout(() => setSyncQandleSuccess(''), 5000);
+      } else {
+        setSyncQandleError(data.error || 'Failed to sync with Qandle API.');
+        setTimeout(() => setSyncQandleError(''), 5000);
+      }
+    } catch (err) {
+      setSyncQandleError(err.message || 'An error occurred during sync.');
+      setTimeout(() => setSyncQandleError(''), 5000);
+    } finally {
+      setIsSyncingQandle(false);
+    }
+  };
 
   const handleSort = (field) => {
     if (callLogsSortField === field) {
@@ -1245,7 +1274,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     
     loadQandleData();
     return () => { isMounted = false; };
-  }, [activeSubTab, effectiveQandleWindow.start, effectiveQandleWindow.end]);
+  }, [activeSubTab, effectiveQandleWindow.start, effectiveQandleWindow.end, qandleRefreshTrigger]);
 
   // Generate Call logs detail rows based on real kpiDocs logs
   const mockCallsList = useMemo(() => {
@@ -3625,9 +3654,53 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                 ⏰ Monitor check-in times, productive hours, active desk time, and effectiveness ratings.
               </span>
             </div>
-            <span style={{ fontSize: '11px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>
-              🟢 SYNCED DATABASE RECORDS
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {syncQandleSuccess && (
+                <span style={{ fontSize: '12px', color: 'var(--success)', fontWeight: 600 }}>
+                  ✓ {syncQandleSuccess}
+                </span>
+              )}
+              {syncQandleError && (
+                <span style={{ fontSize: '12px', color: 'var(--error)', fontWeight: 600 }}>
+                  ⚠ {syncQandleError}
+                </span>
+              )}
+              <button
+                onClick={handleSyncQandle}
+                disabled={isSyncingQandle}
+                className="btn-secondary"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  opacity: isSyncingQandle ? 0.6 : 1,
+                  cursor: isSyncingQandle ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <style>{`
+                  @keyframes qandle-spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                  }
+                  .qandle-spin-icon {
+                    animation: qandle-spin 1s linear infinite;
+                  }
+                `}</style>
+                <RefreshCw 
+                  size={14} 
+                  className={isSyncingQandle ? 'qandle-spin-icon' : ''} 
+                  style={{ transition: 'transform 0.2s' }}
+                />
+                {isSyncingQandle ? 'Syncing...' : 'Sync Qandle'}
+              </button>
+              <span style={{ fontSize: '11px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>
+                🟢 SYNCED DATABASE RECORDS
+              </span>
+            </div>
           </div>
 
           {/* 2. FILTERS PANEL */}

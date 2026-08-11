@@ -14,21 +14,32 @@ function normalizeEmail(emailStr) {
 function formatPrivateKey(rawKey) {
   if (!rawKey) return '';
   let key = rawKey.trim();
+  
   if (key.startsWith('{')) {
     try {
       const parsed = JSON.parse(key);
-      if (parsed.private_key) key = parsed.private_key.trim();
+      if (parsed.private_key) {
+        key = parsed.private_key.trim();
+      }
     } catch (e) {
-      console.error('[Firestore] Private key JSON parse failed:', e);
+      console.error('[Firestore] Failed to parse private key as JSON:', e);
     }
   }
+
   if (key.startsWith('"') && key.endsWith('"')) key = key.slice(1, -1);
   if (key.startsWith("'") && key.endsWith("'")) key = key.slice(1, -1);
   key = key.replace(/\\n/g, '\n');
+  if (key.startsWith('nMII')) key = key.substring(1);
+
   const header = '-----BEGIN PRIVATE KEY-----';
   const footer = '-----END PRIVATE KEY-----';
+
   if (!key.includes(header)) {
-    let base64Body = key.replace(/[^A-Za-z0-9+/=]/g, '');
+    let base64Body = key;
+    if (base64Body.includes(footer)) {
+      base64Body = base64Body.split(footer)[0];
+    }
+    base64Body = base64Body.replace(/[^A-Za-z0-9+/=]/g, '');
     const lines = [];
     for (let i = 0; i < base64Body.length; i += 64) {
       lines.push(base64Body.substring(i, i + 64));
@@ -45,23 +56,50 @@ function initFirestore() {
       const projectId = process.env.FIREBASE_PROJECT_ID || 'humres-management-hub';
       let clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
       let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-      if (clientEmail && clientEmail.trim().startsWith('{')) {
-        try { clientEmail = JSON.parse(clientEmail.trim()).client_email || clientEmail; } catch(e){}
-      }
+
       if (privateKey && privateKey.trim().startsWith('{')) {
-        try { privateKey = JSON.parse(privateKey.trim()).private_key || privateKey; } catch(e){}
+        try {
+          const parsed = JSON.parse(privateKey.trim());
+          if (parsed.private_key) privateKey = parsed.private_key;
+          if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
+        } catch (e) {
+          console.error('[Firestore] Failed parsing privateKey JSON:', e);
+        }
       }
-      initializeApp({
-        credential: cert({
-          projectId,
-          clientEmail,
-          privateKey: formatPrivateKey(privateKey),
-        })
-      });
+
+      if (clientEmail && clientEmail.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(clientEmail.trim());
+          if (parsed.client_email) clientEmail = parsed.client_email;
+        } catch (e) {
+          console.error('[Firestore] Failed parsing clientEmail JSON:', e);
+        }
+      }
+
+      if (clientEmail && privateKey) {
+        initializeApp({
+          credential: cert({
+            projectId,
+            clientEmail,
+            privateKey: formatPrivateKey(privateKey),
+          })
+        });
+      } else {
+        throw new Error('Firebase credentials not set in Vercel environment variables.');
+      }
     }
     db = getFirestore();
   }
   return db;
+}
+
+// Helper to normalize Dialpad milliseconds epoch timestamps to ISO date strings
+function formatDialpadDate(val) {
+  if (!val) return '';
+  const num = Number(val);
+  if (isNaN(num)) return String(val);
+  const dateObj = new Date(num);
+  return !isNaN(dateObj.getTime()) ? dateObj.toISOString() : String(val);
 }
 
 // Name matching overrides for staff
@@ -192,40 +230,67 @@ export default async function handler(req, res) {
     // 2. Fetch trailing concluded calls from Dialpad API
     const tokens = Array.from(new Set([tokenSlot1, tokenSlot2])).filter(Boolean);
     let allDialpadCalls = [];
+    const todayStr = new Date().toISOString().substring(0, 10);
+    let healedCount = 0;
 
     for (const token of tokens) {
-      console.log(`[Sync Calls] Fetching concluded calls from Dialpad...`);
-      const apiRes = await fetch('https://dialpad.com/api/v2/calls?limit=100', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        }
-      });
+      let cursor = null;
+      let page = 1;
+      let hasMore = true;
 
-      if (apiRes.status === 200) {
-        const payload = await apiRes.json();
-        if (payload && Array.isArray(payload.entries)) {
-          allDialpadCalls = allDialpadCalls.concat(payload.entries);
+      while (hasMore && page <= 25) { // Safeguard to prevent infinite loops (max 25 pages)
+        const url = `https://dialpad.com/api/v2/call${cursor ? `?cursor=${cursor}` : ''}`;
+        console.log(`[Sync Calls] Fetching concluded calls page ${page} from Dialpad...`);
+        
+        const apiRes = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          }
+        });
+
+        if (apiRes.status === 200) {
+          const payload = await apiRes.json();
+          const items = payload.cursor ? (payload.items || payload.entries || []) : (Array.isArray(payload) ? payload : (payload.items || payload.entries || []));
+          
+          if (Array.isArray(items) && items.length > 0) {
+            allDialpadCalls = allDialpadCalls.concat(items);
+            
+            // Check if we have started seeing calls from yesterday/prior days
+            const oldestCall = items[items.length - 1];
+            const oldestCallDate = formatDialpadDate(oldestCall?.date_started);
+              
+            if (oldestCallDate && !oldestCallDate.startsWith(todayStr)) {
+              console.log(`[Sync Calls] Reached calls from prior day (${oldestCallDate.substring(0, 10)}). Stopping pagination.`);
+              hasMore = false;
+            }
+          } else {
+            hasMore = false;
+          }
+
+          if (payload.cursor && hasMore) {
+            cursor = payload.cursor;
+            page++;
+          } else {
+            hasMore = false;
+          }
+        } else {
+          console.error(`[Sync Calls] Dialpad API returned status ${apiRes.status}`);
+          hasMore = false;
         }
-      } else {
-        console.error(`[Sync Calls] Dialpad API returned status ${apiRes.status}`);
       }
     }
 
     console.log(`[Sync Calls] Fetched ${allDialpadCalls.length} concluded calls from Dialpad API.`);
 
     const affectedRecruiters = new Set();
-    const todayStr = new Date().toISOString().substring(0, 10);
-    let healedCount = 0;
 
     for (const dCall of allDialpadCalls) {
       const callId = String(dCall.id);
       const conversationId = String(dCall.master_call_id || dCall.entry_point_call_id || dCall.id);
       
-      const dateStartedStr = dCall.date_started 
-        ? new Date(dCall.date_started).toISOString() 
-        : '';
+      const dateStartedStr = formatDialpadDate(dCall.date_started);
         
       if (!dateStartedStr.startsWith(todayStr)) {
         continue; // Only process today's calls to heal active gaps
@@ -284,8 +349,8 @@ export default async function handler(req, res) {
           masterCallId: dCall.master_call_id || '',
           entryPointCallId: dCall.entry_point_call_id || '',
           dateStarted: dateStartedStr,
-          dateConnected: dCall.date_connected ? new Date(dCall.date_connected).toISOString() : '',
-          dateEnded: dCall.date_ended ? new Date(dCall.date_ended).toISOString() : '',
+          dateConnected: formatDialpadDate(dCall.date_connected),
+          dateEnded: formatDialpadDate(dCall.date_ended),
           direction: dCall.direction || '',
           handlerId,
           handlerName,
@@ -301,7 +366,7 @@ export default async function handler(req, res) {
           talkTimeSeconds,
           totalDurationMs,
           wasRecorded: dCall.was_recorded || false,
-          recordingUrl: dCall.recording_url || '',
+          recordingUrl: (Array.isArray(dCall.recording_url) ? dCall.recording_url[0] : dCall.recording_url) || '',
           callStatus: dCall.state === 'concluded' ? 'Connected' : 'No Answer',
           updatedAt: new Date().toISOString()
         };

@@ -1,0 +1,336 @@
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+
+// Normalize email local-part by removing dots
+function normalizeEmail(emailStr) {
+  if (!emailStr) return '';
+  const parts = emailStr.toLowerCase().trim().split('@');
+  if (parts.length !== 2) return emailStr.toLowerCase().trim();
+  const localPart = parts[0].replace(/\./g, '');
+  return `${localPart}@${parts[1]}`;
+}
+
+// Robust PEM private key formatter
+function formatPrivateKey(rawKey) {
+  if (!rawKey) return '';
+  let key = rawKey.trim();
+  if (key.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(key);
+      if (parsed.private_key) key = parsed.private_key.trim();
+    } catch (e) {
+      console.error('[Firestore] Private key JSON parse failed:', e);
+    }
+  }
+  if (key.startsWith('"') && key.endsWith('"')) key = key.slice(1, -1);
+  if (key.startsWith("'") && key.endsWith("'")) key = key.slice(1, -1);
+  key = key.replace(/\\n/g, '\n');
+  const header = '-----BEGIN PRIVATE KEY-----';
+  const footer = '-----END PRIVATE KEY-----';
+  if (!key.includes(header)) {
+    let base64Body = key.replace(/[^A-Za-z0-9+/=]/g, '');
+    const lines = [];
+    for (let i = 0; i < base64Body.length; i += 64) {
+      lines.push(base64Body.substring(i, i + 64));
+    }
+    key = `${header}\n${lines.join('\n')}\n${footer}\n`;
+  }
+  return key;
+}
+
+let db = null;
+function initFirestore() {
+  if (!db) {
+    if (!getApps().length) {
+      const projectId = process.env.FIREBASE_PROJECT_ID || 'humres-management-hub';
+      let clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+      let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+      if (clientEmail && clientEmail.trim().startsWith('{')) {
+        try { clientEmail = JSON.parse(clientEmail.trim()).client_email || clientEmail; } catch(e){}
+      }
+      if (privateKey && privateKey.trim().startsWith('{')) {
+        try { privateKey = JSON.parse(privateKey.trim()).private_key || privateKey; } catch(e){}
+      }
+      initializeApp({
+        credential: cert({
+          projectId,
+          clientEmail,
+          privateKey: formatPrivateKey(privateKey),
+        })
+      });
+    }
+    db = getFirestore();
+  }
+  return db;
+}
+
+// Name matching overrides for staff
+const nameOverrides = {
+  'william champken-frasca': 'will champken',
+  'candyce dawes': 'candyce dawes celene',
+  'candyce dawes celene': 'candyce dawes celene',
+  'matthew james sparks': 'matthew sparks',
+  'swarupa elisetti': 'swarupa elissetti',
+  'praveen m': 'praveenkumar m',
+  'praveenkumar m': 'praveenkumar m'
+};
+
+function matchName(dbName, empName) {
+  if (!dbName || !empName) return false;
+  const normDb = dbName.toLowerCase().replace(/\s+/g, ' ').trim();
+  let normEmp = empName.toLowerCase().replace(/\s+/g, ' ').trim();
+  if (nameOverrides[normEmp]) {
+    normEmp = nameOverrides[normEmp];
+  }
+  if (normDb === normEmp) return true;
+  const cleanDb = normDb.replace(/[^a-z0-9]/g, '');
+  const cleanEmp = normEmp.replace(/[^a-z0-9]/g, '');
+  return cleanDb === cleanEmp;
+}
+
+async function updateRecruiterKpis(firestore, handlerId, dateKey) {
+  if (!handlerId || !dateKey) return;
+  const docId = `${handlerId}_${dateKey}`;
+  console.log(`[KPI Rebuild] Recalculating totals for recruiter ${handlerId} on ${dateKey}...`);
+
+  try {
+    const staffDoc = await firestore.collection('staff').doc(handlerId).get();
+    if (!staffDoc.exists) return;
+    const staff = staffDoc.data();
+
+    const dayCallsSnap = await firestore.collection('dialpad_calls')
+      .where('dateStarted', '>=', `${dateKey}T00:00:00`)
+      .where('dateStarted', '<=', `${dateKey}T23:59:59.999Z`)
+      .get();
+
+    let callsInbound = 0;
+    let callsOutbound = 0;
+    let callsTotal = 0;
+    let totalTalkTimeSeconds = 0;
+    let callsOver5Min = 0;
+    let callsOver10Min = 0;
+
+    dayCallsSnap.forEach(docSnap => {
+      const call = docSnap.data();
+      if (call.handlerId !== handlerId) return;
+
+      callsTotal++;
+      if ((call.direction || '').toLowerCase() === 'inbound') {
+        callsInbound++;
+      } else {
+        callsOutbound++;
+      }
+      
+      const duration = Number(call.durationSeconds || call.talkTimeSeconds || 0);
+      totalTalkTimeSeconds += duration;
+      if (duration >= 300) callsOver5Min++;
+      if (duration >= 600) callsOver10Min++;
+    });
+
+    const kpiData = {
+      staffId: handlerId,
+      staffName: staff.fullName || '',
+      department: staff.department || '',
+      email: staff.businessEmail || staff.personalEmail || '',
+      date: dateKey,
+      callsInbound,
+      callsOutbound,
+      callsTotal,
+      totalTalkTimeSeconds,
+      callsOver5Min,
+      callsOver10Min,
+      lastUpdated: new Date().toISOString()
+    };
+
+    await firestore.collection('kpiDaily').doc(docId).set(kpiData, { merge: true });
+    console.log(`[KPI Rebuild] Saved doc ${docId}: talkTime=${totalTalkTimeSeconds}s`);
+  } catch (err) {
+    console.error(`[KPI Rebuild] Error updating ${handlerId} on ${dateKey}:`, err);
+  }
+}
+
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  // Simple secret protection
+  const querySecret = req.query.secret || '';
+  const isCron = req.headers['x-vercel-cron'] === '1';
+  const expectedSecret = process.env.QANDLE_INGEST_SECRET || 'qandle-talent-kpi-hub-key-2026';
+  
+  if (!isCron && querySecret !== expectedSecret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const tokenSlot1 = process.env.DIALPAD_TOKEN_1 || process.env.DIALPAD_TOKEN || '';
+  const tokenSlot2 = process.env.DIALPAD_TOKEN_2 || process.env.DIALPAD_TOKEN || '';
+  
+  if (!tokenSlot1) {
+    return res.status(500).json({ error: 'Dialpad API tokens not configured' });
+  }
+
+  try {
+    const firestore = initFirestore();
+
+    // 1. Fetch active staff list
+    const staffSnap = await firestore.collection('staff').get();
+    const staffList = [];
+    staffSnap.forEach(sDoc => {
+      const data = sDoc.data();
+      if (data.status !== 'exited') {
+        staffList.push({ id: sDoc.id, ...data });
+      }
+    });
+
+    console.log(`[Sync Calls] Loaded ${staffList.length} active staff profiles.`);
+
+    // 2. Fetch trailing concluded calls from Dialpad API
+    const tokens = Array.from(new Set([tokenSlot1, tokenSlot2])).filter(Boolean);
+    let allDialpadCalls = [];
+
+    for (const token of tokens) {
+      console.log(`[Sync Calls] Fetching concluded calls from Dialpad...`);
+      const apiRes = await fetch('https://dialpad.com/api/v2/calls?limit=100', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (apiRes.status === 200) {
+        const payload = await apiRes.json();
+        if (payload && Array.isArray(payload.entries)) {
+          allDialpadCalls = allDialpadCalls.concat(payload.entries);
+        }
+      } else {
+        console.error(`[Sync Calls] Dialpad API returned status ${apiRes.status}`);
+      }
+    }
+
+    console.log(`[Sync Calls] Fetched ${allDialpadCalls.length} concluded calls from Dialpad API.`);
+
+    const affectedRecruiters = new Set();
+    const todayStr = new Date().toISOString().substring(0, 10);
+    let healedCount = 0;
+
+    for (const dCall of allDialpadCalls) {
+      const callId = String(dCall.id);
+      const conversationId = String(dCall.master_call_id || dCall.entry_point_call_id || dCall.id);
+      
+      const dateStartedStr = dCall.date_started 
+        ? new Date(dCall.date_started).toISOString() 
+        : '';
+        
+      if (!dateStartedStr.startsWith(todayStr)) {
+        continue; // Only process today's calls to heal active gaps
+      }
+
+      // Check if call exists in Firestore
+      const callRef = firestore.collection('dialpad_calls').doc(conversationId);
+      const callSnap = await callRef.get();
+      const existingCall = callSnap.exists ? callSnap.data() : null;
+
+      // Extract target properties
+      const targetEmail = dCall.target?.email || '';
+      const targetName = dCall.target?.name || '';
+      
+      // Determine if we need to write/update
+      const isMissing = !existingCall;
+      const isUnmapped = existingCall && !existingCall.handlerId;
+      const isZeroDuration = existingCall && (!existingCall.durationSeconds || existingCall.durationSeconds === 0) && dCall.duration > 0;
+
+      if (isMissing || isUnmapped || isZeroDuration) {
+        // Find matching staff member
+        let matchedStaff = null;
+        if (targetEmail) {
+          const normTargetEmail = normalizeEmail(targetEmail);
+          matchedStaff = staffList.find(s => {
+            const busEmail = normalizeEmail(s.businessEmail);
+            const persEmail = normalizeEmail(s.personalEmail);
+            if (busEmail === normTargetEmail || persEmail === normTargetEmail) return true;
+            if (s.additionalEmails) {
+              const extraList = s.additionalEmails.split(',').map(e => normalizeEmail(e)).filter(Boolean);
+              if (extraList.includes(normTargetEmail)) return true;
+            }
+            return false;
+          });
+        }
+
+        if (!matchedStaff && targetName) {
+          matchedStaff = staffList.find(s => matchName(s.fullName, targetName));
+        }
+
+        const handlerId = matchedStaff ? matchedStaff.id : '';
+        const handlerName = matchedStaff ? matchedStaff.fullName : targetName;
+        const handlerEmail = matchedStaff ? (matchedStaff.businessEmail || matchedStaff.personalEmail || '') : targetEmail;
+        const department = matchedStaff ? (matchedStaff.department || '') : '';
+
+        const durationMs = Number(dCall.duration || 0);
+        const durationSeconds = Math.round(durationMs / 1000);
+        const talkTimeMs = Number(dCall.talk_time || 0);
+        const talkTimeSeconds = Math.round(talkTimeMs / 1000);
+        const totalDurationMs = Number(dCall.total_duration || 0);
+
+        const callData = {
+          conversationId,
+          primaryCallId: callId,
+          relatedCallIds: [callId],
+          masterCallId: dCall.master_call_id || '',
+          entryPointCallId: dCall.entry_point_call_id || '',
+          dateStarted: dateStartedStr,
+          dateConnected: dCall.date_connected ? new Date(dCall.date_connected).toISOString() : '',
+          dateEnded: dCall.date_ended ? new Date(dCall.date_ended).toISOString() : '',
+          direction: dCall.direction || '',
+          handlerId,
+          handlerName,
+          handlerEmail,
+          department,
+          externalName: dCall.contact?.name || '',
+          externalNumber: dCall.contact?.phone_number || '',
+          internalNumber: dCall.target?.phone || '',
+          connected: dCall.state === 'concluded' || dCall.state === 'connected',
+          durationMs,
+          durationSeconds,
+          talkTimeMs,
+          talkTimeSeconds,
+          totalDurationMs,
+          wasRecorded: dCall.was_recorded || false,
+          recordingUrl: dCall.recording_url || '',
+          callStatus: dCall.state === 'concluded' ? 'Connected' : 'No Answer',
+          updatedAt: new Date().toISOString()
+        };
+
+        await callRef.set(callData, { merge: true });
+        healedCount++;
+
+        if (handlerId) {
+          affectedRecruiters.add(handlerId);
+        }
+      }
+    }
+
+    console.log(`[Sync Calls] Completed sweep. Saved/healed ${healedCount} calls.`);
+
+    // 3. Recalculate daily kpis for affected recruiters
+    if (affectedRecruiters.size > 0) {
+      for (const rId of affectedRecruiters) {
+        await updateRecruiterKpis(firestore, rId, todayStr);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Completed sync. Processed ${allDialpadCalls.length} concluded calls, healed ${healedCount} records. Recalculated ${affectedRecruiters.size} recruiters.`
+    });
+
+  } catch (error) {
+    console.error('[Sync Calls] Error syncing recent calls:', error);
+    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+  }
+}

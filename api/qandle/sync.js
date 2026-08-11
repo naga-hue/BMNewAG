@@ -254,12 +254,14 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Auth Check
+  // Auth Check (Support native Vercel Cron header 'x-vercel-cron')
   const authHeader = req.headers.authorization || '';
   const querySecret = req.query.secret || '';
   const expectedSecret = process.env.QANDLE_INGEST_SECRET || 'qandle-talent-kpi-hub-key-2026';
   
-  const isAuthorized = (authHeader.startsWith('Bearer ') && authHeader.split(' ')[1] === expectedSecret) || 
+  const isCron = req.headers['x-vercel-cron'] === '1';
+  const isAuthorized = isCron || 
+                       (authHeader.startsWith('Bearer ') && authHeader.split(' ')[1] === expectedSecret) || 
                        (querySecret === expectedSecret);
 
   if (!isAuthorized) {
@@ -320,7 +322,7 @@ export default async function handler(req, res) {
     }
     const token = tokenData.access_token;
 
-    // Fetch users preview
+    // Fetch users directory from Qandle
     const userRes = await fetch(BASE_URL + "/client-api/users-preview", {
       method: "GET",
       headers: { "Authorization": "Bearer " + token }
@@ -332,13 +334,16 @@ export default async function handler(req, res) {
     const qandleEmployees = userData.data;
 
     let matchedCount = 0;
-    let writtenCount = 0;
+    let fastPathWritten = 0;
     const batch = firestore.batch();
     const today = new Date();
     const timestamp = getISTMidnightTimestamp(today);
 
+    // Keep track of matched staff to run background backfilling
+    const matchedStaffList = [];
+
+    // --- STEP 1: FAST PATH SYNC (Today & Yesterday for ALL matched active staff) ---
     for (const s of staffList) {
-      // Find matching employee
       const matchedEmp = qandleEmployees.find(qEmp => {
         // 1. Match by qandleEmail
         const sQandle = (s.qandleEmail || '').trim().toLowerCase();
@@ -356,8 +361,9 @@ export default async function handler(req, res) {
 
       if (!matchedEmp) continue;
       matchedCount++;
+      matchedStaffList.push({ staff: s, matchedEmp });
 
-      // Pull productivity graph for matched employee
+      // Pull current week's productivity graph
       const graphRes = await fetch(BASE_URL + `/client-api/productivity-graph/${matchedEmp._id}/${timestamp}`, {
         method: "GET",
         headers: { "Authorization": "Bearer " + token }
@@ -366,7 +372,7 @@ export default async function handler(req, res) {
 
       if (graphData.status === "success" && graphData.data) {
         const dailyRows = expandWeekData(graphData.data, today);
-        // Write today's and yesterday's to heal latency gaps
+        // Write last 2 days (today and yesterday) to heal short-term gaps
         const lastTwoDays = dailyRows.slice(-2);
         
         for (const row of lastTwoDays) {
@@ -392,18 +398,110 @@ export default async function handler(req, res) {
           };
 
           batch.set(docRef, activityData, { merge: true });
-          writtenCount++;
+          fastPathWritten++;
         }
+      }
+      // Small delay between requests to prevent API throttle
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    if (fastPathWritten > 0) {
+      await batch.commit();
+      console.log(`[Qandle Sync] Fast path completed. Synced last 2 days for all recruiters. Wrote ${fastPathWritten} rows.`);
+    }
+
+    // --- STEP 2: PROGRESSIVE BACKGROUND BACKFILL (Trailing 30-days) ---
+    const isFullBackfill = req.query.fullBackfill === 'true';
+    let backfillTargetList = [];
+
+    if (isFullBackfill) {
+      // Force full backfill for all matched staff in a single run
+      backfillTargetList = matchedStaffList;
+      console.log(`[Qandle Sync] Triggering full 30-day backfill for all ${backfillTargetList.length} active matched staff...`);
+    } else if (matchedStaffList.length > 0) {
+      // Progressive mode: Pick the single matched staff member with the oldest/missing backfill time
+      const singleCandidate = [...matchedStaffList].sort((a, b) => {
+        const aTime = a.staff.qandleLastBackfilledAt ? new Date(a.staff.qandleLastBackfilledAt).getTime() : 0;
+        const bTime = b.staff.qandleLastBackfilledAt ? new Date(b.staff.qandleLastBackfilledAt).getTime() : 0;
+        return aTime - bTime;
+      })[0];
+      
+      if (singleCandidate) {
+        backfillTargetList = [singleCandidate];
+        console.log(`[Qandle Sync] Selected candidate for progressive backfill: ${singleCandidate.staff.fullName} (Last backfilled: ${singleCandidate.staff.qandleLastBackfilledAt || 'never'})`);
       }
     }
 
-    if (writtenCount > 0) {
-      await batch.commit();
+    let historyWrittenCount = 0;
+    const historyOffsets = [-7, -14, -21, -28]; // trailing weeks to cover 30 days
+
+    for (const target of backfillTargetList) {
+      const s = target.staff;
+      const emp = target.matchedEmp;
+      const historyBatch = firestore.batch();
+      let targetWrittenCount = 0;
+
+      for (const offset of historyOffsets) {
+        const anchorDate = addDays(today, offset);
+        const histTimestamp = getISTMidnightTimestamp(anchorDate);
+
+        try {
+          const histRes = await fetch(BASE_URL + `/client-api/productivity-graph/${emp._id}/${histTimestamp}`, {
+            method: "GET",
+            headers: { "Authorization": "Bearer " + token }
+          });
+          const histData = await histRes.json();
+
+          if (histData.status === "success" && histData.data) {
+            const dailyRows = expandWeekData(histData.data, anchorDate);
+            for (const row of dailyRows) {
+              const parsedDate = parseQandleDate(row.date);
+              if (!parsedDate) continue;
+
+              const docId = `${s.id}_${parsedDate}`;
+              const docRef = firestore.collection('qandle_activities').doc(docId);
+
+              const activityData = {
+                staffId: s.id,
+                staffName: s.fullName,
+                employeeCode: emp.employee_code || '',
+                date: parsedDate,
+                arrivalTime: row.arrival_time || '-',
+                leftTime: row.left_time || '-',
+                productiveTimeSeconds: timeStringToSeconds(row.productive_time),
+                timeAtWorkSeconds: timeStringToSeconds(row.time_at_work),
+                deskTimeSeconds: timeStringToSeconds(row.desktime),
+                effectiveness: parsePercentage(row.effectiveness),
+                productivity: parsePercentage(row.productivity),
+                updatedAt: new Date().toISOString()
+              };
+
+              historyBatch.set(docRef, activityData, { merge: true });
+              targetWrittenCount++;
+              historyWrittenCount++;
+            }
+          }
+        } catch (err) {
+          console.error(`[Qandle Sync] Error fetching history offset ${offset} for ${s.fullName}:`, err);
+        }
+        // Delay to prevent Qandle rate limits
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+
+      if (targetWrittenCount > 0) {
+        await historyBatch.commit();
+        console.log(`[Qandle Sync] Historical backfill complete for ${s.fullName}. Wrote ${targetWrittenCount} rows.`);
+      }
+
+      // Update staff document backfill timestamp
+      await firestore.collection('staff').doc(s.id).update({
+        qandleLastBackfilledAt: new Date().toISOString()
+      });
     }
 
     return res.status(200).json({
       success: true,
-      message: `Sync completed. Matched ${matchedCount}/${staffList.length} staff, wrote ${writtenCount} activity records.`
+      message: `Sync completed. Matched ${matchedCount}/${staffList.length} staff. Wrote ${fastPathWritten} recent and ${historyWrittenCount} history records.`
     });
 
   } catch (error) {

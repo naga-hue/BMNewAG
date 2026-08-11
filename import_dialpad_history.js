@@ -16,7 +16,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 // Configuration Constants
-const DETAIL_CALLS_LIMIT = 5000; // Limit of recent call details to import to Firestore
+const DETAIL_CALLS_LIMIT = 85000; // Limit of recent call details to import to Firestore
 const csvPath = fs.existsSync('./import-data/dialpad_new.csv') 
   ? './import-data/dialpad_new.csv' 
   : './import-data/dialpad_calls.csv';

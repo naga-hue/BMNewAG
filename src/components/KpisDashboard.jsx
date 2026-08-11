@@ -39,6 +39,76 @@ const formatDuration = (seconds) => {
   return `${secs}s`;
 };
 
+const CRMContactLink = ({ phone, defaultName }) => {
+  const [crmData, setCrmData] = useState(null);
+
+  useEffect(() => {
+    if (!phone) return;
+    
+    const clean = phone.replace(/[^0-9+]/g, '').trim();
+    if (clean.length < 6) return;
+
+    if (window._crmCache && window._crmCache[clean]) {
+      setCrmData(window._crmCache[clean]);
+      return;
+    }
+
+    if (window._crmPending && window._crmPending[clean]) {
+      const interval = setInterval(() => {
+        if (window._crmCache && window._crmCache[clean]) {
+          setCrmData(window._crmCache[clean]);
+          clearInterval(interval);
+        }
+      }, 500);
+      return () => clearInterval(interval);
+    }
+
+    if (!window._crmCache) window._crmCache = {};
+    if (!window._crmPending) window._crmPending = {};
+
+    window._crmPending[clean] = true;
+
+    fetch(`/api/crm-lookup?phone=${encodeURIComponent(clean)}`)
+      .then(r => r.json())
+      .then(d => {
+        window._crmPending[clean] = false;
+        if (d && d.matched) {
+          window._crmCache[clean] = d;
+          setCrmData(d);
+        } else {
+          window._crmCache[clean] = { matched: false };
+          setCrmData({ matched: false });
+        }
+      })
+      .catch(() => {
+        window._crmPending[clean] = false;
+      });
+  }, [phone]);
+
+  if (crmData && crmData.matched) {
+    const linkPath = crmData.type.toLowerCase();
+    const linkUrl = `https://secure.recruitly.io/${linkPath}?id=${crmData.id}`;
+    return (
+      <a 
+        href={linkUrl} 
+        target="_blank" 
+        rel="noopener noreferrer" 
+        title={`${crmData.name} (${crmData.type})${crmData.company ? ` - ${crmData.company}` : ''}`}
+        style={{ 
+          color: '#E8611A',
+          fontWeight: 600, 
+          textDecoration: 'underline',
+          cursor: 'pointer'
+        }}
+      >
+        🔗 {crmData.name}
+      </a>
+    );
+  }
+
+  return <span>{defaultName}</span>;
+};
+
 // Formats raw Dialpad dispositions (e.g. "Candidate~NoAnswer") into pretty styled pills
 const renderDispositionBadges = (dispositionStr) => {
   const disp = dispositionStr || '';
@@ -98,7 +168,35 @@ const renderDispositionBadges = (dispositionStr) => {
   );
 };
 
-export default function KpisDashboard({ staff, companies, currentUser, onShowToast }) {
+// Helper to render color-coded effectiveness & productivity badges
+const renderPercentageBadge = (pct) => {
+  if (pct === undefined || pct === null) return <span style={{ color: 'var(--text-muted)' }}>-</span>;
+  const num = Number(pct);
+  let bgColor = 'rgba(239, 68, 68, 0.1)';
+  let color = 'var(--danger)';
+  if (num >= 80) {
+    bgColor = 'rgba(16, 185, 129, 0.1)';
+    color = 'var(--success)';
+  } else if (num >= 50) {
+    bgColor = 'rgba(245, 158, 11, 0.1)';
+    color = 'var(--warning)';
+  }
+  return (
+    <span style={{
+      padding: '4px 8px',
+      borderRadius: '12px',
+      fontSize: '11px',
+      fontWeight: 700,
+      backgroundColor: bgColor,
+      color: color,
+      display: 'inline-block'
+    }}>
+      {num}%
+    </span>
+  );
+};
+
+export default function KpisDashboard({ staff, companies, currentUser, onShowToast, placements = [] }) {
   // Helper to determine if a staff member is tracked in KPIs
   const isStaffDialpadTracked = (s) => {
     if (s.status === 'exited') return false; // Filter out exited employees
@@ -121,7 +219,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   const [hasRealCalls, setHasRealCalls] = useState(false);
 
   // Dashboard view states
-  const [activeSubTab, setActiveSubTab] = useState('performance'); // 'performance' | 'calls' | 'mapping'
+  const [activeSubTab, setActiveSubTab] = useState('overview'); // 'overview' | 'performance' | 'calls' | 'mapping'
 
   // Call Logs time filtering states
   const [callsTimeRange, setCallsTimeRange] = useState('today'); // today, yesterday, this_week, this_month, custom
@@ -146,6 +244,33 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   // Call Logs sorting states
   const [callLogsSortField, setCallLogsSortField] = useState('date'); // 'date' | 'staffName' | 'direction' | 'targetName' | 'targetType' | 'duration' | 'disposition' | 'benchmark'
   const [callLogsSortDirection, setCallLogsSortDirection] = useState('desc'); // 'asc' | 'desc'
+
+  // Overview tab sorting states
+  const [overviewSortField, setOverviewSortField] = useState('calls'); // default sort by calls
+  const [overviewSortAsc, setOverviewSortAsc] = useState(false); // default descending
+
+  const [callLogsSubFilter, setCallLogsSubFilter] = useState('all'); // 'all' | 'connected' | 'client' | 'candidate' | 'over5m' | 'over10m' | 'callback' | 'alpha'
+
+  const [drillDownModal, setDrillDownModal] = useState(null); // null | { staffName, category, dateText, calls: [], isLoading: true }
+
+  // Qandle attendance & productivity states
+  const [qandleDocs, setQandleDocs] = useState([]);
+  const [isLoadingQandle, setIsLoadingQandle] = useState(false);
+  const [qandleSearch, setQandleSearch] = useState('');
+  const [debouncedQandleSearch, setDebouncedQandleSearch] = useState('');
+  const [qandlePage, setQandlePage] = useState(1);
+  const [qandleSortField, setQandleSortField] = useState('date');
+  const [qandleSortDirection, setQandleSortDirection] = useState('desc');
+  const [qandleTimeRange, setQandleTimeRange] = useState('today');
+  const [qandleCustomStartDate, setQandleCustomStartDate] = useState('');
+  const [qandleCustomEndDate, setQandleCustomEndDate] = useState('');
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQandleSearch(qandleSearch);
+    }, 200);
+    return () => clearTimeout(handler);
+  }, [qandleSearch]);
 
   // Performance Scorecard sorting states
   const [perfSortField, setPerfSortField] = useState('totalCalls'); // 'recruiter' | 'division' | 'totalCalls' | 'totalTalkTime' | 'callsOver5Min' | 'cvsSent' | 'interviews' | 'jobsTaken'
@@ -182,10 +307,27 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     return perfSortDirection === 'asc' ? ' ▲' : ' ▼';
   };
 
+  const handleQandleSort = (field) => {
+    if (qandleSortField === field) {
+      setQandleSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setQandleSortField(field);
+      setQandleSortDirection('desc');
+    }
+  };
+
+  const renderQandleSortIndicator = (field) => {
+    if (qandleSortField !== field) return null;
+    return qandleSortDirection === 'asc' ? ' ▲' : ' ▼';
+  };
+
   // Recruiter Mapping edit states
   const [mappingSearch, setMappingSearch] = useState('');
   const [editingStaffId, setEditingStaffId] = useState(null);
   const [editingAliases, setEditingAliases] = useState('');
+  const [editingQandleEmail, setEditingQandleEmail] = useState('');
+  const [editingDialpadEmail, setEditingDialpadEmail] = useState('');
+  const [editingRecruitlyEmail, setEditingRecruitlyEmail] = useState('');
 
   // KPI Targets edit states
   const [editingTargetsStaffId, setEditingTargetsStaffId] = useState(null);
@@ -279,15 +421,18 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
       const updated = {
         ...staffMember,
-        additionalEmails: editingAliases.trim()
+        additionalEmails: editingAliases.trim(),
+        qandleEmail: editingQandleEmail.trim().toLowerCase(),
+        dialpadEmail: editingDialpadEmail.trim().toLowerCase(),
+        recruitlyEmail: editingRecruitlyEmail.trim().toLowerCase()
       };
 
       await useBoundStore.getState().updateStaff(updated);
-      onShowToast?.(`Matching aliases updated for ${staffMember.fullName}`, 'success');
+      onShowToast?.(`Integration mappings updated for ${staffMember.fullName}`, 'success');
       setEditingStaffId(null);
     } catch (e) {
-      console.error('Error updating matching aliases:', e);
-      onShowToast?.('Failed to update matching aliases', 'error');
+      console.error('Error updating matching mappings:', e);
+      onShowToast?.('Failed to update matching mappings', 'error');
     }
   };
 
@@ -308,6 +453,297 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   const [selectedStaffId, setSelectedStaffId] = useState(
     userRole === 'recruiter' ? currentUser.id : 'all'
   );
+  const [selectedCompanyId, setSelectedCompanyId] = useState('all');
+
+  // Overview / Daily Activity tab date range states
+  const [overviewTimeRange, setOverviewTimeRange] = useState('today');
+  const [overviewCustomStartDate, setOverviewCustomStartDate] = useState('');
+  const [overviewCustomEndDate, setOverviewCustomEndDate] = useState('');
+
+  const handleDrillDown = (staffId, category, isPerformance = false) => {
+    // 1. Copy active date filter to call logs date filter
+    if (isPerformance) {
+      setCallsTimeRange(timeRange);
+      if (timeRange === 'custom') {
+        setCallsCustomStartDate(customStartDate);
+        setCallsCustomEndDate(customEndDate);
+      }
+    } else {
+      setCallsTimeRange(overviewTimeRange === 'day_before' ? 'custom' : overviewTimeRange);
+      if (overviewTimeRange === 'day_before') {
+        const today = new Date();
+        today.setDate(today.getDate() - 2);
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const dayBeforeStr = `${year}-${month}-${day}`;
+        setCallsCustomStartDate(dayBeforeStr);
+        setCallsCustomEndDate(dayBeforeStr);
+      } else if (overviewTimeRange === 'custom') {
+        setCallsCustomStartDate(overviewCustomStartDate);
+        setCallsCustomEndDate(overviewCustomEndDate);
+      }
+    }
+    
+    // 2. Select recruiter (only if not restricted to recruiter role)
+    if (userRole !== 'recruiter') {
+      setSelectedStaffId(staffId);
+    }
+    
+    // 3. Clear text search query
+    setCallLogsSearch('');
+    
+    // 4. Set category sub-filter
+    setCallLogsSubFilter(category);
+    
+    // 5. Reset page count
+    setCallLogsPage(1);
+    
+    // 6. Switch to Calls sub-tab
+    setActiveSubTab('calls');
+  };
+
+  const handleCellClick = async (staffId, staffName, category, isPerformance = false) => {
+    let start = '';
+    let end = '';
+    let dateText = '';
+    
+    if (isPerformance) {
+      const today = new Date();
+      const todayStr = today.toISOString().substring(0, 10);
+      if (timeRange === 'today') {
+        start = todayStr;
+        end = todayStr;
+        dateText = 'Today';
+      } else if (timeRange === 'this_week') {
+        const day = today.getDay();
+        const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(today.setDate(diff));
+        start = monday.toISOString().substring(0, 10);
+        end = todayStr;
+        dateText = 'This Week';
+      } else if (timeRange === 'this_month') {
+        start = `${todayStr.substring(0, 7)}-01`;
+        end = todayStr;
+        dateText = 'This Month';
+      } else {
+        start = customStartDate || '2026-01-01';
+        end = customEndDate || todayStr;
+        dateText = `${start} to ${end}`;
+      }
+    } else {
+      const today = new Date();
+      const getLondonDateString = (d) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      const todayStr = getLondonDateString(today);
+      
+      if (overviewTimeRange === 'today') {
+        start = todayStr;
+        end = todayStr;
+        dateText = 'Today';
+      } else if (overviewTimeRange === 'yesterday') {
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        start = getLondonDateString(yesterday);
+        end = start;
+        dateText = 'Yesterday';
+      } else if (overviewTimeRange === 'day_before') {
+        const dayBefore = new Date(today);
+        dayBefore.setDate(dayBefore.getDate() - 2);
+        start = getLondonDateString(dayBefore);
+        end = start;
+        dateText = 'Day Before Yesterday';
+      } else if (overviewTimeRange === 'custom') {
+        start = overviewCustomStartDate || todayStr;
+        end = overviewCustomEndDate || todayStr;
+        dateText = `${start} to ${end}`;
+      }
+    }
+
+    setDrillDownModal({
+      staffName,
+      category,
+      dateText,
+      calls: [],
+      isLoading: true
+    });
+    try {
+      const q = query(
+        collection(db, 'dialpad_calls'),
+        where('dateStarted', '>=', start),
+        where('dateStarted', '<=', end + 'T23:59:59.999Z')
+      );
+      
+      const snap = await getDocs(q);
+      const rawCalls = [];
+      snap.forEach(d => {
+        const callData = d.data();
+        if (callData.handlerId === staffId) {
+          rawCalls.push({ id: d.id, ...callData });
+        }
+      });
+
+      const formatted = rawCalls.map(call => {
+        let dateVal = '';
+        let timeVal = '';
+        if (call.dateStarted) {
+          let dateObj = null;
+          if (typeof call.dateStarted === 'string') {
+            dateObj = new Date(call.dateStarted);
+          } else if (typeof call.dateStarted === 'number') {
+            const ms = call.dateStarted < 9999999999 ? call.dateStarted * 1000 : call.dateStarted;
+            dateObj = new Date(ms);
+          } else if (call.dateStarted.seconds) {
+            dateObj = new Date(call.dateStarted.seconds * 1000);
+          } else if (call.dateStarted instanceof Date) {
+            dateObj = call.dateStarted;
+          }
+
+          if (dateObj && !isNaN(dateObj.getTime())) {
+            try {
+              const dTF = new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Europe/London',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+              });
+              dateVal = dTF.format(dateObj);
+
+              const tTF = new Intl.DateTimeFormat('en-GB', {
+                timeZone: 'Europe/London',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+              });
+              timeVal = tTF.format(dateObj);
+            } catch (errFormat) {
+              const year = dateObj.getFullYear();
+              const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+              const day = String(dateObj.getDate()).padStart(2, '0');
+              dateVal = `${year}-${month}-${day}`;
+              
+              const hours = String(dateObj.getHours()).padStart(2, '0');
+              const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+              const seconds = String(dateObj.getSeconds()).padStart(2, '0');
+              timeVal = `${hours}:${minutes}:${seconds}`;
+            }
+          }
+        }
+
+        const targetTypeVal = (call.target?.type || 'external').toLowerCase().trim() === 'user' 
+          ? 'Candidate' 
+          : 'Client';
+
+        return {
+          id: call.id || call.conversationId,
+          staffId: call.handlerId,
+          staffName: call.handlerName,
+          department: call.department || '',
+          direction: call.direction === 'inbound' ? 'Inbound' : 'Outbound',
+          date: dateVal,
+          time: timeVal,
+          targetName: call.externalName || call.externalNumber || 'Unknown',
+          targetType: targetTypeVal,
+          duration: call.durationSeconds || 0,
+          hasRecording: call.wasRecorded,
+          recordingUrl: call.recordingUrl,
+          transcript: call.transcript || 'No transcript generated yet.',
+          disposition: call.disposition || '',
+          recapSummary: call.recapSummary || '',
+          recapOutcome: call.recapOutcome || '',
+          externalNumber: call.externalNumber || ''
+        };
+      });
+
+      const filtered = formatted.filter(call => {
+        if (category === 'connected') {
+          if (call.duration <= 0) return false;
+        } else if (category === 'client') {
+          if (call.targetType !== 'Client') return false;
+        } else if (category === 'candidate') {
+          if (call.targetType !== 'Candidate') return false;
+        } else if (category === 'over5m') {
+          if (call.duration < 300) return false;
+        } else if (category === 'over10m') {
+          if (call.duration < 600) return false;
+        } else if (category === 'callback') {
+          const isCB = (call.disposition || '').toLowerCase().includes('callback') || 
+                       (call.disposition || '').toLowerCase().includes('cb');
+          if (!isCB) return false;
+        } else if (category === 'alpha') {
+          const isAlpha = (call.disposition || '').toLowerCase().includes('alpha') || 
+                          (call.recapSummary || '').toLowerCase().includes('opportunity') || 
+                          (call.recapSummary || '').toLowerCase().includes('alpha');
+          if (!isAlpha) return false;
+        }
+        return true;
+      });
+
+      filtered.sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`));
+
+      setDrillDownModal({
+        staffName,
+        category,
+        dateText,
+        calls: filtered,
+        isLoading: false
+      });
+
+    } catch (e) {
+      console.error(e);
+      setDrillDownModal(prev => prev ? { ...prev, isLoading: false } : null);
+      onShowToast?.('Failed to fetch call details', 'error');
+    }
+  };
+
+  const renderClickableCount = (val, staffId, staffName, category, color = 'var(--text-primary)') => {
+    if (!val || val === 0) return <span style={{ color: 'var(--text-muted)' }}>0</span>;
+    return (
+      <button
+        onClick={() => handleCellClick(staffId, staffName, category, false)}
+        style={{
+          background: 'none',
+          border: 'none',
+          color: color,
+          fontWeight: 600,
+          cursor: 'pointer',
+          padding: 0,
+          textDecoration: 'underline',
+          display: 'inline-block'
+        }}
+        title={`View logs for these ${val} calls`}
+      >
+        {val}
+      </button>
+    );
+  };
+
+  const renderClickableCountPerf = (val, staffId, staffName, category, color = 'var(--text-primary)') => {
+    if (!val || val === 0) return <span style={{ color: 'var(--text-muted)' }}>0</span>;
+    return (
+      <button
+        onClick={() => handleCellClick(staffId, staffName, category, true)}
+        style={{
+          background: 'none',
+          border: 'none',
+          color: color,
+          fontWeight: 600,
+          cursor: 'pointer',
+          padding: 0,
+          textDecoration: 'underline',
+          display: 'inline-block'
+        }}
+        title={`View logs for these ${val} calls`}
+      >
+        {val}
+      </button>
+    );
+  };
 
   // 3. Modal details states for call recordings/transcripts
   const [activeCallDetail, setActiveCallDetail] = useState(null);
@@ -376,18 +812,58 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     return Array.from(depts);
   }, [staff]);
 
-  // List of staff filtered by selected department (if not recruiter)
+  // List of staff filtered by selected department and company (if not recruiter)
   const filteredStaffList = useMemo(() => {
     let list = staff;
     if (userRole === 'recruiter') {
       list = staff.filter(s => s.id === currentUser.id);
-    } else if (userRole === 'manager') {
-      list = staff.filter(s => s.department === userDept);
-    } else if (selectedDept !== 'all') {
-      list = staff.filter(s => s.department === selectedDept);
+    } else {
+      if (userRole === 'manager') {
+        list = staff.filter(s => s.department === userDept);
+      } else if (selectedDept !== 'all') {
+        list = staff.filter(s => s.department === selectedDept);
+      }
+      if (selectedCompanyId !== 'all') {
+        list = list.filter(s => s.companyId === selectedCompanyId);
+      }
     }
     return list.filter(isStaffDialpadTracked);
-  }, [staff, selectedDept, userRole, userDept, currentUser.id]);
+  }, [staff, selectedDept, selectedCompanyId, userRole, userDept, currentUser.id]);
+
+  // Calculate daily activity date range window for Overview sub-tab (Today, Yesterday, Day Before Yesterday, Custom)
+  const overviewDateRangeWindow = useMemo(() => {
+    const today = new Date();
+    
+    const getLondonDateString = (d) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const todayStr = getLondonDateString(today);
+    
+    if (overviewTimeRange === 'today') {
+      return { start: todayStr, end: todayStr };
+    } else if (overviewTimeRange === 'yesterday') {
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = getLondonDateString(yesterday);
+      return { start: yesterdayStr, end: yesterdayStr };
+    } else if (overviewTimeRange === 'day_before') {
+      const dayBefore = new Date(today);
+      dayBefore.setDate(dayBefore.getDate() - 2);
+      const dayBeforeStr = getLondonDateString(dayBefore);
+      return { start: dayBeforeStr, end: dayBeforeStr };
+    } else if (overviewTimeRange === 'custom') {
+      return {
+        start: overviewCustomStartDate || todayStr,
+        end: overviewCustomEndDate || todayStr
+      };
+    }
+    
+    return { start: todayStr, end: todayStr };
+  }, [overviewTimeRange, overviewCustomStartDate, overviewCustomEndDate]);
 
   // Calculate date range window based on selected time range
   const dateRangeWindow = useMemo(() => {
@@ -442,16 +918,40 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   }, [dateRangeWindow]);
 
   // Helper to render KPI values against custom targets
-  const renderMetricWithTarget = (actual, dailyTarget, multiplier, isDuration = false) => {
+  const renderMetricWithTarget = (actual, dailyTarget, multiplier, isDuration = false, staffId = null, category = null, staffName = '') => {
     const target = dailyTarget ? Math.round(dailyTarget * multiplier) : 0;
     
     let formattedActual = isDuration ? formatDuration(actual) : actual;
     let formattedTarget = isDuration ? formatDuration(target * 60) : target; // target talk time is in minutes
     
+    const isClickable = staffId && category && actual > 0;
+    
+    const actualElement = isClickable ? (
+      <button
+        onClick={() => handleCellClick(staffId, staffName, category, true)}
+        style={{
+          background: 'none',
+          border: 'none',
+          color: 'var(--primary)',
+          fontWeight: 700,
+          fontSize: '13px',
+          cursor: 'pointer',
+          padding: 0,
+          textDecoration: 'underline',
+          display: 'inline-block'
+        }}
+        title="View logs for these calls"
+      >
+        {formattedActual}
+      </button>
+    ) : (
+      <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{formattedActual}</span>
+    );
+
     if (!target) {
       return (
         <div style={{ textAlign: 'center' }}>
-          <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{formattedActual}</span>
+          {actualElement}
         </div>
       );
     }
@@ -475,7 +975,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{formattedActual}</span>
+          {actualElement}
           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>/ {formattedTarget}</span>
         </div>
         <span style={{
@@ -522,6 +1022,52 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     return { start, end };
   }, [callsTimeRange, callsCustomStartDate, callsCustomEndDate]);
 
+  // Calculate date range window specifically for the Qandle Attendance Tab
+  const qandleDateRangeWindow = useMemo(() => {
+    const today = new Date();
+    const todayStr = today.toISOString().substring(0, 10);
+    
+    let start = '';
+    let end = todayStr;
+    
+    if (qandleTimeRange === 'today') {
+      start = todayStr;
+    } else if (qandleTimeRange === 'yesterday') {
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().substring(0, 10);
+      start = yesterdayStr;
+      end = yesterdayStr;
+    } else if (qandleTimeRange === 'this_week') {
+      const day = today.getDay();
+      const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(today.setDate(diff));
+      start = monday.toISOString().substring(0, 10);
+    } else if (qandleTimeRange === 'this_month') {
+      start = `${todayStr.substring(0, 7)}-01`;
+    } else {
+      start = qandleCustomStartDate || '2026-01-01';
+      end = qandleCustomEndDate || todayStr;
+    }
+    return { start, end };
+  }, [qandleTimeRange, qandleCustomStartDate, qandleCustomEndDate]);
+
+  // Calculate effective date range window for Dialpad queries
+  const effectiveCallsWindow = useMemo(() => {
+    if (activeSubTab === 'overview') {
+      return overviewDateRangeWindow;
+    }
+    return callsDateRangeWindow;
+  }, [activeSubTab, overviewDateRangeWindow, callsDateRangeWindow]);
+
+  // Calculate effective date range window for Qandle queries
+  const effectiveQandleWindow = useMemo(() => {
+    if (activeSubTab === 'overview') {
+      return overviewDateRangeWindow;
+    }
+    return qandleDateRangeWindow;
+  }, [activeSubTab, overviewDateRangeWindow, qandleDateRangeWindow]);
+
   // Check if there are any real Dialpad call logs in the database on mount
   useEffect(() => {
     async function checkRealCalls() {
@@ -567,13 +1113,13 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     loadKpiData();
   }, [dateRangeWindow.start, dateRangeWindow.end]);
 
-  // Load Dialpad calls dynamically with real-time updates when callsDateRangeWindow changes (for the dedicated Dialpad Calls Tab)
+  // Load Dialpad calls dynamically with real-time updates when effectiveCallsWindow changes
   useEffect(() => {
     let isMounted = true;
     
     async function loadCallsData() {
       setIsLoadingCalls(true);
-      const { start, end } = callsDateRangeWindow;
+      const { start, end } = effectiveCallsWindow;
       
       try {
         console.log(`[Calls] Querying call history from ${start} to ${end}...`);
@@ -582,7 +1128,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           where('dateStarted', '>=', start),
           where('dateStarted', '<=', end + 'T23:59:59Z'),
           orderBy('dateStarted', 'desc'),
-          limit(500)
+          limit(2000)
         );
 
         const snapshot = await getDocs(callsQuery);
@@ -604,7 +1150,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             collection(db, 'dialpad_calls'),
             where('dateStarted', '>=', start),
             where('dateStarted', '<=', end + 'T23:59:59Z'),
-            limit(500)
+            limit(2000)
           );
           
           const fallbackSnapshot = await getDocs(callsQueryFallback);
@@ -633,46 +1179,73 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     return () => {
       isMounted = false;
     };
-  }, [callsDateRangeWindow.start, callsDateRangeWindow.end]);
+  }, [effectiveCallsWindow.start, effectiveCallsWindow.end]);
 
-  // Aggregate KPI Data from real Firestore kpiDaily collection
-  const mockKpiData = useMemo(() => {
-    const map = {};
+  // Load Qandle activities when activeSubTab or effectiveQandleWindow changes
+  useEffect(() => {
+    let isMounted = true;
     
-    // Initialize map for all staff in staff list
-    staff.forEach(s => {
-      map[s.id] = {
-        inbound: 0,
-        outbound: 0,
-        totalCalls: 0,
-        totalTalkTime: 0,
-        callsOver5Min: 0,
-        callsOver10Min: 0,
-        cvsSent: 0,
-        interviews: 0,
-        jobsTaken: 0
-      };
-    });
+    async function loadQandleData() {
+      if (activeSubTab !== 'qandle' && activeSubTab !== 'overview') return;
+      setIsLoadingQandle(true);
+      const { start, end } = effectiveQandleWindow;
+      
+      try {
+        console.log(`[Qandle] Querying activities from ${start} to ${end}...`);
+        const qandleQuery = query(
+          collection(db, 'qandle_activities'),
+          where('date', '>=', start),
+          where('date', '<=', end),
+          orderBy('date', 'desc'),
+          limit(1000)
+        );
 
-    const { start, end } = dateRangeWindow;
+        const snapshot = await getDocs(qandleQuery);
+        if (!isMounted) return;
 
-    kpiDocs.forEach(doc => {
-      if (doc.date >= start && doc.date <= end && map[doc.staffId]) {
-        const entry = map[doc.staffId];
-        entry.inbound += (doc.callsInbound || 0);
-        entry.outbound += (doc.callsOutbound || 0);
-        entry.totalCalls += (doc.callsTotal || 0);
-        entry.totalTalkTime += (doc.totalTalkTimeSeconds || 0);
-        entry.callsOver5Min += (doc.callsOver5Min || 0);
-        entry.callsOver10Min += (doc.callsOver10Min || 0);
-        entry.cvsSent += (doc.cvsSent || 0);
-        entry.interviews += (doc.interviews || 0);
-        entry.jobsTaken += (doc.jobsTaken || 0);
+        const activitiesList = [];
+        snapshot.forEach(doc => {
+          activitiesList.push({ id: doc.id, ...doc.data() });
+        });
+        setQandleDocs(activitiesList);
+        setIsLoadingQandle(false);
+      } catch (error) {
+        console.error('Error loading Qandle activities:', error);
+        if (!isMounted) return;
+        
+        // Fallback: if index is missing, query without orderBy
+        try {
+          const qandleQueryFallback = query(
+            collection(db, 'qandle_activities'),
+            where('date', '>=', start),
+            where('date', '<=', end),
+            limit(1000)
+          );
+          
+          const fallbackSnapshot = await getDocs(qandleQueryFallback);
+          if (!isMounted) return;
+
+          const activitiesList = [];
+          fallbackSnapshot.forEach(doc => {
+            activitiesList.push({ id: doc.id, ...doc.data() });
+          });
+          // Sort client-side
+          activitiesList.sort((a, b) => b.date.localeCompare(a.date));
+          setQandleDocs(activitiesList);
+          setIsLoadingQandle(false);
+        } catch (fallbackError) {
+          console.error('Fallback Qandle fetch failed:', fallbackError);
+          if (isMounted) {
+            onShowToast?.('Failed to load Qandle logs', 'error');
+            setIsLoadingQandle(false);
+          }
+        }
       }
-    });
-
-    return map;
-  }, [kpiDocs, dateRangeWindow, staff]);
+    }
+    
+    loadQandleData();
+    return () => { isMounted = false; };
+  }, [activeSubTab, effectiveQandleWindow.start, effectiveQandleWindow.end]);
 
   // Generate Call logs detail rows based on real kpiDocs logs
   const mockCallsList = useMemo(() => {
@@ -680,7 +1253,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     const companiesList = ['Microsoft', 'Google', 'Recruitly', 'BP Energy', 'HSBC Bank', 'Deloitte', 'Dialpad Corp', 'Vodafone', 'Shell', 'Strata Civils'];
     const candidatesList = ['Emile Brand', 'Alex Herzenberg', 'Gabriella Maartens', 'Wendy Campbell', 'Matthew Sparks', 'Toni Tree', 'Ryan Mc Dougall', 'Sean Owen'];
 
-    const { start, end } = dateRangeWindow;
+    const { start, end } = effectiveCallsWindow;
 
     kpiDocs.forEach(doc => {
       if (doc.date >= start && doc.date <= end) {
@@ -690,6 +1263,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         // Apply filters
         if (selectedStaffId !== 'all' && doc.staffId !== selectedStaffId) return;
         if (selectedDept !== 'all' && staffMember.department !== selectedDept) return;
+        if (selectedCompanyId !== 'all' && staffMember.companyId !== selectedCompanyId) return;
 
         const countOver5 = doc.callsOver5Min || 0;
         const totalCalls = doc.callsTotal || 0;
@@ -735,11 +1309,11 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     });
 
     return list.sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
-  }, [kpiDocs, dateRangeWindow, staff, selectedStaffId, selectedDept]);
+  }, [kpiDocs, effectiveCallsWindow, staff, selectedStaffId, selectedDept, selectedCompanyId]);
 
   // Format the raw live calls from the webhook database
   const formattedLiveCalls = useMemo(() => {
-    const { start, end } = callsDateRangeWindow;
+    const { start, end } = effectiveCallsWindow;
 
     return liveCalls
       .map(call => {
@@ -811,7 +1385,8 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           transcript: call.transcript || 'No transcript generated yet.',
           disposition: call.disposition || '',
           recapSummary: call.recapSummary || '',
-          recapOutcome: call.recapOutcome || ''
+          recapOutcome: call.recapOutcome || '',
+          externalNumber: call.externalNumber || ''
         };
       })
       .filter(call => {
@@ -819,9 +1394,13 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         if (call.date && (call.date < start || call.date > end)) return false;
         if (selectedStaffId !== 'all' && call.staffId !== selectedStaffId) return false;
         if (selectedDept !== 'all' && call.department !== selectedDept) return false;
+        if (selectedCompanyId !== 'all') {
+          const staffMember = staff.find(s => s.id === call.staffId);
+          if (!staffMember || staffMember.companyId !== selectedCompanyId) return false;
+        }
         return true;
       });
-  }, [liveCalls, callsDateRangeWindow, selectedStaffId, selectedDept]);
+  }, [liveCalls, effectiveCallsWindow, selectedStaffId, selectedDept, selectedCompanyId, staff]);
 
   const displayCallsList = useMemo(() => {
     if (hasRealCalls) {
@@ -829,6 +1408,320 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     }
     return mockCallsList;
   }, [hasRealCalls, formattedLiveCalls, mockCallsList]);
+
+  // Aggregator for the KPI Overview Dashboard and Activity Heatmap
+  const overviewStats = useMemo(() => {
+    const recruiterStats = {};
+    
+    // Initialize stats for each staff in filteredStaffList
+    filteredStaffList.forEach(s => {
+      recruiterStats[s.id] = {
+        staff: s,
+        calls: 0,
+        connected: 0,
+        clientCalls: 0,
+        candidateCalls: 0,
+        talkTimeSeconds: 0,
+        qandleProductiveSeconds: 0,
+        qandleArrival: '-',
+        qandleLeft: '-',
+        lastCallTime: '-',
+        over5m: 0,
+        over10m: 0,
+        callbacks: 0,
+        alpha: 0,
+        hourlyCalls: Array(24).fill(0)
+      };
+    });
+    
+    const findStaffIdForCall = (call) => {
+      if (call.staffId && recruiterStats[call.staffId]) {
+        return call.staffId;
+      }
+      const handlerEmail = (call.handlerEmail || '').toLowerCase().trim();
+      const matched = filteredStaffList.find(s => {
+        const primary = (s.dialpadEmail || '').toLowerCase().trim();
+        if (primary && primary === handlerEmail) return true;
+        const aliases = Array.isArray(s.additionalEmails) ? s.additionalEmails : [];
+        return aliases.some(alias => (alias || '').toLowerCase().trim() === handlerEmail);
+      });
+      return matched ? matched.id : null;
+    };
+
+    const findStaffIdForQandle = (qDoc) => {
+      if (qDoc.staffId && recruiterStats[qDoc.staffId]) {
+        return qDoc.staffId;
+      }
+      const matched = filteredStaffList.find(s => {
+        const qEmail = (s.qandleEmail || '').toLowerCase().trim();
+        const docEmail = (qDoc.qandleEmail || '').toLowerCase().trim();
+        if (qEmail && docEmail && qEmail === docEmail) return true;
+        
+        const qCode = (s.employeeCode || '').trim().toUpperCase();
+        const docCode = (qDoc.employeeCode || '').trim().toUpperCase();
+        if (qCode && docCode && qCode === docCode) return true;
+        
+        const sName = (s.fullName || '').toLowerCase().trim();
+        const qName = (qDoc.staffName || '').toLowerCase().trim();
+        return sName && qName && sName === qName;
+      });
+      return matched ? matched.id : null;
+    };
+
+    let totalCalls = 0;
+    let totalConnected = 0;
+    let totalTalkTimeSeconds = 0;
+    let totalCallbacks = 0;
+    let totalAlpha = 0;
+    let totalOver5m = 0;
+    let totalOver10m = 0;
+    const globalHourlyCalls = Array(24).fill(0);
+    const callStatusCounts = {};
+    let outboundCount = 0;
+    let inboundCount = 0;
+
+    displayCallsList.forEach(call => {
+      const staffId = call.staffId;
+      if (!staffId) return;
+      
+      const stats = recruiterStats[staffId];
+      stats.calls++;
+      totalCalls++;
+
+      if (call.direction === 'Outbound') {
+        outboundCount++;
+      } else {
+        inboundCount++;
+      }
+
+      const status = call.disposition || 'Unknown';
+      callStatusCounts[status] = (callStatusCounts[status] || 0) + 1;
+
+      const isConnected = call.duration > 0;
+      if (isConnected) {
+        stats.connected++;
+        totalConnected++;
+        stats.talkTimeSeconds += call.duration;
+        totalTalkTimeSeconds += call.duration;
+      }
+
+      if (call.targetType === 'Client') {
+        stats.clientCalls++;
+      } else if (call.targetType === 'Candidate') {
+        stats.candidateCalls++;
+      }
+
+      if (call.duration >= 300) {
+        stats.over5m++;
+        totalOver5m++;
+      }
+      if (call.duration >= 600) {
+        stats.over10m++;
+        totalOver10m++;
+      }
+
+      const isCB = call.isCallback || 
+                   (call.disposition || '').toLowerCase().includes('callback') || 
+                   (call.disposition || '').toLowerCase().includes('cb');
+      if (isCB) {
+        stats.callbacks++;
+        totalCallbacks++;
+      }
+
+      const isAlpha = call.isAlpha || 
+                      (call.disposition || '').toLowerCase().includes('alpha') || 
+                      (call.recapSummary || '').toLowerCase().includes('opportunity') || 
+                      (call.recapSummary || '').toLowerCase().includes('alpha');
+      if (isAlpha) {
+        stats.alpha++;
+        totalAlpha++;
+      }
+
+      if (call.time) {
+        const hr = parseInt(call.time.split(':')[0], 10);
+        if (!isNaN(hr) && hr >= 0 && hr < 24) {
+          stats.hourlyCalls[hr]++;
+          globalHourlyCalls[hr]++;
+        }
+      }
+
+      if (call.time) {
+        if (stats.lastCallTime === '-' || call.time.localeCompare(stats.lastCallTime) > 0) {
+          stats.lastCallTime = call.time.substring(0, 5);
+        }
+      }
+    });
+
+    qandleDocs.forEach(qDoc => {
+      const staffId = findStaffIdForQandle(qDoc);
+      if (!staffId) return;
+
+      const stats = recruiterStats[staffId];
+      if (qDoc.productiveTimeSeconds) {
+        stats.qandleProductiveSeconds += qDoc.productiveTimeSeconds;
+      }
+      
+      if (qDoc.arrivalTime && qDoc.arrivalTime !== '-') {
+        if (stats.qandleArrival === '-' || qDoc.arrivalTime < stats.qandleArrival) {
+          stats.qandleArrival = qDoc.arrivalTime;
+        }
+      }
+      if (qDoc.leftTime && qDoc.leftTime !== '-') {
+        if (stats.qandleLeft === '-' || qDoc.leftTime > stats.qandleLeft) {
+          stats.qandleLeft = qDoc.leftTime;
+        }
+      }
+    });
+
+    const recruiterRows = Object.values(recruiterStats);
+
+    // Calculate earliest and latest call hours dynamically to prevent cutting off early/late calls (like 4AM or 8PM)
+    let earliestHour = 8;
+    let latestHour = 18;
+    displayCallsList.forEach(call => {
+      if (call.time) {
+        const hr = parseInt(call.time.split(':')[0], 10);
+        if (!isNaN(hr) && hr >= 0 && hr < 24) {
+          if (hr < earliestHour) earliestHour = hr;
+          if (hr > latestHour) latestHour = hr;
+        }
+      }
+    });
+
+    let peakHour = '-';
+    let peakCalls = 0;
+    for (let hr = earliestHour; hr <= latestHour; hr++) {
+      if (globalHourlyCalls[hr] > peakCalls) {
+        peakCalls = globalHourlyCalls[hr];
+        peakHour = `${String(hr).padStart(2, '0')}:00`;
+      }
+    }
+
+    return {
+      recruiterRows,
+      totalCalls,
+      totalConnected,
+      connectRate: totalCalls ? Math.round((totalConnected / totalCalls) * 100) : 0,
+      avgTalkTime: totalConnected ? Math.round(totalTalkTimeSeconds / totalConnected) : 0,
+      totalCallbacks,
+      totalAlpha,
+      totalOver5m,
+      totalOver10m,
+      globalHourlyCalls,
+      callStatusCounts,
+      outboundCount,
+      inboundCount,
+      peakHour,
+      peakCalls,
+      earliestHour,
+      latestHour
+    };
+  }, [filteredStaffList, displayCallsList, qandleDocs]);
+
+  // Sort recruiter rows for the Overview and Heatmap grids
+  const sortedRecruiterRows = useMemo(() => {
+    let rows = [...(overviewStats.recruiterRows || [])];
+    if (selectedStaffId !== 'all') {
+      rows = rows.filter(r => r.staff.id === selectedStaffId);
+    }
+    rows.sort((a, b) => {
+      let valA, valB;
+      if (overviewSortField === 'recruiter') {
+        valA = (a.staff.fullName || a.staff.full_name || '').toLowerCase().trim();
+        valB = (b.staff.fullName || b.staff.full_name || '').toLowerCase().trim();
+      } else if (overviewSortField === 'calls') {
+        valA = a.calls;
+        valB = b.calls;
+      } else if (overviewSortField === 'connected') {
+        valA = a.connected;
+        valB = b.connected;
+      } else if (overviewSortField === 'client') {
+        valA = a.clientCalls;
+        valB = b.clientCalls;
+      } else if (overviewSortField === 'candidate') {
+        valA = a.candidateCalls;
+        valB = b.candidateCalls;
+      } else if (overviewSortField === 'talk') {
+        valA = a.talkTimeSeconds;
+        valB = b.talkTimeSeconds;
+      } else if (overviewSortField === 'prd') {
+        valA = a.qandleProductiveSeconds;
+        valB = b.qandleProductiveSeconds;
+      } else if (overviewSortField === 'in') {
+        valA = a.qandleArrival;
+        valB = b.qandleArrival;
+      } else if (overviewSortField === 'out') {
+        valA = a.qandleLeft;
+        valB = b.qandleLeft;
+      } else if (overviewSortField === 'lastCall') {
+        valA = a.lastCallTime;
+        valB = b.lastCallTime;
+      } else if (overviewSortField === 'over5m') {
+        valA = a.over5m;
+        valB = b.over5m;
+      } else if (overviewSortField === 'over10m') {
+        valA = a.over10m;
+        valB = b.over10m;
+      } else if (overviewSortField === 'cb') {
+        valA = a.callbacks;
+        valB = b.callbacks;
+      } else if (overviewSortField === 'a') {
+        valA = a.alpha;
+        valB = b.alpha;
+      } else {
+        return 0;
+      }
+      
+      if (valA === '-' || valA === '') valA = overviewSortAsc ? 'zzzzzz' : -999999;
+      if (valB === '-' || valB === '') valB = overviewSortAsc ? 'zzzzzz' : -999999;
+
+      if (valA < valB) return overviewSortAsc ? -1 : 1;
+      if (valA > valB) return overviewSortAsc ? 1 : -1;
+      return 0;
+    });
+    return rows;
+  }, [overviewStats.recruiterRows, overviewSortField, overviewSortAsc, selectedStaffId]);
+
+  // Aggregate KPI Data from real Firestore kpiDaily collection
+  const mockKpiData = useMemo(() => {
+    const map = {};
+    
+    // Initialize map for all staff in staff list
+    staff.forEach(s => {
+      map[s.id] = {
+        inbound: 0,
+        outbound: 0,
+        totalCalls: 0,
+        totalTalkTime: 0,
+        callsOver5Min: 0,
+        callsOver10Min: 0,
+        cvsSent: 0,
+        interviews: 0,
+        jobsTaken: 0
+      };
+    });
+
+    const { start, end } = dateRangeWindow;
+
+    kpiDocs.forEach(doc => {
+      if (doc.date >= start && doc.date <= end && map[doc.staffId]) {
+        const entry = map[doc.staffId];
+        entry.inbound += (doc.callsInbound || 0);
+        entry.outbound += (doc.callsOutbound || 0);
+        entry.totalCalls += (doc.callsTotal || 0);
+        entry.totalTalkTime += (doc.totalTalkTimeSeconds || 0);
+        entry.callsOver5Min += (doc.callsOver5Min || 0);
+        entry.callsOver10Min += (doc.callsOver10Min || 0);
+        entry.cvsSent += (doc.cvsSent || 0);
+        entry.interviews += (doc.interviews || 0);
+        entry.jobsTaken += (doc.jobsTaken || 0);
+      }
+    });
+
+    return map;
+  }, [kpiDocs, dateRangeWindow, staff]);
+
+
 
   // Filter and search call logs list based on user search and direction controls
   // Filter, search and sort call logs list based on user controls and sorting states
@@ -847,6 +1740,29 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         const numberMatch = (call.externalNumber || '').toLowerCase().includes(query);
         if (!callerMatch && !recipientMatch && !numberMatch) return false;
       }
+
+      // 3. Drill-down cell click category filter
+      if (callLogsSubFilter === 'connected') {
+        if (call.duration <= 0) return false;
+      } else if (callLogsSubFilter === 'client') {
+        if (call.targetType !== 'Client') return false;
+      } else if (callLogsSubFilter === 'candidate') {
+        if (call.targetType !== 'Candidate') return false;
+      } else if (callLogsSubFilter === 'over5m') {
+        if (call.duration < 300) return false;
+      } else if (callLogsSubFilter === 'over10m') {
+        if (call.duration < 600) return false;
+      } else if (callLogsSubFilter === 'callback') {
+        const isCB = (call.disposition || '').toLowerCase().includes('callback') || 
+                     (call.disposition || '').toLowerCase().includes('cb');
+        if (!isCB) return false;
+      } else if (callLogsSubFilter === 'alpha') {
+        const isAlpha = (call.disposition || '').toLowerCase().includes('alpha') || 
+                        (call.recapSummary || '').toLowerCase().includes('opportunity') || 
+                        (call.recapSummary || '').toLowerCase().includes('alpha');
+        if (!isAlpha) return false;
+      }
+
       return true;
     });
 
@@ -877,7 +1793,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       const cmp = strA.localeCompare(strB);
       return callLogsSortDirection === 'asc' ? cmp : -cmp;
     });
-  }, [displayCallsList, debouncedCallLogsSearch, callLogsDirection, callLogsSortField, callLogsSortDirection]);
+  }, [displayCallsList, debouncedCallLogsSearch, callLogsDirection, callLogsSortField, callLogsSortDirection, callLogsSubFilter]);
 
   // Paginated chunk to display
   const displayCallsChunk = useMemo(() => {
@@ -893,6 +1809,83 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   useEffect(() => {
     setCallLogsPage(1);
   }, [callLogsSearch, callLogsDirection]);
+
+  // Format and filter Qandle activities based on global division and recruiter filters
+  const displayQandleList = useMemo(() => {
+    return qandleDocs
+      .map(doc => {
+        const matchedStaff = staff.find(s => s.id === doc.staffId) || {};
+        return {
+          ...doc,
+          department: matchedStaff.department || 'General',
+          staffStatus: matchedStaff.status || 'active',
+        };
+      })
+      .filter(doc => {
+        if (!doc.staffId) return false;
+        if (selectedStaffId !== 'all' && doc.staffId !== selectedStaffId) return false;
+        if (selectedDept !== 'all' && doc.department !== selectedDept) return false;
+        return true;
+      });
+  }, [qandleDocs, staff, selectedStaffId, selectedDept]);
+
+  // Filter, search, and sort Qandle activities
+  const filteredAndSearchedQandle = useMemo(() => {
+    const list = displayQandleList;
+    const query = debouncedQandleSearch.toLowerCase().trim();
+
+    const filtered = list.filter(doc => {
+      if (query) {
+        const nameMatch = (doc.staffName || '').toLowerCase().includes(query);
+        const codeMatch = (doc.employeeCode || '').toLowerCase().includes(query);
+        if (!nameMatch && !codeMatch) return false;
+      }
+      return true;
+    });
+
+    // Sort client-side
+    return filtered.sort((a, b) => {
+      let valA = a[qandleSortField];
+      let valB = b[qandleSortField];
+
+      if (qandleSortField === 'date') {
+        valA = a.date || '';
+        valB = b.date || '';
+      }
+
+      // Check if they are numbers (or numeric strings)
+      const isNumA = typeof valA === 'number' || (valA && !isNaN(valA) && !isNaN(parseFloat(valA)));
+      const isNumB = typeof valB === 'number' || (valB && !isNaN(valB) && !isNaN(parseFloat(valB)));
+
+      if (isNumA && isNumB) {
+        const numA = Number(valA || 0);
+        const numB = Number(valB || 0);
+        return qandleSortDirection === 'asc' ? numA - numB : numB - numA;
+      }
+
+      // Default case: Compare as case-insensitive strings
+      const strA = String(valA || '').toLowerCase();
+      const strB = String(valB || '').toLowerCase();
+      const cmp = strA.localeCompare(strB);
+      return qandleSortDirection === 'asc' ? cmp : -cmp;
+    });
+  }, [displayQandleList, debouncedQandleSearch, qandleSortField, qandleSortDirection]);
+
+  // Paginated Qandle list
+  const qandlePageSize = 10;
+  const displayQandleChunk = useMemo(() => {
+    const startIdx = (qandlePage - 1) * qandlePageSize;
+    return filteredAndSearchedQandle.slice(startIdx, startIdx + qandlePageSize);
+  }, [filteredAndSearchedQandle, qandlePage]);
+
+  const totalQandlePages = useMemo(() => {
+    return Math.max(1, Math.ceil(filteredAndSearchedQandle.length / qandlePageSize));
+  }, [filteredAndSearchedQandle]);
+
+  // Reset Qandle page on search/filter change
+  useEffect(() => {
+    setQandlePage(1);
+  }, [qandleSearch, selectedDept, selectedStaffId, qandleTimeRange]);
 
   // Aggregate stats based on selection
   const aggregatedStats = useMemo(() => {
@@ -987,6 +1980,22 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         marginBottom: '4px'
       }}>
         <button
+          onClick={() => setActiveSubTab('overview')}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontWeight: 700,
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: activeSubTab === 'overview' ? 'var(--primary)' : 'var(--bg-secondary)',
+            color: activeSubTab === 'overview' ? '#fff' : 'var(--text-secondary)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          }}
+        >
+          📊 Recruiter Overview
+        </button>
+        <button
           onClick={() => setActiveSubTab('performance')}
           style={{
             padding: '8px 16px',
@@ -1020,6 +2029,25 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           }}
         >
           📞 Dialpad Call Logs
+        </button>
+        <button
+          onClick={() => {
+            setActiveSubTab('qandle');
+            setQandlePage(1);
+          }}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontWeight: 700,
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: activeSubTab === 'qandle' ? 'var(--primary)' : 'var(--bg-secondary)',
+            color: activeSubTab === 'qandle' ? '#fff' : 'var(--text-secondary)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          }}
+        >
+          ⏰ Qandle Attendance
         </button>
         <button
           onClick={() => {
@@ -1061,7 +2089,628 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         </button>
       </div>
 
-      {activeSubTab === 'performance' ? (
+      {/* 2. DIRECTORY & COMPANY FILTERS PANEL (WITH ROLE-BASED ACCESS CONTROL) */}
+      {(activeSubTab === 'overview' || activeSubTab === 'performance') && (
+        <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+            <Filter size={16} color="var(--primary)" />
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              {userRole === 'admin' && 'Top Management - Company Filters'}
+              {userRole === 'manager' && `Team Lead - ${userDept} Division Filters`}
+              {userRole === 'recruiter' && 'My Access Scopes'}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            
+            {/* Department Filter (Visible to Admin only) */}
+            {userRole === 'admin' && (
+              <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                  Division / Department:
+                </label>
+                <select
+                  value={selectedDept}
+                  onChange={(e) => {
+                    setSelectedDept(e.target.value);
+                    setSelectedStaffId('all'); // reset staff filter when dept changes
+                  }}
+                  className="select-filter"
+                  style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                >
+                  <option value="all">-- All Departments --</option>
+                  {departments.map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* User Filter (Visible to Admin and Manager) */}
+            {userRole !== 'recruiter' && (
+              <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                  Select Individual Staff:
+                </label>
+                <select
+                  value={selectedStaffId}
+                  onChange={(e) => setSelectedStaffId(e.target.value)}
+                  className="select-filter"
+                  style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                >
+                  <option value="all">
+                    {selectedDept === 'all' ? '-- All Personnel --' : `-- All in ${selectedDept} --`}
+                  </option>
+                  {filteredStaffList.map(s => (
+                    <option key={s.id} value={s.id}>{s.fullName} ({s.department})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Company Filter (Visible to All) */}
+            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
+              <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                Filter by Employer / Company:
+              </label>
+              <select
+                value={selectedCompanyId}
+                onChange={(e) => {
+                  setSelectedCompanyId(e.target.value);
+                  setSelectedStaffId('all'); // Reset individual staff select when company changes
+                }}
+                className="select-filter"
+                style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+              >
+                <option value="all">-- All Companies --</option>
+                {Array.isArray(companies) && companies.map(c => (
+                  <option key={c.id} value={c.id}>{c.name || c.legalName || 'Unnamed Company'}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Recruiter Static Scope Info */}
+            {userRole === 'recruiter' && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  🔒 Logged in as Recruiter. Access is restricted to personal logs.
+                </span>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {activeSubTab === 'overview' ? (
+        <>
+          {/* 1. TOP HEADER & FILTERS */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruiter Daily Activity & Overview Report</h2>
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>💡 Phone calls and attendance metrics consolidated in real-time</span>
+            </div>
+
+            {/* Global Date Filter Controls */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '6px', backgroundColor: 'var(--bg-secondary)', padding: '4px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                {[
+                  { id: 'today', label: 'Today' },
+                  { id: 'yesterday', label: 'Yesterday' },
+                  { id: 'day_before', label: 'Day Before Yesterday' },
+                  { id: 'custom', label: 'Custom' }
+                ].map(btn => (
+                  <button
+                    key={btn.id}
+                    onClick={() => setOverviewTimeRange(btn.id)}
+                    className="btn-secondary"
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: '11px',
+                      border: 'none',
+                      backgroundColor: overviewTimeRange === btn.id ? 'var(--primary)' : 'transparent',
+                      color: overviewTimeRange === btn.id ? 'white' : 'var(--text-secondary)',
+                      fontWeight: 600,
+                      borderRadius: '4px'
+                    }}
+                  >
+                    {btn.label}
+                  </button>
+                ))}
+              </div>
+
+              {overviewTimeRange === 'custom' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--bg-secondary)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                  <input
+                    type="date"
+                    value={overviewCustomStartDate}
+                    onChange={(e) => setOverviewCustomStartDate(e.target.value)}
+                    className="form-input"
+                    style={{ fontSize: '11px', height: '24px', padding: '2px 4px', width: '110px' }}
+                  />
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>to</span>
+                  <input
+                    type="date"
+                    value={overviewCustomEndDate}
+                    onChange={(e) => setOverviewCustomEndDate(e.target.value)}
+                    className="form-input"
+                    style={{ fontSize: '11px', height: '24px', padding: '2px 4px', width: '110px' }}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 2. SUMMARY CARDS GRID */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginTop: '8px' }}>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Calls</span>
+              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--text-primary)', margin: '6px 0' }}>{overviewStats.totalCalls}</div>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{overviewDateRangeWindow.start} to {overviewDateRangeWindow.end}</span>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Connected</span>
+              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--success)', margin: '6px 0' }}>{overviewStats.connectRate}%</div>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{overviewStats.totalConnected} connected calls</span>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Callbacks (CB)</span>
+              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--warning)', margin: '6px 0' }}>{overviewStats.totalCallbacks}</div>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>AI identified callback queries</span>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Alpha (A)</span>
+              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--primary)', margin: '6px 0' }}>{overviewStats.totalAlpha}</div>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Opportunity signals captured</span>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Avg Talk Time</span>
+              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--text-primary)', margin: '6px 0' }}>{Math.floor(overviewStats.avgTalkTime / 60)}m {overviewStats.avgTalkTime % 60}s</div>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Average connected duration</span>
+            </div>
+          </div>
+
+          {/* 3. RECRUITER PERFORMANCE CARD */}
+          <div style={{ backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruiter Performance</h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: '11px', fontWeight: 700 }}>
+                    {[
+                      { id: 'recruiter', label: 'Recruiter' },
+                      { id: 'calls', label: 'Calls' },
+                      { id: 'connected', label: 'Conn' },
+                      { id: 'client', label: 'Client' },
+                      { id: 'candidate', label: 'Cand' },
+                      { id: 'talk', label: 'Talk' },
+                      { id: 'prd', label: 'Prd' },
+                      { id: 'in', label: 'In' },
+                      { id: 'out', label: 'Out' },
+                      { id: 'lastCall', label: 'Last Call' },
+                      { id: 'over5m', label: '5m+' },
+                      { id: 'over10m', label: '10m+' },
+                      { id: 'cb', label: 'CB' },
+                      { id: 'a', label: 'A' }
+                    ].map(col => (
+                      <th
+                        key={col.id}
+                        onClick={() => {
+                          if (overviewSortField === col.id) {
+                            setOverviewSortAsc(!overviewSortAsc);
+                          } else {
+                            setOverviewSortField(col.id);
+                            setOverviewSortAsc(false);
+                          }
+                        }}
+                        style={{
+                          textAlign: col.id === 'recruiter' ? 'left' : 'center',
+                          padding: '10px 12px',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          userSelect: 'none'
+                        }}
+                      >
+                        {col.label} {overviewSortField === col.id ? (overviewSortAsc ? '▲' : '▼') : ''}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedRecruiterRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={14} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                        No recruiters match the filter criteria or date range.
+                      </td>
+                    </tr>
+                  ) : (
+                    sortedRecruiterRows.map(row => (
+                      <tr key={row.staff.id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background-color 0.2s' }}>
+                        <td style={{ padding: '12px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                          {row.staff.fullName || row.staff.full_name}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          {renderClickableCount(row.calls, row.staff.id, row.staff.fullName || row.staff.full_name, 'all', 'var(--text-primary)')}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          {renderClickableCount(row.connected, row.staff.id, row.staff.fullName || row.staff.full_name, 'connected', 'var(--success)')}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          {renderClickableCount(row.clientCalls, row.staff.id, row.staff.fullName || row.staff.full_name, 'client', 'var(--text-primary)')}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          {renderClickableCount(row.candidateCalls, row.staff.id, row.staff.fullName || row.staff.full_name, 'candidate', 'var(--text-primary)')}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 600 }}>
+                          {Math.floor(row.talkTimeSeconds / 60)}m {row.talkTimeSeconds % 60}s
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center', color: 'var(--primary)', fontWeight: 600 }}>
+                          {Math.floor(row.qandleProductiveSeconds / 3600)}h {Math.floor((row.qandleProductiveSeconds % 3600) / 60)}m
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>{row.qandleArrival}</td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>{row.qandleLeft}</td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)' }}>{row.lastCallTime}</td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          {renderClickableCount(row.over5m, row.staff.id, row.staff.fullName || row.staff.full_name, 'over5m', 'var(--text-primary)')}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          {renderClickableCount(row.over10m, row.staff.id, row.staff.fullName || row.staff.full_name, 'over10m', 'var(--text-primary)')}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          {renderClickableCount(row.callbacks, row.staff.id, row.staff.fullName || row.staff.full_name, 'callback', 'var(--warning)')}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          {renderClickableCount(row.alpha, row.staff.id, row.staff.fullName || row.staff.full_name, 'alpha', 'var(--primary)')}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 4. RECRUITER ACTIVITY HEATMAP */}
+          <div style={{ backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
+              Recruiter Activity Heatmap ({overviewStats.earliestHour || 8}:00 to {overviewStats.latestHour || 18}:59)
+            </h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: '11px', fontWeight: 700 }}>
+                    <th style={{ textAlign: 'left', padding: '10px 12px', minWidth: '150px' }}>Recruiter</th>
+                    <th style={{ textAlign: 'center', padding: '10px 12px' }}>Prod</th>
+                    <th style={{ textAlign: 'center', padding: '10px 12px' }}>In</th>
+                    <th style={{ textAlign: 'center', padding: '10px 12px' }}>Out</th>
+                    {Array.from({ length: ((overviewStats.latestHour || 18) - (overviewStats.earliestHour || 8) + 1) }, (_, i) => (overviewStats.earliestHour || 8) + i).map(hr => (
+                      <th key={hr} style={{ textAlign: 'center', padding: '10px 6px', width: '40px' }}>{String(hr).padStart(2, '0')}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedRecruiterRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={4 + ((overviewStats.latestHour || 18) - (overviewStats.earliestHour || 8) + 1)} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                        No recruiters found.
+                      </td>
+                    </tr>
+                  ) : (
+                    sortedRecruiterRows.map(row => (
+                      <tr key={row.staff.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '12px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                          {row.staff.fullName || row.staff.full_name}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 600, color: 'var(--primary)' }}>
+                          {Math.floor(row.qandleProductiveSeconds / 3600)}h {Math.floor((row.qandleProductiveSeconds % 3600) / 60)}m
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '12px' }}>{row.qandleArrival}</td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '12px' }}>{row.qandleLeft}</td>
+                        {Array.from({ length: ((overviewStats.latestHour || 18) - (overviewStats.earliestHour || 8) + 1) }, (_, i) => (overviewStats.earliestHour || 8) + i).map(hr => {
+                          const callsInHour = row.hourlyCalls[hr] || 0;
+                          
+                          let bg = 'transparent';
+                          let textCol = 'var(--text-secondary)';
+                          let fontWt = 'normal';
+                          
+                          if (callsInHour === 1) {
+                            bg = 'rgba(147, 51, 234, 0.1)';
+                            textCol = 'var(--text-primary)';
+                          } else if (callsInHour >= 2 && callsInHour <= 3) {
+                            bg = 'rgba(147, 51, 234, 0.25)';
+                            textCol = 'var(--text-primary)';
+                            fontWt = 'bold';
+                          } else if (callsInHour >= 4 && callsInHour <= 5) {
+                            bg = 'rgba(147, 51, 234, 0.5)';
+                            textCol = '#fff';
+                            fontWt = 'bold';
+                          } else if (callsInHour >= 6) {
+                            bg = 'var(--primary)';
+                            textCol = '#fff';
+                            fontWt = 'bold';
+                          }
+
+                          return (
+                            <td
+                              key={hr}
+                              style={{
+                                textAlign: 'center',
+                                padding: '10px 4px',
+                                backgroundColor: bg,
+                                color: textCol,
+                                fontWeight: fontWt,
+                                borderRadius: '4px',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              {callsInHour || '-'}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 5. SCOREBOARD & VISUALIZATIONS ROW */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+            
+            {/* Scorecard Box */}
+            <div style={{ backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>Overview Statistics</h3>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                <div style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>TOTAL CALLS</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, margin: '4px 0', color: 'var(--text-primary)' }}>{overviewStats.totalCalls}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{overviewStats.outboundCount} Out • {overviewStats.inboundCount} In</div>
+                </div>
+
+                <div style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>CONNECT RATE</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, margin: '4px 0', color: 'var(--success)' }}>{overviewStats.connectRate}%</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Avg call success</div>
+                </div>
+
+                <div style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>AVG TALK TIME</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, margin: '4px 0', color: 'var(--text-primary)' }}>
+                    {Math.floor(overviewStats.avgTalkTime / 60)}m {overviewStats.avgTalkTime % 60}s
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Per successful call</div>
+                </div>
+
+                <div style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>CALLBACKS (CB)</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, margin: '4px 0', color: 'var(--warning)' }}>{overviewStats.totalCallbacks}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>AI Flagged</div>
+                </div>
+
+                <div style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>ALPHA SIGNALS (A)</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, margin: '4px 0', color: 'var(--primary)' }}>{overviewStats.totalAlpha}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Captured signals</div>
+                </div>
+
+                <div style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>CRM PLACEMENTS</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, margin: '4px 0', color: 'var(--primary)' }}>
+                    {placements.filter(p => {
+                      const { start, end } = overviewDateRangeWindow;
+                      return p.date && p.date >= start && p.date <= end;
+                    }).length}
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>From Recruitly records</div>
+                </div>
+
+                <div style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>MINS+ CALLS ({"\u2265 5M"})</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, margin: '4px 0', color: 'var(--primary)' }}>{overviewStats.totalOver5m}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Long conversations</div>
+                </div>
+
+                <div style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>PEAK ACTIVITY HOUR</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, margin: '4px 0', color: 'var(--text-primary)' }}>{overviewStats.peakHour}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>With {overviewStats.peakCalls} calls</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Hourly Activity Visualization */}
+            <div style={{ backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>Hourly Activity</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {Array.from({ length: ((overviewStats.latestHour || 18) - (overviewStats.earliestHour || 8) + 1) }, (_, i) => (overviewStats.earliestHour || 8) + i).map(hr => {
+                  const calls = overviewStats.globalHourlyCalls[hr] || 0;
+                  const maxCalls = Math.max(1, ...Array.from({ length: ((overviewStats.latestHour || 18) - (overviewStats.earliestHour || 8) + 1) }, (_, i) => overviewStats.globalHourlyCalls[(overviewStats.earliestHour || 8) + i] || 0));
+                  const pct = (calls / maxCalls) * 100;
+                  
+                  return (
+                    <div key={hr} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontSize: '12px', width: '20px', fontWeight: 600, color: 'var(--text-secondary)' }}>{String(hr).padStart(2, '0')}</span>
+                      <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', height: '14px', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ width: `${pct}%`, backgroundColor: 'var(--primary)', height: '100%', transition: 'width 0.4s ease-out' }}></div>
+                      </div>
+                      <span style={{ fontSize: '12px', width: '24px', textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)' }}>{calls}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* 6. CHARTS ROW */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+            {/* Call Status Donut */}
+            <div style={{ backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <h3 style={{ margin: '0 0 16px 0', width: '100%', fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'left' }}>Call Status</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '20px', width: '100%', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <div style={{ width: '120px', height: '120px' }}>
+                  {(() => {
+                    const statusEntries = Object.entries(overviewStats.callStatusCounts).filter(([_, count]) => count > 0);
+                    const total = statusEntries.reduce((sum, [_, count]) => sum + count, 0);
+                    
+                    if (total === 0) {
+                      return (
+                        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%' }}>
+                          <circle cx="50" cy="50" r="40" stroke="rgba(255,255,255,0.05)" strokeWidth="12" fill="transparent" />
+                          <text x="50" y="55" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontWeight="bold">NO DATA</text>
+                        </svg>
+                      );
+                    }
+
+                    const palette = ['var(--primary)', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6'];
+                    let accumulatedPercent = 0;
+                    const r = 38;
+                    const circumference = 2 * Math.PI * r;
+
+                    return (
+                      <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%' }}>
+                        <circle cx="50" cy="50" r={r} stroke="rgba(255,255,255,0.02)" strokeWidth="12" fill="transparent" />
+                        {statusEntries.map(([status, count], idx) => {
+                          const percent = (count / total) * 100;
+                          const strokeDasharray = `${circumference}`;
+                          const strokeDashoffset = circumference - (percent / 100) * circumference;
+                          const rotation = (accumulatedPercent / 100) * 360 - 90;
+                          accumulatedPercent += percent;
+                          const color = palette[idx % palette.length];
+
+                          return (
+                            <circle
+                              key={status}
+                              cx="50"
+                              cy="50"
+                              r={r}
+                              stroke={color}
+                              strokeWidth="12"
+                              fill="transparent"
+                              strokeDasharray={strokeDasharray}
+                              strokeDashoffset={strokeDashoffset}
+                              transform={`rotate(${rotation} 50 50)`}
+                              style={{ transition: 'stroke-dashoffset 0.5s ease-in-out' }}
+                            />
+                          );
+                        })}
+                        <text x="50" y="55" textAnchor="middle" fontSize="14" fill="var(--text-primary)" fontWeight="800">
+                          {total}
+                        </text>
+                      </svg>
+                    );
+                  })()}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '120px' }}>
+                  {Object.entries(overviewStats.callStatusCounts).filter(([_, count]) => count > 0).map(([status, count], idx) => {
+                    const total = Object.values(overviewStats.callStatusCounts).reduce((a, b) => a + b, 0);
+                    const percent = Math.round((count / total) * 100);
+                    const palette = ['var(--primary)', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6'];
+                    const color = palette[idx % palette.length];
+                    return (
+                      <div key={status} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                        <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: color, display: 'inline-block' }}></span>
+                        <span style={{ color: 'var(--text-secondary)', flex: 1 }}>{status}</span>
+                        <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{percent}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Call Direction Donut */}
+            <div style={{ backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <h3 style={{ margin: '0 0 16px 0', width: '100%', fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'left' }}>Direction</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '20px', width: '100%', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <div style={{ width: '120px', height: '120px' }}>
+                  {(() => {
+                    const total = overviewStats.outboundCount + overviewStats.inboundCount;
+                    if (total === 0) {
+                      return (
+                        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%' }}>
+                          <circle cx="50" cy="50" r="40" stroke="rgba(255,255,255,0.05)" strokeWidth="12" fill="transparent" />
+                          <text x="50" y="55" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontWeight="bold">NO DATA</text>
+                        </svg>
+                      );
+                    }
+
+                    const r = 38;
+                    const circumference = 2 * Math.PI * r;
+                    const outboundPct = (overviewStats.outboundCount / total) * 100;
+                    const inboundPct = (overviewStats.inboundCount / total) * 100;
+
+                    const outboundOffset = circumference - (outboundPct / 100) * circumference;
+                    const inboundOffset = circumference - (inboundPct / 100) * circumference;
+
+                    return (
+                      <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%' }}>
+                        <circle cx="50" cy="50" r={r} stroke="rgba(255,255,255,0.02)" strokeWidth="12" fill="transparent" />
+                        {overviewStats.outboundCount > 0 && (
+                          <circle
+                            cx="50"
+                            cy="50"
+                            r={r}
+                            stroke="var(--primary)"
+                            strokeWidth="12"
+                            fill="transparent"
+                            strokeDasharray={circumference}
+                            strokeDashoffset={outboundOffset}
+                            transform="rotate(-90 50 50)"
+                            style={{ transition: 'stroke-dashoffset 0.5s ease-in-out' }}
+                          />
+                        )}
+                        {overviewStats.inboundCount > 0 && (
+                          <circle
+                            cx="50"
+                            cy="50"
+                            r={r}
+                            stroke="#10b981"
+                            strokeWidth="12"
+                            fill="transparent"
+                            strokeDasharray={circumference}
+                            strokeDashoffset={inboundOffset}
+                            transform={`rotate(${(outboundPct / 100) * 360 - 90} 50 50)`}
+                            style={{ transition: 'stroke-dashoffset 0.5s ease-in-out' }}
+                          />
+                        )}
+                        <text x="50" y="55" textAnchor="middle" fontSize="14" fill="var(--text-primary)" fontWeight="800">
+                          {total}
+                        </text>
+                      </svg>
+                    );
+                  })()}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '120px' }}>
+                  {overviewStats.outboundCount > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                      <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: 'var(--primary)', display: 'inline-block' }}></span>
+                      <span style={{ color: 'var(--text-secondary)', flex: 1 }}>Outbound</span>
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {Math.round((overviewStats.outboundCount / (overviewStats.outboundCount + overviewStats.inboundCount)) * 100)}%
+                      </span>
+                    </div>
+                  )}
+                  {overviewStats.inboundCount > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                      <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }}></span>
+                      <span style={{ color: 'var(--text-secondary)', flex: 1 }}>Inbound</span>
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {Math.round((overviewStats.inboundCount / (overviewStats.outboundCount + overviewStats.inboundCount)) * 100)}%
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      ) : activeSubTab === 'performance' ? (
         <>
           {/* 1. TOP HEADER & PERFORMANCE ALERTS */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
@@ -1121,75 +2770,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         </div>
       </div>
 
-      {/* 2. DIRECTORY FILTERS PANEL (WITH ROLE-BASED ACCESS CONTROL) */}
-      <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
-          <Filter size={16} color="var(--primary)" />
-          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-            {userRole === 'admin' && 'Top Management - Company Filters'}
-            {userRole === 'manager' && `Team Lead - ${userDept} Division Filters`}
-            {userRole === 'recruiter' && 'My Access Scopes'}
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-          
-          {/* Department Filter (Visible to Admin only) */}
-          {userRole === 'admin' && (
-            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
-              <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                Division / Department:
-              </label>
-              <select
-                value={selectedDept}
-                onChange={(e) => {
-                  setSelectedDept(e.target.value);
-                  setSelectedStaffId('all'); // reset staff filter when dept changes
-                }}
-                className="select-filter"
-                style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-              >
-                <option value="all">-- All Departments --</option>
-                {departments.map(d => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* User Filter (Visible to Admin and Manager) */}
-          {userRole !== 'recruiter' && (
-            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
-              <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                Select Individual Staff:
-              </label>
-              <select
-                value={selectedStaffId}
-                onChange={(e) => setSelectedStaffId(e.target.value)}
-                className="select-filter"
-                style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-              >
-                <option value="all">
-                  {selectedDept === 'all' ? '-- All Personnel --' : `-- All in ${selectedDept} --`}
-                </option>
-                {filteredStaffList.map(s => (
-                  <option key={s.id} value={s.id}>{s.fullName} ({s.department})</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Recruiter Static Scope Info */}
-          {userRole === 'recruiter' && (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                🔒 Logged in as Recruiter. Access is restricted to personal logs.
-              </span>
-            </div>
-          )}
-
-        </div>
-      </div>
+      {/* 2. DIRECTORY FILTERS PANEL DELETED - LIFTED GLOBALLY */}
 
       {/* 3. PERFORMANCE STATS CARDS (DIALPAD & RECRUITLY SPLIT) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
@@ -1369,13 +2950,13 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                           </span>
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          {renderMetricWithTarget(kpi.totalCalls, targets.calls, targetMultiplier, false)}
+                          {renderMetricWithTarget(kpi.totalCalls, targets.calls, targetMultiplier, false, s.id, 'all', s.fullName)}
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          {renderMetricWithTarget(kpi.totalTalkTime, targets.talkTimeMin, targetMultiplier, true)}
+                          {renderMetricWithTarget(kpi.totalTalkTime, targets.talkTimeMin, targetMultiplier, true, s.id, 'connected', s.fullName)}
                         </td>
-                        <td style={{ textAlign: 'center', color: kpi.callsOver5Min > 5 ? 'var(--success)' : 'var(--text-secondary)' }}>
-                          {kpi.callsOver5Min}
+                        <td style={{ textAlign: 'center' }}>
+                          {renderClickableCountPerf(kpi.callsOver5Min, s.id, s.fullName, 'over5m', kpi.callsOver5Min > 5 ? 'var(--success)' : 'var(--text-secondary)')}
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           {renderMetricWithTarget(kpi.cvsSent, targets.cvsSent, targetMultiplier, false)}
@@ -1768,6 +3349,48 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
               </div>
             ) : (
               <>
+                {callLogsSubFilter !== 'all' && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                    border: '1px dashed var(--primary)',
+                    borderRadius: '6px',
+                    padding: '10px 16px',
+                    marginBottom: '16px',
+                    fontSize: '12px',
+                    color: 'var(--primary)',
+                    fontWeight: 600
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '14px' }}>🔍</span>
+                      <span>
+                        Filtering logs by: <strong style={{ textTransform: 'capitalize', color: 'var(--text-primary)' }}>
+                          {callLogsSubFilter === 'over5m' ? '5Min+ Calls' : 
+                           callLogsSubFilter === 'over10m' ? '10Min+ Calls' : 
+                           callLogsSubFilter + ' Calls'}
+                        </strong>
+                      </span>
+                    </div>
+                    <button 
+                      onClick={() => setCallLogsSubFilter('all')}
+                      className="btn-secondary"
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: '11px',
+                        backgroundColor: 'var(--primary)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Clear Filter
+                    </button>
+                  </div>
+                )}
                 <div style={{ overflowX: 'auto' }}>
                   <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
@@ -1865,7 +3488,9 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                                 {call.direction}
                               </span>
                             </td>
-                            <td style={{ fontSize: '12px', fontWeight: 600 }}>📞 {call.targetName}</td>
+                            <td style={{ fontSize: '12px', fontWeight: 600 }}>
+                              📞 <CRMContactLink phone={call.externalNumber} defaultName={call.targetName} />
+                            </td>
                             <td>
                               <span style={{
                                 padding: '2px 6px',
@@ -1990,13 +3615,369 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             )}
           </div>
         </>
+      ) : activeSubTab === 'qandle' ? (
+        <>
+          {/* 1. HEADER */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>Qandle Attendance & Productivity Logs</h2>
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                ⏰ Monitor check-in times, productive hours, active desk time, and effectiveness ratings.
+              </span>
+            </div>
+            <span style={{ fontSize: '11px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>
+              🟢 SYNCED DATABASE RECORDS
+            </span>
+          </div>
+
+          {/* 2. FILTERS PANEL */}
+          <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {/* Date range filters row */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Calendar size={16} color="var(--primary)" />
+                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Date Range:</span>
+              </div>
+              
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {[
+                  { id: 'today', label: 'Today' },
+                  { id: 'yesterday', label: 'Yesterday' },
+                  { id: 'this_week', label: 'This Week' },
+                  { id: 'this_month', label: 'This Month' },
+                  { id: 'custom', label: 'Custom Range' }
+                ].map(btn => (
+                  <button
+                    key={btn.id}
+                    onClick={() => {
+                      setQandleTimeRange(btn.id);
+                      setQandlePage(1);
+                    }}
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      border: '1px solid var(--border-color)',
+                      cursor: 'pointer',
+                      backgroundColor: qandleTimeRange === btn.id ? 'var(--primary)' : 'var(--bg-secondary)',
+                      color: qandleTimeRange === btn.id ? '#fff' : 'var(--text-primary)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {btn.label}
+                  </button>
+                ))}
+
+                {qandleTimeRange === 'custom' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '10px' }}>
+                    <input
+                      type="date"
+                      value={qandleCustomStartDate}
+                      onChange={(e) => {
+                        setQandleCustomStartDate(e.target.value);
+                        setQandlePage(1);
+                      }}
+                      className="form-input"
+                      style={{ fontSize: '11px', height: '28px', padding: '2px 6px', width: '120px' }}
+                    />
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>to</span>
+                    <input
+                      type="date"
+                      value={qandleCustomEndDate}
+                      onChange={(e) => {
+                        setQandleCustomEndDate(e.target.value);
+                        setQandlePage(1);
+                      }}
+                      className="form-input"
+                      style={{ fontSize: '11px', height: '28px', padding: '2px 6px', width: '120px' }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Department/Staff/Search row */}
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+              
+              {/* Search text input */}
+              <div className="form-group" style={{ flex: 1.5, minWidth: '220px' }}>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                  Search by recruiter name or employee code:
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }} />
+                  <input
+                    type="text"
+                    placeholder="Type to search..."
+                    value={qandleSearch}
+                    onChange={(e) => {
+                      setQandleSearch(e.target.value);
+                      setQandlePage(1);
+                    }}
+                    className="form-input"
+                    style={{ paddingLeft: '32px', fontSize: '12px', height: '34px' }}
+                  />
+                </div>
+              </div>
+
+              {/* Department selection */}
+              {userRole === 'admin' && (
+                <div className="form-group" style={{ flex: 1, minWidth: '160px' }}>
+                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                    Department Division:
+                  </label>
+                  <select
+                    value={selectedDept}
+                    onChange={(e) => {
+                      setSelectedDept(e.target.value);
+                      setSelectedStaffId('all');
+                      setQandlePage(1);
+                    }}
+                    className="select-filter"
+                    style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                  >
+                    <option value="all">-- All Departments --</option>
+                    {departments.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Staff Recruiter selection */}
+              {userRole !== 'recruiter' && (
+                <div className="form-group" style={{ flex: 1, minWidth: '160px' }}>
+                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                    Recruiter Profile:
+                  </label>
+                  <select
+                    value={selectedStaffId}
+                    onChange={(e) => {
+                      setSelectedStaffId(e.target.value);
+                      setQandlePage(1);
+                    }}
+                    className="select-filter"
+                    style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                  >
+                    <option value="all">-- All Recruiters --</option>
+                    {filteredStaffList.map(s => (
+                      <option key={s.id} value={s.id}>{s.fullName}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+            </div>
+          </div>
+
+          {/* 3. TABLE CARD */}
+          <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            {isLoadingQandle ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px', flexDirection: 'column', gap: '12px' }}>
+                <div style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '50%',
+                  border: '3px solid var(--border-color)',
+                  borderTopColor: 'var(--primary)',
+                  animation: 'spin 1s linear infinite'
+                }}></div>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>Querying attendance logs...</span>
+              </div>
+            ) : filteredAndSearchedQandle.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
+                <Clock size={40} style={{ color: 'var(--text-muted)', marginBottom: '12px' }} />
+                <h4 style={{ margin: '0 0 6px 0', fontWeight: 700 }}>No Attendance Records Found</h4>
+                <p style={{ margin: 0, fontSize: '12px' }}>
+                  There are no Qandle logs matching the selected search query, date range, or filters.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
+                        <th 
+                          onClick={() => handleQandleSort('date')}
+                          style={{ padding: '10px 10px', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                        >
+                          Date{renderQandleSortIndicator('date')}
+                        </th>
+                        <th 
+                          onClick={() => handleQandleSort('staffName')}
+                          style={{ padding: '10px 10px', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                        >
+                          Recruiter{renderQandleSortIndicator('staffName')}
+                        </th>
+                        <th 
+                          onClick={() => handleQandleSort('department')}
+                          style={{ padding: '10px 10px', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                        >
+                          Division{renderQandleSortIndicator('department')}
+                        </th>
+                        <th 
+                          onClick={() => handleQandleSort('arrivalTime')}
+                          style={{ padding: '10px 10px', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s', textAlign: 'center' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                        >
+                          🚪 Log In / Arrival{renderQandleSortIndicator('arrivalTime')}
+                        </th>
+                        <th 
+                          onClick={() => handleQandleSort('leftTime')}
+                          style={{ padding: '10px 10px', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s', textAlign: 'center' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                        >
+                          🚪 Log Out / Left{renderQandleSortIndicator('leftTime')}
+                        </th>
+                        <th 
+                          onClick={() => handleQandleSort('productiveTimeSeconds')}
+                          style={{ padding: '10px 10px', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s', textAlign: 'center' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                        >
+                          ⚡ Productive Hours{renderQandleSortIndicator('productiveTimeSeconds')}
+                        </th>
+                        <th 
+                          onClick={() => handleQandleSort('deskTimeSeconds')}
+                          style={{ padding: '10px 10px', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s', textAlign: 'center' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                        >
+                          💻 Active Desk Time{renderQandleSortIndicator('deskTimeSeconds')}
+                        </th>
+                        <th 
+                          onClick={() => handleQandleSort('timeAtWorkSeconds')}
+                          style={{ padding: '10px 10px', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s', textAlign: 'center' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                        >
+                          🏢 Time at Work{renderQandleSortIndicator('timeAtWorkSeconds')}
+                        </th>
+                        <th 
+                          onClick={() => handleQandleSort('effectiveness')}
+                          style={{ padding: '10px 10px', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s', textAlign: 'center' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                        >
+                          🎯 Effectiveness{renderQandleSortIndicator('effectiveness')}
+                        </th>
+                        <th 
+                          onClick={() => handleQandleSort('productivity')}
+                          style={{ padding: '10px 10px', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s', textAlign: 'center' }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = ''}
+                        >
+                          📈 Productivity{renderQandleSortIndicator('productivity')}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayQandleChunk.map((row) => {
+                        const dateObj = new Date(row.date);
+                        const formattedDateStr = isNaN(dateObj.getTime()) 
+                          ? row.date 
+                          : dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+                        return (
+                          <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)', height: '48px' }}>
+                            <td style={{ padding: '10px', fontWeight: 600, fontSize: '12px', whiteSpace: 'nowrap' }}>
+                              📅 {formattedDateStr}
+                            </td>
+                            <td style={{ padding: '10px', fontWeight: 600, fontSize: '13px' }}>
+                              👤 {row.staffName}
+                              <span style={{ display: 'block', fontSize: '10px', color: 'var(--text-muted)' }}>
+                                {row.employeeCode}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px' }}>
+                              <span style={{
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                color: 'var(--primary)',
+                                fontSize: '11px',
+                                fontWeight: 600
+                              }}>
+                                {row.department}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px', textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>
+                              {row.arrivalTime || '-'}
+                            </td>
+                            <td style={{ padding: '10px', textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>
+                              {row.leftTime || '-'}
+                            </td>
+                            <td style={{ padding: '10px', textAlign: 'center', fontWeight: 600, fontSize: '12px', color: 'var(--primary)' }}>
+                              {formatDuration(row.productiveTimeSeconds)}
+                            </td>
+                            <td style={{ padding: '10px', textAlign: 'center', fontWeight: 500, fontSize: '12px' }}>
+                              {formatDuration(row.deskTimeSeconds)}
+                            </td>
+                            <td style={{ padding: '10px', textAlign: 'center', fontWeight: 500, fontSize: '12px', color: 'var(--text-secondary)' }}>
+                              {formatDuration(row.timeAtWorkSeconds)}
+                            </td>
+                            <td style={{ padding: '10px', textAlign: 'center' }}>
+                              {renderPercentageBadge(row.effectiveness)}
+                            </td>
+                            <td style={{ padding: '10px', textAlign: 'center' }}>
+                              {renderPercentageBadge(row.productivity)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* PAGINATION PANEL */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', flexWrap: 'wrap', gap: '12px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    Showing records {Math.min(filteredAndSearchedQandle.length, (qandlePage - 1) * qandlePageSize + 1)} to {Math.min(filteredAndSearchedQandle.length, qandlePage * qandlePageSize)} of {filteredAndSearchedQandle.length}
+                  </span>
+                  
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={() => setQandlePage(p => Math.max(1, p - 1))}
+                      disabled={qandlePage === 1}
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: '12px', opacity: qandlePage === 1 ? 0.5 : 1, cursor: qandlePage === 1 ? 'not-allowed' : 'pointer' }}
+                    >
+                      ◀ Previous
+                    </button>
+                    <span style={{ display: 'flex', alignItems: 'center', px: '8px', fontSize: '12px', fontWeight: 600 }}>
+                      Page {qandlePage} of {totalQandlePages}
+                    </span>
+                    <button
+                      onClick={() => setQandlePage(p => Math.min(totalQandlePages, p + 1))}
+                      disabled={qandlePage === totalQandlePages}
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: '12px', opacity: qandlePage === totalQandlePages ? 0.5 : 1, cursor: qandlePage === totalQandlePages ? 'not-allowed' : 'pointer' }}
+                    >
+                      Next ▶
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </>
       ) : activeSubTab === 'mapping' ? (
         /* Recruiter Dialpad Mapping View */
         <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
           <div style={{ marginBottom: '16px' }}>
-            <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruiter Dialpad Integration Map</h4>
+            <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruiter Platform Integration Mapping</h4>
             <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-              Configure matching email addresses for each recruiter. Webhook calls and activities are mapped automatically by matching Dialpad email addresses to these aliases.
+              Configure matching user credentials for Qandle (Attendance), Dialpad (Calls), and Recruitly (CRM) for each recruiter.
             </p>
           </div>
 
@@ -2016,12 +3997,12 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
-                  <th style={{ padding: '10px' }}>Recruiter</th>
-                  <th>Primary Email</th>
-                  <th>Dialpad Match Aliases</th>
-                  <th style={{ textAlign: 'center' }}>KPI Tracking</th>
-                  <th style={{ textAlign: 'center' }}>Integration Status</th>
-                  <th style={{ textAlign: 'center' }}>Actions</th>
+                  <th style={{ padding: '10px', minWidth: '150px' }}>Recruiter</th>
+                  <th style={{ minWidth: '180px' }}>⏰ Qandle Mapping</th>
+                  <th style={{ minWidth: '220px' }}>📞 Dialpad Mapping</th>
+                  <th style={{ minWidth: '180px' }}>💼 Recruitly Mapping</th>
+                  <th style={{ textAlign: 'center', minWidth: '100px' }}>KPI Tracking</th>
+                  <th style={{ textAlign: 'center', minWidth: '120px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -2035,7 +4016,6 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                   })
                   .map(s => {
                     const aliases = (s.additionalEmails || '').split(',').map(e => e.trim()).filter(Boolean);
-                    const isMapped = !!s.businessEmail || aliases.length > 0;
                     const isEditing = editingStaffId === s.id;
 
                     return (
@@ -2045,39 +4025,85 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{s.department || 'No department'}</span>
                         </td>
                         <td>
-                          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{s.businessEmail || s.personalEmail || '-'}</span>
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              className="form-input"
+                              value={editingQandleEmail}
+                              onChange={(e) => setEditingQandleEmail(e.target.value)}
+                              placeholder="qandle.email@humres.co.uk"
+                              style={{ width: '100%', fontSize: '12px', height: '32px' }}
+                            />
+                          ) : (
+                            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                              {s.qandleEmail || s.businessEmail || s.personalEmail || (
+                                <span style={{ color: 'var(--warning)', fontStyle: 'italic' }}>Not Mapped</span>
+                              )}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {isEditing ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <input
+                                type="text"
+                                className="form-input"
+                                value={editingDialpadEmail}
+                                onChange={(e) => setEditingDialpadEmail(e.target.value)}
+                                placeholder="dialpad.email@humres.co.uk"
+                                style={{ width: '100%', fontSize: '12px', height: '32px' }}
+                              />
+                              <input
+                                type="text"
+                                className="form-input"
+                                value={editingAliases}
+                                onChange={(e) => setEditingAliases(e.target.value)}
+                                placeholder="Aliases (comma-separated)"
+                                style={{ width: '100%', fontSize: '11px', height: '28px' }}
+                              />
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                {s.dialpadEmail || s.businessEmail || s.personalEmail || (
+                                  <span style={{ color: 'var(--warning)', fontStyle: 'italic' }}>Not Mapped</span>
+                                )}
+                              </span>
+                              {aliases.length > 0 && (
+                                <div style={{ display: 'flex', gap: '2px', flexWrap: 'wrap' }}>
+                                  {aliases.map((alias, idx) => (
+                                    <span key={idx} style={{
+                                      padding: '1px 4px',
+                                      borderRadius: '8px',
+                                      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                      color: 'var(--primary)',
+                                      fontSize: '9px',
+                                      fontWeight: 600
+                                    }}>
+                                      {alias}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td>
                           {isEditing ? (
                             <input
                               type="text"
                               className="form-input"
-                              value={editingAliases}
-                              onChange={(e) => setEditingAliases(e.target.value)}
-                              placeholder="e.g. a.moore@humres.co.uk, amoore@stratass.com"
+                              value={editingRecruitlyEmail}
+                              onChange={(e) => setEditingRecruitlyEmail(e.target.value)}
+                              placeholder="recruitly.email@humres.co.uk"
                               style={{ width: '100%', fontSize: '12px', height: '32px' }}
                             />
                           ) : (
-                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                              {aliases.length > 0 ? (
-                                aliases.map((alias, idx) => (
-                                  <span key={idx} style={{
-                                    padding: '2px 6px',
-                                    borderRadius: '12px',
-                                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                    color: 'var(--primary)',
-                                    fontSize: '11px',
-                                    fontWeight: 600
-                                  }}>
-                                    {alias}
-                                  </span>
-                                ))
-                              ) : (
-                                <span style={{ fontSize: '11px', color: 'var(--warning)', fontStyle: 'italic' }}>
-                                  ⚠️ No additional matching aliases set
-                                </span>
+                            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                              {s.recruitlyEmail || s.businessEmail || s.personalEmail || (
+                                <span style={{ color: 'var(--warning)', fontStyle: 'italic' }}>Not Mapped</span>
                               )}
-                            </div>
+                            </span>
                           )}
                         </td>
                         <td style={{ textAlign: 'center' }}>
@@ -2107,18 +4133,6 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                           />
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          <span style={{
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            fontSize: '10px',
-                            fontWeight: 700,
-                            backgroundColor: isMapped ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                            color: isMapped ? 'var(--success)' : 'var(--warning)'
-                          }}>
-                            {isMapped ? 'Mapped' : 'Unmapped'}
-                          </span>
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
                           {isEditing ? (
                             <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                               <button
@@ -2141,11 +4155,14 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                               onClick={() => {
                                 setEditingStaffId(s.id);
                                 setEditingAliases(s.additionalEmails || '');
+                                setEditingQandleEmail(s.qandleEmail || '');
+                                setEditingDialpadEmail(s.dialpadEmail || '');
+                                setEditingRecruitlyEmail(s.recruitlyEmail || '');
                               }}
                               className="btn-secondary"
                               style={{ padding: '4px 8px', fontSize: '11px' }}
                             >
-                              ⚙️ Edit Aliases
+                              ⚙️ Edit Mapping
                             </button>
                           )}
                         </td>
@@ -2554,7 +4571,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             }}>
               <div>
                 <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>
-                  📞 Call Logs Audit: {activeCallDetail.staffName} ↔ {activeCallDetail.targetName}
+                  📞 Call Logs Audit: {activeCallDetail.staffName} ↔ <CRMContactLink phone={activeCallDetail.externalNumber} defaultName={activeCallDetail.targetName} />
                 </h4>
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                   {activeCallDetail.date} @ {activeCallDetail.time} ({formatDuration(activeCallDetail.duration)})
@@ -2685,6 +4702,181 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
               <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                 🔒 Dialpad transcription generated via Google AI Webhook integration.
               </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. DRILL DOWN CALL LOGS MODAL POPUP */}
+      {drillDownModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 999
+        }}>
+          <div className="card" style={{
+            width: '90%',
+            maxWidth: '900px',
+            maxHeight: '85vh',
+            borderRadius: '8px',
+            border: '1px solid var(--border-color)',
+            overflow: 'hidden',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            backgroundColor: 'var(--bg-primary)',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid var(--border-color)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              backgroundColor: 'var(--bg-secondary)'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, textTransform: 'capitalize', color: 'var(--text-primary)' }}>
+                  📊 {drillDownModal.staffName} — {drillDownModal.category === 'all' ? 'Total' : drillDownModal.category === 'over5m' ? '5Min+' : drillDownModal.category === 'over10m' ? '10Min+' : drillDownModal.category} Calls Audit
+                </h3>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  📅 Date range: {drillDownModal.dateText}
+                </span>
+              </div>
+              <button 
+                onClick={() => setDrillDownModal(null)}
+                className="btn-secondary"
+                style={{ padding: '6px 12px', fontSize: '12px', fontWeight: 600 }}
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+              {drillDownModal.isLoading ? (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '50%',
+                    border: '3px solid var(--border-color)',
+                    borderTopColor: 'var(--primary)',
+                    animation: 'spin 1s linear infinite'
+                  }}></div>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>Querying audit logs...</span>
+                </div>
+              ) : drillDownModal.calls.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
+                  No call logs found for this selection.
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
+                        <th style={{ padding: '10px 8px', color: 'var(--text-secondary)' }}>Time & Date</th>
+                        <th style={{ padding: '10px 8px', color: 'var(--text-secondary)' }}>Direction</th>
+                        <th style={{ padding: '10px 8px', color: 'var(--text-secondary)' }}>Contact</th>
+                        <th style={{ padding: '10px 8px', color: 'var(--text-secondary)' }}>Type</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'center', color: 'var(--text-secondary)' }}>Duration</th>
+                        <th style={{ padding: '10px 8px', color: 'var(--text-secondary)' }}>Disposition</th>
+                        <th style={{ padding: '10px 8px', textAlign: 'center', color: 'var(--text-secondary)' }}>Audit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {drillDownModal.calls.map(call => (
+                        <tr key={call.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          <td style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
+                            {call.date} {call.time}
+                          </td>
+                          <td style={{ padding: '10px 8px' }}>
+                            <span style={{
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              backgroundColor: call.direction === 'Inbound' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+                              color: call.direction === 'Inbound' ? 'var(--success)' : 'var(--primary)'
+                            }}>
+                              {call.direction}
+                            </span>
+                          </td>
+                          <td style={{ padding: '10px 8px', fontWeight: 600 }}>
+                            <CRMContactLink phone={call.externalNumber} defaultName={call.targetName} />
+                          </td>
+                          <td style={{ padding: '10px 8px' }}>
+                            <span style={{
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              backgroundColor: call.targetType === 'Candidate' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                              color: call.targetType === 'Candidate' ? 'var(--purple)' : 'var(--warning)'
+                            }}>
+                              {call.targetType}
+                            </span>
+                          </td>
+                          <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 600 }}>
+                            {formatDuration(call.duration)}
+                          </td>
+                          <td style={{ padding: '10px 8px', color: 'var(--text-secondary)' }}>
+                            {call.disposition || <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>None</span>}
+                          </td>
+                          <td style={{ padding: '10px 8px', textAlign: 'center' }}>
+                            <button
+                              onClick={() => {
+                                // Open the detail modal directly
+                                setActiveCallDetail(call);
+                              }}
+                              className="btn-secondary"
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '11px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              🎥 Listen
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            
+            {/* Modal Footer */}
+            <div style={{
+              padding: '12px 20px',
+              borderTop: '1px solid var(--border-color)',
+              backgroundColor: 'var(--bg-secondary)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                Found {drillDownModal.calls.length} relevant calls
+              </span>
+              <button
+                onClick={() => setDrillDownModal(null)}
+                className="btn-secondary"
+                style={{ padding: '6px 14px', fontSize: '12px', fontWeight: 600 }}
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>

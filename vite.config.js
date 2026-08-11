@@ -11,6 +11,9 @@ export default defineConfig(({ mode }) => {
   process.env.MS365_REFRESH_TOKEN = env.MS365_REFRESH_TOKEN;
   process.env.MS365_SENDER_EMAIL = env.MS365_SENDER_EMAIL;
   process.env.DEEPSEEK_API_KEY = env.DEEPSEEK_API_KEY;
+  process.env.FIREBASE_PROJECT_ID = env.FIREBASE_PROJECT_ID || env.VITE_FIREBASE_PROJECT_ID;
+  process.env.FIREBASE_CLIENT_EMAIL = env.FIREBASE_CLIENT_EMAIL;
+  process.env.FIREBASE_PRIVATE_KEY = env.FIREBASE_PRIVATE_KEY;
 
   return {
     plugins: [
@@ -128,6 +131,39 @@ export default defineConfig(({ mode }) => {
                 urlObj.searchParams.forEach((v, k) => { query[k] = v; });
 
                 const handler = (await import('./api/cron-reminders.js')).default;
+                const mockReq = {
+                  method: req.method,
+                  url: req.url,
+                  headers: req.headers,
+                  query: query
+                };
+                const mockRes = {
+                  setHeader: (k, v) => {},
+                  status: (code) => ({
+                    json: (data) => {
+                      res.statusCode = code;
+                      res.setHeader('Content-Type', 'application/json');
+                      res.end(JSON.stringify(data));
+                    },
+                    end: () => {
+                      res.statusCode = code;
+                      res.end();
+                    }
+                  })
+                };
+                await handler(mockReq, mockRes);
+              } catch (err) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            } else if (req.url.startsWith('/api/crm-lookup')) {
+              try {
+                const urlObj = new URL(req.url, `http://${req.headers.host}`);
+                const query = {};
+                urlObj.searchParams.forEach((v, k) => { query[k] = v; });
+
+                const handler = (await import('./api/crm-lookup.js')).default;
                 const mockReq = {
                   method: req.method,
                   url: req.url,

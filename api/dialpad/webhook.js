@@ -321,8 +321,17 @@ export default async function handler(req, res) {
 
     let finalConversationId = conversationId;
 
-    // 5. Merge Call Leg into dialpad_call_legs
+    // Resolve staff database first (outside the transaction)
+    const staffSnap = await firestore.collection('staff').get();
+    const staffList = [];
+    staffSnap.forEach(sDoc => {
+      staffList.push({ id: sDoc.id, ...sDoc.data() });
+    });
+
+    // 5. Merge Call Leg & Consolidate Logical Call inside transaction (Strongly Consistent!)
     const legRef = firestore.collection('dialpad_call_legs').doc(callId);
+    let resolvedKPI = null;
+
     await firestore.runTransaction(async (transaction) => {
       const legSnap = await transaction.get(legRef);
       let existingData = null;
@@ -350,7 +359,18 @@ export default async function handler(req, res) {
         ...(rawEventData.callRecordingIds || [])
       ]));
 
-      // Assemble merged properties
+      // Clean millisecond duration parsing (always treat duration, talkTime, totalDuration as milliseconds)
+      const rawDur = rawEventData.duration || existingData?.durationMs || 0;
+      const durationMs = rawDur;
+      const durationSeconds = Math.round(rawDur / 1000);
+
+      const rawTalk = rawEventData.talkTime || existingData?.talkTimeMs || 0;
+      const talkTimeMs = rawTalk;
+      const talkTimeSeconds = Math.round(rawTalk / 1000);
+
+      const rawTotalDur = rawEventData.totalDuration || existingData?.totalDurationMs || 0;
+      const totalDurationMs = rawTotalDur;
+
       const legData = {
         callId,
         masterCallId,
@@ -367,11 +387,11 @@ export default async function handler(req, res) {
         dateRang: rawEventData.dateRang || existingData?.dateRang || '',
         dateConnected: rawEventData.dateConnected || existingData?.dateConnected || '',
         dateEnded: rawEventData.dateEnded || existingData?.dateEnded || '',
-        durationMs: rawEventData.duration || existingData?.durationMs || 0,
-        durationSeconds: Math.round((rawEventData.duration || existingData?.durationMs || 0) / 1000),
-        totalDurationMs: rawEventData.totalDuration || existingData?.totalDurationMs || 0,
-        talkTimeMs: rawEventData.talkTime || existingData?.talkTimeMs || 0,
-        talkTimeSeconds: Math.round((rawEventData.talkTime || existingData?.talkTimeMs || 0) / 1000),
+        durationMs,
+        durationSeconds,
+        totalDurationMs,
+        talkTimeMs,
+        talkTimeSeconds,
         callDispositions: mergedDispositions,
         recapSummary: rawEventData.recapSummary || existingData?.recapSummary || '',
         recapOutcome: rawEventData.recapOutcome || existingData?.recapOutcome || '',
@@ -384,7 +404,6 @@ export default async function handler(req, res) {
         lastEventTimestamp: eventTimestamp
       };
 
-      // Determine leg status metrics
       const hasVoicemail = legData.state === 'voicemail' || !!legData.voicemailLink;
       const isMissed = legData.state === 'missed';
       const isConnected = !!legData.dateConnected;
@@ -400,202 +419,193 @@ export default async function handler(req, res) {
         legData.callStatus = 'No Answer';
       }
 
-      transaction.set(legRef, legData, { merge: true });
-    });
-    console.log(`[Webhook] Call leg merged successfully for legId ${callId}`);
-
-    // 6. Consolidate Legs & Update dialpad_calls
-    const legsSnap = await firestore.collection('dialpad_call_legs')
-      .where('conversationId', '==', finalConversationId)
-      .get();
-
-    const relatedLegs = [];
-    legsSnap.forEach(snap => {
-      relatedLegs.push(snap.data());
-    });
-
-    console.log(`[Webhook] Found ${relatedLegs.length} related legs for conversationId ${finalConversationId}`);
-
-    // Identify user-facing primary leg (target.type === 'user')
-    // Exclude group routing legs (target.type !== 'user' or operator call segments without entry-point markers)
-    let primaryLeg = null;
-    const userLegs = relatedLegs.filter(leg => {
-      const targetType = (leg.target?.type || '').toLowerCase().trim();
-      const isUser = targetType === 'user';
-      const isRoutingGroup = leg.operatorCallId && !leg.entryPointCallId;
-      return isUser && !isRoutingGroup;
-    });
-
-    if (userLegs.length > 0) {
-      // Sort user legs by timestamp to get the most recent active leg
-      userLegs.sort((a, b) => b.lastEventTimestamp - a.lastEventTimestamp);
-      primaryLeg = userLegs[0];
-      console.log(`[Webhook] Selected primary recruiter leg: callId=${primaryLeg.callId} (${primaryLeg.target?.name})`);
-    } else {
-      // Fallback: Use the leg with the highest priority or first created if no user leg exists
-      relatedLegs.sort((a, b) => b.lastEventTimestamp - a.lastEventTimestamp);
-      primaryLeg = relatedLegs[0];
-      console.log(`[Webhook] No user-leg found. Using routing fallback leg: callId=${primaryLeg.callId}`);
-    }
-
-    // Filter routing logs diagnostic
-    relatedLegs.forEach(leg => {
-      if (leg.callId !== primaryLeg.callId) {
-        console.log(`[Webhook] Routing call leg grouped: callId=${leg.callId} | Target Type=${leg.target?.type || 'unknown'}`);
+      // 6. Transactional Consolidated Call Loading
+      const callDocRef = firestore.collection('dialpad_calls').doc(finalConversationId);
+      const callSnap = await transaction.get(callDocRef);
+      const callData = callSnap.data() || {};
+      let relatedCallIds = callData.relatedCallIds || [];
+      if (!relatedCallIds.includes(callId)) {
+        relatedCallIds.push(callId);
       }
-    });
 
-    // Compile & enrich parameters across all related legs in the conversation
-    const relatedCallIds = relatedLegs.map(l => l.callId);
-    
-    // Accumulate unique recordings, dispositions, voicemail links and transcripts
-    const collectedRecordings = [];
-    const collectedDispositions = [];
-    let enrichedRecapSummary = '';
-    let enrichedRecapOutcome = '';
-    let enrichedRecordingUrl = '';
-    let enrichedVoicemailLink = '';
-    let enrichedTranscription = '';
-    let enrichedCallStatus = primaryLeg.callStatus;
-
-    relatedLegs.forEach(leg => {
-      if (leg.recordingUrl) enrichedRecordingUrl = leg.recordingUrl;
-      if (leg.voicemailLink) {
-        enrichedVoicemailLink = leg.voicemailLink;
-        enrichedCallStatus = 'Voicemail';
-      }
-      if (leg.recapSummary) enrichedRecapSummary = leg.recapSummary;
-      if (leg.recapOutcome) enrichedRecapOutcome = leg.recapOutcome;
-      if (leg.transcriptionText) enrichedTranscription = leg.transcriptionText;
+      // Fetch other legs transactionally
+      const otherLegRefs = relatedCallIds
+        .filter(id => id !== callId)
+        .map(id => firestore.collection('dialpad_call_legs').doc(id));
       
-      if (Array.isArray(leg.callRecordingIds)) {
-        leg.callRecordingIds.forEach(id => {
-          if (!collectedRecordings.includes(id)) collectedRecordings.push(id);
-        });
-      }
-      if (Array.isArray(leg.callDispositions)) {
-        leg.callDispositions.forEach(disp => {
-          if (!collectedDispositions.includes(disp)) collectedDispositions.push(disp);
-        });
-      }
-    });
-
-    // Match handlerId, handlerName, handlerEmail using staff database and email normalization
-    let handlerId = '';
-    let handlerName = '';
-    let handlerEmail = '';
-    let department = '';
-
-    const targetEmail = primaryLeg.target?.email || '';
-    if (targetEmail) {
-      const normTargetEmail = normalizeEmail(targetEmail);
-      const staffSnap = await firestore.collection('staff').get();
+      const otherLegSnaps = otherLegRefs.length > 0 
+        ? await Promise.all(otherLegRefs.map(ref => transaction.get(ref))) 
+        : [];
       
-      let matchedStaff = null;
-      staffSnap.forEach(sDoc => {
-        const staffData = sDoc.data();
-        const busEmail = normalizeEmail(staffData.businessEmail);
-        const persEmail = normalizeEmail(staffData.personalEmail);
-        
-        if (busEmail === normTargetEmail || persEmail === normTargetEmail) {
-          matchedStaff = { id: sDoc.id, ...staffData };
-        } else if (staffData.additionalEmails) {
-          const extraList = staffData.additionalEmails.split(',').map(e => normalizeEmail(e.trim())).filter(Boolean);
-          if (extraList.includes(normTargetEmail)) {
-            matchedStaff = { id: sDoc.id, ...staffData };
-          }
+      const relatedLegs = [legData];
+      otherLegSnaps.forEach(snap => {
+        if (snap.exists) {
+          relatedLegs.push(snap.data());
         }
       });
 
-      if (matchedStaff) {
-        handlerId = matchedStaff.id;
-        handlerName = matchedStaff.fullName;
-        handlerEmail = matchedStaff.businessEmail || matchedStaff.personalEmail || '';
-        department = matchedStaff.department || '';
-        console.log(`[Webhook] Matched recruiter to staff directory: Name=${handlerName} | StaffID=${handlerId}`);
+      console.log(`[Webhook] Found ${relatedLegs.length} related legs transactionally for conversationId ${finalConversationId}`);
+
+      // Identify user-facing primary leg
+      let primaryLeg = null;
+      const userLegs = relatedLegs.filter(leg => {
+        const targetType = (leg.target?.type || '').toLowerCase().trim();
+        const isUser = targetType === 'user';
+        const isRoutingGroup = leg.operatorCallId && !leg.entryPointCallId;
+        return isUser && !isRoutingGroup;
+      });
+
+      if (userLegs.length > 0) {
+        userLegs.sort((a, b) => b.lastEventTimestamp - a.lastEventTimestamp);
+        primaryLeg = userLegs[0];
       } else {
-        // Fallback to Dialpad profile metadata
-        handlerName = primaryLeg.target?.name || '';
-        handlerEmail = targetEmail;
-        console.log(`[Webhook] Recruiter email "${targetEmail}" did not match staff profiles.`);
+        relatedLegs.sort((a, b) => b.lastEventTimestamp - a.lastEventTimestamp);
+        primaryLeg = relatedLegs[0];
       }
-    }
 
-    // Build the final Logical Call document
-    const callDocRef = firestore.collection('dialpad_calls').doc(finalConversationId);
-    
-    // Load existing logical call doc to preserve transcript status/API data
-    const existingCallSnap = await callDocRef.get();
-    const existingCallData = existingCallSnap.exists ? existingCallSnap.data() : null;
+      // Compile parameters across all related legs
+      const collectedRecordings = [];
+      const collectedDispositions = [];
+      let enrichedRecapSummary = '';
+      let enrichedRecapOutcome = '';
+      let enrichedRecordingUrl = '';
+      let enrichedVoicemailLink = '';
+      let enrichedTranscription = '';
+      let enrichedCallStatus = primaryLeg.callStatus;
 
-    const finalCallData = {
-      conversationId: finalConversationId,
-      primaryCallId: primaryLeg.callId,
-      relatedCallIds,
-      masterCallId: primaryLeg.masterCallId || '',
-      entryPointCallId: primaryLeg.entryPointCallId || '',
-      
-      dateStarted: primaryLeg.dateStarted || '',
-      dateConnected: primaryLeg.dateConnected || '',
-      dateEnded: primaryLeg.dateEnded || '',
-      
-      direction: primaryLeg.direction || '',
-      
-      handlerId,
-      handlerName,
-      handlerEmail,
-      department,
-      
-      externalName: primaryLeg.contact?.name || '',
-      externalNumber: primaryLeg.externalNumber || primaryLeg.contact?.phone_number || '',
-      internalNumber: primaryLeg.internalNumber || '',
-      
-      connected: primaryLeg.connected || false,
-      callStatus: enrichedCallStatus,
-      
-      durationMs: primaryLeg.durationMs || 0,
-      durationSeconds: primaryLeg.durationSeconds || 0,
-      totalDurationMs: primaryLeg.totalDurationMs || 0,
-      talkTimeMs: primaryLeg.talkTimeMs || 0,
-      talkTimeSeconds: primaryLeg.talkTimeSeconds || 0,
-      
-      disposition: collectedDispositions.join(', '),
-      recapSummary: enrichedRecapSummary,
-      recapOutcome: enrichedRecapOutcome,
-      
-      transcriptionId: collectedRecordings.length > 0 ? collectedRecordings[0] : '',
-      recordingUrl: enrichedRecordingUrl,
-      recordingUrls: enrichedRecordingUrl ? [enrichedRecordingUrl] : [],
-      wasRecorded: !!enrichedRecordingUrl,
-      adminRecordingUrls: Array.from(new Set(relatedLegs.flatMap(l => l.adminRecordingUrls || []))),
-      voicemailLink: enrichedVoicemailLink,
-      
-      target: primaryLeg.target || null,
-      contact: primaryLeg.contact || null,
-      
-      lastEventTimestamp: Math.max(primaryLeg.lastEventTimestamp, ...relatedLegs.map(l => l.lastEventTimestamp)),
-      createdAt: existingCallData?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      
-      // Preserve transcript placeholder fields for separate background fetching
-      transcript: existingCallData?.transcript || enrichedTranscription || '',
-      transcriptStatus: existingCallData?.transcriptStatus || (enrichedTranscription ? 'fetched' : 'pending'),
-      transcriptFetchedAt: existingCallData?.transcriptFetchedAt || (enrichedTranscription ? new Date().toISOString() : '')
-    };
+      relatedLegs.forEach(leg => {
+        if (leg.recordingUrl) enrichedRecordingUrl = leg.recordingUrl;
+        if (leg.voicemailLink) {
+          enrichedVoicemailLink = leg.voicemailLink;
+          enrichedCallStatus = 'Voicemail';
+        }
+        if (leg.recapSummary) enrichedRecapSummary = leg.recapSummary;
+        if (leg.recapOutcome) enrichedRecapOutcome = leg.recapOutcome;
+        if (leg.transcriptionText) enrichedTranscription = leg.transcriptionText;
+        
+        if (Array.isArray(leg.callRecordingIds)) {
+          leg.callRecordingIds.forEach(id => {
+            if (!collectedRecordings.includes(id)) collectedRecordings.push(id);
+          });
+        }
+        if (Array.isArray(leg.callDispositions)) {
+          leg.callDispositions.forEach(disp => {
+            if (!collectedDispositions.includes(disp)) collectedDispositions.push(disp);
+          });
+        }
+      });
 
-    await callDocRef.set(finalCallData);
-    console.log(`[Webhook] Consolidated logical call saved successfully: ${finalConversationId}`);
+      // Match handlerId, handlerName, handlerEmail using Resolved Staff List
+      let handlerId = '';
+      let handlerName = '';
+      let handlerEmail = '';
+      let department = '';
+
+      const targetEmail = primaryLeg.target?.email || '';
+      if (targetEmail) {
+        const normTargetEmail = targetEmail.toLowerCase().trim();
+        let matchedStaff = null;
+        staffList.forEach(staffData => {
+          const busEmail = (staffData.businessEmail || '').toLowerCase().trim();
+          const persEmail = (staffData.personalEmail || '').toLowerCase().trim();
+          
+          if (busEmail === normTargetEmail || persEmail === normTargetEmail) {
+            matchedStaff = staffData;
+          } else if (staffData.additionalEmails) {
+            const extraList = staffData.additionalEmails.split(',').map(e => e.toLowerCase().trim()).filter(Boolean);
+            if (extraList.includes(normTargetEmail)) {
+              matchedStaff = staffData;
+            }
+          }
+        });
+
+        if (matchedStaff) {
+          handlerId = matchedStaff.id;
+          handlerName = matchedStaff.fullName;
+          handlerEmail = matchedStaff.businessEmail || matchedStaff.personalEmail || '';
+          department = matchedStaff.department || '';
+        } else {
+          handlerName = primaryLeg.target?.name || '';
+          handlerEmail = targetEmail;
+        }
+      }
+
+      // Build the final logical call document data
+      const finalCallData = {
+        conversationId: finalConversationId,
+        primaryCallId: primaryLeg.callId,
+        relatedCallIds,
+        masterCallId: primaryLeg.masterCallId || '',
+        entryPointCallId: primaryLeg.entryPointCallId || '',
+        
+        dateStarted: primaryLeg.dateStarted || '',
+        dateConnected: primaryLeg.dateConnected || '',
+        dateEnded: primaryLeg.dateEnded || '',
+        
+        direction: primaryLeg.direction || '',
+        
+        handlerId,
+        handlerName,
+        handlerEmail,
+        department,
+        
+        externalName: primaryLeg.contact?.name || '',
+        externalNumber: primaryLeg.externalNumber || primaryLeg.contact?.phone_number || '',
+        internalNumber: primaryLeg.internalNumber || '',
+        
+        connected: primaryLeg.connected || false,
+        callStatus: enrichedCallStatus,
+        
+        durationMs: primaryLeg.durationMs || 0,
+        durationSeconds: primaryLeg.durationSeconds || 0,
+        totalDurationMs: primaryLeg.totalDurationMs || 0,
+        talkTimeMs: primaryLeg.talkTimeMs || 0,
+        talkTimeSeconds: primaryLeg.talkTimeSeconds || 0,
+        
+        disposition: collectedDispositions.join(', '),
+        recapSummary: enrichedRecapSummary,
+        recapOutcome: enrichedRecapOutcome,
+        
+        transcriptionId: collectedRecordings.length > 0 ? collectedRecordings[0] : '',
+        recordingUrl: enrichedRecordingUrl,
+        recordingUrls: enrichedRecordingUrl ? [enrichedRecordingUrl] : [],
+        wasRecorded: !!enrichedRecordingUrl,
+        adminRecordingUrls: Array.from(new Set(relatedLegs.flatMap(l => l.adminRecordingUrls || []))),
+        voicemailLink: enrichedVoicemailLink,
+        
+        target: primaryLeg.target || null,
+        contact: primaryLeg.contact || null,
+        
+        lastEventTimestamp: Math.max(primaryLeg.lastEventTimestamp, ...relatedLegs.map(l => l.lastEventTimestamp)),
+        createdAt: callData.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        
+        // Preserve transcript placeholder fields for separate background fetching
+        transcript: callData.transcript || enrichedTranscription || '',
+        transcriptStatus: callData.transcriptStatus || (enrichedTranscription ? 'fetched' : 'pending'),
+        transcriptFetchedAt: callData.transcriptFetchedAt || (enrichedTranscription ? new Date().toISOString() : '')
+      };
+
+      // Perform all transaction writes together
+      transaction.set(legRef, legData, { merge: true });
+      transaction.set(callDocRef, finalCallData, { merge: true });
+
+      resolvedKPI = { handlerId, dateStarted: finalCallData.dateStarted };
+    });
+
+    console.log(`[Webhook] Consolidated logical call saved successfully under transaction: ${finalConversationId}`);
 
     // Update daily recruiter KPIs in real time
-    if (handlerId) {
-      await updateKpiDaily(firestore, handlerId, finalCallData.dateStarted);
+    if (resolvedKPI && resolvedKPI.handlerId) {
+      await updateKpiDaily(firestore, resolvedKPI.handlerId, resolvedKPI.dateStarted);
     }
 
-    return res.status(200).json({ success: true, conversationId: finalConversationId, callId: primaryLeg.callId });
+    return res.status(200).json({ success: true, conversationId: finalConversationId, callId: callId });
   } catch (error) {
     console.error('[Webhook] Failed to process Dialpad webhook event:', error);
     return res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
+}
 }
 
 /**

@@ -31,6 +31,8 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   FileText,
   Sparkles,
   Mail,
@@ -132,6 +134,22 @@ export default function App() {
   // Navigation tab: 'dashboard' | 'directory' | 'staff'
   const [activeTab, setActiveTab] = useState('whats_important');
   const [creditControlSubTab, setCreditControlSubTab] = useState('direct');
+
+  const [expandedSections, setExpandedSections] = useState({
+    general: true,
+    hrms: true,
+    crm: true,
+    finance: true,
+    kpis: true,
+    admin: false
+  });
+
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
 
   // Fallback to allowed activeTab if current tab is not permitted
   useEffect(() => {
@@ -1725,283 +1743,497 @@ export default function App() {
             </button>
           </div>
           
-          <nav>
+          <nav style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
             <ul className="nav-links">
-              {currentUser.permissions.allowedModules.includes('whats_important') && (
-                <li>
+              {isSidebarMinimized ? (
+                <>
+                  {currentUser.permissions.allowedModules.includes('whats_important') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'whats_important' ? 'active' : ''}`} onClick={() => setActiveTab('whats_important')} title="What's Important">
+                        <Bell size={18} />
+                      </div>
+                    </li>
+                  )}
+                  {currentUser.permissions.allowedModules.includes('dashboard') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')} title="Group Dashboard">
+                        <LayoutDashboard size={18} />
+                      </div>
+                    </li>
+                  )}
+                  {currentUser.permissions.allowedModules.includes('directory') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'directory' ? 'active' : ''}`} onClick={() => setActiveTab('directory')} title="Company Directory">
+                        <Building2 size={18} />
+                      </div>
+                    </li>
+                  )}
+                  {currentUser.permissions.allowedModules.includes('staff') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'staff' ? 'active' : ''}`} onClick={() => setActiveTab('staff')} title={currentUser.permissions.role === 'recruiter' ? 'My Staff Profile' : 'Staff & Consultants'}>
+                        <Users size={18} />
+                      </div>
+                    </li>
+                  )}
+                  {currentUser.permissions.allowedModules.includes('leaves') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'leaves' ? 'active' : ''}`} onClick={() => setActiveTab('leaves')} title="Leaves & Holidays">
+                        <Calendar size={18} />
+                      </div>
+                    </li>
+                  )}
+                  {currentUser.permissions.allowedModules.includes('commissions') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'commissions' ? 'active' : ''}`} onClick={() => setActiveTab('commissions')} title="Commission Plans">
+                        <TrendingUp size={18} />
+                      </div>
+                    </li>
+                  )}
+                  {currentUser.permissions.allowedModules.includes('payroll') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'payroll' ? 'active' : ''}`} onClick={() => setActiveTab('payroll')} title={currentUser.permissions.role === 'recruiter' ? 'My Payroll' : 'Group Payroll'}>
+                        <Wallet size={18} />
+                      </div>
+                    </li>
+                  )}
+                  {currentUser.permissions.allowedModules.includes('vendors') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'vendors' ? 'active' : ''}`} onClick={() => setActiveTab('vendors')} title="Vendors & Assets">
+                        <Laptop size={18} />
+                      </div>
+                    </li>
+                  )}
+                  {currentUser.permissions.allowedModules.includes('placements') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'placements' ? 'active' : ''}`} onClick={() => setActiveTab('placements')} title={currentUser.permissions.role === 'recruiter' ? 'My Placements' : 'Sales & Placements'}>
+                        <TrendingUp size={18} />
+                      </div>
+                    </li>
+                  )}
+                  {currentUser.permissions.allowedModules.includes('crm') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'crm' ? 'active' : ''}`} onClick={() => setActiveTab('crm')} title="CRM Recruiting">
+                        <Briefcase size={18} />
+                      </div>
+                    </li>
+                  )}
+                  <li>
+                    <div className={`nav-item ${activeTab === 'kpis' ? 'active' : ''}`} onClick={() => setActiveTab('kpis')} title="KPIs">
+                      <BarChart2 size={18} />
+                    </div>
+                  </li>
+                  {currentUser.permissions.allowedModules.includes('credit_control') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'credit_control' ? 'active' : ''}`} onClick={() => setActiveTab('credit_control')} title="Credit Control">
+                        <FileText size={18} />
+                      </div>
+                    </li>
+                  )}
+                  {currentUser.permissions.allowedModules.includes('cashflow') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'cashflow' ? 'active' : ''}`} onClick={() => setActiveTab('cashflow')} title="Cashflow Forecast">
+                        <TrendingUp size={18} />
+                      </div>
+                    </li>
+                  )}
+                  {currentUser.permissions.allowedModules.includes('expenses') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'expenses' ? 'active' : ''}`} onClick={() => setActiveTab('expenses')} title={currentUser.permissions.role === 'recruiter' ? 'My Expense Claims' : 'Expense Ledger'}>
+                        <Receipt size={18} />
+                      </div>
+                    </li>
+                  )}
+                  {currentUser.permissions.allowedModules.includes('logs') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')} title="Audit Trail Logs">
+                        <History size={18} />
+                      </div>
+                    </li>
+                  )}
+                  {currentUser.permissions.allowedModules.includes('reports') && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')} title="Profit & Loss / Reports">
+                        <PieChart size={18} />
+                      </div>
+                    </li>
+                  )}
+                  {currentUser.permissions.role === 'admin' && (
+                    <li>
+                      <div className={`nav-item ${activeTab === 'rbac' ? 'active' : ''}`} onClick={() => setActiveTab('rbac')} title="User Access & Roles">
+                        <Key size={18} />
+                      </div>
+                    </li>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* Category: General / Dashboards */}
                   <div 
-                    className={`nav-item ${activeTab === 'whats_important' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('whats_important')}
-                  >
-                    <Bell size={18} />
-                    <span>What's Important</span>
-                  </div>
-                </li>
-              )}
-
-              {currentUser.permissions.allowedModules.includes('dashboard') && (
-                <li>
-                  <div 
-                    className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('dashboard')}
-                  >
-                    <LayoutDashboard size={18} />
-                    <span>Group Dashboard</span>
-                  </div>
-                </li>
-              )}
-              
-              {currentUser.permissions.allowedModules.includes('directory') && (
-                <li>
-                  <div 
-                    className={`nav-item ${activeTab === 'directory' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('directory')}
-                  >
-                    <Building2 size={18} />
-                    <span>Company Directory</span>
-                  </div>
-                </li>
-              )}
-
-              {currentUser.permissions.allowedModules.includes('staff') && (
-                <li>
-                  <div 
-                    className={`nav-item ${activeTab === 'staff' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('staff')}
-                  >
-                    <Users size={18} />
-                    <span>{currentUser.permissions.role === 'recruiter' ? 'My Staff Profile' : 'Staff & Consultants'}</span>
-                  </div>
-                </li>
-              )}
-
-              {currentUser.permissions.allowedModules.includes('leaves') && (
-                <li>
-                  <div 
-                    className={`nav-item ${activeTab === 'leaves' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('leaves')}
-                  >
-                    <Calendar size={18} />
-                    <span>Leaves & Holidays</span>
-                    {currentUser.permissions.role !== 'recruiter' && leaveRequests.filter(r => r.status === 'pending').length > 0 && (
-                      <span style={{ 
-                        marginLeft: 'auto', 
-                        background: 'var(--warning)', 
-                        color: '#000', 
-                        fontSize: '10px', 
-                        padding: '2px 6px', 
-                        borderRadius: '8px',
-                        fontWeight: 700
-                      }}>
-                        {leaveRequests.filter(r => r.status === 'pending').length}
-                      </span>
-                    )}
-                  </div>
-                </li>
-              )}
-
-              {currentUser.permissions.allowedModules.includes('commissions') && (
-                <li>
-                  <div 
-                    className={`nav-item ${activeTab === 'commissions' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('commissions')}
-                  >
-                    <TrendingUp size={18} />
-                    <span>Commission Plans</span>
-                  </div>
-                </li>
-              )}
-
-              {currentUser.permissions.allowedModules.includes('payroll') && (
-                <li>
-                  <div 
-                    className={`nav-item ${activeTab === 'payroll' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('payroll')}
-                  >
-                    <Wallet size={18} />
-                    <span>{currentUser.permissions.role === 'recruiter' ? 'My Payroll' : 'Group Payroll'}</span>
-                  </div>
-                </li>
-              )}
-
-              {currentUser.permissions.allowedModules.includes('vendors') && (
-                <li>
-                  <div 
-                    className={`nav-item ${activeTab === 'vendors' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('vendors')}
-                  >
-                    <Laptop size={18} />
-                    <span>Vendors & Assets</span>
-                  </div>
-                </li>
-              )}
-
-              {currentUser.permissions.allowedModules.includes('placements') && (
-                <li>
-                  <div 
-                    className={`nav-item ${activeTab === 'placements' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('placements')}
-                  >
-                    <TrendingUp size={18} />
-                    <span>{currentUser.permissions.role === 'recruiter' ? 'My Placements' : 'Sales & Placements'}</span>
-                  </div>
-                </li>
-              )}
-
-              {currentUser.permissions.allowedModules.includes('crm') && (
-                <li>
-                  <div 
-                    className={`nav-item ${activeTab === 'crm' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('crm')}
-                  >
-                    <Briefcase size={18} />
-                    <span>CRM Recruiting</span>
-                  </div>
-                </li>
-              )}
-
-              <li>
-                <div 
-                  className={`nav-item ${activeTab === 'kpis' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('kpis')}
-                >
-                  <BarChart2 size={18} />
-                  <span>KPIs</span>
-                </div>
-              </li>
-
-              {currentUser.permissions.allowedModules.includes('credit_control') && (
-                <li>
-                  <div 
-                    className={`nav-item ${activeTab === 'credit_control' ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveTab('credit_control');
+                    onClick={() => toggleSection('general')} 
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 12px 6px 12px',
+                      cursor: 'pointer',
+                      color: 'var(--text-muted)',
+                      fontWeight: 600,
+                      fontSize: '10px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      marginTop: '8px',
+                      userSelect: 'none'
                     }}
                   >
-                    <FileText size={18} />
-                    <span>Credit Control</span>
+                    <span>📊 Dashboards & Entity</span>
+                    {expandedSections.general ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   </div>
-                  {activeTab === 'credit_control' && (
-                    <ul style={{ listStyle: 'none', paddingLeft: '24px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <li>
-                        <div
-                          className={`nav-item sub-nav-item ${creditControlSubTab === 'direct' ? 'active' : ''}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setCreditControlSubTab('direct');
-                          }}
-                          style={{
-                            fontSize: '13px',
-                            padding: '6px 12px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            color: creditControlSubTab === 'direct' ? 'var(--primary-color)' : 'var(--text-secondary)'
-                          }}
-                        >
-                          <span style={{
-                            width: '6px',
-                            height: '6px',
-                            borderRadius: '50%',
-                            backgroundColor: creditControlSubTab === 'direct' ? 'var(--primary-color)' : 'transparent',
-                            border: '1px solid var(--text-secondary)'
-                          }}></span>
-                          <span>Direct Invoices</span>
-                        </div>
-                      </li>
-                      <li>
-                        <div
-                          className={`nav-item sub-nav-item ${creditControlSubTab === 'simplicity' ? 'active' : ''}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setCreditControlSubTab('simplicity');
-                          }}
-                          style={{
-                            fontSize: '13px',
-                            padding: '6px 12px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            color: creditControlSubTab === 'simplicity' ? 'var(--primary-color)' : 'var(--text-secondary)'
-                          }}
-                        >
-                          <span style={{
-                            width: '6px',
-                            height: '6px',
-                            borderRadius: '50%',
-                            backgroundColor: creditControlSubTab === 'simplicity' ? 'var(--primary-color)' : 'transparent',
-                            border: '1px solid var(--text-secondary)'
-                          }}></span>
-                          <span>Simplicity Invoices</span>
-                        </div>
-                      </li>
-                    </ul>
+                  
+                  {expandedSections.general && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
+                      {currentUser.permissions.allowedModules.includes('whats_important') && (
+                        <li>
+                          <div className={`nav-item ${activeTab === 'whats_important' ? 'active' : ''}`} onClick={() => setActiveTab('whats_important')}>
+                            <Bell size={18} />
+                            <span>What's Important</span>
+                          </div>
+                        </li>
+                      )}
+                      {currentUser.permissions.allowedModules.includes('dashboard') && (
+                        <li>
+                          <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
+                            <LayoutDashboard size={18} />
+                            <span>Group Dashboard</span>
+                          </div>
+                        </li>
+                      )}
+                      {currentUser.permissions.allowedModules.includes('directory') && (
+                        <li>
+                          <div className={`nav-item ${activeTab === 'directory' ? 'active' : ''}`} onClick={() => setActiveTab('directory')}>
+                            <Building2 size={18} />
+                            <span>Company Directory</span>
+                          </div>
+                        </li>
+                      )}
+                    </div>
                   )}
-                </li>
-              )}
 
-              {currentUser.permissions.allowedModules.includes('cashflow') && (
-                <li>
+                  {/* Category: HRMS (HR Management) */}
                   <div 
-                    className={`nav-item ${activeTab === 'cashflow' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('cashflow')}
+                    onClick={() => toggleSection('hrms')} 
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 12px 6px 12px',
+                      cursor: 'pointer',
+                      color: 'var(--text-muted)',
+                      fontWeight: 600,
+                      fontSize: '10px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      marginTop: '8px',
+                      userSelect: 'none'
+                    }}
                   >
-                    <TrendingUp size={18} />
-                    <span>Cashflow Forecast</span>
+                    <span>👥 HR Management (HRMS)</span>
+                    {expandedSections.hrms ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   </div>
-                </li>
-              )}
 
-              {currentUser.permissions.allowedModules.includes('expenses') && (
-                <li>
-                  <div 
-                    className={`nav-item ${activeTab === 'expenses' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('expenses')}
-                  >
-                    <Receipt size={18} />
-                    <span>{currentUser.permissions.role === 'recruiter' ? 'My Expense Claims' : 'Expense Ledger'}</span>
-                  </div>
-                </li>
-              )}
+                  {expandedSections.hrms && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
+                      {currentUser.permissions.allowedModules.includes('staff') && (
+                        <li>
+                          <div className={`nav-item ${activeTab === 'staff' ? 'active' : ''}`} onClick={() => setActiveTab('staff')}>
+                            <Users size={18} />
+                            <span>{currentUser.permissions.role === 'recruiter' ? 'My Staff Profile' : 'Staff & Consultants'}</span>
+                          </div>
+                        </li>
+                      )}
+                      {currentUser.permissions.allowedModules.includes('leaves') && (
+                        <li>
+                          <div className={`nav-item ${activeTab === 'leaves' ? 'active' : ''}`} onClick={() => setActiveTab('leaves')}>
+                            <Calendar size={18} />
+                            <span>Leaves & Holidays</span>
+                            {currentUser.permissions.role !== 'recruiter' && leaveRequests.filter(r => r.status === 'pending').length > 0 && (
+                              <span style={{ 
+                                marginLeft: 'auto', 
+                                background: 'var(--warning)', 
+                                color: '#000', 
+                                fontSize: '10px', 
+                                padding: '2px 6px', 
+                                borderRadius: '8px',
+                                fontWeight: 700
+                              }}>
+                                {leaveRequests.filter(r => r.status === 'pending').length}
+                              </span>
+                            )}
+                          </div>
+                        </li>
+                      )}
+                      {currentUser.permissions.allowedModules.includes('commissions') && (
+                        <li>
+                          <div className={`nav-item ${activeTab === 'commissions' ? 'active' : ''}`} onClick={() => setActiveTab('commissions')}>
+                            <TrendingUp size={18} />
+                            <span>Commission Plans</span>
+                          </div>
+                        </li>
+                      )}
+                      {currentUser.permissions.allowedModules.includes('payroll') && (
+                        <li>
+                          <div className={`nav-item ${activeTab === 'payroll' ? 'active' : ''}`} onClick={() => setActiveTab('payroll')}>
+                            <Wallet size={18} />
+                            <span>{currentUser.permissions.role === 'recruiter' ? 'My Payroll' : 'Group Payroll'}</span>
+                          </div>
+                        </li>
+                      )}
+                    </div>
+                  )}
 
-              {currentUser.permissions.allowedModules.includes('logs') && (
-                <li>
+                  {/* Category: CRM & Sales */}
                   <div 
-                    className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('logs')}
+                    onClick={() => toggleSection('crm')} 
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 12px 6px 12px',
+                      cursor: 'pointer',
+                      color: 'var(--text-muted)',
+                      fontWeight: 600,
+                      fontSize: '10px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      marginTop: '8px',
+                      userSelect: 'none'
+                    }}
                   >
-                    <History size={18} />
-                    <span>Audit Trail Logs</span>
+                    <span>💼 CRM & Recruiting</span>
+                    {expandedSections.crm ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   </div>
-                </li>
-              )}
 
-              {currentUser.permissions.allowedModules.includes('reports') && (
-                <li>
-                  <div 
-                    className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('reports')}
-                  >
-                    <PieChart size={18} />
-                    <span>Profit & Loss / Reports</span>
-                  </div>
-                </li>
-              )}
+                  {expandedSections.crm && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
+                      {currentUser.permissions.allowedModules.includes('crm') && (
+                        <li>
+                          <div className={`nav-item ${activeTab === 'crm' ? 'active' : ''}`} onClick={() => setActiveTab('crm')}>
+                            <Briefcase size={18} />
+                            <span>CRM Recruiting Desk</span>
+                          </div>
+                        </li>
+                      )}
+                      {currentUser.permissions.allowedModules.includes('placements') && (
+                        <li>
+                          <div className={`nav-item ${activeTab === 'placements' ? 'active' : ''}`} onClick={() => setActiveTab('placements')}>
+                            <TrendingUp size={18} />
+                            <span>{currentUser.permissions.role === 'recruiter' ? 'My Placements' : 'Sales & Placements'}</span>
+                          </div>
+                        </li>
+                      )}
+                    </div>
+                  )}
 
-              {currentUser.permissions.role === 'admin' && (
-                <li>
+                  {/* Category: Finance */}
                   <div 
-                    className={`nav-item ${activeTab === 'rbac' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('rbac')}
+                    onClick={() => toggleSection('finance')} 
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 12px 6px 12px',
+                      cursor: 'pointer',
+                      color: 'var(--text-muted)',
+                      fontWeight: 600,
+                      fontSize: '10px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      marginTop: '8px',
+                      userSelect: 'none'
+                    }}
                   >
-                    <Key size={18} />
-                    <span>User Access & Roles</span>
+                    <span>💵 Finance & Ledger</span>
+                    {expandedSections.finance ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   </div>
-                </li>
+
+                  {expandedSections.finance && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
+                      {currentUser.permissions.allowedModules.includes('credit_control') && (
+                        <li>
+                          <div className={`nav-item ${activeTab === 'credit_control' ? 'active' : ''}`} onClick={() => setActiveTab('credit_control')}>
+                            <FileText size={18} />
+                            <span>Accounts Receivable</span>
+                          </div>
+                          {activeTab === 'credit_control' && (
+                            <ul style={{ listStyle: 'none', paddingLeft: '24px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <li>
+                                <div
+                                  className={`nav-item sub-nav-item ${creditControlSubTab === 'direct' ? 'active' : ''}`}
+                                  onClick={(e) => { e.stopPropagation(); setCreditControlSubTab('direct'); }}
+                                  style={{
+                                    fontSize: '12px',
+                                    padding: '6px 12px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    color: creditControlSubTab === 'direct' ? 'var(--primary-color)' : 'var(--text-secondary)'
+                                  }}
+                                >
+                                  <span style={{
+                                    width: '6px',
+                                    height: '6px',
+                                    borderRadius: '50%',
+                                    backgroundColor: creditControlSubTab === 'direct' ? 'var(--primary-color)' : 'transparent',
+                                    border: '1px solid var(--text-secondary)'
+                                  }}></span>
+                                  <span>Direct Invoices</span>
+                                </div>
+                              </li>
+                              <li>
+                                <div
+                                  className={`nav-item sub-nav-item ${creditControlSubTab === 'simplicity' ? 'active' : ''}`}
+                                  onClick={(e) => { e.stopPropagation(); setCreditControlSubTab('simplicity'); }}
+                                  style={{
+                                    fontSize: '12px',
+                                    padding: '6px 12px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    color: creditControlSubTab === 'simplicity' ? 'var(--primary-color)' : 'var(--text-secondary)'
+                                  }}
+                                >
+                                  <span style={{
+                                    width: '6px',
+                                    height: '6px',
+                                    borderRadius: '50%',
+                                    backgroundColor: creditControlSubTab === 'simplicity' ? 'var(--primary-color)' : 'transparent',
+                                    border: '1px solid var(--text-secondary)'
+                                  }}></span>
+                                  <span>Simplicity Invoices</span>
+                                </div>
+                              </li>
+                            </ul>
+                          )}
+                        </li>
+                      )}
+                      {currentUser.permissions.allowedModules.includes('vendors') && (
+                        <li>
+                          <div className={`nav-item ${activeTab === 'vendors' ? 'active' : ''}`} onClick={() => setActiveTab('vendors')}>
+                            <Laptop size={18} />
+                            <span>Accounts Payable</span>
+                          </div>
+                        </li>
+                      )}
+                      {currentUser.permissions.allowedModules.includes('expenses') && (
+                        <li>
+                          <div className={`nav-item ${activeTab === 'expenses' ? 'active' : ''}`} onClick={() => setActiveTab('expenses')}>
+                            <Receipt size={18} />
+                            <span>{currentUser.permissions.role === 'recruiter' ? 'My Expense Claims' : 'Expense Ledger'}</span>
+                          </div>
+                        </li>
+                      )}
+                      {currentUser.permissions.allowedModules.includes('cashflow') && (
+                        <li>
+                          <div className={`nav-item ${activeTab === 'cashflow' ? 'active' : ''}`} onClick={() => setActiveTab('cashflow')}>
+                            <TrendingUp size={18} />
+                            <span>Cashflow Forecast</span>
+                          </div>
+                        </li>
+                      )}
+                      {currentUser.permissions.allowedModules.includes('reports') && (
+                        <li>
+                          <div className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')}>
+                            <PieChart size={18} />
+                            <span>Profit & Loss / Reports</span>
+                          </div>
+                        </li>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Category: KPIs */}
+                  <div 
+                    onClick={() => toggleSection('kpis')} 
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 12px 6px 12px',
+                      cursor: 'pointer',
+                      color: 'var(--text-muted)',
+                      fontWeight: 600,
+                      fontSize: '10px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      marginTop: '8px',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <span>📈 KPI Performance</span>
+                    {expandedSections.kpis ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  </div>
+
+                  {expandedSections.kpis && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
+                      <li>
+                        <div className={`nav-item ${activeTab === 'kpis' ? 'active' : ''}`} onClick={() => setActiveTab('kpis')}>
+                          <BarChart2 size={18} />
+                          <span>KPI Scorecard</span>
+                        </div>
+                      </li>
+                    </div>
+                  )}
+
+                  {/* Category: Administration */}
+                  {(currentUser.permissions.role === 'admin' || currentUser.permissions.allowedModules.includes('logs')) && (
+                    <>
+                      <div 
+                        onClick={() => toggleSection('admin')} 
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 12px 6px 12px',
+                          cursor: 'pointer',
+                          color: 'var(--text-muted)',
+                          fontWeight: 600,
+                          fontSize: '10px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                          marginTop: '8px',
+                          userSelect: 'none'
+                        }}
+                      >
+                        <span>⚙️ Administration</span>
+                        {expandedSections.admin ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      </div>
+
+                      {expandedSections.admin && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
+                          {currentUser.permissions.role === 'admin' && (
+                            <li>
+                              <div className={`nav-item ${activeTab === 'rbac' ? 'active' : ''}`} onClick={() => setActiveTab('rbac')}>
+                                <Key size={18} />
+                                <span>User Access & Roles</span>
+                              </div>
+                            </li>
+                          )}
+                          {currentUser.permissions.allowedModules.includes('logs') && (
+                            <li>
+                              <div className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
+                                <History size={18} />
+                                <span>Audit Trail Logs</span>
+                              </div>
+                            </li>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
               )}
             </ul>
           </nav>
@@ -3243,6 +3475,7 @@ export default function App() {
               companies={companies}
               currentUser={currentUser}
               onShowToast={handleShowToast}
+              placements={placements}
             />
           )}
           </Suspense>

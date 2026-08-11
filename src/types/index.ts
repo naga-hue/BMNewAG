@@ -23,6 +23,9 @@ export interface Staff {
   status?: string;
   role?: string;
   payrollPolicyId?: string;
+  qandleEmail?: string;
+  dialpadEmail?: string;
+  recruitlyEmail?: string;
 }
 
 export interface Expense {

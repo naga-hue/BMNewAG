@@ -606,7 +606,6 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
 }
-}
 
 /**
  * Recalculate daily KPI totals for a specific recruiter/date and write to kpiDaily.

@@ -6,12 +6,18 @@
     },
     {
       "path": "/api/qandle/sync",
-      "schedule": "*/30 6-19 * * *"
+      "schedule": "0 8 * * *"
     }
   ],
   "functions": {
     "api/qandle/sync.js": {
       "maxDuration": 60
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api/qandle/ingest",
+      "destination": "/api/qandle/sync"
+    }
+  ]
 }

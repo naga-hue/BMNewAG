@@ -140,6 +140,7 @@ function decimalToTime(val) {
   return h12 + ":" + (minutes < 10 ? "0" : "") + minutes + " " + suffix;
 }
 
+// decimal hours to "Xh Ym"
 function decimalToHours(val) {
   if (val === null || val === undefined || val === 0) return "-";
   const num = parseFloat(val);
@@ -265,10 +266,94 @@ export default async function handler(req, res) {
                        (querySecret === expectedSecret);
 
   if (!isAuthorized) {
-    console.warn('[Qandle Sync] Unauthorized access attempt.');
+    console.warn('[Qandle Sync/Ingest] Unauthorized access attempt.');
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // 1. Check if this is an Ingest action (POST with records array)
+  const isIngest = req.method === 'POST' && req.body && Array.isArray(req.body.records);
+
+  if (isIngest) {
+    // --- RUN INGEST LOGIC ---
+    const { records } = req.body;
+    try {
+      const firestore = initFirestore();
+      const staffSnap = await firestore.collection('staff').get();
+      const staffList = [];
+      staffSnap.forEach(sDoc => {
+        staffList.push({ id: sDoc.id, ...sDoc.data() });
+      });
+
+      console.log(`[Qandle Ingest] Processing batch of ${records.length} records.`);
+
+      let processedCount = 0;
+      let skippedCount = 0;
+      const batch = firestore.batch();
+
+      for (const rec of records) {
+        const empCode = (rec.employee_code || '').trim().toUpperCase();
+        const empName = (rec.full_name || '').trim().toLowerCase();
+
+        let matchedStaff = staffList.find(s => {
+          const dbCode = (s.employeeCode || s.employee_code || '').trim().toUpperCase();
+          return dbCode && dbCode === empCode;
+        });
+
+        if (!matchedStaff) {
+          matchedStaff = staffList.find(s => {
+            const dbName = (s.fullName || s.full_name || '').trim();
+            return matchName(dbName, rec.full_name);
+          });
+        }
+
+        if (!matchedStaff) {
+          console.warn(`[Qandle Ingest] Skipping record. Could not match employee: ${rec.full_name}`);
+          skippedCount++;
+          continue;
+        }
+
+        const parsedDate = parseQandleDate(rec.date);
+        if (!parsedDate) {
+          skippedCount++;
+          continue;
+        }
+
+        const docId = `${matchedStaff.id}_${parsedDate}`;
+        const docRef = firestore.collection('qandle_activities').doc(docId);
+
+        const activityData = {
+          staffId: matchedStaff.id,
+          staffName: matchedStaff.fullName || matchedStaff.full_name || rec.full_name,
+          employeeCode: matchedStaff.employeeCode || empCode,
+          date: parsedDate,
+          arrivalTime: rec.arrival_time || '-',
+          leftTime: rec.left_time || '-',
+          productiveTimeSeconds: timeStringToSeconds(rec.productive_time),
+          timeAtWorkSeconds: timeStringToSeconds(rec.time_at_work),
+          deskTimeSeconds: timeStringToSeconds(rec.desktime),
+          effectiveness: parsePercentage(rec.effectiveness),
+          productivity: parsePercentage(rec.productivity),
+          updatedAt: new Date().toISOString()
+        };
+
+        batch.set(docRef, activityData, { merge: true });
+        processedCount++;
+      }
+
+      if (processedCount > 0) {
+        await batch.commit();
+      }
+
+      console.log(`[Qandle Ingest] Successfully processed ${processedCount} records, skipped ${skippedCount}.`);
+      return res.status(200).json({ success: true, processed: processedCount, skipped: skippedCount });
+
+    } catch (error) {
+      console.error('[Qandle Ingest] Error processing ingest:', error);
+      return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    }
+  }
+
+  // --- RUN SYNC LOGIC ---
   // Time gate (7 AM - 7 PM UK Time)
   const bypassTimecheck = req.query.bypassTimecheck === 'true';
   if (!bypassTimecheck) {
@@ -282,7 +367,7 @@ export default async function handler(req, res) {
     
     if (ukHour < 7 || ukHour >= 19) {
       console.log(`[Qandle Sync] Outside UK work hours (Current UK hour: ${ukHour}). Skipping sync.`);
-      return res.status(200).json({ success: true, message: `Skipped: Outside 7 AM - 7 PM UK hours (Current hour: ${ukHour})` });
+      return res.status(200).json({ success: true, message: `Skipped: Outside 7 AM - 7 PM UK hours` });
     }
   }
 
@@ -293,7 +378,6 @@ export default async function handler(req, res) {
   try {
     const firestore = initFirestore();
     
-    // Fetch active staff list
     const staffSnap = await firestore.collection('staff').get();
     const staffList = [];
     staffSnap.forEach(sDoc => {
@@ -305,7 +389,6 @@ export default async function handler(req, res) {
 
     console.log(`[Qandle Sync] Loaded ${staffList.length} active staff profiles.`);
 
-    // Authenticate with Qandle API
     const authRes = await fetch(BASE_URL + "/oauth/access-token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -322,7 +405,6 @@ export default async function handler(req, res) {
     }
     const token = tokenData.access_token;
 
-    // Fetch users directory from Qandle
     const userRes = await fetch(BASE_URL + "/client-api/users-preview", {
       method: "GET",
       headers: { "Authorization": "Bearer " + token }
@@ -339,23 +421,19 @@ export default async function handler(req, res) {
     const today = new Date();
     const timestamp = getISTMidnightTimestamp(today);
 
-    // Keep track of matched staff to run background backfilling
     const matchedStaffList = [];
 
-    // --- STEP 1: FAST PATH SYNC (Today & Yesterday for ALL matched active staff) ---
+    // Fast Path Sync
     for (const s of staffList) {
       const matchedEmp = qandleEmployees.find(qEmp => {
-        // 1. Match by qandleEmail
         const sQandle = (s.qandleEmail || '').trim().toLowerCase();
         const qEmail = (qEmp.personal_email_id || '').trim().toLowerCase();
         if (sQandle && qEmail && sQandle === qEmail) return true;
 
-        // 2. Match by employeeCode
         const sCode = (s.employeeCode || s.employee_code || '').trim().toUpperCase();
         const qCode = (qEmp.employee_code || '').trim().toUpperCase();
         if (sCode && qCode && sCode === qCode) return true;
 
-        // 3. Fallback to name match
         return matchName(s.fullName, qEmp.full_name);
       });
 
@@ -363,7 +441,6 @@ export default async function handler(req, res) {
       matchedCount++;
       matchedStaffList.push({ staff: s, matchedEmp });
 
-      // Pull current week's productivity graph
       const graphRes = await fetch(BASE_URL + `/client-api/productivity-graph/${matchedEmp._id}/${timestamp}`, {
         method: "GET",
         headers: { "Authorization": "Bearer " + token }
@@ -372,7 +449,6 @@ export default async function handler(req, res) {
 
       if (graphData.status === "success" && graphData.data) {
         const dailyRows = expandWeekData(graphData.data, today);
-        // Write last 2 days (today and yesterday) to heal short-term gaps
         const lastTwoDays = dailyRows.slice(-2);
         
         for (const row of lastTwoDays) {
@@ -401,25 +477,21 @@ export default async function handler(req, res) {
           fastPathWritten++;
         }
       }
-      // Small delay between requests to prevent API throttle
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
     if (fastPathWritten > 0) {
       await batch.commit();
-      console.log(`[Qandle Sync] Fast path completed. Synced last 2 days for all recruiters. Wrote ${fastPathWritten} rows.`);
+      console.log(`[Qandle Sync] Fast path complete. Wrote ${fastPathWritten} rows.`);
     }
 
-    // --- STEP 2: PROGRESSIVE BACKGROUND BACKFILL (Trailing 30-days) ---
+    // Trailing background backfill
     const isFullBackfill = req.query.fullBackfill === 'true';
     let backfillTargetList = [];
 
     if (isFullBackfill) {
-      // Force full backfill for all matched staff in a single run
       backfillTargetList = matchedStaffList;
-      console.log(`[Qandle Sync] Triggering full 30-day backfill for all ${backfillTargetList.length} active matched staff...`);
     } else if (matchedStaffList.length > 0) {
-      // Progressive mode: Pick the single matched staff member with the oldest/missing backfill time
       const singleCandidate = [...matchedStaffList].sort((a, b) => {
         const aTime = a.staff.qandleLastBackfilledAt ? new Date(a.staff.qandleLastBackfilledAt).getTime() : 0;
         const bTime = b.staff.qandleLastBackfilledAt ? new Date(b.staff.qandleLastBackfilledAt).getTime() : 0;
@@ -428,12 +500,11 @@ export default async function handler(req, res) {
       
       if (singleCandidate) {
         backfillTargetList = [singleCandidate];
-        console.log(`[Qandle Sync] Selected candidate for progressive backfill: ${singleCandidate.staff.fullName} (Last backfilled: ${singleCandidate.staff.qandleLastBackfilledAt || 'never'})`);
       }
     }
 
     let historyWrittenCount = 0;
-    const historyOffsets = [-7, -14, -21, -28]; // trailing weeks to cover 30 days
+    const historyOffsets = [-7, -14, -21, -28];
 
     for (const target of backfillTargetList) {
       const s = target.staff;
@@ -482,18 +553,15 @@ export default async function handler(req, res) {
             }
           }
         } catch (err) {
-          console.error(`[Qandle Sync] Error fetching history offset ${offset} for ${s.fullName}:`, err);
+          console.error(`[Qandle Sync] History offset ${offset} failed for ${s.fullName}:`, err);
         }
-        // Delay to prevent Qandle rate limits
         await new Promise(resolve => setTimeout(resolve, 150));
       }
 
       if (targetWrittenCount > 0) {
         await historyBatch.commit();
-        console.log(`[Qandle Sync] Historical backfill complete for ${s.fullName}. Wrote ${targetWrittenCount} rows.`);
       }
 
-      // Update staff document backfill timestamp
       await firestore.collection('staff').doc(s.id).update({
         qandleLastBackfilledAt: new Date().toISOString()
       });
@@ -501,7 +569,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: `Sync completed. Matched ${matchedCount}/${staffList.length} staff. Wrote ${fastPathWritten} recent and ${historyWrittenCount} history records.`
+      message: `Sync completed. Wrote ${fastPathWritten} recent and ${historyWrittenCount} history records.`
     });
 
   } catch (error) {

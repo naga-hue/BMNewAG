@@ -126,6 +126,66 @@ function matchName(dbName, empName) {
   return cleanDb === cleanEmp;
 }
 
+// Consolidate duplicate call legs of the same call
+function consolidateCalls(calls) {
+  const groups = [];
+  for (const call of calls) {
+    let matchedGroup = null;
+    const callTime = call.dateStarted ? new Date(call.dateStarted).getTime() : 0;
+    
+    for (const group of groups) {
+      // Check ID links
+      const masterLink = call.masterCallId && group.masterCallIds.has(call.masterCallId);
+      const entryLink = call.entryPointCallId && group.entryPointCallIds.has(call.entryPointCallId);
+      const directIdLink = (call.masterCallId && group.callIds.has(call.masterCallId)) || 
+                           (call.entryPointCallId && group.callIds.has(call.entryPointCallId)) ||
+                           (call.conversationId && (group.masterCallIds.has(call.conversationId) || group.entryPointCallIds.has(call.conversationId)));
+      
+      // Only consolidate legs of the same call sharing exact ID links (e.g. transfers, routing legs)
+      if (masterLink || entryLink || directIdLink) {
+        matchedGroup = group;
+        break;
+      }
+    }
+    
+    if (matchedGroup) {
+      matchedGroup.callIds.add(call.conversationId || call.primaryCallId || call.id);
+      if (call.masterCallId) matchedGroup.masterCallIds.add(call.masterCallId);
+      if (call.entryPointCallId) matchedGroup.entryPointCallIds.add(call.entryPointCallId);
+      if (call.externalNumber) matchedGroup.externalNumbers.add(call.externalNumber);
+      matchedGroup.legs.push(call);
+    } else {
+      groups.push({
+        baseTime: callTime,
+        callIds: new Set([call.conversationId || call.primaryCallId || call.id].filter(Boolean)),
+        masterCallIds: new Set(call.masterCallId ? [call.masterCallId] : []),
+        entryPointCallIds: new Set(call.entryPointCallId ? [call.entryPointCallId] : []),
+        externalNumbers: new Set(call.externalNumber ? [call.externalNumber] : []),
+        legs: [call]
+      });
+    }
+  }
+
+  return groups.map(group => {
+    // Prefer legs that are connected or have longer talk time
+    group.legs.sort((a, b) => {
+      const talkA = Number(a.durationSeconds || a.talkTimeSeconds || 0);
+      const talkB = Number(b.durationSeconds || b.talkTimeSeconds || 0);
+      return talkB - talkA;
+    });
+    
+    const primary = group.legs[0];
+    const duration = Math.max(...group.legs.map(l => Number(l.durationSeconds || l.talkTimeSeconds || 0)));
+    const connected = group.legs.some(l => l.connected === true);
+    
+    return {
+      ...primary,
+      durationSeconds: duration,
+      connected
+    };
+  });
+}
+
 async function updateRecruiterKpis(firestore, handlerId, dateKey) {
   if (!handlerId || !dateKey) return;
   const docId = `${handlerId}_${dateKey}`;
@@ -148,10 +208,17 @@ async function updateRecruiterKpis(firestore, handlerId, dateKey) {
     let callsOver5Min = 0;
     let callsOver10Min = 0;
 
+    const rawCalls = [];
     dayCallsSnap.forEach(docSnap => {
       const call = docSnap.data();
-      if (call.handlerId !== handlerId) return;
+      if (call.handlerId === handlerId) {
+        rawCalls.push(call);
+      }
+    });
 
+    const consolidated = consolidateCalls(rawCalls);
+
+    consolidated.forEach(call => {
       callsTotal++;
       if ((call.direction || '').toLowerCase() === 'inbound') {
         callsInbound++;
@@ -159,7 +226,7 @@ async function updateRecruiterKpis(firestore, handlerId, dateKey) {
         callsOutbound++;
       }
       
-      const duration = Number(call.durationSeconds || call.talkTimeSeconds || 0);
+      const duration = Number(call.durationSeconds || 0);
       totalTalkTimeSeconds += duration;
       if (duration >= 300) callsOver5Min++;
       if (duration >= 600) callsOver10Min++;
@@ -227,10 +294,16 @@ export default async function handler(req, res) {
 
     console.log(`[Sync Calls] Loaded ${staffList.length} active staff profiles.`);
 
-    // 2. Fetch trailing concluded calls from Dialpad API
+    // 2. Fetch trailing concluded calls from Dialpad API with a reconciliation window
     const tokens = Array.from(new Set([tokenSlot1, tokenSlot2])).filter(Boolean);
     let allDialpadCalls = [];
-    const todayStr = new Date().toISOString().substring(0, 10);
+    
+    const daysLimit = Number(req.query.days || 2);
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysLimit);
+    const cutoffDateStr = cutoffDate.toISOString().substring(0, 10); // "YYYY-MM-DD"
+    console.log(`[Sync Calls] Running recovery sync with cutoff date ${cutoffDateStr} (${daysLimit} days ago).`);
+    
     let healedCount = 0;
 
     for (const token of tokens) {
@@ -257,12 +330,12 @@ export default async function handler(req, res) {
           if (Array.isArray(items) && items.length > 0) {
             allDialpadCalls = allDialpadCalls.concat(items);
             
-            // Check if we have started seeing calls from yesterday/prior days
+            // Check if we have started seeing calls older than our cutoff date
             const oldestCall = items[items.length - 1];
             const oldestCallDate = formatDialpadDate(oldestCall?.date_started);
               
-            if (oldestCallDate && !oldestCallDate.startsWith(todayStr)) {
-              console.log(`[Sync Calls] Reached calls from prior day (${oldestCallDate.substring(0, 10)}). Stopping pagination.`);
+            if (oldestCallDate && oldestCallDate < cutoffDateStr) {
+              console.log(`[Sync Calls] Reached calls older than cutoff date (${oldestCallDate.substring(0, 10)}). Stopping pagination.`);
               hasMore = false;
             }
           } else {
@@ -284,6 +357,18 @@ export default async function handler(req, res) {
 
     console.log(`[Sync Calls] Fetched ${allDialpadCalls.length} concluded calls from Dialpad API.`);
 
+    // Bulk fetch existing calls in the date range to optimize Firestore reads
+    console.log(`[Sync Calls] Bulk loading existing calls from Firestore starting from ${cutoffDateStr}...`);
+    const existingCallsMap = new Map();
+    const existingSnap = await firestore.collection('dialpad_calls')
+      .where('dateStarted', '>=', cutoffDateStr)
+      .get();
+      
+    existingSnap.forEach(docSnap => {
+      existingCallsMap.set(docSnap.id, docSnap.data());
+    });
+    console.log(`[Sync Calls] Loaded ${existingCallsMap.size} existing calls from Firestore.`);
+
     const affectedRecruiters = new Set();
 
     for (const dCall of allDialpadCalls) {
@@ -292,14 +377,13 @@ export default async function handler(req, res) {
       
       const dateStartedStr = formatDialpadDate(dCall.date_started);
         
-      if (!dateStartedStr.startsWith(todayStr)) {
-        continue; // Only process today's calls to heal active gaps
+      if (dateStartedStr < cutoffDateStr) {
+        continue; // Only process calls within the reconciliation window
       }
 
-      // Check if call exists in Firestore
-      const callRef = firestore.collection('dialpad_calls').doc(conversationId);
-      const callSnap = await callRef.get();
-      const existingCall = callSnap.exists ? callSnap.data() : null;
+      // Check if call exists in Firestore Map (doc ID is callId)
+      const existingCall = existingCallsMap.get(callId) || null;
+      const callRef = firestore.collection('dialpad_calls').doc(callId);
 
       // Extract target properties
       const targetEmail = dCall.target?.email || '';
@@ -368,24 +452,38 @@ export default async function handler(req, res) {
           wasRecorded: dCall.was_recorded || false,
           recordingUrl: (Array.isArray(dCall.recording_url) ? dCall.recording_url[0] : dCall.recording_url) || '',
           callStatus: dCall.state === 'concluded' ? 'Connected' : 'No Answer',
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+
+          // Diagnostic / Audit Fields
+          dialpadCallId: callId,
+          webhookState: dCall.state || 'concluded',
+          phoneNumber: dCall.contact?.phone_number || '',
+          dialpadUser: targetEmail,
+          originalTimestamp: dateStartedStr,
+          webhookReceivedTimestamp: '',
+          source: 'api_reconciliation',
+          callSource: isMissing ? 'Recovered from Dialpad API' : (existingCall?.callSource || ''),
+          matchedRecruitlyIds: [],
+          numberOfRecruitlyMatches: 0
         };
 
         await callRef.set(callData, { merge: true });
         healedCount++;
 
         if (handlerId) {
-          affectedRecruiters.add(handlerId);
+          const dateStr = dateStartedStr.substring(0, 10);
+          affectedRecruiters.add(`${handlerId}_${dateStr}`);
         }
       }
     }
 
     console.log(`[Sync Calls] Completed sweep. Saved/healed ${healedCount} calls.`);
 
-    // 3. Recalculate daily kpis for affected recruiters
+    // 3. Recalculate daily kpis for affected recruiters & dates
     if (affectedRecruiters.size > 0) {
-      for (const rId of affectedRecruiters) {
-        await updateRecruiterKpis(firestore, rId, todayStr);
+      for (const pair of affectedRecruiters) {
+        const [rId, dateStr] = pair.split('_');
+        await updateRecruiterKpis(firestore, rId, dateStr);
       }
     }
 

@@ -2,15 +2,6 @@ import crypto from 'crypto';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
-// Normalize email local-part by removing dots
-function normalizeEmail(emailStr) {
-  if (!emailStr) return '';
-  const parts = emailStr.toLowerCase().trim().split('@');
-  if (parts.length !== 2) return emailStr.toLowerCase().trim();
-  const localPart = parts[0].replace(/\./g, '');
-  return `${localPart}@${parts[1]}`;
-}
-
 // Disable default Vercel body-parser so we can retrieve the raw string body for JWT validation
 export const config = {
   api: {
@@ -201,6 +192,41 @@ function normalizeEmail(emailStr) {
   return `${localPart}@${parts[1]}`;
 }
 
+// Helper to determine the priority level of a call state
+function getStatePriority(state) {
+  const s = String(state).toLowerCase().trim();
+  if (['hangup', 'concluded', 'ended', 'voicemail', 'missed', 'dispositions', 'call_transcription', 'call_moments', 'recap_summary', 'recap_outcome'].includes(s)) {
+    return 3;
+  }
+  if (['connected'].includes(s)) {
+    return 2;
+  }
+  return 1; // calling, ringing, created, etc.
+}
+
+// Audit logging helper to record webhook ingestion events in Firestore
+async function writeWebhookLog(firestore, callId, state, payload, httpStatus, processingResult, errorMsg = '') {
+  try {
+    const logId = `${callId}_${state}_${Date.now()}`;
+    const logData = {
+      received_at: new Date().toISOString(),
+      dialpad_call_id: callId,
+      event_type_state: state,
+      external_number: payload.external_number || '',
+      internal_user: payload.target?.email || '',
+      direction: payload.direction || '',
+      http_response_status: httpStatus,
+      processing_result: processingResult,
+      database_result: errorMsg ? 'failed' : 'success',
+      error_message: errorMsg,
+      retry_count: 0
+    };
+    await firestore.collection('dialpad_webhook_logs').doc(logId).set(logData);
+  } catch (err) {
+    console.error('[Webhook Audit Log] Failed to write log:', err);
+  }
+}
+
 export default async function handler(req, res) {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -279,8 +305,15 @@ export default async function handler(req, res) {
     // Initialize Firestore
     const firestore = initFirestore();
 
-    // 4. Save Raw Event to dialpad_events (idempotency target doc)
+    // Idempotency check based on callId + state + eventTimestamp
     const eventDocId = `${callId}_${state}_${eventTimestamp}`;
+    const eventDocRef = firestore.collection('dialpad_events').doc(eventDocId);
+    const eventSnap = await eventDocRef.get();
+    if (eventSnap.exists) {
+      console.log(`[Webhook] Duplicate event detected and skipped: ${eventDocId}`);
+      await writeWebhookLog(firestore, callId, state, payload, 200, 'Duplicate event skipped (idempotency)');
+      return res.status(200).json({ success: true, duplicated: true, message: 'Event already processed' });
+    }
     const rawEventData = {
       eventId: eventDocId,
       callId,
@@ -352,9 +385,16 @@ export default async function handler(req, res) {
         finalConversationId = existingData.conversationId;
       }
 
-      // Check event timestamp to ensure out of order events do not overwrite newer information
-      if (existingData && eventTimestamp < (existingData.lastEventTimestamp || 0)) {
-        console.log(`[Webhook] Skipping out-of-order leg merge for callId ${callId}. Existing is newer.`);
+      // Ensure out-of-order state precedence
+      const existingPriority = existingData ? getStatePriority(existingData.state) : 0;
+      const newPriority = getStatePriority(state);
+      
+      const isOutofOrder = existingData && 
+        (eventTimestamp < (existingData.lastEventTimestamp || 0) || 
+         (eventTimestamp === existingData.lastEventTimestamp && newPriority < existingPriority));
+         
+      if (isOutofOrder) {
+        console.log(`[Webhook] Skipping out-of-order leg merge for callId ${callId}. Existing state ${existingData.state} is newer/higher priority than ${state}.`);
         return;
       }
 
@@ -405,8 +445,14 @@ export default async function handler(req, res) {
         recapSummary: rawEventData.recapSummary || existingData?.recapSummary || '',
         recapOutcome: rawEventData.recapOutcome || existingData?.recapOutcome || '',
         callRecordingIds: mergedRecordings,
-        recordingUrl: rawEventData.recordingUrl || rawEventData.adminRecordingUrls?.[0] || existingData?.recordingUrl || existingData?.adminRecordingUrls?.[0] || '',
-        adminRecordingUrls: rawEventData.adminRecordingUrls || existingData?.adminRecordingUrls || [],
+        recordingUrl: (Array.isArray(rawEventData.recordingUrl) ? rawEventData.recordingUrl[0] : rawEventData.recordingUrl) ||
+                      (Array.isArray(rawEventData.adminRecordingUrls) ? rawEventData.adminRecordingUrls[0] : rawEventData.adminRecordingUrls) ||
+                      (Array.isArray(existingData?.recordingUrl) ? existingData.recordingUrl[0] : existingData?.recordingUrl) ||
+                      (Array.isArray(existingData?.adminRecordingUrls) ? existingData.adminRecordingUrls[0] : existingData?.adminRecordingUrls) || '',
+        adminRecordingUrls: Array.isArray(rawEventData.adminRecordingUrls) ? rawEventData.adminRecordingUrls : 
+                            (rawEventData.adminRecordingUrls ? [rawEventData.adminRecordingUrls] : 
+                            (Array.isArray(existingData?.adminRecordingUrls) ? existingData.adminRecordingUrls : 
+                            (existingData?.adminRecordingUrls ? [existingData.adminRecordingUrls] : []))),
         wasRecorded: !!(rawEventData.recordingUrl || rawEventData.adminRecordingUrls?.length > 0 || existingData?.recordingUrl || existingData?.adminRecordingUrls?.length > 0),
         voicemailLink: rawEventData.voicemailLink || existingData?.voicemailLink || '',
         transcriptionText: rawEventData.transcriptionText || existingData?.transcriptionText || '',
@@ -428,8 +474,8 @@ export default async function handler(req, res) {
         legData.callStatus = 'No Answer';
       }
 
-      // 6. Transactional Consolidated Call Loading
-      const callDocRef = firestore.collection('dialpad_calls').doc(finalConversationId);
+      // 6. Transactional Unique Call Record Loading (doc ID is callId)
+      const callDocRef = firestore.collection('dialpad_calls').doc(callId);
       const callSnap = await transaction.get(callDocRef);
       const callData = callSnap.data() || {};
       let relatedCallIds = callData.relatedCallIds || [];
@@ -483,7 +529,9 @@ export default async function handler(req, res) {
       let enrichedCallStatus = primaryLeg.callStatus;
 
       relatedLegs.forEach(leg => {
-        if (leg.recordingUrl) enrichedRecordingUrl = leg.recordingUrl;
+        if (leg.recordingUrl) {
+          enrichedRecordingUrl = Array.isArray(leg.recordingUrl) ? leg.recordingUrl[0] : leg.recordingUrl;
+        }
         if (leg.voicemailLink) {
           enrichedVoicemailLink = leg.voicemailLink;
           enrichedCallStatus = 'Voicemail';
@@ -579,7 +627,10 @@ export default async function handler(req, res) {
         recordingUrl: enrichedRecordingUrl,
         recordingUrls: enrichedRecordingUrl ? [enrichedRecordingUrl] : [],
         wasRecorded: !!enrichedRecordingUrl,
-        adminRecordingUrls: Array.from(new Set(relatedLegs.flatMap(l => l.adminRecordingUrls || []))),
+        adminRecordingUrls: Array.from(new Set(relatedLegs.flatMap(l => {
+          const arr = l.adminRecordingUrls || [];
+          return Array.isArray(arr) ? arr : [arr];
+        }))),
         voicemailLink: enrichedVoicemailLink,
         
         target: primaryLeg.target || null,
@@ -592,7 +643,18 @@ export default async function handler(req, res) {
         // Preserve transcript placeholder fields for separate background fetching
         transcript: callData.transcript || enrichedTranscription || '',
         transcriptStatus: callData.transcriptStatus || (enrichedTranscription ? 'fetched' : 'pending'),
-        transcriptFetchedAt: callData.transcriptFetchedAt || (enrichedTranscription ? new Date().toISOString() : '')
+        transcriptFetchedAt: callData.transcriptFetchedAt || (enrichedTranscription ? new Date().toISOString() : ''),
+
+        // Diagnostic / Audit Fields
+        dialpadCallId: callId,
+        webhookState: state,
+        phoneNumber: primaryLeg.externalNumber || primaryLeg.contact?.phone_number || '',
+        dialpadUser: targetEmail,
+        originalTimestamp: primaryLeg.dateStarted || '',
+        webhookReceivedTimestamp: new Date().toISOString(),
+        source: 'webhook',
+        matchedRecruitlyIds: [],
+        numberOfRecruitlyMatches: 0
       };
 
       // Perform all transaction writes together
@@ -602,7 +664,8 @@ export default async function handler(req, res) {
       resolvedKPI = { handlerId, dateStarted: finalCallData.dateStarted };
     });
 
-    console.log(`[Webhook] Consolidated logical call saved successfully under transaction: ${finalConversationId}`);
+    console.log(`[Webhook] Call saved successfully under transaction: ${callId}`);
+    await writeWebhookLog(firestore, callId, state, payload, 200, `Call saved successfully. Database ID: ${callId}`);
 
     // Update daily recruiter KPIs in real time
     if (resolvedKPI && resolvedKPI.handlerId) {
@@ -612,8 +675,76 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, conversationId: finalConversationId, callId: callId });
   } catch (error) {
     console.error('[Webhook] Failed to process Dialpad webhook event:', error);
+    try {
+      const firestore = initFirestore();
+      const fallbackCallId = payload?.call_id ? String(payload.call_id) : 'unknown';
+      const fallbackState = payload?.state ? String(payload.state) : 'unknown';
+      await writeWebhookLog(firestore, fallbackCallId, fallbackState, payload || {}, 500, 'Failed to process event', error.message || String(error));
+    } catch (logErr) {
+      console.error('[Webhook Audit Log] Failed to write error log:', logErr);
+    }
     return res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
+}
+
+// Consolidate duplicate call legs of the same call
+function consolidateCalls(calls) {
+  const groups = [];
+  for (const call of calls) {
+    let matchedGroup = null;
+    const callTime = call.dateStarted ? new Date(call.dateStarted).getTime() : 0;
+    
+    for (const group of groups) {
+      // Check ID links
+      const masterLink = call.masterCallId && group.masterCallIds.has(call.masterCallId);
+      const entryLink = call.entryPointCallId && group.entryPointCallIds.has(call.entryPointCallId);
+      const directIdLink = (call.masterCallId && group.callIds.has(call.masterCallId)) || 
+                           (call.entryPointCallId && group.callIds.has(call.entryPointCallId)) ||
+                           (call.conversationId && (group.masterCallIds.has(call.conversationId) || group.entryPointCallIds.has(call.conversationId)));
+      
+      // Only consolidate legs of the same call sharing exact ID links (e.g. transfers, routing legs)
+      if (masterLink || entryLink || directIdLink) {
+        matchedGroup = group;
+        break;
+      }
+    }
+    
+    if (matchedGroup) {
+      matchedGroup.callIds.add(call.conversationId || call.primaryCallId || call.id);
+      if (call.masterCallId) matchedGroup.masterCallIds.add(call.masterCallId);
+      if (call.entryPointCallId) matchedGroup.entryPointCallIds.add(call.entryPointCallId);
+      if (call.externalNumber) matchedGroup.externalNumbers.add(call.externalNumber);
+      matchedGroup.legs.push(call);
+    } else {
+      groups.push({
+        baseTime: callTime,
+        callIds: new Set([call.conversationId || call.primaryCallId || call.id].filter(Boolean)),
+        masterCallIds: new Set(call.masterCallId ? [call.masterCallId] : []),
+        entryPointCallIds: new Set(call.entryPointCallId ? [call.entryPointCallId] : []),
+        externalNumbers: new Set(call.externalNumber ? [call.externalNumber] : []),
+        legs: [call]
+      });
+    }
+  }
+
+  return groups.map(group => {
+    // Prefer legs that are connected or have longer talk time
+    group.legs.sort((a, b) => {
+      const talkA = Number(a.durationSeconds || a.talkTimeSeconds || 0);
+      const talkB = Number(b.durationSeconds || b.talkTimeSeconds || 0);
+      return talkB - talkA;
+    });
+    
+    const primary = group.legs[0];
+    const duration = Math.max(...group.legs.map(l => Number(l.durationSeconds || l.talkTimeSeconds || 0)));
+    const connected = group.legs.some(l => l.connected === true);
+    
+    return {
+      ...primary,
+      durationSeconds: duration,
+      connected
+    };
+  });
 }
 
 /**
@@ -643,10 +774,17 @@ async function updateKpiDaily(firestore, handlerId, dateStarted) {
     let callsOver5Min = 0;
     let callsOver10Min = 0;
 
+    const rawCalls = [];
     dayCallsSnap.forEach(docSnap => {
       const call = docSnap.data();
-      if (call.handlerId !== handlerId) return; // Filter by recruiter in-memory
+      if (call.handlerId === handlerId) {
+        rawCalls.push(call);
+      }
+    });
 
+    const consolidated = consolidateCalls(rawCalls);
+
+    consolidated.forEach(call => {
       callsTotal++;
       if ((call.direction || '').toLowerCase() === 'inbound') {
         callsInbound++;
@@ -654,7 +792,7 @@ async function updateKpiDaily(firestore, handlerId, dateStarted) {
         callsOutbound++;
       }
       
-      const duration = Number(call.durationSeconds || call.talkTimeSeconds || 0);
+      const duration = Number(call.durationSeconds || 0);
       totalTalkTimeSeconds += duration;
       if (duration >= 300) {
         callsOver5Min++;

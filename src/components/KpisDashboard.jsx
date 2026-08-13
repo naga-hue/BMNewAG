@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../services/firebase';
 import { collection, getDocs, query, where, limit, orderBy, onSnapshot } from 'firebase/firestore';
 import { useBoundStore } from '../store/useBoundStore';
+import WebhookLogsTab from './WebhookLogsTab';
 import { 
   Phone, 
   PhoneIncoming, 
@@ -111,7 +112,21 @@ const CRMContactLink = ({ phone, defaultName }) => {
 };
 
 // Formats raw Dialpad dispositions (e.g. "Candidate~NoAnswer") into pretty styled pills
-const renderDispositionBadges = (dispositionStr) => {
+const renderDispositionBadges = (dispositionStr, isConnected) => {
+  if (isConnected === false) {
+    return (
+      <span style={{
+        padding: '3px 8px',
+        borderRadius: '4px',
+        fontSize: '10px',
+        fontWeight: 700,
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        color: 'var(--danger)'
+      }}>
+        Missed
+      </span>
+    );
+  }
   const disp = dispositionStr || '';
   if (!disp || disp.toLowerCase() === 'connected' || disp.toLowerCase() === 'undefined') {
     return (
@@ -270,12 +285,32 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   const [syncQandleError, setSyncQandleError] = useState('');
   const [syncQandleSuccess, setSyncQandleSuccess] = useState('');
 
+  // CRM Activities states
+  const [crmDocs, setCrmDocs] = useState([]);
+  const [isLoadingCrm, setIsLoadingCrm] = useState(false);
+  const [crmSearch, setCrmSearch] = useState('');
+  const [debouncedCrmSearch, setDebouncedCrmSearch] = useState('');
+  const [crmPage, setCrmPage] = useState(1);
+  const [crmSortField, setCrmSortField] = useState('timestamp');
+  const [crmSortDirection, setCrmSortDirection] = useState('desc');
+  const [crmTimeRange, setCrmTimeRange] = useState('today');
+  const [crmCustomStartDate, setCrmCustomStartDate] = useState('');
+  const [crmCustomEndDate, setCrmCustomEndDate] = useState('');
+  const [crmActivityFilter, setCrmActivityFilter] = useState('all'); // 'all' | 'cv_sent' | 'speculative_cv' | 'interview' | 'opportunity' | 'placement'
+
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedQandleSearch(qandleSearch);
     }, 200);
     return () => clearTimeout(handler);
   }, [qandleSearch]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedCrmSearch(crmSearch);
+    }, 200);
+    return () => clearTimeout(handler);
+  }, [crmSearch]);
 
   // Performance Scorecard sorting states
   const [perfSortField, setPerfSortField] = useState('totalCalls'); // 'recruiter' | 'division' | 'totalCalls' | 'totalTalkTime' | 'callsOver5Min' | 'cvsSent' | 'interviews' | 'jobsTaken'
@@ -477,7 +512,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   
   // Set default view depending on permissions
   const [selectedDept, setSelectedDept] = useState(
-    userRole === 'admin' ? 'all' : (userRole === 'manager' ? userDept : userDept)
+    (userRole === 'admin' || userRole === 'director') ? 'all' : userDept
   );
   const [selectedStaffId, setSelectedStaffId] = useState(
     userRole === 'recruiter' ? currentUser.id : 'all'
@@ -884,6 +919,36 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       dayBefore.setDate(dayBefore.getDate() - 2);
       const dayBeforeStr = getLondonDateString(dayBefore);
       return { start: dayBeforeStr, end: dayBeforeStr };
+    } else if (overviewTimeRange === 'this_prediction_week') {
+      const day = today.getDay();
+      let daysToFriday = day - 5;
+      if (daysToFriday < 0) {
+        daysToFriday = daysToFriday + 7;
+      }
+      const friday = new Date(today);
+      friday.setDate(today.getDate() - daysToFriday);
+      
+      const thursday = new Date(friday);
+      thursday.setDate(friday.getDate() + 6);
+      return {
+        start: getLondonDateString(friday),
+        end: getLondonDateString(thursday)
+      };
+    } else if (overviewTimeRange === 'prev_prediction_week') {
+      const day = today.getDay();
+      let daysToFriday = day - 5;
+      if (daysToFriday < 0) {
+        daysToFriday = daysToFriday + 7;
+      }
+      const friday = new Date(today);
+      friday.setDate(today.getDate() - daysToFriday - 7);
+      
+      const thursday = new Date(friday);
+      thursday.setDate(friday.getDate() + 6);
+      return {
+        start: getLondonDateString(friday),
+        end: getLondonDateString(thursday)
+      };
     } else if (overviewTimeRange === 'custom') {
       return {
         start: overviewCustomStartDate || todayStr,
@@ -1097,6 +1162,44 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     return qandleDateRangeWindow;
   }, [activeSubTab, overviewDateRangeWindow, qandleDateRangeWindow]);
 
+  // Calculate date range window specifically for the CRM Activities Tab
+  const crmDateRangeWindow = useMemo(() => {
+    const today = new Date();
+    const todayStr = today.toISOString().substring(0, 10);
+    
+    let start = '';
+    let end = todayStr;
+    
+    if (crmTimeRange === 'today') {
+      start = todayStr;
+    } else if (crmTimeRange === 'yesterday') {
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().substring(0, 10);
+      start = yesterdayStr;
+      end = yesterdayStr;
+    } else if (crmTimeRange === 'this_week') {
+      const day = today.getDay();
+      const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(today.setDate(diff));
+      start = monday.toISOString().substring(0, 10);
+    } else if (crmTimeRange === 'this_month') {
+      start = `${todayStr.substring(0, 7)}-01`;
+    } else {
+      start = crmCustomStartDate || '2026-01-01';
+      end = crmCustomEndDate || todayStr;
+    }
+    return { start, end };
+  }, [crmTimeRange, crmCustomStartDate, crmCustomEndDate]);
+
+  // Calculate effective date range window for CRM activities queries
+  const effectiveCrmWindow = useMemo(() => {
+    if (activeSubTab === 'overview') {
+      return overviewDateRangeWindow;
+    }
+    return crmDateRangeWindow;
+  }, [activeSubTab, overviewDateRangeWindow, crmDateRangeWindow]);
+
   // Check if there are any real Dialpad call logs in the database on mount
   useEffect(() => {
     async function checkRealCalls() {
@@ -1145,12 +1248,48 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     triggerSilentSync();
   }, []);
 
+  const [pollTrigger, setPollTrigger] = useState(0);
+
+  // Option C: Visibility-Aware Smart Polling every 2 minutes for "Today's" data
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // 1. Check if browser tab is active/visible
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+
+      // 2. Resolve local today's YYYY-MM-DD
+      const d = new Date();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const todayStr = `${year}-${month}-${day}`;
+
+      // 3. Evaluate if active date range window overlaps with/covers today
+      const kpisCoverToday = todayStr >= dateRangeWindow.start && todayStr <= dateRangeWindow.end;
+      const callsCoverToday = todayStr >= effectiveCallsWindow.start && todayStr <= effectiveCallsWindow.end;
+      const qandleCoversToday = todayStr >= effectiveQandleWindow.start && todayStr <= effectiveQandleWindow.end;
+
+      if (kpisCoverToday || callsCoverToday || qandleCoversToday) {
+        console.log(`[Polling] Automatically refreshing active dashboard views for date: ${todayStr}...`);
+        setPollTrigger(prev => prev + 1);
+      }
+    }, 120000); // 2 minutes (120,000 ms)
+
+    return () => clearInterval(interval);
+  }, [
+    dateRangeWindow.start, dateRangeWindow.end,
+    effectiveCallsWindow.start, effectiveCallsWindow.end,
+    effectiveQandleWindow.start, effectiveQandleWindow.end
+  ]);
+
   // Load KPI documents from Firestore collections filtered by active date range (instantly aggregates in millisecond speeds)
   useEffect(() => {
     async function loadKpiData() {
       setIsLoading(true);
       try {
-        const { start, end } = dateRangeWindow;
+        const start = dateRangeWindow.start < overviewDateRangeWindow.start ? dateRangeWindow.start : overviewDateRangeWindow.start;
+        const end = dateRangeWindow.end > overviewDateRangeWindow.end ? dateRangeWindow.end : overviewDateRangeWindow.end;
         
         // Fetch Daily aggregates matching the active date range
         const kpiQuery = query(
@@ -1172,7 +1311,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       }
     }
     loadKpiData();
-  }, [dateRangeWindow.start, dateRangeWindow.end]);
+  }, [dateRangeWindow.start, dateRangeWindow.end, overviewDateRangeWindow.start, overviewDateRangeWindow.end, pollTrigger]);
 
   // Load Dialpad calls dynamically with real-time updates when effectiveCallsWindow changes
   useEffect(() => {
@@ -1240,7 +1379,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     return () => {
       isMounted = false;
     };
-  }, [effectiveCallsWindow.start, effectiveCallsWindow.end]);
+  }, [effectiveCallsWindow.start, effectiveCallsWindow.end, pollTrigger]);
 
   // Load Qandle activities when activeSubTab or effectiveQandleWindow changes
   useEffect(() => {
@@ -1306,7 +1445,76 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     
     loadQandleData();
     return () => { isMounted = false; };
-  }, [activeSubTab, effectiveQandleWindow.start, effectiveQandleWindow.end, qandleRefreshTrigger]);
+  }, [activeSubTab, effectiveQandleWindow.start, effectiveQandleWindow.end, qandleRefreshTrigger, pollTrigger]);
+
+  // Load CRM activities when activeSubTab or effectiveCrmWindow changes
+  useEffect(() => {
+    let isMounted = true;
+    
+    async function loadCrmData() {
+      if (activeSubTab !== 'crm_activities') return;
+      setIsLoadingCrm(true);
+      const { start, end } = effectiveCrmWindow;
+      
+      try {
+        console.log(`[CRM] Querying activities from ${start} to ${end}...`);
+        const crmQuery = query(
+          collection(db, 'crm_activities'),
+          where('dateKey', '>=', start),
+          where('dateKey', '<=', end),
+          orderBy('dateKey', 'desc'),
+          limit(1000)
+        );
+
+        const snapshot = await getDocs(crmQuery);
+        if (!isMounted) return;
+
+        const activitiesList = [];
+        snapshot.forEach(doc => {
+          activitiesList.push({ id: doc.id, ...doc.data() });
+        });
+        setCrmDocs(activitiesList);
+        setIsLoadingCrm(false);
+      } catch (error) {
+        console.error('Error loading CRM activities:', error);
+        if (!isMounted) return;
+        
+        // Fallback: if index is missing, query without orderBy
+        try {
+          const crmQueryFallback = query(
+            collection(db, 'crm_activities'),
+            where('dateKey', '>=', start),
+            where('dateKey', '<=', end),
+            limit(1000)
+          );
+          
+          const fallbackSnapshot = await getDocs(crmQueryFallback);
+          if (!isMounted) return;
+
+          const activitiesList = [];
+          fallbackSnapshot.forEach(doc => {
+            activitiesList.push({ id: doc.id, ...doc.data() });
+          });
+          // Sort client-side
+          activitiesList.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+          setCrmDocs(activitiesList);
+          setIsLoadingCrm(false);
+        } catch (fallbackError) {
+          console.error('Fallback CRM fetch failed:', fallbackError);
+          if (isMounted) {
+            onShowToast?.('Failed to load CRM activities', 'error');
+            setIsLoadingCrm(false);
+          }
+        }
+      }
+    }
+
+    loadCrmData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeSubTab, effectiveCrmWindow.start, effectiveCrmWindow.end, pollTrigger]);
 
   // Generate Call logs detail rows based on real kpiDocs logs
   const mockCallsList = useMemo(() => {
@@ -1441,13 +1649,19 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           targetName: call.externalName || call.externalNumber || 'Unknown',
           targetType: targetTypeVal,
           duration: call.durationSeconds || 0,
+          connected: call.connected !== false,
           hasRecording: call.wasRecorded,
           recordingUrl: call.recordingUrl,
           transcript: call.transcript || 'No transcript generated yet.',
           disposition: call.disposition || '',
           recapSummary: call.recapSummary || '',
           recapOutcome: call.recapOutcome || '',
-          externalNumber: call.externalNumber || ''
+          externalNumber: call.externalNumber || '',
+          masterCallId: call.masterCallId || '',
+          entryPointCallId: call.entryPointCallId || '',
+          conversationId: call.conversationId || '',
+          dateStarted: call.dateStarted || '',
+          timestamp: call.dateStarted ? new Date(call.dateStarted).getTime() : 0
         };
       })
       .filter(call => {
@@ -1464,10 +1678,69 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   }, [liveCalls, effectiveCallsWindow, selectedStaffId, selectedDept, selectedCompanyId, staff]);
 
   const displayCallsList = useMemo(() => {
-    if (hasRealCalls) {
-      return formattedLiveCalls;
+    const rawList = hasRealCalls ? formattedLiveCalls : mockCallsList;
+    if (!rawList || rawList.length === 0) return [];
+    
+    // Consolidate duplicate call legs
+    const groups = [];
+    for (const call of rawList) {
+      let matchedGroup = null;
+      const callTime = call.timestamp || (call.dateStarted ? new Date(call.dateStarted).getTime() : 0);
+      
+      for (const group of groups) {
+        // Check ID links
+        const masterLink = call.masterCallId && group.masterCallIds.has(call.masterCallId);
+        const entryLink = call.entryPointCallId && group.entryPointCallIds.has(call.entryPointCallId);
+        const directIdLink = (call.masterCallId && group.callIds.has(call.masterCallId)) || 
+                             (call.entryPointCallId && group.callIds.has(call.entryPointCallId)) ||
+                             (call.conversationId && (group.masterCallIds.has(call.conversationId) || group.entryPointCallIds.has(call.conversationId)));
+        // Only consolidate legs of the same call sharing exact ID links (e.g. transfers, routing legs)
+        if (masterLink || entryLink || directIdLink) {
+          matchedGroup = group;
+          break;
+        }
+      }
+      
+      if (matchedGroup) {
+        matchedGroup.callIds.add(call.conversationId || call.primaryCallId || call.id);
+        if (call.masterCallId) matchedGroup.masterCallIds.add(call.masterCallId);
+        if (call.entryPointCallId) matchedGroup.entryPointCallIds.add(call.entryPointCallId);
+        if (call.externalNumber) matchedGroup.externalNumbers.add(call.externalNumber);
+        matchedGroup.legs.push(call);
+      } else {
+        groups.push({
+          baseTime: callTime,
+          callIds: new Set([call.conversationId || call.primaryCallId || call.id].filter(Boolean)),
+          masterCallIds: new Set(call.masterCallId ? [call.masterCallId] : []),
+          entryPointCallIds: new Set(call.entryPointCallId ? [call.entryPointCallId] : []),
+          externalNumbers: new Set(call.externalNumber ? [call.externalNumber] : []),
+          legs: [call]
+        });
+      }
     }
-    return mockCallsList;
+
+    return groups.map(group => {
+      // Prefer legs that have an external phone number (for CRM matching) and longer talk time
+      group.legs.sort((a, b) => {
+        const hasPhoneA = !!a.externalNumber;
+        const hasPhoneB = !!b.externalNumber;
+        if (hasPhoneA !== hasPhoneB) return hasPhoneA ? -1 : 1; // Prioritize hasPhone === true
+        
+        const talkA = Number(a.duration || 0);
+        const talkB = Number(b.duration || 0);
+        return talkB - talkA;
+      });
+      
+      const primary = group.legs[0];
+      const duration = Math.max(...group.legs.map(l => Number(l.duration || 0)));
+      const connected = group.legs.some(l => l.connected === true);
+      
+      return {
+        ...primary,
+        duration,
+        connected
+      };
+    });
   }, [hasRealCalls, formattedLiveCalls, mockCallsList]);
 
   // Aggregator for the KPI Overview Dashboard and Activity Heatmap
@@ -1491,7 +1764,12 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         over10m: 0,
         callbacks: 0,
         alpha: 0,
-        hourlyCalls: Array(24).fill(0)
+        hourlyCalls: Array(24).fill(0),
+        cvsSent: 0,
+        speculativeCvs: 0,
+        interviews: 0,
+        jobsTaken: 0,
+        placementsCount: 0
       };
     });
     
@@ -1546,6 +1824,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       if (!staffId) return;
       
       const stats = recruiterStats[staffId];
+      if (!stats) return;
       stats.calls++;
       totalCalls++;
 
@@ -1618,6 +1897,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       if (!staffId) return;
 
       const stats = recruiterStats[staffId];
+      if (!stats) return;
       if (qDoc.productiveTimeSeconds) {
         stats.qandleProductiveSeconds += qDoc.productiveTimeSeconds;
       }
@@ -1632,6 +1912,50 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           stats.qandleLeft = qDoc.leftTime;
         }
       }
+    });
+
+    // Aggregate daily KPI scorecards (cvsSent, speculativeCvs, interviews, jobsTaken)
+    const { start: oStart, end: oEnd } = overviewDateRangeWindow;
+    kpiDocs.forEach(doc => {
+      if (!doc.date || doc.date < oStart || doc.date > oEnd) return;
+      const stats = recruiterStats[doc.staffId];
+      if (stats) {
+        if (doc.cvsSent) stats.cvsSent += doc.cvsSent;
+        if (doc.speculativeCvs) stats.speculativeCvs += doc.speculativeCvs;
+        if (doc.interviews) stats.interviews += doc.interviews;
+        if (doc.jobsTaken) stats.jobsTaken += doc.jobsTaken;
+      }
+    });
+
+    // Aggregate placements (with splits)
+    if (Array.isArray(placements)) {
+      placements.forEach(p => {
+        if (!p.splits) return;
+        const pDate = p.date || (p.createdAt ? p.createdAt.substring(0, 10) : '');
+        if (!pDate || pDate < oStart || pDate > oEnd) return;
+        
+        p.splits.forEach(sp => {
+          const stats = recruiterStats[sp.staffId];
+          if (stats) {
+            stats.placementsCount += 1;
+          }
+        });
+      });
+    }
+
+    // Calculate global sums for CRM activities
+    let totalCvsSent = 0;
+    let totalSpeculativeCvs = 0;
+    let totalInterviews = 0;
+    let totalJobsTaken = 0;
+    let totalPlacements = 0;
+
+    Object.values(recruiterStats).forEach(r => {
+      totalCvsSent += r.cvsSent;
+      totalSpeculativeCvs += r.speculativeCvs;
+      totalInterviews += r.interviews;
+      totalJobsTaken += r.jobsTaken;
+      totalPlacements += r.placementsCount;
     });
 
     const recruiterRows = Object.values(recruiterStats);
@@ -1675,9 +1999,14 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       peakHour,
       peakCalls,
       earliestHour,
-      latestHour
+      latestHour,
+      totalCvsSent,
+      totalSpeculativeCvs,
+      totalInterviews,
+      totalJobsTaken,
+      totalPlacements
     };
-  }, [filteredStaffList, displayCallsList, qandleDocs]);
+  }, [filteredStaffList, displayCallsList, qandleDocs, kpiDocs, placements, overviewDateRangeWindow]);
 
   // Sort recruiter rows for the Overview and Heatmap grids
   const sortedRecruiterRows = useMemo(() => {
@@ -1729,6 +2058,21 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       } else if (overviewSortField === 'a') {
         valA = a.alpha;
         valB = b.alpha;
+      } else if (overviewSortField === 'cvsSent') {
+        valA = a.cvsSent;
+        valB = b.cvsSent;
+      } else if (overviewSortField === 'speculativeCvs') {
+        valA = a.speculativeCvs;
+        valB = b.speculativeCvs;
+      } else if (overviewSortField === 'interviews') {
+        valA = a.interviews;
+        valB = b.interviews;
+      } else if (overviewSortField === 'jobsTaken') {
+        valA = a.jobsTaken;
+        valB = b.jobsTaken;
+      } else if (overviewSortField === 'placementsCount') {
+        valA = a.placementsCount;
+        valB = b.placementsCount;
       } else {
         return 0;
       }
@@ -1948,6 +2292,83 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     setQandlePage(1);
   }, [qandleSearch, selectedDept, selectedStaffId, qandleTimeRange]);
 
+  // Format and filter CRM activities
+  const displayCrmList = useMemo(() => {
+    return crmDocs
+      .map(doc => {
+        const matchedStaff = staff.find(s => s.id === doc.recruiterId) || {};
+        return {
+          ...doc,
+          department: matchedStaff.department || 'General',
+          staffStatus: matchedStaff.status || 'active',
+        };
+      })
+      .filter(doc => {
+        if (crmActivityFilter !== 'all' && doc.activityType !== crmActivityFilter) return false;
+        if (selectedStaffId !== 'all' && doc.recruiterId !== selectedStaffId) return false;
+        if (selectedDept !== 'all' && doc.department !== selectedDept) return false;
+        return true;
+      });
+  }, [crmDocs, staff, crmActivityFilter, selectedStaffId, selectedDept]);
+
+  const filteredAndSearchedCrm = useMemo(() => {
+    const list = displayCrmList;
+    const query = debouncedCrmSearch.toLowerCase().trim();
+
+    const filtered = list.filter(doc => {
+      if (query) {
+        const nameMatch = (doc.recruiterName || '').toLowerCase().includes(query);
+        const candidateMatch = (doc.candidateName || '').toLowerCase().includes(query);
+        const clientMatch = (doc.clientCompany || '').toLowerCase().includes(query);
+        const titleMatch = (doc.jobTitle || '').toLowerCase().includes(query);
+        if (!nameMatch && !candidateMatch && !clientMatch && !titleMatch) return false;
+      }
+      return true;
+    });
+
+    // Sort client-side
+    return filtered.sort((a, b) => {
+      let valA = a[crmSortField];
+      let valB = b[crmSortField];
+
+      if (crmSortField === 'timestamp') {
+        valA = a.timestamp || a.createdAt || '';
+        valB = b.timestamp || b.createdAt || '';
+      }
+
+      // Check if they are numbers (or numeric strings)
+      const isNumA = typeof valA === 'number' || (valA && !isNaN(valA) && !isNaN(parseFloat(valA)));
+      const isNumB = typeof valB === 'number' || (valB && !isNaN(valB) && !isNaN(parseFloat(valB)));
+
+      if (isNumA && isNumB) {
+        const numA = Number(valA || 0);
+        const numB = Number(valB || 0);
+        return crmSortDirection === 'asc' ? numA - numB : numB - numA;
+      }
+
+      const strA = String(valA || '').toLowerCase();
+      const strB = String(valB || '').toLowerCase();
+      const cmp = strA.localeCompare(strB);
+      return crmSortDirection === 'asc' ? cmp : -cmp;
+    });
+  }, [displayCrmList, debouncedCrmSearch, crmSortField, crmSortDirection]);
+
+  // Paginated CRM list
+  const crmPageSize = 10;
+  const displayCrmChunk = useMemo(() => {
+    const startIdx = (crmPage - 1) * crmPageSize;
+    return filteredAndSearchedCrm.slice(startIdx, startIdx + crmPageSize);
+  }, [filteredAndSearchedCrm, crmPage]);
+
+  const totalCrmPages = useMemo(() => {
+    return Math.max(1, Math.ceil(filteredAndSearchedCrm.length / crmPageSize));
+  }, [filteredAndSearchedCrm]);
+
+  // Reset CRM page on search/filter change
+  useEffect(() => {
+    setCrmPage(1);
+  }, [crmSearch, selectedDept, selectedStaffId, crmTimeRange, crmActivityFilter]);
+
   // Aggregate stats based on selection
   const aggregatedStats = useMemo(() => {
     let inbound = 0;
@@ -2112,6 +2533,25 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         </button>
         <button
           onClick={() => {
+            setActiveSubTab('crm_activities');
+            setCrmPage(1);
+          }}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontWeight: 700,
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: activeSubTab === 'crm_activities' ? 'var(--primary)' : 'var(--bg-secondary)',
+            color: activeSubTab === 'crm_activities' ? '#fff' : 'var(--text-secondary)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          }}
+        >
+          💼 CRM Activities
+        </button>
+        <button
+          onClick={() => {
             setActiveSubTab('mapping');
             setEditingStaffId(null);
           }}
@@ -2148,6 +2588,25 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         >
           ⚙️ KPI Target Settings
         </button>
+
+        <button
+          onClick={() => {
+            setActiveSubTab('webhook_logs');
+          }}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontWeight: 700,
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: activeSubTab === 'webhook_logs' ? 'var(--primary)' : 'var(--bg-secondary)',
+            color: activeSubTab === 'webhook_logs' ? '#fff' : 'var(--text-secondary)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          }}
+        >
+          📡 Webhook Logs
+        </button>
       </div>
 
       {/* 2. DIRECTORY & COMPANY FILTERS PANEL (WITH ROLE-BASED ACCESS CONTROL) */}
@@ -2157,6 +2616,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             <Filter size={16} color="var(--primary)" />
             <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
               {userRole === 'admin' && 'Top Management - Company Filters'}
+              {userRole === 'director' && 'Director Access - Team Filters'}
               {userRole === 'manager' && `Team Lead - ${userDept} Division Filters`}
               {userRole === 'recruiter' && 'My Access Scopes'}
             </span>
@@ -2164,8 +2624,8 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
           <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
             
-            {/* Department Filter (Visible to Admin only) */}
-            {userRole === 'admin' && (
+            {/* Department Filter (Visible to Admin & Director) */}
+            {(userRole === 'admin' || userRole === 'director') && (
               <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
                 <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
                   Division / Department:
@@ -2254,11 +2714,13 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
             {/* Global Date Filter Controls */}
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', gap: '6px', backgroundColor: 'var(--bg-secondary)', padding: '4px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', gap: '6px', backgroundColor: 'var(--bg-secondary)', padding: '4px', borderRadius: '6px', border: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
                 {[
                   { id: 'today', label: 'Today' },
                   { id: 'yesterday', label: 'Yesterday' },
-                  { id: 'day_before', label: 'Day Before Yesterday' },
+                  { id: 'day_before', label: 'Day Before' },
+                  { id: 'this_prediction_week', label: 'This Week (Fri-Thu)' },
+                  { id: 'prev_prediction_week', label: 'Prev Week (Fri-Thu)' },
                   { id: 'custom', label: 'Custom' }
                 ].map(btn => (
                   <button
@@ -2334,6 +2796,39 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
               <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Average connected duration</span>
             </div>
           </div>
+          
+          {/* CRM SUMMARY CARDS GRID */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginTop: '16px', marginBottom: '16px' }}>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>CVs Shared</span>
+              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--text-primary)', margin: '6px 0' }}>{overviewStats.totalCvsSent}</div>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>CV Shared for Vacancies</span>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Speculative CVs</span>
+              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--text-primary)', margin: '6px 0' }}>{overviewStats.totalSpeculativeCvs}</div>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Speculative candidate sends</span>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Interviews</span>
+              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--primary)', margin: '6px 0' }}>{overviewStats.totalInterviews}</div>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Interviews organized</span>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Vacancies</span>
+              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--warning)', margin: '6px 0' }}>{overviewStats.totalJobsTaken}</div>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Jobs taken over / created</span>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Placements</span>
+              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--success)', margin: '6px 0' }}>{overviewStats.totalPlacements}</div>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>CRM placements registered</span>
+            </div>
+          </div>
 
           {/* 3. RECRUITER PERFORMANCE CARD */}
           <div style={{ backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
@@ -2356,7 +2851,12 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                       { id: 'over5m', label: '5m+' },
                       { id: 'over10m', label: '10m+' },
                       { id: 'cb', label: 'CB' },
-                      { id: 'a', label: 'A' }
+                      { id: 'a', label: 'A' },
+                      { id: 'cvsSent', label: 'CVs Shared' },
+                      { id: 'speculativeCvs', label: 'Spec CVs' },
+                      { id: 'interviews', label: 'Interviews' },
+                      { id: 'jobsTaken', label: 'Vacancies' },
+                      { id: 'placementsCount', label: 'Placements' }
                     ].map(col => (
                       <th
                         key={col.id}
@@ -2384,7 +2884,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                 <tbody>
                   {sortedRecruiterRows.length === 0 ? (
                     <tr>
-                      <td colSpan={14} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                      <td colSpan={19} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
                         No recruiters match the filter criteria or date range.
                       </td>
                     </tr>
@@ -2426,6 +2926,21 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                         </td>
                         <td style={{ padding: '12px', textAlign: 'center' }}>
                           {renderClickableCount(row.alpha, row.staff.id, row.staff.fullName || row.staff.full_name, 'alpha', 'var(--primary)')}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)' }}>
+                          {row.cvsSent}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)' }}>
+                          {row.speculativeCvs}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 700, color: 'var(--primary)' }}>
+                          {row.interviews}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 700, color: 'var(--warning)' }}>
+                          {row.jobsTaken}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 700, color: 'var(--success)' }}>
+                          {row.placementsCount}
                         </td>
                       </tr>
                     ))
@@ -3566,7 +4081,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                             </td>
                             <td style={{ textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>{formatDuration(call.duration)}</td>
                             <td style={{ textAlign: 'center' }}>
-                              {renderDispositionBadges(call.disposition)}
+                              {renderDispositionBadges(call.disposition, call.connected)}
                             </td>
                             <td style={{ textAlign: 'center' }}>
                               {call.duration >= 600 ? (
@@ -4076,6 +4591,369 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             )}
           </div>
         </>
+      ) : activeSubTab === 'crm_activities' ? (
+        <>
+          {/* 1. HEADER */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruitly CRM Activity Logs</h2>
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                💼 Track real-time recruiter activities including CV shares, interviews, job creation, and placement registries.
+              </span>
+            </div>
+            <div>
+              <span style={{ fontSize: '11px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)', padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>
+                📡 LIVE ZAPIER Webhook Pipeline
+              </span>
+            </div>
+          </div>
+
+          {/* 2. SECONDARY TABS & FILTERS */}
+          <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '16px' }}>
+            {/* Date Preset Row */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Calendar size={16} color="var(--primary)" />
+                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Date Range:</span>
+              </div>
+              
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {[
+                  { id: 'today', label: 'Today' },
+                  { id: 'yesterday', label: 'Yesterday' },
+                  { id: 'this_week', label: 'This Week' },
+                  { id: 'this_month', label: 'This Month' },
+                  { id: 'custom', label: 'Custom Range' }
+                ].map(btn => (
+                  <button
+                    key={btn.id}
+                    onClick={() => {
+                      setCrmTimeRange(btn.id);
+                      setCrmPage(1);
+                    }}
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      border: '1px solid var(--border-color)',
+                      cursor: 'pointer',
+                      backgroundColor: crmTimeRange === btn.id ? 'var(--primary)' : 'var(--bg-secondary)',
+                      color: crmTimeRange === btn.id ? '#fff' : 'var(--text-primary)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {btn.label}
+                  </button>
+                ))}
+
+                {crmTimeRange === 'custom' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '10px' }}>
+                    <input
+                      type="date"
+                      value={crmCustomStartDate}
+                      onChange={(e) => {
+                        setCrmCustomStartDate(e.target.value);
+                        setCrmPage(1);
+                      }}
+                      className="form-input"
+                      style={{ fontSize: '11px', height: '28px', padding: '2px 6px', width: '120px' }}
+                    />
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>to</span>
+                    <input
+                      type="date"
+                      value={crmCustomEndDate}
+                      onChange={(e) => {
+                        setCrmCustomEndDate(e.target.value);
+                        setCrmPage(1);
+                      }}
+                      className="form-input"
+                      style={{ fontSize: '11px', height: '28px', padding: '2px 6px', width: '120px' }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Filter Pills row */}
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px', borderBottom: '1px solid var(--border-color)' }}>
+              {[
+                { id: 'all', label: '📦 All Activities' },
+                { id: 'cv_sent', label: '📄 CV Shared for Job' },
+                { id: 'speculative_cv', label: '📨 Speculative CVs' },
+                { id: 'interview', label: '🤝 Interviews Organized' },
+                { id: 'opportunity', label: '💼 Jobs / Opportunities' },
+                { id: 'placement', label: '🏆 Placements' }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setCrmActivityFilter(tab.id);
+                    setCrmPage(1);
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '20px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    border: '1px solid var(--border-color)',
+                    cursor: 'pointer',
+                    backgroundColor: crmActivityFilter === tab.id ? 'var(--primary)' : 'var(--bg-secondary)',
+                    color: crmActivityFilter === tab.id ? '#fff' : 'var(--text-primary)',
+                    transition: 'all 0.15s ease',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Search Input and Metadata Counts Row */}
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div className="form-group" style={{ flex: 1, minWidth: '240px' }}>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                  Search by recruiter, candidate, client company, or job title:
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }} />
+                  <input
+                    type="text"
+                    value={crmSearch}
+                    onChange={(e) => {
+                      setCrmSearch(e.target.value);
+                      setCrmPage(1);
+                    }}
+                    placeholder="Type to search activities..."
+                    className="form-input"
+                    style={{ paddingLeft: '32px', fontSize: '12px', height: '34px' }}
+                  />
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  Found {filteredAndSearchedCrm.length} relevant activities
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. RECORDS TABLE */}
+          <div className="card" style={{ padding: '0', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+            {isLoadingCrm ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px', flexDirection: 'column', gap: '12px' }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  border: '3px solid var(--border-color)',
+                  borderTopColor: 'var(--primary)',
+                  animation: 'spin 1s linear infinite'
+                }}></div>
+                <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 600 }}>Loading CRM logs...</span>
+              </div>
+            ) : filteredAndSearchedCrm.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
+                No Recruitly CRM activities found matching the current selections.
+              </div>
+            ) : (
+              <>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '2px solid var(--border-color)', textAlign: 'left' }}>
+                        <th 
+                          onClick={() => {
+                            setCrmSortField('timestamp');
+                            setCrmSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                          }}
+                          style={{ padding: '12px 16px', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          Time & Date {crmSortField === 'timestamp' && (crmSortDirection === 'asc' ? '▲' : '▼')}
+                        </th>
+                        <th 
+                          onClick={() => {
+                            setCrmSortField('recruiterName');
+                            setCrmSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                          }}
+                          style={{ padding: '12px 16px', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          Recruiter {crmSortField === 'recruiterName' && (crmSortDirection === 'asc' ? '▲' : '▼')}
+                        </th>
+                        <th 
+                          onClick={() => {
+                            setCrmSortField('activityType');
+                            setCrmSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                          }}
+                          style={{ padding: '12px 16px', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          Activity Type {crmSortField === 'activityType' && (crmSortDirection === 'asc' ? '▲' : '▼')}
+                        </th>
+                        <th 
+                          onClick={() => {
+                            setCrmSortField('candidateName');
+                            setCrmSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                          }}
+                          style={{ padding: '12px 16px', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          Candidate {crmSortField === 'candidateName' && (crmSortDirection === 'asc' ? '▲' : '▼')}
+                        </th>
+                        <th 
+                          onClick={() => {
+                            setCrmSortField('clientCompany');
+                            setCrmSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                          }}
+                          style={{ padding: '12px 16px', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          Client Company {crmSortField === 'clientCompany' && (crmSortDirection === 'asc' ? '▲' : '▼')}
+                        </th>
+                        <th 
+                          onClick={() => {
+                            setCrmSortField('jobTitle');
+                            setCrmSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                          }}
+                          style={{ padding: '12px 16px', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          Job Vacancy {crmSortField === 'jobTitle' && (crmSortDirection === 'asc' ? '▲' : '▼')}
+                        </th>
+                        <th 
+                          onClick={() => {
+                            setCrmSortField('placementValue');
+                            setCrmSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                          }}
+                          style={{ padding: '12px 16px', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap', textAlign: 'right' }}
+                        >
+                          Value {crmSortField === 'placementValue' && (crmSortDirection === 'asc' ? '▲' : '▼')}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayCrmChunk.map(doc => {
+                        const dateFormatted = doc.timestamp 
+                          ? new Date(doc.timestamp).toLocaleString('en-GB', {
+                              timeZone: 'Europe/London',
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })
+                          : doc.dateKey;
+
+                        const getCrmTypeBadge = (type) => {
+                          let label = type;
+                          let bg = 'rgba(107, 114, 128, 0.1)';
+                          let color = 'var(--text-secondary)';
+
+                          if (type === 'cv_sent') {
+                            label = '📄 CV Shared for Job';
+                            bg = 'rgba(59, 130, 246, 0.1)';
+                            color = 'var(--primary)';
+                          } else if (type === 'speculative_cv') {
+                            label = '📨 Speculative CV';
+                            bg = 'rgba(139, 92, 246, 0.1)';
+                            color = '#8b5cf6';
+                          } else if (type === 'interview') {
+                            label = '🤝 Interview';
+                            bg = 'rgba(245, 158, 11, 0.1)';
+                            color = '#f59e0b';
+                          } else if (type === 'opportunity') {
+                            label = '💼 Job Created';
+                            bg = 'rgba(16, 185, 129, 0.1)';
+                            color = 'var(--success)';
+                          } else if (type === 'placement') {
+                            label = '🏆 Placement';
+                            bg = 'rgba(236, 72, 153, 0.1)';
+                            color = '#ec4899';
+                          }
+
+                          return (
+                            <span style={{
+                              padding: '2px 8px',
+                              borderRadius: '20px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              backgroundColor: bg,
+                              color: color,
+                              border: `1px solid ${color}33`,
+                              display: 'inline-block'
+                            }}>
+                              {label}
+                            </span>
+                          );
+                        };
+
+                        return (
+                          <tr key={doc.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                            <td style={{ padding: '12px 16px', whiteSpace: 'nowrap', fontWeight: 500 }}>
+                              {dateFormatted}
+                            </td>
+                            <td style={{ padding: '12px 16px', fontWeight: 600 }}>
+                              {doc.recruiterName}
+                            </td>
+                            <td style={{ padding: '12px 16px' }}>
+                              {getCrmTypeBadge(doc.activityType)}
+                            </td>
+                            <td style={{ padding: '12px 16px', fontWeight: 500 }}>
+                              {doc.candidateName || '-'}
+                            </td>
+                            <td style={{ padding: '12px 16px' }}>
+                              {doc.clientCompany ? (
+                                <CRMContactLink 
+                                  phone="" 
+                                  defaultName={doc.clientCompany} 
+                                  onShowToast={onShowToast}
+                                />
+                              ) : '-'}
+                            </td>
+                            <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>
+                              {doc.jobTitle || '-'}
+                            </td>
+                            <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
+                              {doc.activityType === 'placement' && doc.placementValue 
+                                ? `£${Number(doc.placementValue).toLocaleString()}` 
+                                : '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination footer */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', backgroundColor: 'var(--bg-secondary)', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '12px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Showing page <strong>{crmPage}</strong> of <strong>{totalCrmPages}</strong>
+                  </span>
+                  
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={() => setCrmPage(p => Math.max(1, p - 1))}
+                      disabled={crmPage === 1}
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: '12px', opacity: crmPage === 1 ? 0.5 : 1, cursor: crmPage === 1 ? 'not-allowed' : 'pointer' }}
+                    >
+                      ◀ Previous
+                    </button>
+                    <span style={{ display: 'flex', alignItems: 'center', fontSize: '12px', fontWeight: 600, padding: '0 8px' }}>
+                      {crmPage} / {totalCrmPages}
+                    </span>
+                    <button
+                      onClick={() => setCrmPage(p => Math.min(totalCrmPages, p + 1))}
+                      disabled={crmPage === totalCrmPages}
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: '12px', opacity: crmPage === totalCrmPages ? 0.5 : 1, cursor: crmPage === totalCrmPages ? 'not-allowed' : 'pointer' }}
+                    >
+                      Next ▶
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </>
       ) : activeSubTab === 'mapping' ? (
         /* Recruiter Dialpad Mapping View */
         <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
@@ -4278,6 +5156,8 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             </table>
           </div>
         </div>
+      ) : activeSubTab === 'webhook_logs' ? (
+        <WebhookLogsTab onShowToast={onShowToast} />
       ) : (
         /* KPI Targets Settings View */
         <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>

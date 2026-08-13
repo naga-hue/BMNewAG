@@ -1,0 +1,104 @@
+Total Dialpad API Calls fetched: 1661
+Chelsea Rauch's calls from Dialpad API: 101 calls
+
+[1] ID: undefined | Time (UTC): 08:11:36 | Direction: outbound | Contact: Ajenas Cibisovas - CA-14124 - Estimator | State: hangup | Dur: 14s | Talk: NaNs | Rec: undefined
+[2] ID: undefined | Time (UTC): 08:12:39 | Direction: outbound | Contact: Bruce Dykstra - CA-11343 - Estimator Joinery | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[3] ID: undefined | Time (UTC): 08:16:36 | Direction: outbound | Contact: Catalin Iliese - CA-11377 - Estimator Joinery | State: hangup | Dur: 18s | Talk: NaNs | Rec: undefined
+[4] ID: undefined | Time (UTC): 08:17:17 | Direction: outbound | Contact: Charlotte Slade - CA-46429 - Estimator | State: hangup | Dur: 20s | Talk: NaNs | Rec: undefined
+[5] ID: undefined | Time (UTC): 08:17:52 | Direction: outbound | Contact: Daniel Collada - CA-10575 - Estimator Joinery | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[6] ID: undefined | Time (UTC): 08:20:07 | Direction: outbound | Contact: Danny Mulley - CA-46049 - Designer/Estimator | State: hangup | Dur: 20s | Talk: NaNs | Rec: undefined
+[7] ID: undefined | Time (UTC): 08:21:06 | Direction: outbound | Contact: Dominic Kearns - CA-14245 - Estimator Joinery | State: hangup | Dur: 13s | Talk: NaNs | Rec: undefined
+[8] ID: undefined | Time (UTC): 08:21:36 | Direction: outbound | Contact: Emily Blaker - CA-46259 - Estimator Joinery | State: hangup | Dur: 16s | Talk: NaNs | Rec: undefined
+[9] ID: undefined | Time (UTC): 08:22:25 | Direction: outbound | Contact: Graham Rogers - CA-46255 - Estimator Joinery | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[10] ID: undefined | Time (UTC): 08:23:42 | Direction: outbound | Contact: Megan Dare - CA-10470 - Estimator Joinery | State: hangup | Dur: 15s | Talk: NaNs | Rec: undefined
+[11] ID: undefined | Time (UTC): 08:24:16 | Direction: outbound | Contact: Ross Murphy - CA-46262 -Estimator Joinery | State: hangup | Dur: 16s | Talk: NaNs | Rec: undefined
+[12] ID: undefined | Time (UTC): 08:28:01 | Direction: outbound | Contact: Jobanjit Singh - CA-46554 -QS Drylining | State: hangup | Dur: 19s | Talk: NaNs | Rec: undefined
+[13] ID: undefined | Time (UTC): 08:28:40 | Direction: outbound | Contact: Jonathan Wheeler - CA-95 - QS Drylining | State: hangup | Dur: 17s | Talk: NaNs | Rec: undefined
+[14] ID: undefined | Time (UTC): 08:33:34 | Direction: outbound | Contact: Lee Norton - CA-13804 - Estimator Drylining | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[15] ID: undefined | Time (UTC): 08:34:04 | Direction: outbound | Contact: Matt Harper - CA-11642 - QS Drylining | State: hangup | Dur: 16s | Talk: NaNs | Rec: undefined
+[16] ID: undefined | Time (UTC): 08:34:39 | Direction: outbound | Contact: Olga Gavrilova - CA-46796 - QS Drylining | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[17] ID: undefined | Time (UTC): 08:35:35 | Direction: outbound | Contact: Oliver Phillips - CA-11663 - Contracts Manager Drylining | State: hangup | Dur: 14s | Talk: NaNs | Rec: undefined
+[18] ID: undefined | Time (UTC): 08:37:18 | Direction: outbound | Contact: Robert Hickman - CA-16604 - QS Drylining | State: hangup | Dur: 21s | Talk: NaNs | Rec: undefined
+[19] ID: undefined | Time (UTC): 08:38:01 | Direction: outbound | Contact: Udeh Reece OKUGBENI - CA-46799 - QS Drylining | State: hangup | Dur: 21s | Talk: NaNs | Rec: undefined
+[20] ID: undefined | Time (UTC): 08:38:50 | Direction: outbound | Contact: Zuzana Kopcanova - CA-11109 - QS Drylining | State: hangup | Dur: 20s | Talk: NaNs | Rec: undefined
+[21] ID: undefined | Time (UTC): 08:41:43 | Direction: outbound | Contact: Emily Cross - CA-13893 - Passive Fire Protection Enginee | State: hangup | Dur: 23s | Talk: NaNs | Rec: undefined
+[22] ID: undefined | Time (UTC): 08:42:46 | Direction: outbound | Contact: Moh Dadashzadeh - CA-47039 - Fire Safety Engineer | State: hangup | Dur: 13s | Talk: NaNs | Rec: undefined
+[23] ID: undefined | Time (UTC): 08:45:40 | Direction: outbound | Contact: Marius Mureseanu - CA-12121 - PM Passive Fire | State: hangup | Dur: 6s | Talk: NaNs | Rec: undefined
+[24] ID: undefined | Time (UTC): 09:04:41 | Direction: outbound | Contact: Frank Selormey - Design & Sales Joinery | State: hangup | Dur: 670s | Talk: NaNs | Rec: undefined
+[25] ID: undefined | Time (UTC): 09:48:43 | Direction: outbound | Contact: Imperial Finishes - Switch Board | State: hangup | Dur: 16s | Talk: NaNs | Rec: undefined
+[26] ID: undefined | Time (UTC): 09:58:01 | Direction: outbound | Contact: Vosseler - CT-7976 - Switch Board | State: hangup | Dur: 42s | Talk: NaNs | Rec: undefined
+[27] ID: undefined | Time (UTC): 10:00:48 | Direction: outbound | Contact: Russell Taylor - CT-74673 - Taylor Drylining | State: hangup | Dur: 27s | Talk: NaNs | Rec: undefined
+[28] ID: undefined | Time (UTC): 10:04:03 | Direction: outbound | Contact: Aron Broqaj - CT-51186 - PAA INTERIORS | State: hangup | Dur: 17s | Talk: NaNs | Rec: undefined
+[29] ID: undefined | Time (UTC): 10:31:07 | Direction: outbound | Contact: Aaron Danks - CA-45693 - Designer Drylining | State: hangup | Dur: 12s | Talk: NaNs | Rec: undefined
+[30] ID: undefined | Time (UTC): 10:32:50 | Direction: outbound | Contact: Adam Bogard-CA-6018- Estimator Cladding | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[31] ID: undefined | Time (UTC): 10:36:41 | Direction: outbound | Contact: Christopher Gande - CA-46681 - Contracts Manager | State: hangup | Dur: 17s | Talk: NaNs | Rec: undefined
+[32] ID: undefined | Time (UTC): 10:38:28 | Direction: outbound | Contact: Colin Brown - CA-16164 - QS Drylining | State: hangup | Dur: 30s | Talk: NaNs | Rec: undefined
+[33] ID: undefined | Time (UTC): 10:40:08 | Direction: outbound | Contact: Cronan Hehir - CA-10565 - Estimator Drylining | State: hangup | Dur: 24s | Talk: NaNs | Rec: undefined
+[34] ID: undefined | Time (UTC): 10:42:10 | Direction: outbound | Contact: Ian Garvey - CA-11376 - QS Drylining | State: hangup | Dur: 12s | Talk: NaNs | Rec: undefined
+[35] ID: undefined | Time (UTC): 10:44:42 | Direction: outbound | Contact: James Spencer - CA-46078 - Estimator Drylining | State: hangup | Dur: 10s | Talk: NaNs | Rec: undefined
+[36] ID: undefined | Time (UTC): 10:46:11 | Direction: outbound | Contact: Jenny Mellor - CA-46687 -Sales Drylining | State: hangup | Dur: 14s | Talk: NaNs | Rec: undefined
+[37] ID: undefined | Time (UTC): 10:49:20 | Direction: outbound | Contact: Joseph Newsome - CA-22685 - QS Drylining | State: hangup | Dur: 14s | Talk: NaNs | Rec: undefined
+[38] ID: undefined | Time (UTC): 10:50:35 | Direction: outbound | Contact: Kevin Gates - CA-10695 - Estimator Drylining | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[39] ID: undefined | Time (UTC): 10:53:23 | Direction: inbound | Contact: Joseph Newsome - CA-22685 - QS Drylining | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[40] ID: undefined | Time (UTC): 13:28:53 | Direction: outbound | Contact: Ajenas Cibisovas - CA-14124 - Estimator | State: hangup | Dur: 35s | Talk: NaNs | Rec: undefined
+[41] ID: undefined | Time (UTC): 13:29:57 | Direction: outbound | Contact: Bruce Dykstra - CA-11343 - Estimator Joinery | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[42] ID: undefined | Time (UTC): 13:31:34 | Direction: outbound | Contact: Sean Owen | State: hangup | Dur: 38s | Talk: NaNs | Rec: undefined
+[43] ID: undefined | Time (UTC): 13:31:50 | Direction: outbound | Contact: Dylan Kotze | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[44] ID: undefined | Time (UTC): 13:32:55 | Direction: outbound | Contact: Dylan Kotze | State: hangup | Dur: 10s | Talk: NaNs | Rec: undefined
+[45] ID: undefined | Time (UTC): 13:34:35 | Direction: outbound | Contact: Sean Owen | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[46] ID: undefined | Time (UTC): 13:37:01 | Direction: outbound | Contact: Sean Owen | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[47] ID: undefined | Time (UTC): 13:39:31 | Direction: outbound | Contact: Sean Owen | State: hangup | Dur: 5s | Talk: NaNs | Rec: undefined
+[48] ID: undefined | Time (UTC): 13:40:13 | Direction: outbound | Contact: Sean Owen | State: hangup | Dur: 13s | Talk: NaNs | Rec: undefined
+[49] ID: undefined | Time (UTC): 13:46:36 | Direction: outbound | Contact: Catalin Iliese - CA-11377 - Estimator Joinery | State: hangup | Dur: 15s | Talk: NaNs | Rec: undefined
+[50] ID: undefined | Time (UTC): 13:47:31 | Direction: outbound | Contact: Charlotte Slade - CA-46429 - Estimator | State: hangup | Dur: 24s | Talk: NaNs | Rec: undefined
+[51] ID: undefined | Time (UTC): 13:48:29 | Direction: outbound | Contact: Daniel Collada - CA-10575 - Estimator Joinery | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[52] ID: undefined | Time (UTC): 13:49:25 | Direction: outbound | Contact: Danny Mulley - CA-46049 - Designer/Estimator | State: hangup | Dur: 17s | Talk: NaNs | Rec: undefined
+[53] ID: undefined | Time (UTC): 13:50:30 | Direction: outbound | Contact: Dominic Kearns - CA-14245 - Estimator Joinery | State: hangup | Dur: 17s | Talk: NaNs | Rec: undefined
+[54] ID: undefined | Time (UTC): 13:51:19 | Direction: outbound | Contact: Emily Blaker - CA-46259 - Estimator Joinery | State: hangup | Dur: 30s | Talk: NaNs | Rec: undefined
+[55] ID: undefined | Time (UTC): 13:52:26 | Direction: outbound | Contact: Graham Rogers - CA-46255 - Estimator Joinery | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[56] ID: undefined | Time (UTC): 13:53:48 | Direction: outbound | Contact: Megan Dare - CA-10470 - Estimator Joinery | State: hangup | Dur: 35s | Talk: NaNs | Rec: undefined
+[57] ID: undefined | Time (UTC): 13:54:51 | Direction: outbound | Contact: Ross Murphy - CA-46262 -Estimator Joinery | State: hangup | Dur: 22s | Talk: NaNs | Rec: undefined
+[58] ID: undefined | Time (UTC): 13:56:09 | Direction: outbound | Contact: Jobanjit Singh - CA-46554 -QS Drylining | State: hangup | Dur: 18s | Talk: NaNs | Rec: undefined
+[59] ID: undefined | Time (UTC): 13:58:54 | Direction: outbound | Contact: Jonathan Wheeler - CA-95 - QS Drylining | State: hangup | Dur: 20s | Talk: NaNs | Rec: undefined
+[60] ID: undefined | Time (UTC): 14:00:28 | Direction: outbound | Contact: Lee Norton - CA-13804 - Estimator Drylining | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[61] ID: undefined | Time (UTC): 14:00:57 | Direction: outbound | Contact: Matt Harper - CA-11642 - QS Drylining | State: hangup | Dur: 18s | Talk: NaNs | Rec: undefined
+[62] ID: undefined | Time (UTC): 14:03:34 | Direction: outbound | Contact: Olga Gavrilova - CA-46796 - QS Drylining | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[63] ID: undefined | Time (UTC): 14:05:55 | Direction: outbound | Contact: Oliver Phillips - CA-11663 - Contracts Manager Drylining | State: hangup | Dur: 12s | Talk: NaNs | Rec: undefined
+[64] ID: undefined | Time (UTC): 14:06:28 | Direction: outbound | Contact: Robert Hickman - CA-16604 - QS Drylining | State: hangup | Dur: 15s | Talk: NaNs | Rec: undefined
+[65] ID: undefined | Time (UTC): 14:07:08 | Direction: outbound | Contact: Udeh Reece OKUGBENI - CA-46799 - QS Drylining | State: hangup | Dur: 17s | Talk: NaNs | Rec: undefined
+[66] ID: undefined | Time (UTC): 14:08:08 | Direction: outbound | Contact: Zuzana Kopcanova - CA-11109 - QS Drylining | State: hangup | Dur: 22s | Talk: NaNs | Rec: undefined
+[67] ID: undefined | Time (UTC): 14:09:13 | Direction: outbound | Contact: Emily Cross - CA-13893 - Passive Fire Protection Enginee | State: hangup | Dur: 29s | Talk: NaNs | Rec: undefined
+[68] ID: undefined | Time (UTC): 14:15:23 | Direction: outbound | Contact: Moh Dadashzadeh - CA-47039 - Fire Safety Engineer | State: hangup | Dur: 17s | Talk: NaNs | Rec: undefined
+[69] ID: undefined | Time (UTC): 14:18:34 | Direction: outbound | Contact: Marius Mureseanu - CA-12121 - PM Passive Fire | State: hangup | Dur: 4s | Talk: NaNs | Rec: undefined
+[70] ID: undefined | Time (UTC): 14:44:58 | Direction: outbound | Contact: Aaron Danks - CA-45693 - Designer Drylining | State: hangup | Dur: 14s | Talk: NaNs | Rec: undefined
+[71] ID: undefined | Time (UTC): 14:45:53 | Direction: outbound | Contact: Adam Bogard-CA-6018- Estimator Cladding | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[72] ID: undefined | Time (UTC): 14:47:11 | Direction: outbound | Contact: Christopher Gande - CA-46681 - Contracts Manager | State: hangup | Dur: 14s | Talk: NaNs | Rec: undefined
+[73] ID: undefined | Time (UTC): 14:47:53 | Direction: outbound | Contact: Colin Brown - CA-16164 - QS Drylining | State: hangup | Dur: 26s | Talk: NaNs | Rec: undefined
+[74] ID: undefined | Time (UTC): 14:49:12 | Direction: outbound | Contact: Cronan Hehir - CA-10565 - Estimator Drylining | State: hangup | Dur: 19s | Talk: NaNs | Rec: undefined
+[75] ID: undefined | Time (UTC): 14:49:57 | Direction: outbound | Contact: Ian Garvey - CA-11376 - QS Drylining | State: hangup | Dur: 11s | Talk: NaNs | Rec: undefined
+[76] ID: undefined | Time (UTC): 14:50:56 | Direction: outbound | Contact: James Spencer - CA-46078 - Estimator Drylining | State: hangup | Dur: 26s | Talk: NaNs | Rec: undefined
+[77] ID: undefined | Time (UTC): 14:51:48 | Direction: outbound | Contact: Jenny Mellor - CA-46687 -Sales Drylining | State: hangup | Dur: 15s | Talk: NaNs | Rec: undefined
+[78] ID: undefined | Time (UTC): 14:53:22 | Direction: outbound | Contact: Joseph Newsome - CA-22685 - QS Drylining | State: hangup | Dur: 20s | Talk: NaNs | Rec: undefined
+[79] ID: undefined | Time (UTC): 14:56:40 | Direction: outbound | Contact: Kevin Gates - CA-10695 - Estimator Drylining | State: hangup | Dur: 31s | Talk: NaNs | Rec: undefined
+[80] ID: undefined | Time (UTC): 14:59:13 | Direction: outbound | Contact: Liam Wooles - CA-13592 - QS Drylining | State: hangup | Dur: 12s | Talk: NaNs | Rec: undefined
+[81] ID: undefined | Time (UTC): 15:00:21 | Direction: outbound | Contact: Lyubomir Georgiev - CA-17668 - PM Drylining | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[82] ID: undefined | Time (UTC): 15:02:28 | Direction: outbound | Contact: Marc Housley - CA-11489 - Estimator Drylining | State: hangup | Dur: 12s | Talk: NaNs | Rec: undefined
+[83] ID: undefined | Time (UTC): 15:03:43 | Direction: outbound | Contact: Mark Puttock - CA-10706 - Estimator Drylining | State: hangup | Dur: 19s | Talk: NaNs | Rec: undefined
+[84] ID: undefined | Time (UTC): 15:04:31 | Direction: outbound | Contact: Mark Hobbs - CA-46798 - QS Drylining | State: hangup | Dur: 54s | Talk: NaNs | Rec: undefined
+[85] ID: undefined | Time (UTC): 15:05:54 | Direction: outbound | Contact: Matt Harper - CA-11642 - QS Drylining | State: hangup | Dur: 14s | Talk: NaNs | Rec: undefined
+[86] ID: undefined | Time (UTC): 15:09:37 | Direction: outbound | Contact: Sam Reeve - CA-10761 - Estimator Drylining | State: hangup | Dur: 16s | Talk: NaNs | Rec: undefined
+[87] ID: undefined | Time (UTC): 15:11:26 | Direction: outbound | Contact: Samuel Gibson - CA-46777 - QS Drylining | State: hangup | Dur: 52s | Talk: NaNs | Rec: undefined
+[88] ID: undefined | Time (UTC): 15:17:05 | Direction: outbound | Contact: Shelby Wornham - CA-17706 - QS Drylining | State: hangup | Dur: 46s | Talk: NaNs | Rec: undefined
+[89] ID: undefined | Time (UTC): 15:35:33 | Direction: inbound | Contact: Sam Reeve - CA-10761 - Estimator Drylining | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[90] ID: undefined | Time (UTC): 15:48:35 | Direction: outbound | Contact: Tony Wiseman - CA-10879 - Contracts Manager | State: hangup | Dur: 51s | Talk: NaNs | Rec: undefined
+[91] ID: undefined | Time (UTC): 15:52:15 | Direction: outbound | Contact: Vitalij Fencsak - CA-11612 - Estimator Drylining | State: hangup | Dur: 13s | Talk: NaNs | Rec: undefined
+[92] ID: undefined | Time (UTC): 15:56:40 | Direction: inbound | Contact: Marc Housley - CA-11489 - Estimator Drylining | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[93] ID: undefined | Time (UTC): 15:57:36 | Direction: outbound | Contact: Darren Smith - CA-46924 - CAD Joinery | State: hangup | Dur: 15s | Talk: NaNs | Rec: undefined
+[94] ID: undefined | Time (UTC): 15:59:12 | Direction: outbound | Contact: George Hanson-Phelan - CA-46829 - Estimator Joinery | State: hangup | Dur: 16s | Talk: NaNs | Rec: undefined
+[95] ID: undefined | Time (UTC): 16:00:30 | Direction: outbound | Contact: James Corp - CA-15405 - PM Joinery | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[96] ID: undefined | Time (UTC): 16:01:30 | Direction: outbound | Contact: James Somers - CA-47005 - CAD Designer Joinery | State: hangup | Dur: 13s | Talk: NaNs | Rec: undefined
+[97] ID: undefined | Time (UTC): 16:03:29 | Direction: outbound | Contact: Joseph Keenan - CA-46824 - PM Joinery | State: hangup | Dur: 17s | Talk: NaNs | Rec: undefined
+[98] ID: undefined | Time (UTC): 16:07:18 | Direction: outbound | Contact: Nathan Loosley - CA-13309 - Estimator Joinery | State: hangup | Dur: 16s | Talk: NaNs | Rec: undefined
+[99] ID: undefined | Time (UTC): 16:10:18 | Direction: outbound | Contact: Paul Joel - CA-46326 - Estimator Joinery | State: hangup | Dur: 0s | Talk: NaNs | Rec: undefined
+[100] ID: undefined | Time (UTC): 16:11:21 | Direction: outbound | Contact: Paul Duncan - CA-47009 - Designer Joinery | State: hangup | Dur: 18s | Talk: NaNs | Rec: undefined
+[101] ID: undefined | Time (UTC): 16:12:59 | Direction: outbound | Contact: Saumik Hamid - CA-46691 - Sales | State: hangup | Dur: 45s | Talk: NaNs | Rec: undefined

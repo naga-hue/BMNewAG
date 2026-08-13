@@ -110,18 +110,18 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { conversationId } = req.query;
-  if (!conversationId) {
-    return res.status(400).json({ error: 'Missing conversationId parameter' });
+  const callId = req.query.callId || req.query.conversationId;
+  if (!callId) {
+    return res.status(400).json({ error: 'Missing callId or conversationId parameter' });
   }
 
   try {
     const firestore = initFirestore();
-    const callRef = firestore.collection('dialpad_calls').doc(String(conversationId));
+    const callRef = firestore.collection('dialpad_calls').doc(String(callId));
     const callSnap = await callRef.get();
 
     if (!callSnap.exists) {
-      return res.status(404).json({ error: `Call with conversation ID ${conversationId} not found` });
+      return res.status(404).json({ error: `Call with ID ${callId} not found` });
     }
 
     const callData = callSnap.data();
@@ -344,6 +344,66 @@ export default async function handler(req, res) {
   }
 }
 
+// Consolidate duplicate call legs of the same call
+function consolidateCalls(calls) {
+  const groups = [];
+  for (const call of calls) {
+    let matchedGroup = null;
+    const callTime = call.dateStarted ? new Date(call.dateStarted).getTime() : 0;
+    
+    for (const group of groups) {
+      // Check ID links
+      const masterLink = call.masterCallId && group.masterCallIds.has(call.masterCallId);
+      const entryLink = call.entryPointCallId && group.entryPointCallIds.has(call.entryPointCallId);
+      const directIdLink = (call.masterCallId && group.callIds.has(call.masterCallId)) || 
+                           (call.entryPointCallId && group.callIds.has(call.entryPointCallId)) ||
+                           (call.conversationId && (group.masterCallIds.has(call.conversationId) || group.entryPointCallIds.has(call.conversationId)));
+      
+      // Only consolidate legs of the same call sharing exact ID links (e.g. transfers, routing legs)
+      if (masterLink || entryLink || directIdLink) {
+        matchedGroup = group;
+        break;
+      }
+    }
+    
+    if (matchedGroup) {
+      matchedGroup.callIds.add(call.conversationId || call.primaryCallId || call.id);
+      if (call.masterCallId) matchedGroup.masterCallIds.add(call.masterCallId);
+      if (call.entryPointCallId) matchedGroup.entryPointCallIds.add(call.entryPointCallId);
+      if (call.externalNumber) matchedGroup.externalNumbers.add(call.externalNumber);
+      matchedGroup.legs.push(call);
+    } else {
+      groups.push({
+        baseTime: callTime,
+        callIds: new Set([call.conversationId || call.primaryCallId || call.id].filter(Boolean)),
+        masterCallIds: new Set(call.masterCallId ? [call.masterCallId] : []),
+        entryPointCallIds: new Set(call.entryPointCallId ? [call.entryPointCallId] : []),
+        externalNumbers: new Set(call.externalNumber ? [call.externalNumber] : []),
+        legs: [call]
+      });
+    }
+  }
+
+  return groups.map(group => {
+    // Prefer legs that are connected or have longer talk time
+    group.legs.sort((a, b) => {
+      const talkA = Number(a.durationSeconds || a.talkTimeSeconds || 0);
+      const talkB = Number(b.durationSeconds || b.talkTimeSeconds || 0);
+      return talkB - talkA;
+    });
+    
+    const primary = group.legs[0];
+    const duration = Math.max(...group.legs.map(l => Number(l.durationSeconds || l.talkTimeSeconds || 0)));
+    const connected = group.legs.some(l => l.connected === true);
+    
+    return {
+      ...primary,
+      durationSeconds: duration,
+      connected
+    };
+  });
+}
+
 /**
  * Recalculate daily KPI totals for a specific recruiter/date and write to kpiDaily.
  */
@@ -371,10 +431,17 @@ async function updateKpiDaily(firestore, handlerId, dateStarted) {
     let callsOver5Min = 0;
     let callsOver10Min = 0;
 
+    const rawCalls = [];
     dayCallsSnap.forEach(docSnap => {
       const call = docSnap.data();
-      if (call.handlerId !== handlerId) return; // Filter by recruiter in-memory
+      if (call.handlerId === handlerId) {
+        rawCalls.push(call);
+      }
+    });
 
+    const consolidated = consolidateCalls(rawCalls);
+
+    consolidated.forEach(call => {
       callsTotal++;
       if ((call.direction || '').toLowerCase() === 'inbound') {
         callsInbound++;
@@ -382,7 +449,7 @@ async function updateKpiDaily(firestore, handlerId, dateStarted) {
         callsOutbound++;
       }
       
-      const duration = Number(call.durationSeconds || call.talkTimeSeconds || 0);
+      const duration = Number(call.durationSeconds || 0);
       totalTalkTimeSeconds += duration;
       if (duration >= 300) {
         callsOver5Min++;

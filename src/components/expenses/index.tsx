@@ -14,9 +14,18 @@ import './expenses.css';
 interface ExpensesDashboardProps {
   onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
   currentUser?: any;
+  expenses?: any[];
+  staff?: any[];
+  companies?: any[];
 }
 
-export default function ExpensesDashboard({ onShowToast, currentUser }: ExpensesDashboardProps) {
+export default function ExpensesDashboard({ 
+  onShowToast, 
+  currentUser,
+  expenses: propExpenses,
+  staff: propStaff,
+  companies: propCompanies
+}: ExpensesDashboardProps) {
   const isRecruiter = currentUser?.permissions?.role === 'recruiter';
   const [activeSubTab, setActiveSubTab] = useState(isRecruiter ? 'reimbursements' : 'ledger');
   const [showForm, setShowForm] = useState(false);
@@ -24,11 +33,15 @@ export default function ExpensesDashboard({ onShowToast, currentUser }: Expenses
   const [showDateSwapModal, setShowDateSwapModal] = useState(false);
   const [selectedSwapIds, setSelectedSwapIds] = useState<Set<string>>(new Set());
 
-  const expenses = useBoundStore(state => state.expenses);
-  const staff = useBoundStore(state => state.staff);
+  const storeExpenses = useBoundStore(state => state.expenses);
+  const storeStaff = useBoundStore(state => state.staff);
   const vendors = useBoundStore(state => state.vendors);
-  const companies = useBoundStore(state => state.companies);
+  const storeCompanies = useBoundStore(state => state.companies);
   const nominalCodes = useBoundStore(state => state.nominalCodes);
+
+  const expenses = propExpenses || storeExpenses;
+  const staff = propStaff || storeStaff;
+  const companies = propCompanies || storeCompanies;
 
   const updateExpense = useBoundStore(state => state.updateExpense);
   const saveExpense = updateExpense;

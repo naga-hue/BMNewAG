@@ -132,6 +132,8 @@ export default function App() {
     return null;
   });
 
+  const [scopingViewMode, setScopingViewMode] = useState('team'); // 'team' or 'self'
+
   // Database lists
   const companies = useBoundStore(state => state.companies);
   const staff = useBoundStore(state => state.staff);
@@ -665,7 +667,7 @@ export default function App() {
     }
 
     const role = currentUser.permissions?.role || (currentUser.id === 'super-admin' ? 'admin' : 'recruiter');
-    const scope = currentUser.permissions?.dataScope || (currentUser.id === 'super-admin' ? 'all' : 'self');
+    const scope = scopingViewMode === 'self' ? 'self' : (currentUser.permissions?.dataScope || (currentUser.id === 'super-admin' ? 'all' : 'self'));
     const dept = currentUser.department;
     const userId = currentUser.id;
 
@@ -694,11 +696,14 @@ export default function App() {
       };
     }
 
+    // Filter companies for non-admin/restricted users so they only see their employer company
+    const filteredCompanies = companies.filter(c => c.id === currentUser.companyId);
+
     if (scope === 'department') {
       const deptStaffIds = staff.filter(s => s.department === dept).map(s => s.id);
       
       return {
-        scopedCompanies: companies,
+        scopedCompanies: filteredCompanies,
         scopedStaff: staff.filter(s => s.department === dept || s.id === userId),
         scopedLeaves: leaveRequests.filter(r => deptStaffIds.includes(r.staffId)),
         scopedPlacements: placements.filter(p => p.splits && p.splits.some(sp => deptStaffIds.includes(sp.staffId))),
@@ -713,7 +718,7 @@ export default function App() {
       const teamStaffIds = getReportingTreeStaffIds(userId, staff);
       
       return {
-        scopedCompanies: companies,
+        scopedCompanies: filteredCompanies,
         scopedStaff: staff.filter(s => teamStaffIds.includes(s.id)),
         scopedLeaves: leaveRequests.filter(r => teamStaffIds.includes(r.staffId)),
         scopedPlacements: placements.filter(p => p.splits && p.splits.some(sp => teamStaffIds.includes(sp.staffId))),
@@ -726,14 +731,13 @@ export default function App() {
 
     // Consultant / Recruiter (scope: 'self')
     return {
-      scopedCompanies: companies,
+      scopedCompanies: filteredCompanies,
       scopedStaff: staff.filter(s => s.id === userId),
       scopedLeaves: leaveRequests.filter(r => r.staffId === userId),
       scopedPlacements: placements.filter(p => p.splits && p.splits.some(sp => sp.staffId === userId)),
       scopedExpenses: expenses.filter(e => 
-        e.allocationType === 'staff' && 
-        Array.isArray(e.allocationTarget) && 
-        e.allocationTarget.includes(userId)
+        (e.staffId === userId) ||
+        (e.allocationType === 'staff' && Array.isArray(e.allocationTarget) && e.allocationTarget.includes(userId))
       )
     };
   };
@@ -2457,6 +2461,7 @@ export default function App() {
                       setCurrentUser(DEFAULT_ADMIN_USER);
                       localStorage.setItem('bm-logged-in-user-id', 'super-admin');
                       setActiveTab('dashboard');
+                      setScopingViewMode('team');
                     } else {
                       const selectedMember = staff.find(st => st.id === val);
                       if (selectedMember) {
@@ -2472,6 +2477,7 @@ export default function App() {
                         });
                         localStorage.setItem('bm-logged-in-user-id', selectedMember.id);
                         setActiveTab('dashboard');
+                        setScopingViewMode('team');
                       }
                     }
                   }}
@@ -2493,6 +2499,55 @@ export default function App() {
                     </option>
                   ))}
                 </select>
+              </div>
+            )}
+
+            {currentUser && ['admin', 'director', 'manager'].includes(currentUser.permissions?.role) && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '16px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500 }}>View Mode:</span>
+                <div style={{ 
+                  display: 'flex', 
+                  backgroundColor: 'var(--bg-secondary)', 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: 'var(--radius-md)', 
+                  padding: '2px',
+                  alignItems: 'center' 
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => setScopingViewMode('team')}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      borderRadius: '4px',
+                      border: 'none',
+                      backgroundColor: scopingViewMode === 'team' ? 'var(--primary)' : 'transparent',
+                      color: scopingViewMode === 'team' ? '#ffffff' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    Team View
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setScopingViewMode('self')}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      borderRadius: '4px',
+                      border: 'none',
+                      backgroundColor: scopingViewMode === 'self' ? 'var(--primary)' : 'transparent',
+                      color: scopingViewMode === 'self' ? '#ffffff' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    My Profile
+                  </button>
+                </div>
               </div>
             )}
 
@@ -3389,7 +3444,7 @@ export default function App() {
           {/* TAB 6: Vendors & Assets Dashboard */}
           {activeTab === 'vendors' && (
             <VendorsDashboard 
-              companies={companies}
+              companies={scopedCompanies}
               staff={scopedStaff}
               vendors={vendors}
               contracts={contracts}
@@ -3410,7 +3465,7 @@ export default function App() {
           {/* TAB 7: Sales & Placements Dashboard */}
           {activeTab === 'placements' && (
             <PlacementsDashboard 
-              companies={companies}
+              companies={scopedCompanies}
               staff={scopedStaff}
               placements={scopedPlacements}
               onSavePlacement={handleSavePlacement}
@@ -3425,7 +3480,7 @@ export default function App() {
           {activeTab === 'credit_control' && (
             <CreditControlDashboard 
               placements={scopedPlacements}
-              companies={companies}
+              companies={scopedCompanies}
               staff={scopedStaff}
               currentUser={currentUser}
               onUpdatePlacement={handleSavePlacement}
@@ -3457,7 +3512,7 @@ export default function App() {
           {/* TAB 8: Expenses Ledger & Bank Categorizer */}
           {activeTab === 'expenses' && (
             <ExpensesDashboard 
-              companies={companies}
+              companies={scopedCompanies}
               staff={scopedStaff}
               placements={scopedPlacements}
               expenses={scopedExpenses}
@@ -3488,12 +3543,12 @@ export default function App() {
           {/* TAB 10: Profit & Loss / Group Reports */}
           {activeTab === 'reports' && (
             <ReportsDashboard 
-              companies={companies}
+              companies={scopedCompanies}
               staff={scopedStaff}
               placements={scopedPlacements}
               expenses={scopedExpenses}
               commissionPolicies={commissionPolicies}
-              payrollRecords={payrollRecords}
+              payrollRecords={payrollRecords.filter(rec => scopedStaff.some(s => s.id === rec.staffId))}
               payrollPolicies={payrollPolicies}
               leaveRequests={scopedLeaves}
               leavePolicies={leavePolicies}
@@ -3526,11 +3581,11 @@ export default function App() {
           {/* TAB 12: KPI Monitoring Dashboard */}
           {activeTab === 'kpis' && (
             <KpisDashboard 
-              staff={staff}
-              companies={companies}
+              staff={scopedStaff}
+              companies={scopedCompanies}
               currentUser={currentUser}
               onShowToast={handleShowToast}
-              placements={placements}
+              placements={scopedPlacements}
             />
           )}
           </Suspense>

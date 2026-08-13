@@ -445,22 +445,52 @@ Yours sincerely,
                           setEditRole(val);
                           if (val === 'admin') {
                             setEditScope('all');
+                            setEditModules([
+                              'whats_important:write', 'dashboard:write', 'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'payroll:write', 'placements:write', 
+                              'credit_control:write', 'cashflow:write', 'expenses:write', 'vendors:write', 'crm:write', 'logs:write', 'reports:write', 'rbac:write'
+                            ]);
+                          } else if (val === 'hr_admin') {
+                            setEditScope('all');
+                            setEditModules([
+                              'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'payroll:view', 'placements:view',
+                              'expenses:view', 'vendors:write', 'crm:write', 'reports:view', 'rbac:view'
+                            ]);
+                          } else if (val === 'finance_admin') {
+                            setEditScope('all');
+                            setEditModules([
+                              'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'payroll:write', 'placements:write', 
+                              'expenses:write', 'vendors:write', 'credit_control:write', 'cashflow:write', 'reports:write'
+                            ]);
                           } else if (val === 'director') {
-                            setEditScope('team');
+                            setEditScope('all');
+                            setEditModules([
+                              'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'payroll:view', 'placements:view', 
+                              'expenses:view', 'vendors:view', 'crm:view', 'credit_control:view', 'cashflow:view', 'reports:view'
+                            ]);
                           } else if (val === 'manager') {
                             setEditScope('department');
+                            setEditModules([
+                              'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'payroll:view', 'placements:view', 
+                              'expenses:view', 'vendors:view', 'crm:view'
+                            ]);
                           } else if (customRoles[val]) {
                             setEditScope('department');
                             setEditModules(customRoles[val]);
                           } else {
                             setEditScope('self');
+                            setEditModules([
+                              'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'placements:view', 
+                              'expenses:view', 'crm:view'
+                            ]);
                           }
                         }}
                         style={{ padding: '4px 8px', fontSize: '12px' }}
                       >
                         <option value="recruiter">Recruiter / Consultant</option>
-                        <option value="manager">Manager</option>
+                        <option value="manager">Manager / Team Lead</option>
                         <option value="director">Director</option>
+                        <option value="hr_admin">HR Admin</option>
+                        <option value="finance_admin">Finance Admin</option>
                         <option value="admin">Super Admin</option>
                         {Object.keys(customRoles).map(rName => (
                           <option key={rName} value={rName}>{rName}</option>
@@ -470,13 +500,17 @@ Yours sincerely,
                       <span style={{ 
                         fontSize: '11px', 
                         fontWeight: 700, 
-                        color: perm.role === 'admin' ? 'var(--accent)' : perm.role === 'manager' ? 'var(--warning)' : 'var(--text-secondary)',
+                        color: perm.role === 'admin' ? 'var(--accent)' : perm.role === 'manager' || perm.role === 'director' ? 'var(--warning)' : 'var(--text-secondary)',
                         backgroundColor: 'var(--bg-secondary)',
                         padding: '2px 8px',
-                        borderRadius: '4px',
-                        textTransform: 'capitalize'
+                        borderRadius: '4px'
                       }}>
-                        {perm.role}
+                        {perm.role === 'admin' ? 'Super Admin' : 
+                         perm.role === 'hr_admin' ? 'HR Admin' :
+                         perm.role === 'finance_admin' ? 'Finance Admin' :
+                         perm.role === 'director' ? 'Director' :
+                         perm.role === 'manager' ? 'Manager / Team Lead' : 
+                         perm.role === 'recruiter' ? 'Recruiter / Consultant' : perm.role}
                       </span>
                     )}
                   </td>

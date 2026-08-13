@@ -963,23 +963,35 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                         if (val === 'admin') {
                           setDataScope('all');
                           setAllowedModules(MODULES_LIST.map(m => `${m.key}:write`));
+                        } else if (val === 'hr_admin') {
+                          setDataScope('all');
+                          setAllowedModules([
+                            'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'payroll:view', 'placements:view',
+                            'expenses:view', 'vendors:write', 'crm:write', 'reports:view', 'rbac:view'
+                          ]);
+                        } else if (val === 'finance_admin') {
+                          setDataScope('all');
+                          setAllowedModules([
+                            'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'payroll:write', 'placements:write', 
+                            'expenses:write', 'vendors:write', 'credit_control:write', 'cashflow:write', 'reports:write'
+                          ]);
                         } else if (val === 'director') {
                           setDataScope('all');
                           setAllowedModules([
-                            'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
-                            'expenses:write', 'vendors:write', 'crm:write', 'credit_control:write', 'cashflow:write', 'reports:write'
+                            'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'payroll:view', 'placements:view', 
+                            'expenses:view', 'vendors:view', 'crm:view', 'credit_control:view', 'cashflow:view', 'reports:view'
                           ]);
                         } else if (val === 'manager') {
                           setDataScope('department');
                           setAllowedModules([
-                            'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
-                            'expenses:write', 'vendors:write', 'crm:write', 'credit_control:write', 'cashflow:write'
+                            'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'payroll:view', 'placements:view', 
+                            'expenses:view', 'vendors:view', 'crm:view'
                           ]);
                         } else {
                           setDataScope('self');
                           setAllowedModules([
-                            'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
-                            'expenses:write', 'vendors:write', 'crm:write'
+                            'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'placements:view', 
+                            'expenses:view', 'crm:view'
                           ]);
                         }
                       }}
@@ -988,6 +1000,8 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                       <option value="recruiter">Recruiter / Consultant</option>
                       <option value="manager">Manager / Team Lead</option>
                       <option value="director">Director</option>
+                      <option value="hr_admin">HR Admin</option>
+                      <option value="finance_admin">Finance Admin</option>
                       <option value="admin">Super Admin</option>
                     </select>
                   </div>

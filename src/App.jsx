@@ -1634,19 +1634,19 @@ export default function App() {
   /* ==========================================
      STAFF DASHBOARD METRICS CALCULATION
      ========================================== */
-  const totalStaffCount = staff.length;
+  const totalStaffCount = scopedStaff.length;
   
   // Recruitment Consultants count
-  const consultantsCount = staff.filter(s => s.department === 'Recruitment' || (s.jobTitle || '').toLowerCase().includes('consultant')).length;
+  const consultantsCount = scopedStaff.filter(s => s.department === 'Recruitment' || (s.jobTitle || '').toLowerCase().includes('consultant')).length;
 
   // Audit missing contracts
-  const missingContractsCount = staff.filter(s => 
+  const missingContractsCount = scopedStaff.filter(s => 
     !s.documents || !s.documents.some(d => d.type === 'appointment')
   ).length;
 
   // Payroll Cost summary normalized to GBP
   const getPayrollSummaryStr = () => {
-    const totalGBP = staff.reduce((sum, s) => {
+    const totalGBP = scopedStaff.reduce((sum, s) => {
       return sum + toGBP(s.salary, s.currency);
     }, 0);
     return formatGBP(totalGBP);

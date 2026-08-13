@@ -283,10 +283,27 @@ Yours sincerely,
     setEditPassword(s.password || '');
   };
 
-  const handleToggleModule = (modKey) => {
-    setEditModules(prev => 
-      prev.includes(modKey) ? prev.filter(m => m !== modKey) : [...prev, modKey]
-    );
+  const handleToggleViewPermission = (key) => {
+    setEditModules(prev => {
+      const hasView = prev.includes(key) || prev.includes(`${key}:view`) || prev.includes(`${key}:write`);
+      if (hasView) {
+        return prev.filter(x => x !== key && x !== `${key}:view` && x !== `${key}:write`);
+      } else {
+        return [...prev, `${key}:view`];
+      }
+    });
+  };
+
+  const handleToggleWritePermission = (key) => {
+    setEditModules(prev => {
+      const hasWrite = prev.includes(key) || prev.includes(`${key}:write`);
+      if (hasWrite) {
+        return prev.filter(x => x !== key && x !== `${key}:write`);
+      } else {
+        const filtered = prev.filter(x => x !== `${key}:view`);
+        return [...filtered, `${key}:write`];
+      }
+    });
   };
 
   const handleSavePermissions = async (s) => {
@@ -428,6 +445,8 @@ Yours sincerely,
                           setEditRole(val);
                           if (val === 'admin') {
                             setEditScope('all');
+                          } else if (val === 'director') {
+                            setEditScope('team');
                           } else if (val === 'manager') {
                             setEditScope('department');
                           } else if (customRoles[val]) {
@@ -441,6 +460,7 @@ Yours sincerely,
                       >
                         <option value="recruiter">Recruiter / Consultant</option>
                         <option value="manager">Manager</option>
+                        <option value="director">Director</option>
                         <option value="admin">Super Admin</option>
                         {Object.keys(customRoles).map(rName => (
                           <option key={rName} value={rName}>{rName}</option>
@@ -490,27 +510,29 @@ Yours sincerely,
                       >
                         <option value="self">Self Records Only</option>
                         <option value="department">Departmental Records</option>
+                        <option value="team">Reporting Team Tree</option>
                         <option value="all">All Group Records</option>
                       </select>
                     ) : (
                       <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                         {perm.dataScope === 'all' ? 'All Group Records' :
-                         perm.dataScope === 'department' ? 'Departmental Records' : 'Self Records Only'}
+                         perm.dataScope === 'department' ? 'Departmental Records' :
+                         perm.dataScope === 'team' ? 'Reporting Team Tree' : 'Self Records Only'}
                       </span>
                     )}
                   </td>
 
                   {/* Allowed Modules column */}
-                  <td style={{ maxWidth: '350px' }}>
+                  <td style={{ maxWidth: '400px' }}>
                     {isEditing ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <div style={{ display: 'flex', gap: '6px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: '6px', marginBottom: '6px', flexWrap: 'wrap' }}>
                           <button
                             type="button"
                             onClick={() => {
                               setEditRole('admin');
                               setEditScope('all');
-                              setEditModules(MODULES_LIST.map(m => m.key));
+                              setEditModules(MODULES_LIST.map(m => `${m.key}:write`));
                             }}
                             style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--accent)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
                           >
@@ -521,7 +543,7 @@ Yours sincerely,
                             onClick={() => {
                               setEditRole('recruiter');
                               setEditScope('self');
-                              setEditModules(['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors', 'crm']);
+                              setEditModules(['directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 'expenses:write', 'vendors:write', 'crm:write']);
                             }}
                             style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
                           >
@@ -532,41 +554,70 @@ Yours sincerely,
                             onClick={() => {
                               setEditRole('manager');
                               setEditScope('all');
-                              setEditModules(['directory', 'staff', 'leaves', 'commissions', 'placements', 'expenses', 'vendors', 'crm', 'credit_control', 'cashflow', 'reports']);
+                              setEditModules(['directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 'expenses:write', 'vendors:write', 'crm:write', 'credit_control:write', 'cashflow:write', 'reports:write']);
                             }}
                             style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--warning)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
                           >
                             📊 Finance Blueprint
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditRole('director');
+                              setEditScope('team');
+                              setEditModules(['directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 'expenses:write', 'vendors:write', 'crm:write', 'credit_control:write', 'cashflow:write', 'reports:write']);
+                            }}
+                            style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--primary)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
+                          >
+                            👑 Director Blueprint
+                          </button>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', padding: '6px 0' }}>
-                          {MODULES_LIST.map(m => {
-                            const checked = editModules.includes(m.key);
-                            return (
-                              <div 
-                                key={m.key} 
-                                onClick={() => handleToggleModule(m.key)}
-                                style={{ 
-                                  display: 'flex', 
-                                  alignItems: 'center', 
-                                  gap: '6px', 
-                                  fontSize: '11px', 
-                                  cursor: 'pointer',
-                                  userSelect: 'none',
-                                  color: checked ? 'var(--accent)' : 'var(--text-muted)'
-                                }}
-                              >
-                                {checked ? <CheckSquare size={13} style={{ color: 'var(--accent)' }} /> : <Square size={13} />}
-                                <span>{m.label}</span>
-                              </div>
-                            );
-                          })}
+
+                        <div className="table-container" style={{ border: '1px solid var(--border-color)', borderRadius: '6px', overflow: 'hidden' }}>
+                          <table className="entity-table dense" style={{ margin: 0, width: '100%' }}>
+                            <thead>
+                              <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                                <th style={{ fontSize: '10px', padding: '6px' }}>Module / Component</th>
+                                <th style={{ fontSize: '10px', padding: '6px', textAlign: 'center', width: '80px' }}>View (Read)</th>
+                                <th style={{ fontSize: '10px', padding: '6px', textAlign: 'center', width: '80px' }}>Edit (Write)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {MODULES_LIST.map(m => {
+                                const hasView = editModules.includes(m.key) || editModules.includes(`${m.key}:view`) || editModules.includes(`${m.key}:write`);
+                                const hasWrite = editModules.includes(m.key) || editModules.includes(`${m.key}:write`);
+                                return (
+                                  <tr key={m.key}>
+                                    <td style={{ fontSize: '11px', padding: '5px 6px', fontWeight: 600 }}>{m.label}</td>
+                                    <td style={{ padding: '5px 6px', textAlign: 'center' }}>
+                                      <div 
+                                        onClick={() => handleToggleViewPermission(m.key)}
+                                        style={{ display: 'inline-flex', cursor: 'pointer', color: hasView ? 'var(--accent)' : 'var(--text-secondary)' }}
+                                      >
+                                        {hasView ? <CheckSquare size={14} /> : <Square size={14} />}
+                                      </div>
+                                    </td>
+                                    <td style={{ padding: '5px 6px', textAlign: 'center' }}>
+                                      <div 
+                                        onClick={() => handleToggleWritePermission(m.key)}
+                                        style={{ display: 'inline-flex', cursor: 'pointer', color: hasWrite ? 'var(--accent)' : 'var(--text-secondary)' }}
+                                      >
+                                        {hasWrite ? <CheckSquare size={14} /> : <Square size={14} />}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                         {(perm.allowedModules || []).map(mKey => {
-                          const mLabel = MODULES_LIST.find(ml => ml.key === mKey)?.label || mKey;
+                          const cleanKey = mKey.split(':')[0];
+                          const suffix = mKey.includes(':') ? ` (${mKey.split(':')[1]})` : '';
+                          const mLabel = (MODULES_LIST.find(ml => ml.key === cleanKey)?.label || cleanKey) + suffix;
                           return (
                             <span 
                               key={mKey} 
@@ -576,7 +627,8 @@ Yours sincerely,
                                 border: '1px solid rgba(99, 102, 241, 0.15)',
                                 color: 'var(--accent)',
                                 padding: '1px 6px',
-                                borderRadius: '3px'
+                                borderRadius: '3px',
+                                textTransform: 'capitalize'
                               }}
                             >
                               {mLabel}

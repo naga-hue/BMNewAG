@@ -10,7 +10,10 @@ import {
   ArrowRight,
   Check,
   UploadCloud,
-  Trash2
+  Trash2,
+  Shield,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 
 const CURRENCIES = [
@@ -19,6 +22,21 @@ const CURRENCIES = [
   { code: 'AED', symbol: 'AED ', label: 'AED - UAE Dirham' },
   { code: 'INR', symbol: '₹', label: 'INR - Indian Rupee' },
   { code: 'ZAR', symbol: 'R', label: 'ZAR - South African Rand' }
+];
+
+const MODULES_LIST = [
+  { key: 'directory', label: 'Company Directory' },
+  { key: 'staff', label: 'Staff & Consultants' },
+  { key: 'leaves', label: 'Leaves & Holidays' },
+  { key: 'commissions', label: 'Commission Plans' },
+  { key: 'placements', label: 'Sales & Placements' },
+  { key: 'expenses', label: 'Expense Ledger' },
+  { key: 'vendors', label: 'Vendors & Assets' },
+  { key: 'crm', label: 'CRM Recruiting Desk' },
+  { key: 'credit_control', label: 'Credit Control Invoices' },
+  { key: 'cashflow', label: 'Cashflow Projections' },
+  { key: 'logs', label: 'Audit Trail Logs' },
+  { key: 'reports', label: 'Profit & Loss / Reports' }
 ];
 
 const doesPolicyMatchCompany = (policyCompanyId, employeeCompanyId) => {
@@ -73,7 +91,16 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
   const [businessPhone, setBusinessPhone] = useState('');
   const [additionalEmails, setAdditionalEmails] = useState('');
 
-  // Step 5: Documents list state
+  // Step 5: Security & Access Permissions state
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState('recruiter');
+  const [dataScope, setDataScope] = useState('self');
+  const [allowedModules, setAllowedModules] = useState([
+    'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
+    'expenses:write', 'vendors:write', 'crm:write'
+  ]);
+
+  // Step 6: Documents list state
   const [documents, setDocuments] = useState([]);
   const [uploadDocType, setUploadDocType] = useState('appointment');
 
@@ -148,6 +175,14 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setBusinessPhone(staffMember.businessPhone || '');
       setAdditionalEmails(staffMember.additionalEmails || '');
       
+      setPassword(staffMember.password || '');
+      setRole(staffMember.permissions?.role || 'recruiter');
+      setDataScope(staffMember.permissions?.dataScope || 'self');
+      setAllowedModules(staffMember.permissions?.allowedModules || [
+        'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
+        'expenses:write', 'vendors:write', 'crm:write'
+      ]);
+
       setDocuments(staffMember.documents || []);
     } else {
       // Default creation state
@@ -192,6 +227,14 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setBusinessPhone('');
       setAdditionalEmails('');
       
+      setPassword('');
+      setRole('recruiter');
+      setDataScope('self');
+      setAllowedModules([
+        'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
+        'expenses:write', 'vendors:write', 'crm:write'
+      ]);
+
       setDocuments([]);
     }
     setCurrentStep(1);
@@ -245,6 +288,9 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       const isEmailValid = /\S+@\S+\.\S+/.test(businessEmail);
       return isEmailValid && businessPhone.trim() !== '';
     }
+    if (currentStep === 5) {
+      return password.trim() !== '';
+    }
     return true;
   };
 
@@ -278,6 +324,9 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
         errs.businessEmail = "Valid Business Email";
       }
       if (!businessPhone.trim()) errs.businessPhone = "Work Phone";
+    }
+    else if (currentStep === 5) {
+      if (!password.trim()) errs.password = "Access Password";
     }
 
     if (Object.keys(errs).length === 0) {
@@ -319,6 +368,29 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
     setDocuments(prev => prev.filter(d => d.id !== id));
   };
 
+  const handleToggleViewPermission = (key) => {
+    setAllowedModules(prev => {
+      const hasView = prev.includes(key) || prev.includes(`${key}:view`) || prev.includes(`${key}:write`);
+      if (hasView) {
+        return prev.filter(x => x !== key && x !== `${key}:view` && x !== `${key}:write`);
+      } else {
+        return [...prev, `${key}:view`];
+      }
+    });
+  };
+
+  const handleToggleWritePermission = (key) => {
+    setAllowedModules(prev => {
+      const hasWrite = prev.includes(key) || prev.includes(`${key}:write`);
+      if (hasWrite) {
+        return prev.filter(x => x !== key && x !== `${key}:write`);
+      } else {
+        const filtered = prev.filter(x => x !== `${key}:view`);
+        return [...filtered, `${key}:write`];
+      }
+    });
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!canGoNext()) {
@@ -358,6 +430,12 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       noticePayPeriod: status === 'exited' ? noticePayPeriod : '',
       noticePayoutOption: status === 'exited' ? noticePayoutOption : '',
       noticePayoutCustomDate: (status === 'exited' && noticePayoutOption === 'custom-date') ? noticePayoutCustomDate : '',
+      password: password.trim(),
+      permissions: {
+        role,
+        dataScope,
+        allowedModules
+      },
       documents
     };
 
@@ -386,7 +464,8 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
             { step: 2, label: 'Job details', icon: <Briefcase size={12} /> },
             { step: 3, label: 'Salary', icon: <Wallet size={12} /> },
             { step: 4, label: 'Work Contact', icon: <Briefcase size={12} /> },
-            { step: 5, label: 'Documents', icon: <FileText size={12} /> }
+            { step: 5, label: 'Security', icon: <Shield size={12} /> },
+            { step: 6, label: 'Documents', icon: <FileText size={12} /> }
           ].map(s => (
             <div 
               key={s.step} 
@@ -853,8 +932,173 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
               </div>
             )}
 
-            {/* STEP 5: Employment Document Attachments */}
+            {/* STEP 5: Security & Permissions Access */}
             {currentStep === 5 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--accent)' }}>Security Credentials & Dashboard Permissions</h3>
+                
+                <div className="form-group">
+                  <label className="form-label">Sign-in / Access Password <span>*</span></label>
+                  <input 
+                    type="text" 
+                    className="form-input"
+                    placeholder="Welcome123"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Required for the user to sign in to their dashboard.</span>
+                </div>
+
+                <div className="form-group-row">
+                  <div className="form-group">
+                    <label className="form-label">Access Role <span>*</span></label>
+                    <select 
+                      className="select-filter" 
+                      value={role}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setRole(val);
+                        // Setup sensible defaults for scope/modules based on selected blueprint role
+                        if (val === 'admin') {
+                          setDataScope('all');
+                          setAllowedModules(MODULES_LIST.map(m => `${m.key}:write`));
+                        } else if (val === 'director') {
+                          setDataScope('all');
+                          setAllowedModules([
+                            'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
+                            'expenses:write', 'vendors:write', 'crm:write', 'credit_control:write', 'cashflow:write', 'reports:write'
+                          ]);
+                        } else if (val === 'manager') {
+                          setDataScope('department');
+                          setAllowedModules([
+                            'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
+                            'expenses:write', 'vendors:write', 'crm:write', 'credit_control:write', 'cashflow:write'
+                          ]);
+                        } else {
+                          setDataScope('self');
+                          setAllowedModules([
+                            'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
+                            'expenses:write', 'vendors:write', 'crm:write'
+                          ]);
+                        }
+                      }}
+                      style={{ width: '100%', padding: '10px' }}
+                    >
+                      <option value="recruiter">Recruiter / Consultant</option>
+                      <option value="manager">Manager / Team Lead</option>
+                      <option value="director">Director</option>
+                      <option value="admin">Super Admin</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Data Visibility Scope <span>*</span></label>
+                    <select 
+                      className="select-filter" 
+                      value={dataScope}
+                      onChange={(e) => setDataScope(e.target.value)}
+                      style={{ width: '100%', padding: '10px' }}
+                    >
+                      <option value="self">Self Records Only</option>
+                      <option value="department">Departmental Records</option>
+                      <option value="team">Reporting Team Tree</option>
+                      <option value="all">All Group Records</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ marginTop: '8px' }}>
+                  <label className="form-label" style={{ marginBottom: '8px', display: 'block' }}>Permitted Dashboard Modules Matrix</label>
+                  
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRole('admin');
+                        setDataScope('all');
+                        setAllowedModules(MODULES_LIST.map(m => `${m.key}:write`));
+                      }}
+                      style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--accent)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
+                    >
+                      ⭐ Admin Preset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRole('recruiter');
+                        setDataScope('self');
+                        setAllowedModules([
+                          'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
+                          'expenses:write', 'vendors:write', 'crm:write'
+                        ]);
+                      }}
+                      style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
+                    >
+                      💼 Recruiter Preset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRole('manager');
+                        setDataScope('all');
+                        setAllowedModules([
+                          'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
+                          'expenses:write', 'vendors:write', 'crm:write', 'credit_control:write', 'cashflow:write', 'reports:view'
+                        ]);
+                      }}
+                      style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--warning)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
+                    >
+                      📊 Management Preset
+                    </button>
+                  </div>
+
+                  <div className="table-container" style={{ marginTop: '12px', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <table className="entity-table dense" style={{ margin: 0, width: '100%' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                          <th style={{ fontSize: '11px', textTransform: 'uppercase', padding: '10px' }}>Module / Feature Tab</th>
+                          <th style={{ fontSize: '11px', textTransform: 'uppercase', padding: '10px', textAlign: 'center', width: '100px' }}>View (Read)</th>
+                          <th style={{ fontSize: '11px', textTransform: 'uppercase', padding: '10px', textAlign: 'center', width: '100px' }}>Edit (Write)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {MODULES_LIST.map(m => {
+                          const hasView = allowedModules.includes(m.key) || allowedModules.includes(`${m.key}:view`) || allowedModules.includes(`${m.key}:write`);
+                          const hasWrite = allowedModules.includes(m.key) || allowedModules.includes(`${m.key}:write`);
+                          return (
+                            <tr key={m.key}>
+                              <td style={{ fontSize: '12px', padding: '8px 10px', fontWeight: 600 }}>
+                                {m.label}
+                              </td>
+                              <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                <div 
+                                  onClick={() => handleToggleViewPermission(m.key)}
+                                  style={{ display: 'inline-flex', cursor: 'pointer', color: hasView ? 'var(--accent)' : 'var(--text-secondary)' }}
+                                >
+                                  {hasView ? <CheckSquare size={16} /> : <Square size={16} />}
+                                </div>
+                              </td>
+                              <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                <div 
+                                  onClick={() => handleToggleWritePermission(m.key)}
+                                  style={{ display: 'inline-flex', cursor: 'pointer', color: hasWrite ? 'var(--accent)' : 'var(--text-secondary)' }}
+                                >
+                                  {hasWrite ? <CheckSquare size={16} /> : <Square size={16} />}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 6: Employment Document Attachments */}
+            {currentStep === 6 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '8px', color: 'var(--accent)' }}>Onboarding Documents Checklist</h3>
                 <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
@@ -936,7 +1180,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
             </button>
           )}
 
-          {currentStep < 5 ? (
+          {currentStep < 6 ? (
             <button type="button" className="btn-primary" onClick={handleNext} disabled={!canGoNext()}>
               Next <ArrowRight size={16} />
             </button>

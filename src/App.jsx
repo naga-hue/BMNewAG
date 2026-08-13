@@ -87,6 +87,7 @@ export default function App() {
   });
 
   // Default Super Admin User configuration
+  // Default Super Admin User configuration
   const getDefaultAllowedModules = (role) => {
     if (role === 'admin') {
       return ['whats_important', 'dashboard', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'credit_control', 'cashflow', 'expenses', 'vendors', 'crm', 'logs', 'reports', 'rbac'];
@@ -95,6 +96,23 @@ export default function App() {
       return ['whats_important', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'crm', 'expenses', 'reports'];
     }
     return ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors', 'crm'];
+  };
+
+  const hasViewPermission = (user, moduleKey) => {
+    if (!user || !user.permissions) return false;
+    const { role, allowedModules = [] } = user.permissions;
+    if (role === 'admin') return true;
+    return allowedModules.includes(moduleKey) || 
+           allowedModules.includes(`${moduleKey}:view`) || 
+           allowedModules.includes(`${moduleKey}:write`);
+  };
+
+  const hasWritePermission = (user, moduleKey) => {
+    if (!user || !user.permissions) return false;
+    const { role, allowedModules = [] } = user.permissions;
+    if (role === 'admin') return true;
+    return allowedModules.includes(moduleKey) || 
+           allowedModules.includes(`${moduleKey}:write`);
   };
 
   const DEFAULT_ADMIN_USER = {
@@ -154,9 +172,9 @@ export default function App() {
   // Fallback to allowed activeTab if current tab is not permitted
   useEffect(() => {
     if (currentUser) {
-      const allowed = currentUser.permissions?.allowedModules || [];
-      if (allowed.length > 0 && !allowed.includes(activeTab) && activeTab !== 'kpis') {
-        const fallback = allowed.find(m => m !== 'dashboard' && m !== 'whats_important' && m !== 'rbac') || allowed[0] || 'staff';
+      if (activeTab !== 'kpis' && activeTab !== 'rbac' && !hasViewPermission(currentUser, activeTab)) {
+        const tabs = ['whats_important', 'dashboard', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'vendors', 'placements', 'crm', 'credit_control', 'cashflow', 'expenses', 'logs', 'reports'];
+        const fallback = tabs.find(t => hasViewPermission(currentUser, t)) || 'staff';
         setActiveTab(fallback);
       }
     }
@@ -646,10 +664,25 @@ export default function App() {
       };
     }
 
-    const role = currentUser.permissions?.role || 'admin';
-    const scope = currentUser.permissions?.dataScope || 'all';
+    const role = currentUser.permissions?.role || (currentUser.id === 'super-admin' ? 'admin' : 'recruiter');
+    const scope = currentUser.permissions?.dataScope || (currentUser.id === 'super-admin' ? 'all' : 'self');
     const dept = currentUser.department;
     const userId = currentUser.id;
+
+    // Recursive reporting tree crawler
+    const getReportingTreeStaffIds = (managerId, allStaff) => {
+      const ids = new Set([managerId]);
+      let prevSize = 0;
+      while (ids.size > prevSize) {
+        prevSize = ids.size;
+        allStaff.forEach(s => {
+          if (s.reportingManagerId && ids.has(s.reportingManagerId)) {
+            ids.add(s.id);
+          }
+        });
+      }
+      return Array.from(ids);
+    };
 
     if (role === 'admin' || scope === 'all') {
       return {
@@ -661,8 +694,7 @@ export default function App() {
       };
     }
 
-    if (role === 'manager' || scope === 'department') {
-      // Find staff in manager's department
+    if (scope === 'department') {
       const deptStaffIds = staff.filter(s => s.department === dept).map(s => s.id);
       
       return {
@@ -677,9 +709,24 @@ export default function App() {
       };
     }
 
+    if (scope === 'team') {
+      const teamStaffIds = getReportingTreeStaffIds(userId, staff);
+      
+      return {
+        scopedCompanies: companies,
+        scopedStaff: staff.filter(s => teamStaffIds.includes(s.id)),
+        scopedLeaves: leaveRequests.filter(r => teamStaffIds.includes(r.staffId)),
+        scopedPlacements: placements.filter(p => p.splits && p.splits.some(sp => teamStaffIds.includes(sp.staffId))),
+        scopedExpenses: expenses.filter(e => 
+          teamStaffIds.includes(e.staffId) ||
+          (e.allocationType === 'staff' && Array.isArray(e.allocationTarget) && e.allocationTarget.some(t => teamStaffIds.includes(t)))
+        )
+      };
+    }
+
     // Consultant / Recruiter (scope: 'self')
     return {
-      scopedCompanies: companies, // They can view companies in directory
+      scopedCompanies: companies,
       scopedStaff: staff.filter(s => s.id === userId),
       scopedLeaves: leaveRequests.filter(r => r.staffId === userId),
       scopedPlacements: placements.filter(p => p.splits && p.splits.some(sp => sp.staffId === userId)),
@@ -1747,70 +1794,70 @@ export default function App() {
             <ul className="nav-links">
               {isSidebarMinimized ? (
                 <>
-                  {currentUser.permissions.allowedModules.includes('whats_important') && (
+                  {hasViewPermission(currentUser, 'whats_important') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'whats_important' ? 'active' : ''}`} onClick={() => setActiveTab('whats_important')} title="What's Important">
                         <Bell size={18} />
                       </div>
                     </li>
                   )}
-                  {currentUser.permissions.allowedModules.includes('dashboard') && (
+                  {hasViewPermission(currentUser, 'dashboard') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')} title="Group Dashboard">
                         <LayoutDashboard size={18} />
                       </div>
                     </li>
                   )}
-                  {currentUser.permissions.allowedModules.includes('directory') && (
+                  {hasViewPermission(currentUser, 'directory') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'directory' ? 'active' : ''}`} onClick={() => setActiveTab('directory')} title="Company Directory">
                         <Building2 size={18} />
                       </div>
                     </li>
                   )}
-                  {currentUser.permissions.allowedModules.includes('staff') && (
+                  {hasViewPermission(currentUser, 'staff') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'staff' ? 'active' : ''}`} onClick={() => setActiveTab('staff')} title={currentUser.permissions.role === 'recruiter' ? 'My Staff Profile' : 'Staff & Consultants'}>
                         <Users size={18} />
                       </div>
                     </li>
                   )}
-                  {currentUser.permissions.allowedModules.includes('leaves') && (
+                  {hasViewPermission(currentUser, 'leaves') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'leaves' ? 'active' : ''}`} onClick={() => setActiveTab('leaves')} title="Leaves & Holidays">
                         <Calendar size={18} />
                       </div>
                     </li>
                   )}
-                  {currentUser.permissions.allowedModules.includes('commissions') && (
+                  {hasViewPermission(currentUser, 'commissions') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'commissions' ? 'active' : ''}`} onClick={() => setActiveTab('commissions')} title="Commission Plans">
                         <TrendingUp size={18} />
                       </div>
                     </li>
                   )}
-                  {currentUser.permissions.allowedModules.includes('payroll') && (
+                  {hasViewPermission(currentUser, 'payroll') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'payroll' ? 'active' : ''}`} onClick={() => setActiveTab('payroll')} title={currentUser.permissions.role === 'recruiter' ? 'My Payroll' : 'Group Payroll'}>
                         <Wallet size={18} />
                       </div>
                     </li>
                   )}
-                  {currentUser.permissions.allowedModules.includes('vendors') && (
+                  {hasViewPermission(currentUser, 'vendors') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'vendors' ? 'active' : ''}`} onClick={() => setActiveTab('vendors')} title="Vendors & Assets">
                         <Laptop size={18} />
                       </div>
                     </li>
                   )}
-                  {currentUser.permissions.allowedModules.includes('placements') && (
+                  {hasViewPermission(currentUser, 'placements') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'placements' ? 'active' : ''}`} onClick={() => setActiveTab('placements')} title={currentUser.permissions.role === 'recruiter' ? 'My Placements' : 'Sales & Placements'}>
                         <TrendingUp size={18} />
                       </div>
                     </li>
                   )}
-                  {currentUser.permissions.allowedModules.includes('crm') && (
+                  {hasViewPermission(currentUser, 'crm') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'crm' ? 'active' : ''}`} onClick={() => setActiveTab('crm')} title="CRM Recruiting">
                         <Briefcase size={18} />
@@ -1822,35 +1869,35 @@ export default function App() {
                       <BarChart2 size={18} />
                     </div>
                   </li>
-                  {currentUser.permissions.allowedModules.includes('credit_control') && (
+                  {hasViewPermission(currentUser, 'credit_control') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'credit_control' ? 'active' : ''}`} onClick={() => setActiveTab('credit_control')} title="Credit Control">
                         <FileText size={18} />
                       </div>
                     </li>
                   )}
-                  {currentUser.permissions.allowedModules.includes('cashflow') && (
+                  {hasViewPermission(currentUser, 'cashflow') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'cashflow' ? 'active' : ''}`} onClick={() => setActiveTab('cashflow')} title="Cashflow Forecast">
                         <TrendingUp size={18} />
                       </div>
                     </li>
                   )}
-                  {currentUser.permissions.allowedModules.includes('expenses') && (
+                  {hasViewPermission(currentUser, 'expenses') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'expenses' ? 'active' : ''}`} onClick={() => setActiveTab('expenses')} title={currentUser.permissions.role === 'recruiter' ? 'My Expense Claims' : 'Expense Ledger'}>
                         <Receipt size={18} />
                       </div>
                     </li>
                   )}
-                  {currentUser.permissions.allowedModules.includes('logs') && (
+                  {hasViewPermission(currentUser, 'logs') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')} title="Audit Trail Logs">
                         <History size={18} />
                       </div>
                     </li>
                   )}
-                  {currentUser.permissions.allowedModules.includes('reports') && (
+                  {hasViewPermission(currentUser, 'reports') && (
                     <li>
                       <div className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')} title="Profit & Loss / Reports">
                         <PieChart size={18} />
@@ -1891,7 +1938,7 @@ export default function App() {
                   
                   {expandedSections.general && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
-                      {currentUser.permissions.allowedModules.includes('whats_important') && (
+                      {hasViewPermission(currentUser, 'whats_important') && (
                         <li>
                           <div className={`nav-item ${activeTab === 'whats_important' ? 'active' : ''}`} onClick={() => setActiveTab('whats_important')}>
                             <Bell size={18} />
@@ -1899,7 +1946,7 @@ export default function App() {
                           </div>
                         </li>
                       )}
-                      {currentUser.permissions.allowedModules.includes('dashboard') && (
+                      {hasViewPermission(currentUser, 'dashboard') && (
                         <li>
                           <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
                             <LayoutDashboard size={18} />
@@ -1907,7 +1954,7 @@ export default function App() {
                           </div>
                         </li>
                       )}
-                      {currentUser.permissions.allowedModules.includes('directory') && (
+                      {hasViewPermission(currentUser, 'directory') && (
                         <li>
                           <div className={`nav-item ${activeTab === 'directory' ? 'active' : ''}`} onClick={() => setActiveTab('directory')}>
                             <Building2 size={18} />
@@ -1917,7 +1964,7 @@ export default function App() {
                       )}
                     </div>
                   )}
-
+ 
                   {/* Category: HRMS (HR Management) */}
                   <div 
                     onClick={() => toggleSection('hrms')} 
@@ -1939,10 +1986,10 @@ export default function App() {
                     <span>👥 HR Management (HRMS)</span>
                     {expandedSections.hrms ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   </div>
-
+ 
                   {expandedSections.hrms && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
-                      {currentUser.permissions.allowedModules.includes('staff') && (
+                      {hasViewPermission(currentUser, 'staff') && (
                         <li>
                           <div className={`nav-item ${activeTab === 'staff' ? 'active' : ''}`} onClick={() => setActiveTab('staff')}>
                             <Users size={18} />
@@ -1950,7 +1997,7 @@ export default function App() {
                           </div>
                         </li>
                       )}
-                      {currentUser.permissions.allowedModules.includes('leaves') && (
+                      {hasViewPermission(currentUser, 'leaves') && (
                         <li>
                           <div className={`nav-item ${activeTab === 'leaves' ? 'active' : ''}`} onClick={() => setActiveTab('leaves')}>
                             <Calendar size={18} />
@@ -1971,7 +2018,7 @@ export default function App() {
                           </div>
                         </li>
                       )}
-                      {currentUser.permissions.allowedModules.includes('commissions') && (
+                      {hasViewPermission(currentUser, 'commissions') && (
                         <li>
                           <div className={`nav-item ${activeTab === 'commissions' ? 'active' : ''}`} onClick={() => setActiveTab('commissions')}>
                             <TrendingUp size={18} />
@@ -1979,7 +2026,7 @@ export default function App() {
                           </div>
                         </li>
                       )}
-                      {currentUser.permissions.allowedModules.includes('payroll') && (
+                      {hasViewPermission(currentUser, 'payroll') && (
                         <li>
                           <div className={`nav-item ${activeTab === 'payroll' ? 'active' : ''}`} onClick={() => setActiveTab('payroll')}>
                             <Wallet size={18} />
@@ -1989,7 +2036,7 @@ export default function App() {
                       )}
                     </div>
                   )}
-
+ 
                   {/* Category: CRM & Sales */}
                   <div 
                     onClick={() => toggleSection('crm')} 
@@ -2011,10 +2058,10 @@ export default function App() {
                     <span>💼 CRM & Recruiting</span>
                     {expandedSections.crm ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   </div>
-
+ 
                   {expandedSections.crm && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
-                      {currentUser.permissions.allowedModules.includes('crm') && (
+                      {hasViewPermission(currentUser, 'crm') && (
                         <li>
                           <div className={`nav-item ${activeTab === 'crm' ? 'active' : ''}`} onClick={() => setActiveTab('crm')}>
                             <Briefcase size={18} />
@@ -2022,7 +2069,7 @@ export default function App() {
                           </div>
                         </li>
                       )}
-                      {currentUser.permissions.allowedModules.includes('placements') && (
+                      {hasViewPermission(currentUser, 'placements') && (
                         <li>
                           <div className={`nav-item ${activeTab === 'placements' ? 'active' : ''}`} onClick={() => setActiveTab('placements')}>
                             <TrendingUp size={18} />
@@ -2032,7 +2079,7 @@ export default function App() {
                       )}
                     </div>
                   )}
-
+ 
                   {/* Category: Finance */}
                   <div 
                     onClick={() => toggleSection('finance')} 
@@ -2054,10 +2101,10 @@ export default function App() {
                     <span>💵 Finance & Ledger</span>
                     {expandedSections.finance ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   </div>
-
+ 
                   {expandedSections.finance && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
-                      {currentUser.permissions.allowedModules.includes('credit_control') && (
+                      {hasViewPermission(currentUser, 'credit_control') && (
                         <li>
                           <div className={`nav-item ${activeTab === 'credit_control' ? 'active' : ''}`} onClick={() => setActiveTab('credit_control')}>
                             <FileText size={18} />
@@ -2119,7 +2166,7 @@ export default function App() {
                           )}
                         </li>
                       )}
-                      {currentUser.permissions.allowedModules.includes('vendors') && (
+                      {hasViewPermission(currentUser, 'vendors') && (
                         <li>
                           <div className={`nav-item ${activeTab === 'vendors' ? 'active' : ''}`} onClick={() => setActiveTab('vendors')}>
                             <Laptop size={18} />
@@ -2127,7 +2174,7 @@ export default function App() {
                           </div>
                         </li>
                       )}
-                      {currentUser.permissions.allowedModules.includes('expenses') && (
+                      {hasViewPermission(currentUser, 'expenses') && (
                         <li>
                           <div className={`nav-item ${activeTab === 'expenses' ? 'active' : ''}`} onClick={() => setActiveTab('expenses')}>
                             <Receipt size={18} />
@@ -2135,7 +2182,7 @@ export default function App() {
                           </div>
                         </li>
                       )}
-                      {currentUser.permissions.allowedModules.includes('cashflow') && (
+                      {hasViewPermission(currentUser, 'cashflow') && (
                         <li>
                           <div className={`nav-item ${activeTab === 'cashflow' ? 'active' : ''}`} onClick={() => setActiveTab('cashflow')}>
                             <TrendingUp size={18} />
@@ -2143,7 +2190,7 @@ export default function App() {
                           </div>
                         </li>
                       )}
-                      {currentUser.permissions.allowedModules.includes('reports') && (
+                      {hasViewPermission(currentUser, 'reports') && (
                         <li>
                           <div className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')}>
                             <PieChart size={18} />
@@ -2153,7 +2200,7 @@ export default function App() {
                       )}
                     </div>
                   )}
-
+ 
                   {/* Category: KPIs */}
                   <div 
                     onClick={() => toggleSection('kpis')} 
@@ -2175,7 +2222,7 @@ export default function App() {
                     <span>📈 KPI Performance</span>
                     {expandedSections.kpis ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   </div>
-
+ 
                   {expandedSections.kpis && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
                       <li>
@@ -2186,9 +2233,9 @@ export default function App() {
                       </li>
                     </div>
                   )}
-
+ 
                   {/* Category: Administration */}
-                  {(currentUser.permissions.role === 'admin' || currentUser.permissions.allowedModules.includes('logs')) && (
+                  {(currentUser.permissions.role === 'admin' || hasViewPermission(currentUser, 'logs')) && (
                     <>
                       <div 
                         onClick={() => toggleSection('admin')} 
@@ -2210,7 +2257,7 @@ export default function App() {
                         <span>⚙️ Administration</span>
                         {expandedSections.admin ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                       </div>
-
+ 
                       {expandedSections.admin && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
                           {currentUser.permissions.role === 'admin' && (
@@ -2221,7 +2268,7 @@ export default function App() {
                               </div>
                             </li>
                           )}
-                          {currentUser.permissions.allowedModules.includes('logs') && (
+                          {hasViewPermission(currentUser, 'logs') && (
                             <li>
                               <div className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
                                 <History size={18} />
@@ -2458,40 +2505,48 @@ export default function App() {
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
 
-            {activeTab === 'staff' ? (
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button 
-                  className="btn-danger" 
-                  onClick={handleClearAllStaff}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '13px' }}
-                >
-                  <Trash2 size={14} /> Clear Directory
-                </button>
-                {(currentUser.permissions?.role === 'admin' || currentUser.permissions?.role === 'manager') && (
-                  <button 
-                    className="btn-secondary" 
-                    onClick={() => setIsAiRemindersOpen(true)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '13px', backgroundColor: 'rgba(99, 102, 241, 0.15)', color: 'var(--primary)', border: '1px solid rgba(99, 102, 241, 0.3)' }}
-                  >
-                    <Sparkles size={14} style={{ color: '#fbbf24' }} /> AI Reminders
-                  </button>
-                )}
-                <button 
-                  className="btn-secondary" 
-                  onClick={() => setIsBulkImportOpen(true)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '13px' }}
-                >
-                  <Upload size={14} /> Bulk Import (Excel/CSV)
-                </button>
-                <button className="btn-primary" onClick={handleOpenStaffCreate}>
-                  <Plus size={16} /> Onboard Staff
-                </button>
-              </div>
-            ) : activeTab === 'directory' || activeTab === 'dashboard' ? (
-              <button className="btn-primary" onClick={handleOpenCreate}>
-                <Plus size={16} /> Register Entity
-              </button>
-            ) : null}
+             {activeTab === 'staff' ? (
+               <div style={{ display: 'flex', gap: '8px' }}>
+                 {hasWritePermission(currentUser, 'staff') && (
+                   <button 
+                     className="btn-danger" 
+                     onClick={handleClearAllStaff}
+                     style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '13px' }}
+                   >
+                     <Trash2 size={14} /> Clear Directory
+                   </button>
+                 )}
+                 {(currentUser.permissions?.role === 'admin' || currentUser.permissions?.role === 'manager') && (
+                   <button 
+                     className="btn-secondary" 
+                     onClick={() => setIsAiRemindersOpen(true)}
+                     style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '13px', backgroundColor: 'rgba(99, 102, 241, 0.15)', color: 'var(--primary)', border: '1px solid rgba(99, 102, 241, 0.3)' }}
+                   >
+                     <Sparkles size={14} style={{ color: '#fbbf24' }} /> AI Reminders
+                   </button>
+                 )}
+                 {hasWritePermission(currentUser, 'staff') && (
+                   <button 
+                     className="btn-secondary" 
+                     onClick={() => setIsBulkImportOpen(true)}
+                     style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '13px' }}
+                   >
+                     <Upload size={14} /> Bulk Import (Excel/CSV)
+                   </button>
+                 )}
+                 {hasWritePermission(currentUser, 'staff') && (
+                   <button className="btn-primary" onClick={handleOpenStaffCreate}>
+                     <Plus size={16} /> Onboard Staff
+                   </button>
+                 )}
+               </div>
+             ) : activeTab === 'directory' || activeTab === 'dashboard' ? (
+               hasWritePermission(currentUser, 'directory') && (
+                 <button className="btn-primary" onClick={handleOpenCreate}>
+                   <Plus size={16} /> Register Entity
+                 </button>
+               )
+             ) : null}
           </div>
         </header>
 

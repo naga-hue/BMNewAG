@@ -182,7 +182,10 @@ export function calculateCashReceivedCommission(
       const deptStaff = staffList.filter(s => policy.assignedDepartments.includes(s.department));
       targetStaffIds = Array.from(new Set([member.id, ...deptStaff.map(s => s.id)]));
     } else {
-      const teamMembers = staffList.filter(s => s.reportingManagerId === member.id);
+      const teamMembers = staffList.filter(s => {
+        const mgrIds = s.reportingManagerIds || (s.reportingManagerId ? [s.reportingManagerId] : []);
+        return mgrIds.includes(member.id);
+      });
       targetStaffIds = [member.id, ...teamMembers.map(s => s.id)];
     }
   }
@@ -274,8 +277,10 @@ export function calculateCashReceivedCommission(
   const isAHComissn = policy.name === 'AH comissn';
   const isTeamLeadCommission = policy.name === 'AH Manager commission Team Lead Commission' || policy.name === 'Team Lead Commission';
   
-  // Get reporting team members
-  const teamMembers = staffList.filter(s => s.reportingManagerId === member.id && s.status === 'active');
+  const teamMembers = staffList.filter(s => {
+    const mgrIds = s.reportingManagerIds || (s.reportingManagerId ? [s.reportingManagerId] : []);
+    return mgrIds.includes(member.id) && s.status === 'active';
+  });
   const teamStaffIds = teamMembers.map(s => s.id);
   const teamHeadcount = teamStaffIds.length;
 

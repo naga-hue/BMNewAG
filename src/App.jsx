@@ -678,7 +678,11 @@ export default function App() {
       while (ids.size > prevSize) {
         prevSize = ids.size;
         allStaff.forEach(s => {
-          if (s.reportingManagerId && ids.has(s.reportingManagerId)) {
+          const mgrIds = s.reportingManagerIds || (s.reportingManagerId ? [s.reportingManagerId] : []);
+          const isDirectReport = mgrIds.some(mId => ids.has(mId));
+          const isDottedReport = s.dottedLineManagerIds && Array.isArray(s.dottedLineManagerIds) && s.dottedLineManagerIds.some(mId => ids.has(mId));
+          
+          if (isDirectReport || isDottedReport) {
             ids.add(s.id);
           }
         });
@@ -3397,6 +3401,7 @@ export default function App() {
               onUpdateLeaveRequestStatus={handleUpdateLeaveRequestStatus}
               onUpdateStaff={handleSaveStaff}
               onShowToast={handleShowToast}
+              currentUser={currentUser}
             />
           )}
 
@@ -3459,6 +3464,7 @@ export default function App() {
               onSaveAssetAssignment={handleSaveAssetAssignment}
               onDeleteAssetAssignment={handleDeleteAssetAssignment}
               onShowToast={handleShowToast}
+              currentUser={currentUser}
             />
           )}
 
@@ -3473,6 +3479,7 @@ export default function App() {
               onSavePlacementsBatch={handleSavePlacementsBatch}
               onClearAllPlacements={handleClearAllPlacements}
               onShowToast={handleShowToast}
+              currentUser={currentUser}
             />
           )}
 
@@ -3543,14 +3550,17 @@ export default function App() {
           {/* TAB 10: Profit & Loss / Group Reports */}
           {activeTab === 'reports' && (
             <ReportsDashboard 
-              companies={scopedCompanies}
-              staff={scopedStaff}
-              placements={scopedPlacements}
-              expenses={scopedExpenses}
+              companies={companies}
+              staff={staff}
+              placements={placements}
+              expenses={expenses}
               commissionPolicies={commissionPolicies}
-              payrollRecords={payrollRecords.filter(rec => scopedStaff.some(s => s.id === rec.staffId))}
+              payrollRecords={currentUser?.permissions?.role === 'admin' 
+                ? payrollRecords 
+                : payrollRecords.filter(rec => staff.some(s => s.companyId === currentUser.companyId && s.id === rec.staffId))
+              }
               payrollPolicies={payrollPolicies}
-              leaveRequests={scopedLeaves}
+              leaveRequests={leaveRequests}
               leavePolicies={leavePolicies}
               holidays={holidays}
               nominalCodes={nominalCodes}

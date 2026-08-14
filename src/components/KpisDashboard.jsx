@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { db } from '../services/firebase';
 import { collection, getDocs, query, where, limit, orderBy, onSnapshot } from 'firebase/firestore';
 import { useBoundStore } from '../store/useBoundStore';
 import WebhookLogsTab from './WebhookLogsTab';
+import CRMImporterTab from './CRMImporterTab';
 import { 
   Phone, 
   PhoneIncoming, 
@@ -25,6 +26,21 @@ import {
   RefreshCw
 } from 'lucide-react';
 
+const CA_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/London',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
+});
+
+const GB_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/London',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false
+});
+
 // Formats seconds to a readable string (e.g. 2h 15m or 4m 12s)
 const formatDuration = (seconds) => {
   if (!seconds || isNaN(seconds)) return '0s';
@@ -41,7 +57,7 @@ const formatDuration = (seconds) => {
   return `${secs}s`;
 };
 
-const CRMContactLink = ({ phone, defaultName }) => {
+const CRMContactLink = ({ phone, defaultName, companyId }) => {
   const [crmData, setCrmData] = useState(null);
 
   useEffect(() => {
@@ -50,15 +66,17 @@ const CRMContactLink = ({ phone, defaultName }) => {
     const clean = phone.replace(/[^0-9+]/g, '').trim();
     if (clean.length < 6) return;
 
-    if (window._crmCache && window._crmCache[clean]) {
-      setCrmData(window._crmCache[clean]);
+    const cacheKey = `${clean}_${companyId || ''}`;
+
+    if (window._crmCache && window._crmCache[cacheKey]) {
+      setCrmData(window._crmCache[cacheKey]);
       return;
     }
 
-    if (window._crmPending && window._crmPending[clean]) {
+    if (window._crmPending && window._crmPending[cacheKey]) {
       const interval = setInterval(() => {
-        if (window._crmCache && window._crmCache[clean]) {
-          setCrmData(window._crmCache[clean]);
+        if (window._crmCache && window._crmCache[cacheKey]) {
+          setCrmData(window._crmCache[cacheKey]);
           clearInterval(interval);
         }
       }, 500);
@@ -68,24 +86,24 @@ const CRMContactLink = ({ phone, defaultName }) => {
     if (!window._crmCache) window._crmCache = {};
     if (!window._crmPending) window._crmPending = {};
 
-    window._crmPending[clean] = true;
+    window._crmPending[cacheKey] = true;
 
-    fetch(`/api/crm-lookup?phone=${encodeURIComponent(clean)}`)
+    fetch(`/api/crm-lookup?phone=${encodeURIComponent(clean)}&companyId=${companyId || ''}`)
       .then(r => r.json())
       .then(d => {
-        window._crmPending[clean] = false;
+        window._crmPending[cacheKey] = false;
         if (d && d.matched) {
-          window._crmCache[clean] = d;
+          window._crmCache[cacheKey] = d;
           setCrmData(d);
         } else {
-          window._crmCache[clean] = { matched: false };
+          window._crmCache[cacheKey] = { matched: false };
           setCrmData({ matched: false });
         }
       })
       .catch(() => {
-        window._crmPending[clean] = false;
+        window._crmPending[cacheKey] = false;
       });
-  }, [phone]);
+  }, [phone, companyId]);
 
   if (crmData && crmData.matched) {
     const linkPath = crmData.type.toLowerCase();
@@ -213,6 +231,8 @@ const renderPercentageBadge = (pct) => {
 };
 
 export default function KpisDashboard({ staff, companies, currentUser, onShowToast, placements = [] }) {
+  const staffMap = useMemo(() => new Map(staff.map(s => [s.id, s])), [staff]);
+
   // Helper to determine if a staff member is tracked in KPIs
   const isStaffDialpadTracked = (s) => {
     if (s.status === 'exited') return false; // Filter out exited employees
@@ -399,6 +419,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   const [targetTalkTimeMin, setTargetTalkTimeMin] = useState(0);
   const [targetCvsSent, setTargetCvsSent] = useState(0);
   const [targetSpeculativeCvs, setTargetSpeculativeCvs] = useState(0);
+  const [targetOpportunities, setTargetOpportunities] = useState(0);
   const [targetJobsTaken, setTargetJobsTaken] = useState(0);
   const [targetInterviews, setTargetInterviews] = useState(0);
   const [targetPlacements, setTargetPlacements] = useState(0);
@@ -416,6 +437,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     setTargetTalkTimeMin(targets.talkTimeMin || 60);
     setTargetCvsSent(targets.cvsSent || 5);
     setTargetSpeculativeCvs(targets.speculativeCvs || 2);
+    setTargetOpportunities(targets.opportunities || 0);
     setTargetJobsTaken(targets.jobsTaken || 1);
     setTargetInterviews(targets.interviews || 2);
     setTargetPlacements(targets.placements || 4);
@@ -438,6 +460,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
               talkTimeMin: Number(targetTalkTimeMin || 0),
               cvsSent: Number(targetCvsSent || 0),
               speculativeCvs: Number(targetSpeculativeCvs || 0),
+              opportunities: Number(targetOpportunities || 0),
               jobsTaken: Number(targetJobsTaken || 0),
               interviews: Number(targetInterviews || 0),
               placements: Number(targetPlacements || 0),
@@ -460,6 +483,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             talkTimeMin: Number(targetTalkTimeMin || 0),
             cvsSent: Number(targetCvsSent || 0),
             speculativeCvs: Number(targetSpeculativeCvs || 0),
+            opportunities: Number(targetOpportunities || 0),
             jobsTaken: Number(targetJobsTaken || 0),
             interviews: Number(targetInterviews || 0),
             placements: Number(targetPlacements || 0),
@@ -512,7 +536,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   
   // Set default view depending on permissions
   const [selectedDept, setSelectedDept] = useState(
-    (userRole === 'admin' || userRole === 'director') ? 'all' : userDept
+    (userRole === 'admin' || currentUser?.permissions?.dataScope === 'all') ? 'all' : userDept
   );
   const [selectedStaffId, setSelectedStaffId] = useState(
     userRole === 'recruiter' ? currentUser.id : 'all'
@@ -669,22 +693,8 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
           if (dateObj && !isNaN(dateObj.getTime())) {
             try {
-              const dTF = new Intl.DateTimeFormat('en-CA', {
-                timeZone: 'Europe/London',
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit'
-              });
-              dateVal = dTF.format(dateObj);
-
-              const tTF = new Intl.DateTimeFormat('en-GB', {
-                timeZone: 'Europe/London',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: false
-              });
-              timeVal = tTF.format(dateObj);
+              dateVal = CA_FORMATTER.format(dateObj);
+              timeVal = GB_FORMATTER.format(dateObj);
             } catch (errFormat) {
               const year = dateObj.getFullYear();
               const month = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -882,9 +892,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     if (userRole === 'recruiter') {
       list = staff.filter(s => s.id === currentUser.id);
     } else {
-      if (userRole === 'manager') {
-        list = staff.filter(s => s.department === userDept);
-      } else if (selectedDept !== 'all') {
+      if (selectedDept !== 'all') {
         list = staff.filter(s => s.department === selectedDept);
       }
       if (selectedCompanyId !== 'all') {
@@ -1250,6 +1258,18 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
   const [pollTrigger, setPollTrigger] = useState(0);
 
+  // Last Refreshed timestamps
+  const [kpiLastRefreshed, setKpiLastRefreshed] = useState(null);
+  const [callsLastRefreshed, setCallsLastRefreshed] = useState(null);
+  const [qandleLastRefreshed, setQandleLastRefreshed] = useState(null);
+  const [crmLastRefreshed, setCrmLastRefreshed] = useState(null);
+
+  // References for tracking window changes
+  const lastDateRangeRef = useRef({ start: '', end: '' });
+  const lastCallsWindowRef = useRef({ start: '', end: '' });
+  const lastQandleWindowRef = useRef({ start: '', end: '' });
+  const lastCrmWindowRef = useRef({ start: '', end: '' });
+
   // Option C: Visibility-Aware Smart Polling every 2 minutes for "Today's" data
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1286,7 +1306,11 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   // Load KPI documents from Firestore collections filtered by active date range (instantly aggregates in millisecond speeds)
   useEffect(() => {
     async function loadKpiData() {
-      setIsLoading(true);
+      const dateChanged = lastDateRangeRef.current.start !== dateRangeWindow.start || lastDateRangeRef.current.end !== dateRangeWindow.end;
+      if (kpiDocs.length === 0 || dateChanged) {
+        setIsLoading(true);
+        lastDateRangeRef.current = { start: dateRangeWindow.start, end: dateRangeWindow.end };
+      }
       try {
         const start = dateRangeWindow.start < overviewDateRangeWindow.start ? dateRangeWindow.start : overviewDateRangeWindow.start;
         const end = dateRangeWindow.end > overviewDateRangeWindow.end ? dateRangeWindow.end : overviewDateRangeWindow.end;
@@ -1303,6 +1327,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           kpiList.push({ id: doc.id, ...doc.data() });
         });
         setKpiDocs(kpiList);
+        setKpiLastRefreshed(new Date().toLocaleTimeString());
       } catch (e) {
         console.error('Error loading KPI data:', e);
         onShowToast?.('Failed to load call performance data from database', 'error');
@@ -1318,7 +1343,11 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     let isMounted = true;
     
     async function loadCallsData() {
-      setIsLoadingCalls(true);
+      const windowChanged = lastCallsWindowRef.current.start !== effectiveCallsWindow.start || lastCallsWindowRef.current.end !== effectiveCallsWindow.end;
+      if (liveCalls.length === 0 || windowChanged) {
+        setIsLoadingCalls(true);
+        lastCallsWindowRef.current = { start: effectiveCallsWindow.start, end: effectiveCallsWindow.end };
+      }
       const { start, end } = effectiveCallsWindow;
       
       try {
@@ -1339,6 +1368,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           callsList.push({ id: doc.id, ...doc.data() });
         });
         setLiveCalls(callsList);
+        setCallsLastRefreshed(new Date().toLocaleTimeString());
         setIsLoadingCalls(false);
       } catch (error) {
         console.error('Error loading Dialpad calls:', error);
@@ -1363,6 +1393,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           // Sort client-side
           callsList.sort((a, b) => b.dateStarted.localeCompare(a.dateStarted));
           setLiveCalls(callsList);
+          setCallsLastRefreshed(new Date().toLocaleTimeString());
           setIsLoadingCalls(false);
         } catch (fallbackError) {
           console.error('Fallback calls fetch failed:', fallbackError);
@@ -1387,7 +1418,11 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     
     async function loadQandleData() {
       if (activeSubTab !== 'qandle' && activeSubTab !== 'overview') return;
-      setIsLoadingQandle(true);
+      const windowChanged = lastQandleWindowRef.current.start !== effectiveQandleWindow.start || lastQandleWindowRef.current.end !== effectiveQandleWindow.end;
+      if (qandleDocs.length === 0 || windowChanged) {
+        setIsLoadingQandle(true);
+        lastQandleWindowRef.current = { start: effectiveQandleWindow.start, end: effectiveQandleWindow.end };
+      }
       const { start, end } = effectiveQandleWindow;
       
       try {
@@ -1408,6 +1443,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           activitiesList.push({ id: doc.id, ...doc.data() });
         });
         setQandleDocs(activitiesList);
+        setQandleLastRefreshed(new Date().toLocaleTimeString());
         setIsLoadingQandle(false);
       } catch (error) {
         console.error('Error loading Qandle activities:', error);
@@ -1432,6 +1468,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           // Sort client-side
           activitiesList.sort((a, b) => b.date.localeCompare(a.date));
           setQandleDocs(activitiesList);
+          setQandleLastRefreshed(new Date().toLocaleTimeString());
           setIsLoadingQandle(false);
         } catch (fallbackError) {
           console.error('Fallback Qandle fetch failed:', fallbackError);
@@ -1452,8 +1489,12 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     let isMounted = true;
     
     async function loadCrmData() {
-      if (activeSubTab !== 'crm_activities') return;
-      setIsLoadingCrm(true);
+      if (activeSubTab !== 'crm_activities' && activeSubTab !== 'opportunities' && activeSubTab !== 'jobs') return;
+      const windowChanged = lastCrmWindowRef.current.start !== effectiveCrmWindow.start || lastCrmWindowRef.current.end !== effectiveCrmWindow.end;
+      if (crmDocs.length === 0 || windowChanged) {
+        setIsLoadingCrm(true);
+        lastCrmWindowRef.current = { start: effectiveCrmWindow.start, end: effectiveCrmWindow.end };
+      }
       const { start, end } = effectiveCrmWindow;
       
       try {
@@ -1474,6 +1515,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           activitiesList.push({ id: doc.id, ...doc.data() });
         });
         setCrmDocs(activitiesList);
+        setCrmLastRefreshed(new Date().toLocaleTimeString());
         setIsLoadingCrm(false);
       } catch (error) {
         console.error('Error loading CRM activities:', error);
@@ -1498,6 +1540,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           // Sort client-side
           activitiesList.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
           setCrmDocs(activitiesList);
+          setCrmLastRefreshed(new Date().toLocaleTimeString());
           setIsLoadingCrm(false);
         } catch (fallbackError) {
           console.error('Fallback CRM fetch failed:', fallbackError);
@@ -1583,6 +1626,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   // Format the raw live calls from the webhook database
   const formattedLiveCalls = useMemo(() => {
     const { start, end } = effectiveCallsWindow;
+    const staffMap = new Map(staff.map(s => [s.id, s]));
 
     return liveCalls
       .map(call => {
@@ -1604,22 +1648,8 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           if (dateObj && !isNaN(dateObj.getTime())) {
             try {
               // Format to Europe/London timezone for consistent UK local business hours
-              const dTF = new Intl.DateTimeFormat('en-CA', {
-                timeZone: 'Europe/London',
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit'
-              });
-              dateVal = dTF.format(dateObj);
-
-              const tTF = new Intl.DateTimeFormat('en-GB', {
-                timeZone: 'Europe/London',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: false
-              });
-              timeVal = tTF.format(dateObj);
+              dateVal = CA_FORMATTER.format(dateObj);
+              timeVal = GB_FORMATTER.format(dateObj);
             } catch (errFormat) {
               const year = dateObj.getFullYear();
               const month = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -1670,7 +1700,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         if (selectedStaffId !== 'all' && call.staffId !== selectedStaffId) return false;
         if (selectedDept !== 'all' && call.department !== selectedDept) return false;
         if (selectedCompanyId !== 'all') {
-          const staffMember = staff.find(s => s.id === call.staffId);
+          const staffMember = staffMap.get(call.staffId);
           if (!staffMember || staffMember.companyId !== selectedCompanyId) return false;
         }
         return true;
@@ -1683,39 +1713,55 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     
     // Consolidate duplicate call legs
     const groups = [];
+    const idToGroupMap = new Map();
+
     for (const call of rawList) {
       let matchedGroup = null;
       const callTime = call.timestamp || (call.dateStarted ? new Date(call.dateStarted).getTime() : 0);
       
-      for (const group of groups) {
-        // Check ID links
-        const masterLink = call.masterCallId && group.masterCallIds.has(call.masterCallId);
-        const entryLink = call.entryPointCallId && group.entryPointCallIds.has(call.entryPointCallId);
-        const directIdLink = (call.masterCallId && group.callIds.has(call.masterCallId)) || 
-                             (call.entryPointCallId && group.callIds.has(call.entryPointCallId)) ||
-                             (call.conversationId && (group.masterCallIds.has(call.conversationId) || group.entryPointCallIds.has(call.conversationId)));
-        // Only consolidate legs of the same call sharing exact ID links (e.g. transfers, routing legs)
-        if (masterLink || entryLink || directIdLink) {
-          matchedGroup = group;
-          break;
+      if (call.masterCallId && idToGroupMap.has(call.masterCallId)) {
+        matchedGroup = idToGroupMap.get(call.masterCallId);
+      } else if (call.entryPointCallId && idToGroupMap.has(call.entryPointCallId)) {
+        matchedGroup = idToGroupMap.get(call.entryPointCallId);
+      } else {
+        const cid = call.conversationId || call.primaryCallId || call.id;
+        if (cid && idToGroupMap.has(cid)) {
+          matchedGroup = idToGroupMap.get(cid);
         }
       }
       
       if (matchedGroup) {
-        matchedGroup.callIds.add(call.conversationId || call.primaryCallId || call.id);
-        if (call.masterCallId) matchedGroup.masterCallIds.add(call.masterCallId);
-        if (call.entryPointCallId) matchedGroup.entryPointCallIds.add(call.entryPointCallId);
+        const cid = call.conversationId || call.primaryCallId || call.id;
+        if (cid) {
+          matchedGroup.callIds.add(cid);
+          idToGroupMap.set(cid, matchedGroup);
+        }
+        if (call.masterCallId) {
+          matchedGroup.masterCallIds.add(call.masterCallId);
+          idToGroupMap.set(call.masterCallId, matchedGroup);
+        }
+        if (call.entryPointCallId) {
+          matchedGroup.entryPointCallIds.add(call.entryPointCallId);
+          idToGroupMap.set(call.entryPointCallId, matchedGroup);
+        }
         if (call.externalNumber) matchedGroup.externalNumbers.add(call.externalNumber);
         matchedGroup.legs.push(call);
       } else {
-        groups.push({
+        const cid = call.conversationId || call.primaryCallId || call.id;
+        const newGroup = {
           baseTime: callTime,
-          callIds: new Set([call.conversationId || call.primaryCallId || call.id].filter(Boolean)),
+          callIds: new Set([cid].filter(Boolean)),
           masterCallIds: new Set(call.masterCallId ? [call.masterCallId] : []),
           entryPointCallIds: new Set(call.entryPointCallId ? [call.entryPointCallId] : []),
           externalNumbers: new Set(call.externalNumber ? [call.externalNumber] : []),
           legs: [call]
-        });
+        };
+        
+        if (cid) idToGroupMap.set(cid, newGroup);
+        if (call.masterCallId) idToGroupMap.set(call.masterCallId, newGroup);
+        if (call.entryPointCallId) idToGroupMap.set(call.entryPointCallId, newGroup);
+        
+        groups.push(newGroup);
       }
     }
 
@@ -1773,38 +1819,70 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       };
     });
     
+    // Pre-compute maps for O(1) lookups
+    const emailToStaffIdMap = new Map();
+    const qandleEmailToStaffIdMap = new Map();
+    const codeToStaffIdMap = new Map();
+    const nameToStaffIdMap = new Map();
+
+    filteredStaffList.forEach(s => {
+      // 1. Dialpad call email lookup map
+      const dialpadEmail = (s.dialpadEmail || '').toLowerCase().trim();
+      if (dialpadEmail) emailToStaffIdMap.set(dialpadEmail, s.id);
+      
+      const busEmail = (s.businessEmail || '').toLowerCase().trim();
+      if (busEmail) emailToStaffIdMap.set(busEmail, s.id);
+
+      const persEmail = (s.personalEmail || '').toLowerCase().trim();
+      if (persEmail) emailToStaffIdMap.set(persEmail, s.id);
+
+      const aliases = Array.isArray(s.additionalEmails) ? s.additionalEmails : [];
+      aliases.forEach(alias => {
+        const cleanAlias = (alias || '').toLowerCase().trim();
+        if (cleanAlias) emailToStaffIdMap.set(cleanAlias, s.id);
+      });
+
+      // 2. Qandle email lookup map
+      const qandleEmail = (s.qandleEmail || '').toLowerCase().trim();
+      if (qandleEmail) qandleEmailToStaffIdMap.set(qandleEmail, s.id);
+
+      // 3. Employee code lookup map
+      const empCode = (s.employeeCode || '').trim().toUpperCase();
+      if (empCode) codeToStaffIdMap.set(empCode, s.id);
+
+      // 4. Staff name lookup map
+      const fullName = (s.fullName || '').toLowerCase().trim();
+      if (fullName) nameToStaffIdMap.set(fullName, s.id);
+    });
+
     const findStaffIdForCall = (call) => {
       if (call.staffId && recruiterStats[call.staffId]) {
         return call.staffId;
       }
       const handlerEmail = (call.handlerEmail || '').toLowerCase().trim();
-      const matched = filteredStaffList.find(s => {
-        const primary = (s.dialpadEmail || '').toLowerCase().trim();
-        if (primary && primary === handlerEmail) return true;
-        const aliases = Array.isArray(s.additionalEmails) ? s.additionalEmails : [];
-        return aliases.some(alias => (alias || '').toLowerCase().trim() === handlerEmail);
-      });
-      return matched ? matched.id : null;
+      if (handlerEmail && emailToStaffIdMap.has(handlerEmail)) {
+        return emailToStaffIdMap.get(handlerEmail);
+      }
+      return null;
     };
 
     const findStaffIdForQandle = (qDoc) => {
       if (qDoc.staffId && recruiterStats[qDoc.staffId]) {
         return qDoc.staffId;
       }
-      const matched = filteredStaffList.find(s => {
-        const qEmail = (s.qandleEmail || '').toLowerCase().trim();
-        const docEmail = (qDoc.qandleEmail || '').toLowerCase().trim();
-        if (qEmail && docEmail && qEmail === docEmail) return true;
-        
-        const qCode = (s.employeeCode || '').trim().toUpperCase();
-        const docCode = (qDoc.employeeCode || '').trim().toUpperCase();
-        if (qCode && docCode && qCode === docCode) return true;
-        
-        const sName = (s.fullName || '').toLowerCase().trim();
-        const qName = (qDoc.staffName || '').toLowerCase().trim();
-        return sName && qName && sName === qName;
-      });
-      return matched ? matched.id : null;
+      const docEmail = (qDoc.qandleEmail || '').toLowerCase().trim();
+      if (docEmail && qandleEmailToStaffIdMap.has(docEmail)) {
+        return qandleEmailToStaffIdMap.get(docEmail);
+      }
+      const docCode = (qDoc.employeeCode || '').trim().toUpperCase();
+      if (docCode && codeToStaffIdMap.has(docCode)) {
+        return codeToStaffIdMap.get(docCode);
+      }
+      const qName = (qDoc.staffName || '').toLowerCase().trim();
+      if (qName && nameToStaffIdMap.has(qName)) {
+        return nameToStaffIdMap.get(qName);
+      }
+      return null;
     };
 
     let totalCalls = 0;
@@ -2294,9 +2372,10 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
   // Format and filter CRM activities
   const displayCrmList = useMemo(() => {
+    const staffMap = new Map(staff.map(s => [s.id, s]));
     return crmDocs
       .map(doc => {
-        const matchedStaff = staff.find(s => s.id === doc.recruiterId) || {};
+        const matchedStaff = staffMap.get(doc.recruiterId) || {};
         return {
           ...doc,
           department: matchedStaff.department || 'General',
@@ -2304,12 +2383,20 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         };
       })
       .filter(doc => {
-        if (crmActivityFilter !== 'all' && doc.activityType !== crmActivityFilter) return false;
+        let targetFilter = 'all';
+        if (activeSubTab === 'opportunities') {
+          targetFilter = 'opportunity';
+        } else if (activeSubTab === 'jobs') {
+          targetFilter = 'job_taken';
+        } else {
+          targetFilter = crmActivityFilter;
+        }
+        if (targetFilter !== 'all' && doc.activityType !== targetFilter) return false;
         if (selectedStaffId !== 'all' && doc.recruiterId !== selectedStaffId) return false;
         if (selectedDept !== 'all' && doc.department !== selectedDept) return false;
         return true;
       });
-  }, [crmDocs, staff, crmActivityFilter, selectedStaffId, selectedDept]);
+  }, [crmDocs, staff, crmActivityFilter, selectedStaffId, selectedDept, activeSubTab]);
 
   const filteredAndSearchedCrm = useMemo(() => {
     const list = displayCrmList;
@@ -2552,6 +2639,44 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         </button>
         <button
           onClick={() => {
+            setActiveSubTab('opportunities');
+            setCrmPage(1);
+          }}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontWeight: 700,
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: activeSubTab === 'opportunities' ? 'var(--primary)' : 'var(--bg-secondary)',
+            color: activeSubTab === 'opportunities' ? '#fff' : 'var(--text-secondary)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          }}
+        >
+          📈 Opportunities
+        </button>
+        <button
+          onClick={() => {
+            setActiveSubTab('jobs');
+            setCrmPage(1);
+          }}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontWeight: 700,
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: activeSubTab === 'jobs' ? 'var(--primary)' : 'var(--bg-secondary)',
+            color: activeSubTab === 'jobs' ? '#fff' : 'var(--text-secondary)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          }}
+        >
+          📋 Jobs / Vacancies
+        </button>
+        <button
+          onClick={() => {
             setActiveSubTab('mapping');
             setEditingStaffId(null);
           }}
@@ -2607,6 +2732,27 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         >
           📡 Webhook Logs
         </button>
+
+        {userRole === 'admin' && (
+          <button
+            onClick={() => {
+              setActiveSubTab('import_data');
+            }}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '6px',
+              fontSize: '13px',
+              fontWeight: 700,
+              border: 'none',
+              cursor: 'pointer',
+              backgroundColor: activeSubTab === 'import_data' ? 'var(--primary)' : 'var(--bg-secondary)',
+              color: activeSubTab === 'import_data' ? '#fff' : 'var(--text-secondary)',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+            }}
+          >
+            📂 Import Data
+          </button>
+        )}
       </div>
 
       {/* 2. DIRECTORY & COMPANY FILTERS PANEL (WITH ROLE-BASED ACCESS CONTROL) */}
@@ -2624,8 +2770,8 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
           <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
             
-            {/* Department Filter (Visible to Admin & Director) */}
-            {(userRole === 'admin' || userRole === 'director') && (
+            {/* Department Filter (Visible to Admin, Director, or Team Manager) */}
+            {(userRole === 'admin' || userRole === 'director' || currentUser?.permissions?.dataScope === 'team') && (
               <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
                 <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
                   Division / Department:
@@ -3418,7 +3564,9 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
               <Users size={18} color="var(--primary)" />
               <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>Recruiter Activity Leaderboard</h4>
             </div>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Click column headers to sort</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              Click column headers to sort {kpiLastRefreshed && `• Last refreshed at ${kpiLastRefreshed}`}
+            </span>
           </div>
 
           <div style={{ overflowX: 'auto' }}>
@@ -3840,7 +3988,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
               </div>
 
               {/* Department selection */}
-              {userRole === 'admin' && (
+              {(userRole === 'admin' || userRole === 'director' || currentUser?.permissions?.dataScope === 'team') && (
                 <div className="form-group" style={{ flex: 1, minWidth: '160px' }}>
                   <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
                     Department Division:
@@ -3911,6 +4059,11 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
           {/* 3. TABLE CARD */}
           <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            {callsLastRefreshed && !isLoadingCalls && (
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'right', marginBottom: '8px' }}>
+                Last refreshed at {callsLastRefreshed}
+              </div>
+            )}
             {isLoadingCalls ? (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px', flexDirection: 'column', gap: '12px' }}>
                 <div style={{
@@ -4065,7 +4218,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                               </span>
                             </td>
                             <td style={{ fontSize: '12px', fontWeight: 600 }}>
-                              📞 <CRMContactLink phone={call.externalNumber} defaultName={call.targetName} />
+                              📞 <CRMContactLink phone={call.externalNumber} defaultName={call.targetName} companyId={staffMap.get(call.staffId)?.companyId || currentUser?.companyId} />
                             </td>
                             <td>
                               <span style={{
@@ -4342,7 +4495,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
               </div>
 
               {/* Department selection */}
-              {userRole === 'admin' && (
+              {(userRole === 'admin' || userRole === 'director' || currentUser?.permissions?.dataScope === 'team') && (
                 <div className="form-group" style={{ flex: 1, minWidth: '160px' }}>
                   <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
                     Department Division:
@@ -4393,6 +4546,11 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
 
           {/* 3. TABLE CARD */}
           <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            {qandleLastRefreshed && !isLoadingQandle && (
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'right', marginBottom: '8px' }}>
+                Last refreshed at {qandleLastRefreshed}
+              </div>
+            )}
             {isLoadingQandle ? (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px', flexDirection: 'column', gap: '12px' }}>
                 <div style={{
@@ -4591,14 +4749,24 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             )}
           </div>
         </>
-      ) : activeSubTab === 'crm_activities' ? (
+      ) : (activeSubTab === 'crm_activities' || activeSubTab === 'opportunities' || activeSubTab === 'jobs') ? (
         <>
           {/* 1. HEADER */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruitly CRM Activity Logs</h2>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                {activeSubTab === 'opportunities' 
+                  ? 'Recruitly CRM Opportunity Logs' 
+                  : activeSubTab === 'jobs'
+                    ? 'Recruitly CRM Job/Vacancy Logs'
+                    : 'Recruitly CRM Activity Logs'}
+              </h2>
               <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                💼 Track real-time recruiter activities including CV shares, interviews, job creation, and placement registries.
+                {activeSubTab === 'opportunities' 
+                  ? '💼 Track real-time opportunity creation by recruiters.' 
+                  : activeSubTab === 'jobs'
+                    ? '💼 Track real-time job/vacancy creation by recruiters.'
+                    : '💼 Track real-time recruiter activities including CV shares, interviews, job creation, and placement registries.'}
               </span>
             </div>
             <div>
@@ -4611,7 +4779,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           {/* 2. SECONDARY TABS & FILTERS */}
           <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '16px' }}>
             {/* Date Preset Row */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: activeSubTab === 'crm_activities' ? '1px solid var(--border-color)' : 'none', paddingBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Calendar size={16} color="var(--primary)" />
                 <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Date Range:</span>
@@ -4676,38 +4844,41 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             </div>
 
             {/* Filter Pills row */}
-            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px', borderBottom: '1px solid var(--border-color)' }}>
-              {[
-                { id: 'all', label: '📦 All Activities' },
-                { id: 'cv_sent', label: '📄 CV Shared for Job' },
-                { id: 'speculative_cv', label: '📨 Speculative CVs' },
-                { id: 'interview', label: '🤝 Interviews Organized' },
-                { id: 'opportunity', label: '💼 Jobs / Opportunities' },
-                { id: 'placement', label: '🏆 Placements' }
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    setCrmActivityFilter(tab.id);
-                    setCrmPage(1);
-                  }}
-                  style={{
-                    padding: '6px 12px',
-                    borderRadius: '20px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    border: '1px solid var(--border-color)',
-                    cursor: 'pointer',
-                    backgroundColor: crmActivityFilter === tab.id ? 'var(--primary)' : 'var(--bg-secondary)',
-                    color: crmActivityFilter === tab.id ? '#fff' : 'var(--text-primary)',
-                    transition: 'all 0.15s ease',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+            {activeSubTab === 'crm_activities' && (
+              <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px', borderBottom: '1px solid var(--border-color)' }}>
+                {[
+                  { id: 'all', label: '📦 All Activities' },
+                  { id: 'cv_sent', label: '📄 CV Shared for Job' },
+                  { id: 'speculative_cv', label: '📨 Speculative CVs' },
+                  { id: 'interview', label: '🤝 Interviews Organized' },
+                  { id: 'opportunity', label: '📈 Opportunities' },
+                  { id: 'job_taken', label: '📋 Jobs / Vacancies' },
+                  { id: 'placement', label: '🏆 Placements' }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      setCrmActivityFilter(tab.id);
+                      setCrmPage(1);
+                    }}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '20px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      border: '1px solid var(--border-color)',
+                      cursor: 'pointer',
+                      backgroundColor: crmActivityFilter === tab.id ? 'var(--primary)' : 'var(--bg-secondary)',
+                      color: crmActivityFilter === tab.id ? '#fff' : 'var(--text-primary)',
+                      transition: 'all 0.15s ease',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Search Input and Metadata Counts Row */}
             <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -4724,17 +4895,26 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                       setCrmSearch(e.target.value);
                       setCrmPage(1);
                     }}
-                    placeholder="Type to search activities..."
+                    placeholder={`Type to search ${
+                      activeSubTab === 'opportunities' ? 'opportunities' : activeSubTab === 'jobs' ? 'jobs/vacancies' : 'activities'
+                    }...`}
                     className="form-input"
                     style={{ paddingLeft: '32px', fontSize: '12px', height: '34px' }}
                   />
                 </div>
               </div>
               
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                 <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                  Found {filteredAndSearchedCrm.length} relevant activities
+                  Found {filteredAndSearchedCrm.length} relevant {
+                    activeSubTab === 'opportunities' ? 'opportunities' : activeSubTab === 'jobs' ? 'jobs/vacancies' : 'activities'
+                  }
                 </span>
+                {crmLastRefreshed && !isLoadingCrm && (
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    • Last refreshed at {crmLastRefreshed}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -4755,7 +4935,9 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
               </div>
             ) : filteredAndSearchedCrm.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
-                No Recruitly CRM activities found matching the current selections.
+                No Recruitly CRM {
+                  activeSubTab === 'opportunities' ? 'opportunities' : activeSubTab === 'jobs' ? 'jobs/vacancies' : 'activities'
+                } found matching the current selections.
               </div>
             ) : (
               <>
@@ -4903,7 +5085,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                                 <CRMContactLink 
                                   phone="" 
                                   defaultName={doc.clientCompany} 
-                                  onShowToast={onShowToast}
+                                  companyId={staffMap.get(doc.recruiterId)?.companyId || currentUser?.companyId}
                                 />
                               ) : '-'}
                             </td>
@@ -5158,6 +5340,8 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         </div>
       ) : activeSubTab === 'webhook_logs' ? (
         <WebhookLogsTab onShowToast={onShowToast} />
+      ) : activeSubTab === 'import_data' ? (
+        <CRMImporterTab onShowToast={onShowToast} staff={staff} />
       ) : (
         /* KPI Targets Settings View */
         <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
@@ -5556,7 +5740,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             }}>
               <div>
                 <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>
-                  📞 Call Logs Audit: {activeCallDetail.staffName} ↔ <CRMContactLink phone={activeCallDetail.externalNumber} defaultName={activeCallDetail.targetName} />
+                  📞 Call Logs Audit: {activeCallDetail.staffName} ↔ <CRMContactLink phone={activeCallDetail.externalNumber} defaultName={activeCallDetail.targetName} companyId={staffMap.get(activeCallDetail.staffId)?.companyId || currentUser?.companyId} />
                 </h4>
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                   {activeCallDetail.date} @ {activeCallDetail.time} ({formatDuration(activeCallDetail.duration)})
@@ -5796,7 +5980,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                             </span>
                           </td>
                           <td style={{ padding: '10px 8px', fontWeight: 600 }}>
-                            <CRMContactLink phone={call.externalNumber} defaultName={call.targetName} />
+                            <CRMContactLink phone={call.externalNumber} defaultName={call.targetName} companyId={staffMap.get(call.staffId)?.companyId || currentUser?.companyId} />
                           </td>
                           <td style={{ padding: '10px 8px' }}>
                             <span style={{

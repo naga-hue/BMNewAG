@@ -12,6 +12,7 @@ interface InvoiceDetailDrawerProps {
   todayStr: string;
   currentUser: any;
   onShowToast: (msg: string, type?: string) => void;
+  readOnly?: boolean;
 }
 
 export default function InvoiceDetailDrawer({
@@ -21,7 +22,8 @@ export default function InvoiceDetailDrawer({
   setSelectedInvoice,
   todayStr,
   currentUser,
-  onShowToast
+  onShowToast,
+  readOnly = false
 }: InvoiceDetailDrawerProps) {
   const placements = useBoundStore(state => state.placements);
   const companies = useBoundStore(state => state.companies);
@@ -434,9 +436,9 @@ export default function InvoiceDetailDrawer({
         <div className="wizard-content" style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           
           {/* 1. Placement Reference Info Box (Editable) */}
-          <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px', backgroundColor: 'var(--bg-secondary)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px', backgroundColor: 'var(--bg-secondary)', display: 'flex', flexDirection: 'column', gap: '12px', pointerEvents: readOnly ? 'none' : 'auto', opacity: readOnly ? 0.85 : 1 }}>
             <h4 style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent)', margin: 0, textTransform: 'uppercase' }}>
-              Placement Details (Editable)
+              Placement Details {readOnly ? '(View Only)' : '(Editable)'}
             </h4>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -556,8 +558,8 @@ export default function InvoiceDetailDrawer({
           )}
 
           {/* 2. Editable Invoice coordinates */}
-          <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <h4 style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent)', margin: 0, textTransform: 'uppercase' }}>Invoice Configuration</h4>
+          <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', pointerEvents: readOnly ? 'none' : 'auto', opacity: readOnly ? 0.85 : 1 }}>
+            <h4 style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent)', margin: 0, textTransform: 'uppercase' }}>Invoice Configuration {readOnly && '(View Only)'}</h4>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
@@ -691,8 +693,8 @@ export default function InvoiceDetailDrawer({
           </div>
 
           {/* 3. Payment Status & Received coordinates */}
-          <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <h4 style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent)', margin: 0, textTransform: 'uppercase' }}>Payment Details & Chasing Status</h4>
+          <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', pointerEvents: readOnly ? 'none' : 'auto', opacity: readOnly ? 0.85 : 1 }}>
+            <h4 style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent)', margin: 0, textTransform: 'uppercase' }}>Payment Details & Chasing Status {readOnly && '(View Only)'}</h4>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '16px' }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
@@ -828,28 +830,32 @@ export default function InvoiceDetailDrawer({
             </h4>
             
             {/* Logging Box */}
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <input 
-                type="text" 
-                className="form-input" 
-                placeholder="Add new chaser note..."
-                value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddChaseNote()}
-                style={{ flex: 1 }}
-              />
-              <button type="button" className="btn-primary" onClick={() => handleAddChaseNote()} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px' }}>
-                <Send size={12} /> Log Note
-              </button>
-            </div>
+            {!readOnly && (
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  placeholder="Add new chaser note..."
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddChaseNote()}
+                  style={{ flex: 1 }}
+                />
+                <button type="button" className="btn-primary" onClick={() => handleAddChaseNote()} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px' }}>
+                  <Send size={12} /> Log Note
+                </button>
+              </div>
+            )}
 
             {/* Shortcut Quick log buttons */}
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-              <button type="button" className="btn-secondary" onClick={() => handleAddChaseNote("Client contacted via phone 📞")} style={{ fontSize: '10px', padding: '4px 8px' }}>📞 Phone Call</button>
-              <button type="button" className="btn-secondary" onClick={() => handleAddChaseNote("Payment promised by client 💳")} style={{ fontSize: '10px', padding: '4px 8px' }}>💳 Payment Promised</button>
-              <button type="button" className="btn-secondary" onClick={() => handleAddChaseNote("Email reminder sent ✉️")} style={{ fontSize: '10px', padding: '4px 8px' }}>✉️ Sent Reminder</button>
-              <button type="button" className="btn-secondary" onClick={() => handleAddChaseNote("Awaiting client PO / Approval ⏳")} style={{ fontSize: '10px', padding: '4px 8px' }}>⏳ Awaiting PO</button>
-            </div>
+            {!readOnly && (
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <button type="button" className="btn-secondary" onClick={() => handleAddChaseNote("Client contacted via phone 📞")} style={{ fontSize: '10px', padding: '4px 8px' }}>📞 Phone Call</button>
+                <button type="button" className="btn-secondary" onClick={() => handleAddChaseNote("Payment promised by client 💳")} style={{ fontSize: '10px', padding: '4px 8px' }}>💳 Payment Promised</button>
+                <button type="button" className="btn-secondary" onClick={() => handleAddChaseNote("Email reminder sent ✉️")} style={{ fontSize: '10px', padding: '4px 8px' }}>✉️ Sent Reminder</button>
+                <button type="button" className="btn-secondary" onClick={() => handleAddChaseNote("Awaiting client PO / Approval ⏳")} style={{ fontSize: '10px', padding: '4px 8px' }}>⏳ Awaiting PO</button>
+              </div>
+            )}
 
             {/* Notes List Timeline */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px', marginTop: '4px' }}>
@@ -881,9 +887,11 @@ export default function InvoiceDetailDrawer({
           <button type="button" className="btn-secondary" onClick={() => setIsDetailOpen(false)}>
             Cancel
           </button>
-          <button type="button" className="btn-primary" onClick={handleSaveInvoiceEdits}>
-            Save Invoice Updates
-          </button>
+          {!readOnly && (
+            <button type="button" className="btn-primary" onClick={handleSaveInvoiceEdits}>
+              Save Invoice Updates
+            </button>
+          )}
         </div>
 
       </div>

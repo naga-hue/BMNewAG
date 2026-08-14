@@ -20,13 +20,15 @@ interface HardwareProps {
   assetAssignments?: any[];
   contracts?: any[];
   onShowToast: (msg: string, type?: string) => void;
+  readOnly?: boolean;
 }
 
 export default function HardwareAssetsRegister({
   staff = [],
   assetAssignments = [],
   contracts = [],
-  onShowToast
+  onShowToast,
+  readOnly = false
 }: HardwareProps) {
   const [viewMode, setViewMode] = useState<'inventory' | 'profiles'>('inventory');
   const [searchTerm, setSearchTerm] = useState('');
@@ -199,7 +201,7 @@ export default function HardwareAssetsRegister({
           </button>
         </div>
 
-        {viewMode === 'inventory' && (
+        {viewMode === 'inventory' && !readOnly && (
           <button type="button" className="btn-primary" onClick={handleCreateClick} style={{ marginLeft: '12px' }}>
             ➕ Add Hardware Asset
           </button>
@@ -271,14 +273,18 @@ export default function HardwareAssetsRegister({
                     </span>
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-                      <button className="btn-icon" title="Edit Asset" onClick={() => handleEditClick(a)}>
-                        <Edit2 size={13} />
-                      </button>
-                      <button className="btn-icon delete" title="Delete Asset" onClick={() => handleDelete(a.id)}>
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
+                    {readOnly ? (
+                      <span style={{ color: 'var(--text-muted)' }}>—</span>
+                    ) : (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+                        <button className="btn-icon" title="Edit Asset" onClick={() => handleEditClick(a)}>
+                          <Edit2 size={13} />
+                        </button>
+                        <button className="btn-icon delete" title="Delete Asset" onClick={() => handleDelete(a.id)}>
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               );

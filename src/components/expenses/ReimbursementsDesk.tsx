@@ -7,9 +7,10 @@ import { CheckCircle2, XCircle, AlertCircle, FileText, Send, Calendar, DollarSig
 interface ReimbursementsDeskProps {
   onShowToast: (msg: string, type?: string) => void;
   currentUser?: any;
+  readOnly?: boolean;
 }
 
-export default function ReimbursementsDesk({ onShowToast, currentUser }: ReimbursementsDeskProps) {
+export default function ReimbursementsDesk({ onShowToast, currentUser, readOnly = false }: ReimbursementsDeskProps) {
   const staff = useBoundStore(state => state.staff);
   const companies = useBoundStore(state => state.companies);
   const reimbursementClaims = useBoundStore(state => state.reimbursementClaims || []);
@@ -17,9 +18,10 @@ export default function ReimbursementsDesk({ onShowToast, currentUser }: Reimbur
   const updateExpense = useBoundStore(state => state.updateExpense);
 
   const isRecruiter = currentUser?.permissions?.role === 'recruiter';
+  const lockClaimantToSelf = isRecruiter || readOnly;
 
   // Form States
-  const [claimantId, setClaimantId] = useState(isRecruiter ? currentUser?.id || '' : '');
+  const [claimantId, setClaimantId] = useState(lockClaimantToSelf ? currentUser?.id || '' : '');
   const [claimDate, setClaimDate] = useState(new Date().toISOString().split('T')[0]);
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState('GBP');
@@ -329,10 +331,10 @@ Sent automatically via Humres Group Business Management Suite.`;
                 if (s) setCurrency(s.currency || 'GBP');
               }}
               required
-              disabled={isRecruiter}
+              disabled={lockClaimantToSelf}
               style={{ width: '100%', padding: '8px 10px' }}
             >
-              {isRecruiter ? (
+              {lockClaimantToSelf ? (
                 <option value={currentUser?.id}>{currentUser?.fullName}</option>
               ) : (
                 <>
@@ -563,7 +565,7 @@ Sent automatically via Humres Group Business Management Suite.`;
                           )}
                         </td>
                         <td style={{ textAlign: 'right' }}>
-                          {isRecruiter ? (
+                          {isRecruiter || readOnly || claim.staffId === currentUser?.id ? (
                             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                               {claim.status === 'pending' ? 'Awaiting Approval' : 'Processed'}
                             </span>

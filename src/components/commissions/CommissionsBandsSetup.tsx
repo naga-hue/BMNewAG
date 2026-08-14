@@ -10,6 +10,7 @@ interface CommissionsBandsSetupProps {
   onSavePolicy: (policy: any) => Promise<any>;
   onDeletePolicy?: (id: string) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
+  readOnly?: boolean;
 }
 
 export default function CommissionsBandsSetup({
@@ -18,7 +19,8 @@ export default function CommissionsBandsSetup({
   commissionPolicies,
   onSavePolicy,
   onDeletePolicy,
-  onShowToast
+  onShowToast,
+  readOnly = false
 }: CommissionsBandsSetupProps) {
   const [showForm, setShowForm] = useState(false);
   const [editingPolicyId, setEditingPolicyId] = useState<string | null>(null);
@@ -168,24 +170,26 @@ export default function CommissionsBandsSetup({
           <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Commission Scheme Configurator</h2>
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Manage tiered brackets, thresholds, and override bonuses across the group.</p>
         </div>
-        <button className="btn-primary" onClick={() => {
-          setEditingPolicyId(null);
-          setName('');
-          setDescription('');
-          setType('individual');
-          setEffectiveFrom('day_one');
-          setMonthlyThreshold('3000');
-          setTeamOverridePercent('2.5');
-          setStarterWaiveThreshold(false);
-          setSlabs([
-            { minAmount: 0, maxAmount: 10000, rate: 10 },
-            { minAmount: 10000, maxAmount: 15000, rate: 15 },
-            { minAmount: 15000, maxAmount: 999999, rate: 20 }
-          ]);
-          setShowForm(prev => !prev);
-        }}>
-          <Plus size={16} /> {showForm ? 'Close Form' : 'Create Incentive Plan'}
-        </button>
+        {!readOnly && (
+          <button className="btn-primary" onClick={() => {
+            setEditingPolicyId(null);
+            setName('');
+            setDescription('');
+            setType('individual');
+            setEffectiveFrom('day_one');
+            setMonthlyThreshold('3000');
+            setTeamOverridePercent('2.5');
+            setStarterWaiveThreshold(false);
+            setSlabs([
+              { minAmount: 0, maxAmount: 10000, rate: 10 },
+              { minAmount: 10000, maxAmount: 15000, rate: 15 },
+              { minAmount: 15000, maxAmount: 999999, rate: 20 }
+            ]);
+            setShowForm(prev => !prev);
+          }}>
+            <Plus size={16} /> {showForm ? 'Close Form' : 'Create Incentive Plan'}
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -508,31 +512,33 @@ export default function CommissionsBandsSetup({
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => {
-                    setEditingPolicyId(p.id);
-                    setName(p.name);
-                    setCompanyId(p.companyId);
-                    setType(p.type || 'individual');
-                    setEffectiveFrom(p.effectiveFrom || 'day_one');
-                    setMonthlyThreshold(String(p.monthlyThreshold || '3000'));
-                    setTeamOverridePercent(String(p.teamOverridePercent || '2.5'));
-                    setDescription(p.description || '');
-                    setStarterWaiveThreshold(p.starterWaiveThreshold || false);
-                    setCalcInterval(p.calcInterval || 'monthly');
-                    setSlabType(p.slabType || 'progressive');
-                    setAssignedDepartments(p.assignedDepartments || []);
-                    setSlabs(p.slabs || []);
-                    setShowForm(true);
-                  }}
-                  style={{ padding: '4px 8px', fontSize: '11px' }}
-                >
-                  Edit
-                </button>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setEditingPolicyId(p.id);
+                      setName(p.name);
+                      setCompanyId(p.companyId);
+                      setType(p.type || 'individual');
+                      setEffectiveFrom(p.effectiveFrom || 'day_one');
+                      setMonthlyThreshold(String(p.monthlyThreshold || '3000'));
+                      setTeamOverridePercent(String(p.teamOverridePercent || '2.5'));
+                      setDescription(p.description || '');
+                      setStarterWaiveThreshold(p.starterWaiveThreshold || false);
+                      setCalcInterval(p.calcInterval || 'monthly');
+                      setSlabType(p.slabType || 'progressive');
+                      setAssignedDepartments(p.assignedDepartments || []);
+                      setSlabs(p.slabs || []);
+                      setShowForm(true);
+                    }}
+                    style={{ padding: '4px 8px', fontSize: '11px' }}
+                  >
+                    Edit
+                  </button>
+                )}
 
-                {onDeletePolicy && (
+                {!readOnly && onDeletePolicy && (
                   <button 
                     className="btn-icon delete" 
                     onClick={() => {

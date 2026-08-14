@@ -11,6 +11,7 @@ interface PlacementsMatrixProps {
   matrixViewType: 'count' | 'value';
   setMatrixViewType: (type: 'count' | 'value') => void;
   onDrilldown: (placements: any[], clientName: string, monthName: string) => void;
+  readOnly?: boolean;
 }
 
 export default function PlacementsMatrix({
@@ -21,7 +22,8 @@ export default function PlacementsMatrix({
   setMatrixYear,
   matrixViewType,
   setMatrixViewType,
-  onDrilldown
+  onDrilldown,
+  readOnly = false
 }: PlacementsMatrixProps) {
   const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
 

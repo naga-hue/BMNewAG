@@ -32,6 +32,7 @@ interface UnifiedAssetsManagerProps {
   onDeleteAssetAssignment: (id: string) => Promise<any>;
   onSaveContract: (contract: any) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
+  readOnly?: boolean;
 }
 
 export default function UnifiedAssetsManager({
@@ -43,7 +44,8 @@ export default function UnifiedAssetsManager({
   onSaveAssetAssignment,
   onDeleteAssetAssignment,
   onSaveContract,
-  onShowToast
+  onShowToast,
+  readOnly = false
 }: UnifiedAssetsManagerProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<'all' | 'software' | 'hardware'>('all');
@@ -546,25 +548,27 @@ export default function UnifiedAssetsManager({
                                           <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>{ass.email}</div>
                                           {ass.notes && <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '2px' }}>Note: {ass.notes}</div>}
                                         </div>
-                                        <button 
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleUnassignAsset(ass.id, item.id, item.categoryTag);
-                                          }}
-                                          className="btn-icon delete"
-                                          style={{ width: '28px', height: '28px', padding: 0 }}
-                                          title="Release Asset"
-                                        >
-                                          <Trash2 size={13} />
-                                        </button>
+                                        {!readOnly && (
+                                          <button 
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleUnassignAsset(ass.id, item.id, item.categoryTag);
+                                            }}
+                                            className="btn-icon delete"
+                                            style={{ width: '28px', height: '28px', padding: 0 }}
+                                            title="Release Asset"
+                                          >
+                                            <Trash2 size={13} />
+                                          </button>
+                                        )}
                                       </div>
                                     ))}
                                   </div>
                                 )}
 
                                 {/* Assign Seat Trigger Form */}
-                                {((item.categoryTag === 'software' && item.assignedCount < item.poolSize) || (item.categoryTag === 'hardware' && item.assignedCount === 0)) && (
+                                {!readOnly && ((item.categoryTag === 'software' && item.assignedCount < item.poolSize) || (item.categoryTag === 'hardware' && item.assignedCount === 0)) && (
                                   <div style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', padding: '12px 16px', borderRadius: '8px', marginTop: '4px' }}>
                                     <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                       <UserPlus size={12} /> Allocate Seat to Employee
@@ -632,40 +636,42 @@ export default function UnifiedAssetsManager({
                                     </span>
                                     
                                     {/* Apportionment Mode Select */}
-                                    <div style={{ display: 'flex', gap: '4px', padding: '3px', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleToggleHeadcountSplit(item.rawContract, true)}
-                                        style={{
-                                          padding: '4px 8px',
-                                          fontSize: '10px',
-                                          border: 'none',
-                                          borderRadius: '4px',
-                                          backgroundColor: item.useHeadcountSplit ? 'var(--primary)' : 'transparent',
-                                          color: item.useHeadcountSplit ? '#fff' : 'var(--text-secondary)',
-                                          cursor: 'pointer',
-                                          fontWeight: 600
-                                        }}
-                                      >
-                                        👥 Dynamic Headcount
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleToggleHeadcountSplit(item.rawContract, false)}
-                                        style={{
-                                          padding: '4px 8px',
-                                          fontSize: '10px',
-                                          border: 'none',
-                                          borderRadius: '4px',
-                                          backgroundColor: !item.useHeadcountSplit ? 'var(--primary)' : 'transparent',
-                                          color: !item.useHeadcountSplit ? '#fff' : 'var(--text-secondary)',
-                                          cursor: 'pointer',
-                                          fontWeight: 600
-                                        }}
-                                      >
-                                        ⚙️ Manual Percentage
-                                      </button>
-                                    </div>
+                                    {!readOnly && (
+                                      <div style={{ display: 'flex', gap: '4px', padding: '3px', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleHeadcountSplit(item.rawContract, true)}
+                                          style={{
+                                            padding: '4px 8px',
+                                            fontSize: '10px',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            backgroundColor: item.useHeadcountSplit ? 'var(--primary)' : 'transparent',
+                                            color: item.useHeadcountSplit ? '#fff' : 'var(--text-secondary)',
+                                            cursor: 'pointer',
+                                            fontWeight: 600
+                                          }}
+                                        >
+                                          👥 Dynamic Headcount
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleHeadcountSplit(item.rawContract, false)}
+                                          style={{
+                                            padding: '4px 8px',
+                                            fontSize: '10px',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            backgroundColor: !item.useHeadcountSplit ? 'var(--primary)' : 'transparent',
+                                            color: !item.useHeadcountSplit ? '#fff' : 'var(--text-secondary)',
+                                            cursor: 'pointer',
+                                            fontWeight: 600
+                                          }}
+                                        >
+                                          ⚙️ Manual Percentage
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
 
                                   {/* Apportioned Cost visual progress bars */}
@@ -714,19 +720,21 @@ export default function UnifiedAssetsManager({
                                     )}
 
                                     {/* Action button to expand inline targets list */}
-                                    <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-start' }}>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setShowSplitsEditor(!showSplitsEditor);
-                                        }}
-                                        className="btn-secondary"
-                                        style={{ fontSize: '10.5px', padding: '4px 10px', height: '26px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                                      >
-                                        <Settings size={12} /> {showSplitsEditor ? 'Close Split Target Settings' : 'Edit Apportionment Targets'}
-                                      </button>
-                                    </div>
+                                    {!readOnly && (
+                                      <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-start' }}>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setShowSplitsEditor(!showSplitsEditor);
+                                          }}
+                                          className="btn-secondary"
+                                          style={{ fontSize: '10.5px', padding: '4px 10px', height: '26px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                        >
+                                          <Settings size={12} /> {showSplitsEditor ? 'Close Split Target Settings' : 'Edit Apportionment Targets'}
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
 
                                   {/* Apportionment Checklist Editor (1-Click toggle!) */}

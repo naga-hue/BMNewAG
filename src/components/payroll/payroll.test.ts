@@ -114,7 +114,8 @@ describe('Payroll Calculations', () => {
         status: 'approved',
         startDate: '2026-06-01',
         endDate: '2026-06-03',
-        totalDays: 3
+        totalDays: 3,
+        leaveType: 'unpaid'
       }
     ];
 

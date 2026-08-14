@@ -25,6 +25,7 @@ interface DirectLedgerTableProps {
   renderSortIndicator: (field: string) => React.ReactNode;
   todayStr: string;
   onShowToast: (msg: string, type?: string) => void;
+  readOnly?: boolean;
 }
 
 export default function DirectLedgerTable({
@@ -39,7 +40,8 @@ export default function DirectLedgerTable({
   handleSort,
   renderSortIndicator,
   todayStr,
-  onShowToast
+  onShowToast,
+  readOnly = false
 }: DirectLedgerTableProps) {
   const placements = useBoundStore(state => state.placements);
   const companies = useBoundStore(state => state.companies);
@@ -450,7 +452,7 @@ export default function DirectLedgerTable({
             <span style={{ backgroundColor: `${statusObj.color}15`, color: statusObj.color, border: `1px solid ${statusObj.color}30`, padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase' }}>
               {statusObj.label}
             </span>
-            {inv.paymentStatus !== 'paid' && (
+            {inv.paymentStatus !== 'paid' && !readOnly && (
               <button
                 title="Mark as Paid"
                 onClick={async () => {

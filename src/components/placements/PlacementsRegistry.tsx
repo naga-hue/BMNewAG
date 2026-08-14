@@ -14,6 +14,7 @@ interface PlacementsRegistryProps {
   onShowToast: (msg: string, type?: string) => void;
   viewingPlacement: ExtendedPlacement | null;
   setViewingPlacement: (placement: ExtendedPlacement | null) => void;
+  readOnly?: boolean;
 }
 
 export default function PlacementsRegistry({
@@ -24,7 +25,8 @@ export default function PlacementsRegistry({
   onDeletePlacement,
   onShowToast,
   viewingPlacement,
-  setViewingPlacement
+  setViewingPlacement,
+  readOnly = false
 }: PlacementsRegistryProps) {
   // Local UI & form states
   const [showLogForm, setShowLogForm] = useState(false);
@@ -912,29 +914,31 @@ export default function PlacementsRegistry({
           <p>Log candidates placements, splits allocation ratios, and adjust DNS/Rebates items.</p>
         </div>
         
-        <button className="btn-primary" onClick={() => {
-          if (showLogForm) {
-            handleCancelForm();
-          } else {
-            setEditingPlacementId(null);
-            setPIdInput('');
-            setInvoiceInput('');
-            setClientInput('');
-            setCandidateInput('');
-            setStartDateInput('');
-            setScoredDateInput('');
-            setDnsDateInput('');
-            setStatusInput('active');
-            setGrossInput('');
-            setDeductionsInput('0');
-            setClientPaymentStatusInput('unpaid');
-            setClientPaidDateInput('');
-            setSplitsInput([{ staffId: '', percentage: 100 }]);
-            setShowLogForm(true);
-          }
-        }}>
-          <Plus size={16} /> {showLogForm ? 'Close Log Form' : 'Log Placement'}
-        </button>
+        {!readOnly && (
+          <button className="btn-primary" onClick={() => {
+            if (showLogForm) {
+              handleCancelForm();
+            } else {
+              setEditingPlacementId(null);
+              setPIdInput('');
+              setInvoiceInput('');
+              setClientInput('');
+              setCandidateInput('');
+              setStartDateInput('');
+              setScoredDateInput('');
+              setDnsDateInput('');
+              setStatusInput('active');
+              setGrossInput('');
+              setDeductionsInput('0');
+              setClientPaymentStatusInput('unpaid');
+              setClientPaidDateInput('');
+              setSplitsInput([{ staffId: '', percentage: 100 }]);
+              setShowLogForm(true);
+            }
+          }}>
+            <Plus size={16} /> {showLogForm ? 'Close Log Form' : 'Log Placement'}
+          </button>
+        )}
       </div>
 
       {/* Metrics Summary Grid */}
@@ -1643,14 +1647,16 @@ export default function PlacementsRegistry({
           />
         </div>
 
-        <button 
-          type="button" 
-          className="btn-secondary" 
-          onClick={handleExportPlacements}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', fontSize: '13px' }}
-        >
-          📥 Export CSV
-        </button>
+        {!readOnly && (
+          <button 
+            type="button" 
+            className="btn-secondary" 
+            onClick={handleExportPlacements}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', fontSize: '13px' }}
+          >
+            📥 Export CSV
+          </button>
+        )}
       </div>
 
       {/* Registry Table */}
@@ -1777,62 +1783,64 @@ export default function PlacementsRegistry({
                     })}
                   </td>
                   <td onClick={(e) => e.stopPropagation()}>
-                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                      {p.status === 'active' && (
-                        <>
-                          <button 
-                            className="btn-secondary" 
-                            title="Mark Did Not Start"
-                            onClick={() => handleQuickDNS(p)}
-                            style={{ padding: '4px 8px', fontSize: '10px', borderColor: 'var(--danger)', color: 'var(--danger)' }}
+                    {!readOnly && (
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                        {p.status === 'active' && (
+                          <>
+                            <button 
+                              className="btn-secondary" 
+                              title="Mark Did Not Start"
+                              onClick={() => handleQuickDNS(p)}
+                              style={{ padding: '4px 8px', fontSize: '10px', borderColor: 'var(--danger)', color: 'var(--danger)' }}
+                            >
+                              DNS
+                            </button>
+                            <button 
+                              className="btn-secondary" 
+                              title="Apply Rebate"
+                              onClick={() => handleQuickRebate(p)}
+                              style={{ padding: '4px 8px', fontSize: '10px', borderColor: 'var(--warning)', color: 'var(--warning)' }}
+                            >
+                              Rebate
+                            </button>
+                          </>
+                        )}
+                        
+                        {p.clientPaymentStatus === 'paid' ? (
+                          <button
+                            className="btn-secondary"
+                            onClick={() => handleToggleClientPayment(p, 'unpaid')}
+                            style={{ padding: '4px 8px', fontSize: '10px', borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
                           >
-                            DNS
+                            Reset Unpaid
                           </button>
-                          <button 
-                            className="btn-secondary" 
-                            title="Apply Rebate"
-                            onClick={() => handleQuickRebate(p)}
-                            style={{ padding: '4px 8px', fontSize: '10px', borderColor: 'var(--warning)', color: 'var(--warning)' }}
+                        ) : (
+                          <button
+                            className="btn-secondary"
+                            onClick={() => handleToggleClientPayment(p, 'paid')}
+                            style={{ padding: '4px 8px', fontSize: '10px', borderColor: 'var(--success)', color: 'var(--success)' }}
                           >
-                            Rebate
+                            Client Paid
                           </button>
-                        </>
-                      )}
-                      
-                      {p.clientPaymentStatus === 'paid' ? (
-                        <button
-                          className="btn-secondary"
-                          onClick={() => handleToggleClientPayment(p, 'unpaid')}
-                          style={{ padding: '4px 8px', fontSize: '10px', borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
-                        >
-                          Reset Unpaid
-                        </button>
-                      ) : (
-                        <button
-                          className="btn-secondary"
-                          onClick={() => handleToggleClientPayment(p, 'paid')}
-                          style={{ padding: '4px 8px', fontSize: '10px', borderColor: 'var(--success)', color: 'var(--success)' }}
-                        >
-                          Client Paid
-                        </button>
-                      )}
+                        )}
 
-                      <button className="btn-icon" onClick={() => handleEditPlacement(p)} title="Edit details">
-                        <Edit3 size={11} />
-                      </button>
-                      <button 
-                        className="btn-icon delete" 
-                        onClick={() => {
-                          if (window.confirm(`Are you sure you want to delete placement record "${p.placementId}"?`)) {
-                            onDeletePlacement(p.id);
-                            onShowToast(`Deleted placement "${p.placementId}"`, "info");
-                          }
-                        }} 
-                        title="Delete record"
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
+                        <button className="btn-icon" onClick={() => handleEditPlacement(p)} title="Edit details">
+                          <Edit3 size={11} />
+                        </button>
+                        <button 
+                          className="btn-icon delete" 
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to delete placement record "${p.placementId}"?`)) {
+                              onDeletePlacement(p.id);
+                              onShowToast(`Deleted placement "${p.placementId}"`, "info");
+                            }
+                          }} 
+                          title="Delete record"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               );

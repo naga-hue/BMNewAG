@@ -20,6 +20,7 @@ interface ExpensesTableProps {
   setExpandedSections: React.Dispatch<React.SetStateAction<{ company: boolean; department: boolean; staff: boolean }>>;
   setAllocationSearch: (search: string) => void;
   onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
+  readOnly?: boolean;
 }
 
 const EMPTY_ARRAY: any[] = [];
@@ -37,7 +38,8 @@ export default function ExpensesTable({
   setAllocatingManualShares: _setAllocatingManualShares,
   setExpandedSections: _setExpandedSections,
   setAllocationSearch: _setAllocationSearch,
-  onShowToast
+  onShowToast,
+  readOnly = false
 }: ExpensesTableProps) {
   const expenses = useBoundStore(state => state.expenses);
   const companies = useBoundStore(state => state.companies);
@@ -980,29 +982,33 @@ export default function ExpensesTable({
             ⚠️ Unmapped ({unmappedExpensesCount})
           </button>
 
-          <button 
-            type="button" 
-            className="btn-secondary" 
-            onClick={handleExportExpenses}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px' }}
-          >
-            📥 Export CSV
-          </button>
+          {!readOnly && (
+            <>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                onClick={handleExportExpenses}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px' }}
+              >
+                📥 Export CSV
+              </button>
 
-          <button 
-            type="button" 
-            className="btn-secondary" 
-            onClick={handleAutoMapPayeesAndVendors}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', color: 'var(--primary)', fontWeight: 600, borderColor: 'var(--primary)' }}
-            title="Automatically scan transaction payees and map them to registered Vendors & Staff Salary profiles"
-          >
-            ⚡ Smart Auto-Map Vendors & Staff
-          </button>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                onClick={handleAutoMapPayeesAndVendors}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', color: 'var(--primary)', fontWeight: 600, borderColor: 'var(--primary)' }}
+                title="Automatically scan transaction payees and map them to registered Vendors & Staff Salary profiles"
+              >
+                ⚡ Smart Auto-Map Vendors & Staff
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       {/* Bulk Actions Panel */}
-      {selectedExpenseIds.length > 0 && (
+      {selectedExpenseIds.length > 0 && !readOnly && (
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
@@ -1620,21 +1626,25 @@ export default function ExpensesTable({
                             <Eye size={12} />
                           </button>
                         )}
-                        <button className="btn-icon" onClick={() => handleEditExpense(exp)} title="Edit Transaction">
-                          <Edit3 size={12} />
-                        </button>
-                        <button 
-                          className="btn-icon delete" 
-                          onClick={() => {
-                            if (window.confirm(`Are you sure you want to delete this expense record?`)) {
-                              deleteExpense(exp.id);
-                              onShowToast("Deleted transaction.", "info");
-                            }
-                          }}
-                          title="Delete transaction"
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        {!readOnly && (
+                          <>
+                            <button className="btn-icon" onClick={() => handleEditExpense(exp)} title="Edit Transaction">
+                              <Edit3 size={12} />
+                            </button>
+                            <button 
+                              className="btn-icon delete" 
+                              onClick={() => {
+                                if (window.confirm(`Are you sure you want to delete this expense record?`)) {
+                                  deleteExpense(exp.id);
+                                  onShowToast("Deleted transaction.", "info");
+                                }
+                              }}
+                              title="Delete transaction"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   )}

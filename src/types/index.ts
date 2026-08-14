@@ -12,6 +12,8 @@ export interface Company {
   name: string;
   departments?: string[];
   bankAccounts?: BankAccount[];
+  recruitlyApiKey?: string;
+  dialpadApiKey?: string;
 }
 
 export interface Staff {

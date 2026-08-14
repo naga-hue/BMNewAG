@@ -18,6 +18,7 @@ interface CommissionsPayrollProps {
   selectedBreakdownRow: any;
   setSelectedBreakdownRow: (row: any) => void;
   currentUser?: any;
+  readOnly?: boolean;
 }
 
 export default function CommissionsPayroll({
@@ -32,7 +33,8 @@ export default function CommissionsPayroll({
   setPayrollMonth,
   selectedBreakdownRow,
   setSelectedBreakdownRow,
-  currentUser
+  currentUser,
+  readOnly = false
 }: CommissionsPayrollProps) {
   const isRecruiter = currentUser?.permissions?.role === 'recruiter';
 
@@ -441,7 +443,7 @@ export default function CommissionsPayroll({
                         >
                           🔍 Breakdown
                         </button>
-                        {row.calc.totalPayout > 0 && (
+                        {!readOnly && row.calc.totalPayout > 0 && (
                           row.isPaid ? (
                             <button 
                               type="button"
@@ -629,6 +631,7 @@ export default function CommissionsPayroll({
                               <td style={{ textAlign: 'right' }}>{symbol}{p.myBillingShare.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                               <td>
                                 <select
+                                  disabled={readOnly}
                                   value={p.paymentStatus || 'unpaid'}
                                   onChange={async (e) => {
                                     const newStatus = e.target.value;
@@ -699,55 +702,57 @@ export default function CommissionsPayroll({
                               <td style={{ textAlign: 'right', fontWeight: 600 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
                                   <span>{symbol}{p.myCommShare.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const newVal = prompt(`Override commission share for Candidate ${p.candidateName} (GBP):`, String(p.myCommShare));
-                                      if (newVal !== null) {
-                                        const parsed = parseFloat(newVal);
-                                        if (!isNaN(parsed)) {
-                                          setSelectedBreakdownRow((prev: any) => {
-                                            if (!prev) return prev;
-                                            const updatedPlacements = prev.calc.currentPlacements.map((item: any) => {
-                                              if (item.id === p.id) {
-                                                return {
-                                                  ...item,
-                                                  myCommShare: parsed
-                                                };
-                                              }
-                                              return item;
-                                            });
+                                  {!readOnly && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const newVal = prompt(`Override commission share for Candidate ${p.candidateName} (GBP):`, String(p.myCommShare));
+                                        if (newVal !== null) {
+                                          const parsed = parseFloat(newVal);
+                                          if (!isNaN(parsed)) {
+                                            setSelectedBreakdownRow((prev: any) => {
+                                              if (!prev) return prev;
+                                              const updatedPlacements = prev.calc.currentPlacements.map((item: any) => {
+                                                if (item.id === p.id) {
+                                                  return {
+                                                    ...item,
+                                                    myCommShare: parsed
+                                                  };
+                                                }
+                                                return item;
+                                              });
 
-                                            let newPaidNow = 0;
-                                            let newWithheld = 0;
-                                            updatedPlacements.forEach((x: any) => {
-                                              if (x.isPaid) {
-                                                newPaidNow += x.myCommShare;
-                                              } else {
-                                                newWithheld += x.myCommShare;
-                                              }
-                                            });
+                                              let newPaidNow = 0;
+                                              let newWithheld = 0;
+                                              updatedPlacements.forEach((x: any) => {
+                                                if (x.isPaid) {
+                                                  newPaidNow += x.myCommShare;
+                                                } else {
+                                                  newWithheld += x.myCommShare;
+                                                }
+                                              });
 
-                                            return {
-                                              ...prev,
-                                              calc: {
-                                                ...prev.calc,
-                                                currentPlacements: updatedPlacements,
-                                                paidNow: newPaidNow,
-                                                withheld: newWithheld,
-                                                totalPayout: newPaidNow + prev.calc.released
-                                              }
-                                            };
-                                          });
-                                          onShowToast(`Adjusted commission share override to £${parsed.toLocaleString()}`, "success");
+                                              return {
+                                                ...prev,
+                                                calc: {
+                                                  ...prev.calc,
+                                                  currentPlacements: updatedPlacements,
+                                                  paidNow: newPaidNow,
+                                                  withheld: newWithheld,
+                                                  totalPayout: newPaidNow + prev.calc.released
+                                                }
+                                              };
+                                            });
+                                            onShowToast(`Adjusted commission share override to £${parsed.toLocaleString()}`, "success");
+                                          }
                                         }
-                                      }
-                                    }}
-                                    style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: '10px' }}
-                                    title="Adjust share"
-                                  >
-                                    ✏️
-                                  </button>
+                                      }}
+                                      style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: '10px' }}
+                                      title="Adjust share"
+                                    >
+                                      ✏️
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                               <td>

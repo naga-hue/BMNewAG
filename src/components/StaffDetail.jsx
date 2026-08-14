@@ -337,7 +337,12 @@ Yours sincerely,
   const currencyObj = CURRENCIES.find(c => c.code === (staffMember.currency || 'GBP')) || { code: 'GBP', symbol: '£' };
 
   // Resolve manager details
-  const reportingManager = staffList.find(s => s.id === staffMember.reportingManagerId);
+  const reportingManagers = (staffMember.reportingManagerIds || (staffMember.reportingManagerId ? [staffMember.reportingManagerId] : []))
+    .map(id => staffList.find(s => s.id === id))
+    .filter(Boolean);
+  const dottedLineManagers = (staffMember.dottedLineManagerIds || [])
+    .map(id => staffList.find(s => s.id === id))
+    .filter(Boolean);
   const policy = leavePolicies.find(p => p.id === staffMember.leavePolicyId);
   const resolveAnnualAllowance = (member, pol) => {
     if (!pol) return 0;
@@ -635,7 +640,10 @@ Yours sincerely,
         const deptStaff = staffList.filter(s => policy.assignedDepartments.includes(s.department));
         targetStaffIds = Array.from(new Set([member.id, ...deptStaff.map(s => s.id)]));
       } else {
-        const teamMembers = staffList.filter(s => s.reportingManagerId === member.id);
+        const teamMembers = staffList.filter(s => {
+          const mgrIds = s.reportingManagerIds || (s.reportingManagerId ? [s.reportingManagerId] : []);
+          return mgrIds.includes(member.id);
+        });
         targetStaffIds = [member.id, ...teamMembers.map(s => s.id)];
       }
     }
@@ -1165,32 +1173,71 @@ Yours sincerely,
                       </span>
                     </div>
                   )}
-                  <div className="detail-item">
-                    <span className="detail-label">Reporting Manager</span>
-                    {reportingManager ? (
-                      <button 
-                        onClick={() => {
-                          if (onSelectStaff) {
-                            onSelectStaff(reportingManager);
-                          }
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--primary)',
-                          padding: 0,
-                          textAlign: 'left',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          textDecoration: 'underline'
-                        }}
-                        title={`View ${reportingManager.fullName}'s profile`}
-                      >
-                        {reportingManager.fullName}
-                      </button>
+                   <div className="detail-item">
+                    <span className="detail-label">Reporting Managers</span>
+                    {reportingManagers && reportingManagers.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {reportingManagers.map(mgr => (
+                          <button 
+                            key={mgr.id}
+                            onClick={() => {
+                              if (onSelectStaff) {
+                                onSelectStaff(mgr);
+                              }
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--primary)',
+                              padding: 0,
+                              textAlign: 'left',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              textDecoration: 'underline'
+                            }}
+                            title={`View ${mgr.fullName}'s profile`}
+                          >
+                            {mgr.fullName}
+                          </button>
+                        ))}
+                      </div>
                     ) : (
                       <span className="detail-value" style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
                         None / Reports to Board
+                      </span>
+                    )}
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">Dotted Line Managers</span>
+                    {dottedLineManagers && dottedLineManagers.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {dottedLineManagers.map(mgr => (
+                          <button 
+                            key={mgr.id}
+                            onClick={() => {
+                              if (onSelectStaff) {
+                                onSelectStaff(mgr);
+                              }
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--primary)',
+                              padding: 0,
+                              textAlign: 'left',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              textDecoration: 'underline'
+                            }}
+                            title={`View ${mgr.fullName}'s profile`}
+                          >
+                            {mgr.fullName}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="detail-value" style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
+                        None
                       </span>
                     )}
                   </div>

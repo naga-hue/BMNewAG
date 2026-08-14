@@ -33,6 +33,14 @@ export default function CommissionsDashboard({
   onShowToast,
   currentUser
 }: CommissionsDashboardProps) {
+  const hasWriteAccess = currentUser?.permissions?.role === 'admin' || 
+    currentUser?.permissions?.role === 'hr_admin' ||
+    (currentUser?.permissions?.allowedModules && (
+      currentUser.permissions.allowedModules.includes('commissions:write') || 
+      currentUser.permissions.allowedModules.includes('commissions')
+    ));
+  const readOnly = !hasWriteAccess;
+
   const isRecruiter = currentUser?.permissions?.role === 'recruiter';
   const [activeSubTab, setActiveSubTab] = useState(isRecruiter ? 'payroll' : 'policies'); // policies, assignments, payroll, matrix
   const [payrollMonth, setPayrollMonth] = useState('2026-06');
@@ -79,6 +87,7 @@ export default function CommissionsDashboard({
           onSavePolicy={onSavePolicy}
           onDeletePolicy={onDeletePolicy}
           onShowToast={onShowToast}
+          readOnly={readOnly}
         />
       )}
 
@@ -89,6 +98,7 @@ export default function CommissionsDashboard({
           commissionPolicies={commissionPolicies}
           onUpdateStaff={onUpdateStaff}
           onShowToast={onShowToast}
+          readOnly={readOnly}
         />
       )}
 
@@ -106,6 +116,7 @@ export default function CommissionsDashboard({
           selectedBreakdownRow={selectedBreakdownRow}
           setSelectedBreakdownRow={setSelectedBreakdownRow}
           currentUser={currentUser}
+          readOnly={readOnly}
         />
       )}
 
@@ -117,6 +128,7 @@ export default function CommissionsDashboard({
           placements={placements}
           onSelectRecruiterDetail={handleSelectRecruiterDetail}
           currentUser={currentUser}
+          readOnly={readOnly}
         />
       )}
 

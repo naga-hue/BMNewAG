@@ -21,6 +21,7 @@ interface LeavesDashboardProps {
   onUpdateLeaveRequestStatus?: (id: string, status: string) => Promise<any>;
   onUpdateStaff?: (s: Staff) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
+  currentUser?: any;
 }
 
 export default function LeavesDashboard({
@@ -36,8 +37,10 @@ export default function LeavesDashboard({
   onSaveLeaveRequest,
   onUpdateLeaveRequestStatus,
   onUpdateStaff,
-  onShowToast
+  onShowToast,
+  currentUser
 }: LeavesDashboardProps) {
+  const isAdminOrHr = currentUser?.permissions?.role === 'admin' || currentUser?.permissions?.role === 'hr_admin';
   const [activeSubTab, setActiveSubTab] = useState<'dashboard' | 'requests' | 'policies' | 'holidays' | 'overlap'>('dashboard');
 
   return (
@@ -49,7 +52,7 @@ export default function LeavesDashboard({
           { key: 'overlap', label: 'Absences Timeline' },
           { key: 'policies', label: 'Leave Policies' },
           { key: 'holidays', label: 'Public Holidays' }
-        ].map(t => (
+        ].filter(t => isAdminOrHr || (t.key !== 'policies' && t.key !== 'holidays')).map(t => (
           <button
             key={t.key}
             onClick={() => setActiveSubTab(t.key as any)}
@@ -84,6 +87,7 @@ export default function LeavesDashboard({
           onSaveLeaveRequest={onSaveLeaveRequest}
           onUpdateLeaveRequestStatus={onUpdateLeaveRequestStatus}
           onShowToast={onShowToast}
+          currentUser={currentUser}
         />
       )}
 

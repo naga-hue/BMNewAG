@@ -72,6 +72,10 @@ export default function CreditControlDashboard({
   const currentUser = propCurrentUser || EMPTY_USER;
   const onUpdatePlacement = propOnUpdatePlacement || storeUpdatePlacement;
 
+  const isFinanceOrAdmin = currentUser?.permissions?.role === 'admin' || 
+    currentUser?.permissions?.role === 'finance_admin';
+  const readOnly = !isFinanceOrAdmin;
+
   const [activeSubTab, setActiveSubTab] = useState<'direct' | 'simplicity'>(defaultSubTab || 'direct');
   
   React.useEffect(() => {
@@ -1403,10 +1407,10 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
               🔍 Filters
             </button>
 
-            {/* Reschedule Dropzones Toggle (Simplicity Only) */}
-            {activeSubTab === 'simplicity' && (
-              <button
-                type="button"
+            {/* Reschedule Zones */}
+            {activeSubTab === 'simplicity' && !readOnly && (
+              <button 
+                type="button" 
                 className={`btn-secondary ${showRescheduleDropzones ? 'active' : ''}`}
                 onClick={() => setShowRescheduleDropzones(!showRescheduleDropzones)}
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px', height: '34px', border: showRescheduleDropzones ? '1px solid var(--primary)' : '1px solid var(--border-color)', backgroundColor: showRescheduleDropzones ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }}
@@ -1416,17 +1420,19 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
             )}
 
             {/* Export CSV */}
-            <button 
-              type="button" 
-              className="btn-secondary" 
-              onClick={handleExportCSV}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px', height: '34px' }}
-            >
-              📥 Export CSV
-            </button>
+            {!readOnly && (
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                onClick={handleExportCSV}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px', height: '34px' }}
+              >
+                📥 Export CSV
+              </button>
+            )}
 
             {/* Simplicity Factoring Export (Simplicity Only) */}
-            {activeSubTab === 'simplicity' && (
+            {activeSubTab === 'simplicity' && !readOnly && (
               <>
                 <button 
                   type="button" 
@@ -1606,6 +1612,7 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
           renderSortIndicator={renderSortIndicator}
           todayStr={todayStr}
           onShowToast={onShowToast}
+          readOnly={readOnly}
         />
       ) : (
         <SimplicityLedgerTable
@@ -1631,6 +1638,7 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
           onShowToast={onShowToast}
           showRescheduleDropzones={showRescheduleDropzones}
           simplicityCardFilter={simplicityCardFilter}
+          readOnly={readOnly}
         />
       )}
 
@@ -1700,6 +1708,7 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
         todayStr={todayStr}
         currentUser={currentUser}
         onShowToast={onShowToast}
+        readOnly={readOnly}
       />
 
       {/* Simplicity Importer Overlay Modal */}

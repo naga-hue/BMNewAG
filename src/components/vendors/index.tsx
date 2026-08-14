@@ -11,6 +11,7 @@ import BatchAllocateSeatsModal from './BatchAllocateSeatsModal';
 import ReconcileCellModal from './ReconcileCellModal';
 import UnifiedAssetsManager from './UnifiedAssetsManager';
 import CategorizationDesk from '../expenses/CategorizationDesk';
+import HardwareAssetsRegister from './HardwareAssetsRegister';
 import '../vendors.css';
 
 export interface VendorsDashboardProps {
@@ -28,6 +29,7 @@ export interface VendorsDashboardProps {
   onSaveAssetAssignment?: (assignment: any) => Promise<any>;
   onDeleteAssetAssignment?: (id: string) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
+  currentUser?: any;
 }
 
 export default function VendorsDashboard({
@@ -45,8 +47,14 @@ export default function VendorsDashboard({
   onDeleteContract = async () => {},
   onSaveAssetAssignment = async () => {},
   onDeleteAssetAssignment = async () => {},
-  onShowToast
+  onShowToast,
+  currentUser
 }: VendorsDashboardProps) {
+  const isFinanceOrAdmin = currentUser?.permissions?.role === 'admin' || 
+    currentUser?.permissions?.role === 'finance_admin';
+  const hasVendorsWrite = isFinanceOrAdmin || currentUser?.permissions?.role === 'hr_admin';
+  const readOnly = !hasVendorsWrite;
+
   const [activeSubTab, setActiveSubTab] = useState('unified');
   
   // Modals state
@@ -95,59 +103,28 @@ export default function VendorsDashboard({
         gap: '12px'
       }}>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button 
-            type="button" 
-            className={`tab-btn ${activeSubTab === 'unified' ? 'active' : ''}`}
-            onClick={() => setActiveSubTab('unified')}
-          >
-            💻 Unified Assets & Licenses
-          </button>
-          <button 
-            type="button" 
-            className={`tab-btn ${activeSubTab === 'vendors' ? 'active' : ''}`}
-            onClick={() => setActiveSubTab('vendors')}
-          >
-            🏢 Vendors Directory
-          </button>
-          <button 
-            type="button" 
-            className={`tab-btn ${activeSubTab === 'contracts' ? 'active' : ''}`}
-            onClick={() => setActiveSubTab('contracts')}
-          >
-            📄 Contracts Register
-          </button>
-          <button 
-            type="button" 
-            className={`tab-btn ${activeSubTab === 'allocations' ? 'active' : ''}`}
-            onClick={() => setActiveSubTab('allocations')}
-          >
-            💻 Seat Allocations
-          </button>
-          <button 
-            type="button" 
-            className={`tab-btn ${activeSubTab === 'forecast' ? 'active' : ''}`}
-            onClick={() => setActiveSubTab('forecast')}
-          >
-            📊 Forecast Matrix
-          </button>
-          <button 
-            type="button" 
-            className={`tab-btn ${activeSubTab === 'hardware' ? 'active' : ''}`}
-            onClick={() => setActiveSubTab('hardware')}
-          >
-            🔌 Hardware Inventory
-          </button>
-          <button 
-            type="button" 
-            className={`tab-btn ${activeSubTab === 'categorization' ? 'active' : ''}`}
-            onClick={() => setActiveSubTab('categorization')}
-            style={{
-              fontWeight: (expenses || []).some(e => (!e.recipientType || e.recipientType === 'other' || !e.nominalCode) && e.status !== 'dns' && e.status !== 'cancelled') ? 700 : undefined,
-              color: (expenses || []).some(e => (!e.recipientType || e.recipientType === 'other' || !e.nominalCode) && e.status !== 'dns' && e.status !== 'cancelled') && activeSubTab !== 'categorization' ? 'var(--warning)' : undefined
-            }}
-          >
-            ⚡ Categorization Desk
-          </button>
+          {[
+            { key: 'unified', label: '💻 Unified Assets & Licenses' },
+            { key: 'vendors', label: '🏢 Vendors Directory' },
+            { key: 'contracts', label: '📄 Contracts Register' },
+            { key: 'allocations', label: '💻 Seat Allocations' },
+            { key: 'forecast', label: '📊 Forecast Matrix' },
+            { key: 'hardware', label: '🔌 Hardware Inventory' },
+            { key: 'categorization', label: '⚡ Categorization Desk' }
+          ].filter(t => isFinanceOrAdmin || t.key !== 'categorization').map(t => (
+            <button 
+              key={t.key}
+              type="button" 
+              className={`tab-btn ${activeSubTab === t.key ? 'active' : ''}`}
+              onClick={() => setActiveSubTab(t.key)}
+              style={t.key === 'categorization' ? {
+                fontWeight: (expenses || []).some(e => (!e.recipientType || e.recipientType === 'other' || !e.nominalCode) && e.status !== 'dns' && e.status !== 'cancelled') ? 700 : undefined,
+                color: (expenses || []).some(e => (!e.recipientType || e.recipientType === 'other' || !e.nominalCode) && e.status !== 'dns' && e.status !== 'cancelled') && activeSubTab !== 'categorization' ? 'var(--warning)' : undefined
+              } : undefined}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
       </div>
@@ -168,6 +145,7 @@ export default function VendorsDashboard({
           onDeleteAssetAssignment={onDeleteAssetAssignment}
           onSaveContract={onSaveContract}
           onShowToast={onShowToast}
+          readOnly={readOnly}
         />
       )}
 
@@ -188,6 +166,7 @@ export default function VendorsDashboard({
             onSaveAssetAssignment={onSaveAssetAssignment}
             onDeleteAssetAssignment={onDeleteAssetAssignment}
             onShowToast={onShowToast}
+            readOnly={readOnly}
           />
         ) : (
           <VendorDirectory 
@@ -199,7 +178,8 @@ export default function VendorsDashboard({
             onDeleteVendor={onDeleteVendor}
             onShowToast={onShowToast}
             onSelectProfileId={setSelectedVendorProfileId}
-            onAddNewVendorClick={handleCreateVendor}
+            onAddNewVendorClick={readOnly ? undefined : handleCreateVendor}
+            readOnly={readOnly}
           />
         )
       )}
@@ -219,8 +199,9 @@ export default function VendorsDashboard({
           onSaveAssetAssignment={onSaveAssetAssignment}
           onDeleteAssetAssignment={onDeleteAssetAssignment}
           onShowToast={onShowToast}
-          onBatchAllocateSeatsClick={setMultiAssignContract}
-          onRegisterContractClick={handleCreateContract}
+          onBatchAllocateSeatsClick={readOnly ? undefined : setMultiAssignContract}
+          onRegisterContractClick={readOnly ? undefined : handleCreateContract}
+          readOnly={readOnly}
         />
       )}
 
@@ -235,6 +216,7 @@ export default function VendorsDashboard({
           onSaveAssetAssignment={onSaveAssetAssignment}
           onDeleteAssetAssignment={onDeleteAssetAssignment}
           onShowToast={onShowToast}
+          readOnly={readOnly}
         />
       )}
 
@@ -246,7 +228,7 @@ export default function VendorsDashboard({
           staff={staff}
           expenses={expenses}
           assetAssignments={assetAssignments}
-          onCellClick={(contract, year, monthIndex, projectedVal) => {
+          onCellClick={readOnly ? undefined : (contract, year, monthIndex, projectedVal) => {
             const monthKey = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
             setReconcilingCell({ contract, monthKey, projectedAmount: projectedVal });
           }}
@@ -259,6 +241,7 @@ export default function VendorsDashboard({
           assetAssignments={assetAssignments}
           contracts={contracts}
           onShowToast={onShowToast}
+          readOnly={readOnly}
         />
       )}
 

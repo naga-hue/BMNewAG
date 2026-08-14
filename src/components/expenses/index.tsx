@@ -151,8 +151,12 @@ export default function ExpensesDashboard({
           if (targets.length > 0) {
             const perStaffShare = gbpAmt / targets.length;
             targets.forEach(staffId => {
-              staffOverhead[staffId][mIdx] += perStaffShare;
-              staffTrans[staffId][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: 'Direct Staff Split' });
+              if (staffOverhead[staffId]) {
+                staffOverhead[staffId][mIdx] += perStaffShare;
+              }
+              if (staffTrans[staffId]) {
+                staffTrans[staffId][mIdx].push({ ...exp, apportionedShare: perStaffShare, shareReason: 'Direct Staff Split' });
+              }
             });
           }
         } else {
@@ -304,9 +308,13 @@ export default function ExpensesDashboard({
       onShowToast(`Error linking transaction: ${err.message}`, "warning");
     }
   };
+  const isFinanceOrAdmin = currentUser?.permissions?.role === 'admin' || 
+    currentUser?.permissions?.role === 'finance_admin';
+  const readOnly = !isFinanceOrAdmin;
 
+  // Compute unmapped/uncategorized card count
   const unmappedCount = useMemo(() => {
-    return (expenses || []).filter(e => (!e.recipientType || e.recipientType === 'other' || !e.nominalCode) && e.status !== 'dns' && e.status !== 'cancelled').length;
+    return expenses.filter((e: any) => !e.nominalCode || e.nominalCode === 'uncategorized').length;
   }, [expenses]);
 
   return (
@@ -322,7 +330,7 @@ export default function ExpensesDashboard({
           { key: 'matrix', label: 'YTD Expenses Allocation Matrix' },
           { key: 'recipients', label: 'Recipient Payments Matrix' },
           { key: 'settings', label: 'Nominal Codes Setup' }
-        ].filter(t => !isRecruiter || t.key === 'reimbursements').map(t => (
+        ].filter(t => isFinanceOrAdmin || ['ledger', 'reimbursements', 'matrix'].includes(t.key)).map(t => (
           <button
             key={t.key}
             onClick={() => {
@@ -342,18 +350,16 @@ export default function ExpensesDashboard({
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '-12px' }}>
-        {activeSubTab === 'ledger' && !showForm && (
+        {activeSubTab === 'ledger' && !showForm && isFinanceOrAdmin && (
           <>
-            {!isRecruiter && (
-              <button 
-                type="button" 
-                className="btn-secondary" 
-                onClick={() => setShowDateSwapModal(true)}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', height: '34px', border: '1px solid var(--border-color)' }}
-              >
-                🔧 Date Swap Repair Tool
-              </button>
-            )}
+            <button 
+              type="button" 
+              className="btn-secondary" 
+              onClick={() => setShowDateSwapModal(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', height: '34px', border: '1px solid var(--border-color)' }}
+            >
+              🔧 Date Swap Repair Tool
+            </button>
             <button type="button" className="btn-primary" onClick={() => setShowForm(true)} style={{ fontSize: '13px', height: '34px' }}>
               Record Manual Expense Claim
             </button>
@@ -390,6 +396,7 @@ export default function ExpensesDashboard({
           setExpandedSections={setExpandedSections}
           setAllocationSearch={setAllocationSearch}
           onShowToast={onShowToast}
+          readOnly={readOnly}
         />
       )}
 
@@ -398,7 +405,7 @@ export default function ExpensesDashboard({
       )}
 
       {activeSubTab === 'reimbursements' && (
-        <ReimbursementsDesk onShowToast={onShowToast} currentUser={currentUser} />
+        <ReimbursementsDesk onShowToast={onShowToast} currentUser={currentUser} readOnly={readOnly} />
       )}
 
       {activeSubTab === 'matrix' && (

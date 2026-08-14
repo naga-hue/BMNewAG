@@ -35,6 +35,7 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
   const [vatStartMonth, setVatStartMonth] = useState('1');
   const [vatDueDateDays, setVatDueDateDays] = useState('37');
   const [recruitlyApiKey, setRecruitlyApiKey] = useState('');
+  const [dialpadApiKey, setDialpadApiKey] = useState('');
 
   // POC state
   const [pocName, setPocName] = useState('');
@@ -70,6 +71,7 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
       setVatStartMonth(String(company.vatStartMonth || '1'));
       setVatDueDateDays(String(company.vatDueDateDays || '37'));
       setRecruitlyApiKey(company.recruitlyApiKey || '');
+      setDialpadApiKey(company.dialpadApiKey || '');
 
       if (company.pointOfContact) {
         setPocName(company.pointOfContact.name || '');
@@ -117,6 +119,7 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
       setDocuments([]);
       setIncludeInConsolidation(true);
       setRecruitlyApiKey('');
+      setDialpadApiKey('');
     }
     setCurrentStep(1);
   }, [company, isOpen]);
@@ -244,6 +247,7 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
       notes,
       includeInConsolidation,
       recruitlyApiKey: recruitlyApiKey.trim(),
+      dialpadApiKey: dialpadApiKey.trim(),
       pointOfContact: pocName ? {
         name: pocName,
         role: pocRole,
@@ -399,6 +403,20 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
                     value={recruitlyApiKey} 
                     onChange={(e) => setRecruitlyApiKey(e.target.value)} 
                   />
+                </div>
+
+                <div className="form-group" style={{ marginTop: '12px' }}>
+                  <label className="form-label">Dialpad Tenant API Token</label>
+                  <input 
+                    type="password" 
+                    className="form-input" 
+                    placeholder="Enter Dialpad API key/token for this company" 
+                    value={dialpadApiKey} 
+                    onChange={(e) => setDialpadApiKey(e.target.value)} 
+                  />
+                  <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                    Used for Dialpad call integrations. Humres, Huntech, and Strata share a tenant, while Totaco uses a separate tenant.
+                  </small>
                 </div>
                 
                 <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '8px', display: 'flex', marginTop: '12px' }}>

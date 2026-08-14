@@ -40,6 +40,7 @@ interface SimplicityLedgerTableProps {
   onShowToast: (msg: string, type?: string) => void;
   showRescheduleDropzones: boolean;
   simplicityCardFilter?: string;
+  readOnly?: boolean;
 }
 
 export default function SimplicityLedgerTable({
@@ -64,7 +65,8 @@ export default function SimplicityLedgerTable({
   todayStr,
   onShowToast,
   showRescheduleDropzones,
-  simplicityCardFilter
+  simplicityCardFilter,
+  readOnly = false
 }: SimplicityLedgerTableProps) {
   const placements = useBoundStore(state => state.placements);
   const companies = useBoundStore(state => state.companies);
@@ -516,7 +518,7 @@ export default function SimplicityLedgerTable({
                 </span>
               </div>
               
-              {inv.paymentStatus !== 'paid' && (
+              {inv.paymentStatus !== 'paid' && !readOnly && (
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px' }}>
                   {/* 1. Simplicity Payout Received Toggle */}
                   <button

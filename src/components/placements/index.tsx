@@ -19,6 +19,7 @@ interface PlacementsDashboardProps {
   onSavePlacementsBatch?: (batch: any[]) => Promise<any>;
   onClearAllPlacements?: () => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
+  currentUser?: any;
 }
 
 export default function PlacementsDashboard({
@@ -29,7 +30,8 @@ export default function PlacementsDashboard({
   onDeletePlacement: propOnDeletePlacement,
   onSavePlacementsBatch: propOnSavePlacementsBatch,
   onClearAllPlacements: propOnClearAllPlacements,
-  onShowToast
+  onShowToast,
+  currentUser
 }: PlacementsDashboardProps) {
   const storePlacements = useBoundStore(state => state.placements) as ExtendedPlacement[];
   const storeCompanies = useBoundStore(state => state.companies);
@@ -38,6 +40,11 @@ export default function PlacementsDashboard({
   const placements = propPlacements || storePlacements;
   const companies = propCompanies || storeCompanies;
   const staff = propStaff || storeStaff;
+
+  const isHRorFinanceOrAdmin = currentUser?.permissions?.role === 'admin' || 
+    currentUser?.permissions?.role === 'hr_admin' || 
+    currentUser?.permissions?.role === 'finance_admin';
+  const readOnly = !isHRorFinanceOrAdmin;
 
   const onSavePlacement = propOnSavePlacement || (async (placement) => {
     return await firebaseService.savePlacement(placement);
@@ -86,7 +93,7 @@ export default function PlacementsDashboard({
           { key: 'import', label: 'CSV Spreadsheet Importer' },
           { key: 'leaderboard', label: 'Monthly Billing Rankings' },
           { key: 'analytics', label: 'Billing Charts & Trends' }
-        ].map(t => (
+        ].filter(t => isHRorFinanceOrAdmin || t.key !== 'import').map(t => (
           <button
             key={t.key}
             onClick={() => setActiveSubTab(t.key)}
@@ -116,6 +123,7 @@ export default function PlacementsDashboard({
           matrixViewType={matrixViewType}
           setMatrixViewType={setMatrixViewType}
           onDrilldown={handleDrilldown}
+          readOnly={readOnly}
         />
       )}
 
@@ -129,6 +137,7 @@ export default function PlacementsDashboard({
           onShowToast={onShowToast}
           viewingPlacement={viewingPlacement}
           setViewingPlacement={setViewingPlacement}
+          readOnly={readOnly}
         />
       )}
 

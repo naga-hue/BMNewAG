@@ -272,17 +272,31 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const tokenSlot1 = process.env.DIALPAD_TOKEN_1 || process.env.DIALPAD_TOKEN || '';
-  const tokenSlot2 = process.env.DIALPAD_TOKEN_2 || process.env.DIALPAD_TOKEN || '';
-  
-  if (!tokenSlot1) {
-    return res.status(500).json({ error: 'Dialpad API tokens not configured' });
-  }
-
   try {
     const firestore = initFirestore();
 
-    // 1. Fetch active staff list
+    // 1. Fetch company configured dialpad API keys from database
+    const compSnap = await firestore.collection('companies').get();
+    const dbTokens = [];
+    compSnap.forEach(doc => {
+      const c = doc.data();
+      if (c.dialpadApiKey && c.dialpadApiKey.trim()) {
+        dbTokens.push(c.dialpadApiKey.trim());
+      }
+    });
+
+    const tokenSlot1 = process.env.DIALPAD_TOKEN_1 || process.env.DIALPAD_TOKEN || '';
+    const tokenSlot2 = process.env.DIALPAD_TOKEN_2 || process.env.DIALPAD_TOKEN || '';
+    
+    // Combine database configured tokens and env variables (as fallback)
+    const rawTokensList = [...dbTokens, tokenSlot1, tokenSlot2];
+    const tokens = Array.from(new Set(rawTokensList)).filter(Boolean);
+
+    if (tokens.length === 0) {
+      return res.status(500).json({ error: 'Dialpad API tokens not configured in database or env variables' });
+    }
+
+    // 2. Fetch active staff list
     const staffSnap = await firestore.collection('staff').get();
     const staffList = [];
     staffSnap.forEach(sDoc => {
@@ -294,8 +308,7 @@ export default async function handler(req, res) {
 
     console.log(`[Sync Calls] Loaded ${staffList.length} active staff profiles.`);
 
-    // 2. Fetch trailing concluded calls from Dialpad API with a reconciliation window
-    const tokens = Array.from(new Set([tokenSlot1, tokenSlot2])).filter(Boolean);
+    // 3. Fetch trailing concluded calls from Dialpad API with a reconciliation window
     let allDialpadCalls = [];
     
     const daysLimit = Number(req.query.days || 2);

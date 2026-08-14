@@ -8,6 +8,7 @@ interface CommissionsAssignmentsProps {
   commissionPolicies: any[];
   onUpdateStaff?: (s: Staff) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
+  readOnly?: boolean;
 }
 
 export default function CommissionsAssignments({
@@ -15,7 +16,8 @@ export default function CommissionsAssignments({
   staff,
   commissionPolicies,
   onUpdateStaff,
-  onShowToast
+  onShowToast,
+  readOnly = false
 }: CommissionsAssignmentsProps) {
   const [companyFilter, setCompanyFilter] = useState(['all']);
   const [deptFilter, setDeptFilter] = useState(['all']);
@@ -119,22 +121,33 @@ export default function CommissionsAssignments({
         <td>{employer ? employer.name : 'Group'}</td>
         <td>{s.jobTitle}</td>
         <td>
-          <select 
-            className="select-filter"
-            value={s.commissionPolicyId || ''}
-            onChange={(e) => handleAssignPolicy(s.id, e.target.value)}
-            style={{ width: '100%', maxWidth: '280px', padding: '6px' }}
-          >
-            <option value="">-- No Incentive Plan --</option>
-            {commissionPolicies.map(p => {
-              const pComp = companies.find(c => c.id === p.companyId);
-              return (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({pComp ? pComp.name : 'Group-wide'})
-                </option>
-              );
-            })}
-          </select>
+          {readOnly ? (
+            <span style={{ fontSize: '13px', fontWeight: 500, color: s.commissionPolicyId ? 'var(--primary)' : 'var(--text-secondary)' }}>
+              {(() => {
+                const assigned = commissionPolicies.find(p => p.id === s.commissionPolicyId);
+                if (!assigned) return 'No Incentive Plan';
+                const pComp = companies.find(c => c.id === assigned.companyId);
+                return `${assigned.name} (${pComp ? pComp.name : 'Group-wide'})`;
+              })()}
+            </span>
+          ) : (
+            <select 
+              className="select-filter"
+              value={s.commissionPolicyId || ''}
+              onChange={(e) => handleAssignPolicy(s.id, e.target.value)}
+              style={{ width: '100%', maxWidth: '280px', padding: '6px' }}
+            >
+              <option value="">-- No Incentive Plan --</option>
+              {commissionPolicies.map(p => {
+                const pComp = companies.find(c => c.id === p.companyId);
+                return (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({pComp ? pComp.name : 'Group-wide'})
+                  </option>
+                );
+              })}
+            </select>
+          )}
         </td>
       </tr>
     );

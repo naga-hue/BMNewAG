@@ -19,6 +19,7 @@ interface LeaveRequestsDeskProps {
   onSaveLeaveRequest: (req: any) => Promise<any>;
   onUpdateLeaveRequestStatus?: (id: string, status: string) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
+  currentUser?: any;
 }
 
 export default function LeaveRequestsDesk({
@@ -28,8 +29,12 @@ export default function LeaveRequestsDesk({
   leavePolicies = [],
   onSaveLeaveRequest,
   onUpdateLeaveRequestStatus,
-  onShowToast
+  onShowToast,
+  currentUser
 }: LeaveRequestsDeskProps) {
+  const isAdminOrHr = currentUser?.permissions?.role === 'admin' || currentUser?.permissions?.role === 'hr_admin';
+  const canApprove = ['admin', 'hr_admin', 'director', 'manager'].includes(currentUser?.permissions?.role);
+  const selectableStaff = isAdminOrHr ? staff : staff.filter(s => s.id === currentUser?.id);
   const [showReqForm, setShowReqForm] = useState(false);
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   const [reqType, setReqType] = useState('annual');
@@ -192,25 +197,27 @@ export default function LeaveRequestsDesk({
                 backgroundColor: 'var(--bg-secondary)',
                 width: '100%'
               }}>
-                <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', marginBottom: '4px' }}>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setSelectedStaffIds(staff.map(s => s.id))}
-                    style={{ padding: '2px 8px', fontSize: '10px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                  >
-                    Select All
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setSelectedStaffIds([])}
-                    style={{ padding: '2px 8px', fontSize: '10px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                  >
-                    Deselect All
-                  </button>
-                </div>
-                {staff.map(s => {
+                {isAdminOrHr && (
+                  <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', marginBottom: '4px' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setSelectedStaffIds(staff.map(s => s.id))}
+                      style={{ padding: '2px 8px', fontSize: '10px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setSelectedStaffIds([])}
+                      style={{ padding: '2px 8px', fontSize: '10px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                    >
+                      Deselect All
+                    </button>
+                  </div>
+                )}
+                {selectableStaff.map(s => {
                   const isChecked = selectedStaffIds.includes(s.id);
                   const employer = companies.find(c => c.id === s.companyId);
                   return (
@@ -450,7 +457,7 @@ export default function LeaveRequestsDesk({
                       </div>
                     )}
 
-                    {req.status === 'pending' && (
+                    {req.status === 'pending' && canApprove && req.staffId !== currentUser?.id && (
                       <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
                         <button 
                           className="btn-primary" 

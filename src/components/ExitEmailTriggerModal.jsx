@@ -171,7 +171,10 @@ export default function ExitEmailTriggerModal({
 
     let targetStaffIds = [member.id];
     if (policy.type === 'manager') {
-      const teamMembers = staff.filter(s => s.reportingManagerId === member.id);
+      const teamMembers = staff.filter(s => {
+        const mgrIds = s.reportingManagerIds || (s.reportingManagerId ? [s.reportingManagerId] : []);
+        return mgrIds.includes(member.id);
+      });
       targetStaffIds = [member.id, ...teamMembers.map(s => s.id)];
     }
 
@@ -340,10 +343,12 @@ export default function ExitEmailTriggerModal({
       // 1. Resolve Office Location
       const officeLocations = company.addressOverride || company.address || 'Humres HQ Office';
 
-      // 2. Resolve Reporting Manager
-      const reportingManager = staff.find(s => s.id === staffMember.reportingManagerId);
-      const managerName = reportingManager ? reportingManager.fullName : 'None';
-      const managerEmail = reportingManager?.businessEmail || reportingManager?.personalEmail || '';
+      // 2. Resolve Reporting Managers
+      const reportingManagers = (staffMember.reportingManagerIds || (staffMember.reportingManagerId ? [staffMember.reportingManagerId] : []))
+        .map(id => staff.find(s => s.id === id))
+        .filter(Boolean);
+      const managerName = reportingManagers.length > 0 ? reportingManagers.map(m => m.fullName).join(', ') : 'None';
+      const managerEmail = reportingManagers.map(m => m.businessEmail || m.personalEmail || '').filter(Boolean).join(', ');
 
       // 3. Resolve Assigned Assets (Hardware & Software Seats resolved via matched contracts)
       const myAssignments = assetAssignments.filter(a => a.staffId === staffMember.id);

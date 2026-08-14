@@ -112,7 +112,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { phone } = req.query;
+  const { phone, companyId } = req.query;
   if (!phone) {
     return res.status(400).json({ error: 'Missing phone query parameter' });
   }
@@ -125,19 +125,28 @@ export default async function handler(req, res) {
 
   try {
     const firestoreDb = initFirestore();
-    
-    // Find Humres CRM API Key from companies collection
-    const compSnap = await firestoreDb.collection('companies').get();
     let apiKey = null;
-    compSnap.forEach((doc) => {
-      const data = doc.data();
-      if (data.name && data.name.toLowerCase().includes('humres') && data.recruitlyApiKey) {
-        apiKey = data.recruitlyApiKey;
+
+    if (companyId) {
+      const compDoc = await firestoreDb.collection('companies').doc(companyId).get();
+      if (compDoc.exists) {
+        apiKey = compDoc.data().recruitlyApiKey;
       }
-    });
+    }
+    
+    if (!apiKey) {
+      // Find Humres CRM API Key from companies collection
+      const compSnap = await firestoreDb.collection('companies').get();
+      compSnap.forEach((doc) => {
+        const data = doc.data();
+        if (data.name && data.name.toLowerCase().includes('humres') && data.recruitlyApiKey) {
+          apiKey = data.recruitlyApiKey;
+        }
+      });
+    }
 
     if (!apiKey) {
-      console.warn('[CRM Lookup] No Humres recruitlyApiKey found in companies collection.');
+      console.warn('[CRM Lookup] No recruitlyApiKey found in companies collection.');
       return res.status(500).json({ error: 'Recruitly API Key configuration not found in companies database.' });
     }
 

@@ -66,6 +66,8 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
   const [jobTitle, setJobTitle] = useState('');
   const [startDate, setStartDate] = useState('');
   const [reportingManagerId, setReportingManagerId] = useState('');
+  const [reportingManagerIds, setReportingManagerIds] = useState([]);
+  const [dottedLineManagerIds, setDottedLineManagerIds] = useState([]);
   const [leavePolicyId, setLeavePolicyId] = useState('');
   const [commissionPolicyId, setCommissionPolicyId] = useState('');
   const [status, setStatus] = useState('active');
@@ -151,7 +153,9 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setDepartment(staffMember.department || '');
       setJobTitle(staffMember.jobTitle || '');
       setStartDate(normalizeDateForInput(staffMember.startDate || ''));
+      setReportingManagerIds(staffMember.reportingManagerIds || (staffMember.reportingManagerId ? [staffMember.reportingManagerId] : []));
       setReportingManagerId(staffMember.reportingManagerId || '');
+      setDottedLineManagerIds(staffMember.dottedLineManagerIds || []);
       setLeavePolicyId(staffMember.leavePolicyId || '');
       setCommissionPolicyId(staffMember.commissionPolicyId || '');
       setStatus(staffMember.status || 'active');
@@ -198,6 +202,8 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setJobTitle('');
       setStartDate('');
       setReportingManagerId('');
+      setReportingManagerIds([]);
+      setDottedLineManagerIds([]);
       setLeavePolicyId('');
       setCommissionPolicyId('');
       setStatus('active');
@@ -415,7 +421,9 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       businessEmail,
       businessPhone,
       additionalEmails,
-      reportingManagerId,
+      reportingManagerIds,
+      reportingManagerId: reportingManagerIds && reportingManagerIds.length > 0 ? reportingManagerIds[0] : '',
+      dottedLineManagerIds,
       leavePolicyId,
       commissionPolicyId,
       payrollPolicyId,
@@ -633,22 +641,88 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                   {errors.startDate && <span style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '2px' }}>{errors.startDate}</span>}
                 </div>
 
-                <div className="form-group" style={{ marginTop: '8px' }}>
-                  <label className="form-label">Reporting Manager</label>
-                  <select 
-                    className="select-filter"
-                    value={reportingManagerId}
-                    onChange={(e) => setReportingManagerId(e.target.value)}
-                    style={{ width: '100%', padding: '10px' }}
-                  >
-                    <option value="">None - Reports to Board / Director</option>
+                 <div className="form-group" style={{ marginTop: '8px' }}>
+                  <label className="form-label">Reporting Managers</label>
+                  <div style={{ 
+                    maxHeight: '120px', 
+                    overflowY: 'auto', 
+                    border: '1px solid var(--border-color)', 
+                    borderRadius: '6px', 
+                    padding: '8px', 
+                    backgroundColor: 'var(--bg-secondary)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px'
+                  }}>
                     {staffList
-                      .filter(s => s.companyId === companyId && s.id !== (staffMember ? staffMember.id : ''))
-                      .map(s => (
-                        <option key={s.id} value={s.id}>{s.fullName} ({s.jobTitle})</option>
-                      ))
+                      .filter(s => s.companyId === companyId && s.id !== (staffMember ? staffMember.id : '') && !(dottedLineManagerIds || []).includes(s.id))
+                      .map(s => {
+                        const isChecked = (reportingManagerIds || []).includes(s.id);
+                        return (
+                          <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-primary)' }}>
+                            <input 
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setReportingManagerIds(prev => [...(prev || []), s.id]);
+                                } else {
+                                  setReportingManagerIds(prev => (prev || []).filter(id => id !== s.id));
+                                }
+                              }}
+                              style={{ width: '14px', height: '14px', accentColor: 'var(--primary)' }}
+                            />
+                            <span>{s.fullName} ({s.jobTitle || 'No Title'})</span>
+                          </label>
+                        );
+                      })
                     }
-                  </select>
+                    {staffList.filter(s => s.companyId === companyId && s.id !== (staffMember ? staffMember.id : '') && !(dottedLineManagerIds || []).includes(s.id)).length === 0 && (
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>No other staff members available in this company</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ marginTop: '12px' }}>
+                  <label className="form-label">Dotted Line Managers</label>
+                  <div style={{ 
+                    maxHeight: '120px', 
+                    overflowY: 'auto', 
+                    border: '1px solid var(--border-color)', 
+                    borderRadius: '6px', 
+                    padding: '8px', 
+                    backgroundColor: 'var(--bg-secondary)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px'
+                  }}>
+                    {staffList
+                      .filter(s => s.companyId === companyId && s.id !== (staffMember ? staffMember.id : '') && !(reportingManagerIds || []).includes(s.id))
+                      .map(s => {
+                        const isChecked = (dottedLineManagerIds || []).includes(s.id);
+                        return (
+                          <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-primary)' }}>
+                            <input 
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setDottedLineManagerIds(prev => [...(prev || []), s.id]);
+                                } else {
+                                  setDottedLineManagerIds(prev => (prev || []).filter(id => id !== s.id));
+                                }
+                              }}
+                              style={{ width: '14px', height: '14px', accentColor: 'var(--primary)' }}
+                            />
+                            <span>{s.fullName} ({s.jobTitle || 'No Title'})</span>
+                          </label>
+                        );
+                      })
+                    }
+                    {staffList.filter(s => s.companyId === companyId && s.id !== (staffMember ? staffMember.id : '') && !(reportingManagerIds || []).includes(s.id)).length === 0 && (
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>No other staff members available in this company</span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="form-group" style={{ marginTop: '8px' }}>

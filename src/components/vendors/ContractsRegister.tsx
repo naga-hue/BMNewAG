@@ -28,6 +28,7 @@ interface ContractsRegisterProps {
   onEditContract?: (contract: any) => void;
   onRegisterContractClick: () => void;
   onBatchAllocateSeatsClick?: (contract: any) => void;
+  readOnly?: boolean;
 }
 
 export default function ContractsRegister({
@@ -44,7 +45,8 @@ export default function ContractsRegister({
   onShowToast,
   handleEditContract,
   onEditContract,
-  onRegisterContractClick
+  onRegisterContractClick,
+  readOnly = false
 }: ContractsRegisterProps) {
   const triggerEditContract = onEditContract || handleEditContract;
   const [expandedContractId, setExpandedContractId] = useState<string | null>(null);
@@ -160,9 +162,11 @@ export default function ContractsRegister({
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Manage software license pools, landlord leases, payment schedules, and currency settings.</p>
         </div>
         
-        <button className="btn-primary" onClick={onRegisterContractClick}>
-          <Plus size={16} /> Register Contract
-        </button>
+        {!readOnly && (
+          <button className="btn-primary" onClick={onRegisterContractClick}>
+            <Plus size={16} /> Register Contract
+          </button>
+        )}
       </div>
 
       {/* Contracts Spreadsheet Grid Table */}
@@ -419,7 +423,9 @@ export default function ContractsRegister({
                       ) : '—'}
                     </td>
                     <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                      {uploadContractId === contract.id ? (
+                      {readOnly ? (
+                        <span style={{ color: 'var(--text-muted)' }}>—</span>
+                      ) : uploadContractId === contract.id ? (
                         <div style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'center' }}>
                           <input 
                             type="file" 
@@ -495,13 +501,15 @@ export default function ContractsRegister({
                                     }}>
                                       <strong style={{ color: 'var(--text-primary)' }}>{member.fullName}</strong>
                                       {a.email && <span style={{ color: 'var(--text-muted)', fontSize: '10.5px' }}>({a.email})</span>}
-                                      <button 
-                                        onClick={() => handleReleaseSeat(a.id, contract.name, member.fullName)}
-                                        style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '12px', padding: 0, marginLeft: '4px' }}
-                                        title="Release Seat"
-                                      >
-                                        ✕
-                                      </button>
+                                      {!readOnly && (
+                                        <button 
+                                          onClick={() => handleReleaseSeat(a.id, contract.name, member.fullName)}
+                                          style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '12px', padding: 0, marginLeft: '4px' }}
+                                          title="Release Seat"
+                                        >
+                                          ✕
+                                        </button>
+                                      )}
                                     </div>
                                   );
                                 })}
@@ -512,7 +520,7 @@ export default function ContractsRegister({
                               </div>
                             )}
 
-                            {isPackage || unusedCount > 0 ? (
+                            {readOnly ? null : (isPackage || unusedCount > 0) ? (
                               <form 
                                 onSubmit={(e) => handleAllocateSeatInline(e, contract.id, contract.name)}
                                 style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '10px' }}

@@ -86,7 +86,20 @@ function initFirestore() {
 }
 
 // Helper to resolve the correct Dialpad token based on company ID
-function getDialpadToken(companyId) {
+async function getDialpadToken(firestore, companyId) {
+  if (companyId) {
+    try {
+      const compDoc = await firestore.collection('companies').doc(companyId).get();
+      if (compDoc.exists) {
+        const data = compDoc.data();
+        if (data.dialpadApiKey) {
+          return data.dialpadApiKey.trim();
+        }
+      }
+    } catch (e) {
+      console.error('[getDialpadToken] Error fetching company:', e);
+    }
+  }
   // comp-1782806159650 is Totaco Ltd
   if (companyId === 'comp-1782806159650') {
     return process.env.DIALPAD_TOKEN_2 || process.env.DIALPAD_TOKEN || '';
@@ -137,7 +150,7 @@ export default async function handler(req, res) {
       }
     }
 
-    const token = getDialpadToken(companyId);
+    const token = await getDialpadToken(firestore, companyId);
     if (!token) {
       console.warn(`[Enrich] No Dialpad Token configured for company ${companyId || 'default'}. Returning cached data.`);
       return res.status(200).json({ ...callData, enriched: false, message: 'No Dialpad API token configured' });

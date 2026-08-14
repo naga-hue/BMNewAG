@@ -122,8 +122,11 @@ function normalizeActivityType(typeStr) {
   if (s.includes('placement') || s.includes('deal') || s.includes('placed') || s === 'placement') {
     return 'placement';
   }
-  if (s.includes('opportunity') || s.includes('job created') || s.includes('lead') || s === 'opportunity') {
+  if (s.includes('opportunity') || s.includes('bite')) {
     return 'opportunity';
+  }
+  if (s.includes('job') || s.includes('lead') || s === 'job_taken') {
+    return 'job_taken';
   }
   return s;
 }
@@ -295,6 +298,8 @@ export default async function handler(req, res) {
     } else if (typeLower === 'interview') {
       updateFields.interviews = FieldValue.increment(1);
     } else if (typeLower === 'opportunity') {
+      updateFields.opportunities = FieldValue.increment(1);
+    } else if (typeLower === 'job_taken') {
       updateFields.jobsTaken = FieldValue.increment(1);
     }
 

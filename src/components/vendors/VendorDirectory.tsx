@@ -13,6 +13,7 @@ interface VendorDirectoryProps {
   onShowToast: (msg: string, type?: string) => void;
   onSelectProfileId: (id: string | null) => void;
   onAddNewVendorClick: () => void;
+  readOnly?: boolean;
 }
 
 export default function VendorDirectory({
@@ -24,7 +25,8 @@ export default function VendorDirectory({
   onDeleteVendor,
   onShowToast,
   onSelectProfileId,
-  onAddNewVendorClick
+  onAddNewVendorClick,
+  readOnly = false
 }: VendorDirectoryProps) {
   const activeNominalCodes = useMemo(() => {
     return (nominalCodes || []).map((c: any) => {
@@ -51,9 +53,11 @@ export default function VendorDirectory({
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Register service providers, software vendors, and office landlords.</p>
         </div>
         
-        <button className="btn-primary" onClick={onAddNewVendorClick}>
-          <Plus size={16} /> Add Vendor Partner
-        </button>
+        {!readOnly && (
+          <button className="btn-primary" onClick={onAddNewVendorClick}>
+            <Plus size={16} /> Add Vendor Partner
+          </button>
+        )}
       </div>
 
       {/* Vendors Spreadsheet Grid Table */}
@@ -152,19 +156,21 @@ export default function VendorDirectory({
                     {v.description || '—'}
                   </td>
                   <td style={{ border: '1px solid var(--border-color)', padding: '6px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                      <button className="btn-icon" onClick={() => onEditVendor(v)} title="Edit Vendor" style={{ padding: '4px', borderRadius: '4px' }}>
-                        <Edit3 size={11} />
-                      </button>
-                      <button className="btn-icon delete" onClick={() => {
-                        if (onDeleteVendor && window.confirm(`Are you sure you want to delete vendor "${v.name}"?`)) {
-                          onDeleteVendor(v.id);
-                          onShowToast(`Deleted vendor "${v.name}"`, "info");
-                        }
-                      }} title="Delete Vendor" style={{ padding: '4px', borderRadius: '4px' }}>
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
+                    {!readOnly && (
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                        <button className="btn-icon" onClick={() => onEditVendor(v)} title="Edit Vendor" style={{ padding: '4px', borderRadius: '4px' }}>
+                          <Edit3 size={11} />
+                        </button>
+                        <button className="btn-icon delete" onClick={() => {
+                          if (onDeleteVendor && window.confirm(`Are you sure you want to delete vendor "${v.name}"?`)) {
+                            onDeleteVendor(v.id);
+                            onShowToast(`Deleted vendor "${v.name}"`, "info");
+                          }
+                        }} title="Delete Vendor" style={{ padding: '4px', borderRadius: '4px' }}>
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               );

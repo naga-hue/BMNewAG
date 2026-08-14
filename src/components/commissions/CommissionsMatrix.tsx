@@ -22,7 +22,8 @@ export default function CommissionsMatrix({
   commissionPolicies,
   placements,
   onSelectRecruiterDetail,
-  currentUser
+  currentUser,
+  readOnly = false
 }: CommissionsMatrixProps) {
   const isRecruiter = currentUser?.permissions?.role === 'recruiter';
   const [matrixYear, setMatrixYear] = useState('2026');
@@ -81,7 +82,10 @@ export default function CommissionsMatrix({
           const deptStaff = staff.filter(s => policy.assignedDepartments.includes(s.department || ''));
           targetStaffIds = Array.from(new Set([member.id, ...deptStaff.map(s => s.id)]));
         } else {
-          const teamMembers = staff.filter(s => s.reportingManagerId === member.id);
+          const teamMembers = staff.filter(s => {
+            const mgrIds = s.reportingManagerIds || (s.reportingManagerId ? [s.reportingManagerId] : []);
+            return mgrIds.includes(member.id);
+          });
           targetStaffIds = [member.id, ...teamMembers.map(s => s.id)];
         }
       }
@@ -139,42 +143,44 @@ export default function CommissionsMatrix({
         </div>
 
         {/* Quick Export Button */}
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => {
-            const headers = ['Recruiter Name', 'Scheme Name', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'YTD Total'];
-            const csvRows = [headers.join(',')];
-            matrixData.rows.forEach(r => {
-              const row = [
-                `"${r.member.fullName}"`,
-                `"${r.policy ? r.policy.name : 'None'}"`,
-                ...matrixMonths.map(m => r.monthlyValues[m].toFixed(2)),
-                r.rowTotal.toFixed(2)
+        {!readOnly && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              const headers = ['Recruiter Name', 'Scheme Name', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'YTD Total'];
+              const csvRows = [headers.join(',')];
+              matrixData.rows.forEach(r => {
+                const row = [
+                  `"${r.member.fullName}"`,
+                  `"${r.policy ? r.policy.name : 'None'}"`,
+                  ...matrixMonths.map(m => r.monthlyValues[m].toFixed(2)),
+                  r.rowTotal.toFixed(2)
+                ];
+                csvRows.push(row.join(','));
+              });
+              
+              // Add totals row
+              const totalsRow = [
+                '"Total Payouts"',
+                '""',
+                ...matrixMonths.map(m => matrixData.colTotals[m].toFixed(2)),
+                matrixData.grandTotal.toFixed(2)
               ];
-              csvRows.push(row.join(','));
-            });
-            
-            // Add totals row
-            const totalsRow = [
-              '"Total Payouts"',
-              '""',
-              ...matrixMonths.map(m => matrixData.colTotals[m].toFixed(2)),
-              matrixData.grandTotal.toFixed(2)
-            ];
-            csvRows.push(totalsRow.join(','));
+              csvRows.push(totalsRow.join(','));
 
-            const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.setAttribute('href', url);
-            a.setAttribute('download', `YTD_Commission_Matrix_${matrixYear}.csv`);
-            a.click();
-          }}
-          style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px' }}
-        >
-          📥 Export CSV Matrix
-        </button>
+              const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.setAttribute('href', url);
+              a.setAttribute('download', `YTD_Commission_Matrix_${matrixYear}.csv`);
+              a.click();
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px' }}
+          >
+            📥 Export CSV Matrix
+          </button>
+        )}
       </div>
 
       {/* Filter Bar */}

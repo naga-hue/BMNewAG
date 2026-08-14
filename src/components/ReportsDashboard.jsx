@@ -115,6 +115,9 @@ export default function ReportsDashboard({
   });
   // Companies included based on consolidation preference
   const activeCompaniesForPL = companies.filter(c => {
+    if (currentUser?.permissions?.role !== 'admin' && c.id !== currentUser?.companyId) {
+      return false;
+    }
     if (companyFilter.includes('all')) {
       return c.includeInConsolidation !== false;
     }
@@ -304,7 +307,10 @@ export default function ReportsDashboard({
         const deptStaff = staffList.filter(s => policy.assignedDepartments.includes(s.department));
         targetStaffIds = Array.from(new Set([member.id, ...deptStaff.map(s => s.id)]));
       } else {
-        const teamMembers = staffList.filter(s => s.reportingManagerId === member.id);
+        const teamMembers = staffList.filter(s => {
+          const mgrIds = s.reportingManagerIds || (s.reportingManagerId ? [s.reportingManagerId] : []);
+          return mgrIds.includes(member.id);
+        });
         targetStaffIds = [member.id, ...teamMembers.map(s => s.id)];
       }
     }
@@ -1696,18 +1702,23 @@ export default function ReportsDashboard({
               <div style={{ padding: '6px 12px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: '12px', fontWeight: 600, color: 'var(--accent)' }}>
                 🏢 Department: {userDept} (Locked)
               </div>
-            ) : (
-              <CompanyDeptTreeFilter
-                companies={companies}
-                staff={staff}
-                selectedCompanyIds={companyFilter}
-                selectedDepartments={deptFilter}
-                onChange={({ companyIds, departments }) => {
-                  setCompanyFilter(companyIds);
-                  setDeptFilter(departments);
-                }}
-              />
-            )}
+            ) : (() => {
+              const selectableCompanies = currentUser?.permissions?.role === 'admin'
+                ? companies
+                : companies.filter(c => c.id === currentUser?.companyId);
+              return (
+                <CompanyDeptTreeFilter
+                  companies={selectableCompanies}
+                  staff={staff}
+                  selectedCompanyIds={companyFilter}
+                  selectedDepartments={deptFilter}
+                  onChange={({ companyIds, departments }) => {
+                    setCompanyFilter(companyIds);
+                    setDeptFilter(departments);
+                  }}
+                />
+              );
+            })()}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

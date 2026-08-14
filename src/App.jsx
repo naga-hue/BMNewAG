@@ -36,7 +36,12 @@ import {
   FileText,
   Sparkles,
   Mail,
-  BarChart2
+  BarChart2,
+  Radio,
+  FileSpreadsheet,
+  Link2,
+  Clock,
+  Phone
 } from 'lucide-react';
 
 import { initialCompanies } from './mockData';
@@ -151,9 +156,9 @@ export default function App() {
   const payrollRecords = useBoundStore(state => state.payrollRecords);
   const payrollPolicies = useBoundStore(state => state.payrollPolicies);
 
-  // Navigation tab: 'dashboard' | 'directory' | 'staff'
   const [activeTab, setActiveTab] = useState('whats_important');
   const [creditControlSubTab, setCreditControlSubTab] = useState('direct');
+  const [activeKpiSubTab, setActiveKpiSubTab] = useState('overview');
 
   const [expandedSections, setExpandedSections] = useState({
     general: true,
@@ -2234,11 +2239,88 @@ export default function App() {
                   {expandedSections.kpis && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
                       <li>
-                        <div className={`nav-item ${activeTab === 'kpis' ? 'active' : ''}`} onClick={() => setActiveTab('kpis')}>
+                        <div 
+                          className={`nav-item ${activeTab === 'kpis' && activeKpiSubTab === 'overview' ? 'active' : ''}`} 
+                          onClick={() => { setActiveTab('kpis'); setActiveKpiSubTab('overview'); }}
+                        >
                           <BarChart2 size={18} />
-                          <span>KPI Scorecard</span>
+                          <span>Recruiter Overview</span>
                         </div>
                       </li>
+                      <li>
+                        <div 
+                          className={`nav-item ${activeTab === 'kpis' && activeKpiSubTab === 'performance' ? 'active' : ''}`} 
+                          onClick={() => { setActiveTab('kpis'); setActiveKpiSubTab('performance'); }}
+                        >
+                          <TrendingUp size={18} />
+                          <span>Performance Scorecard</span>
+                        </div>
+                      </li>
+                      <li>
+                        <div 
+                          className={`nav-item ${activeTab === 'kpis' && activeKpiSubTab === 'calls' ? 'active' : ''}`} 
+                          onClick={() => { setActiveTab('kpis'); setActiveKpiSubTab('calls'); }}
+                        >
+                          <Phone size={18} />
+                          <span>Dialpad Call Logs</span>
+                        </div>
+                      </li>
+                      <li>
+                        <div 
+                          className={`nav-item ${activeTab === 'kpis' && activeKpiSubTab === 'qandle' ? 'active' : ''}`} 
+                          onClick={() => { setActiveTab('kpis'); setActiveKpiSubTab('qandle'); }}
+                        >
+                          <Clock size={18} />
+                          <span>Qandle Attendance</span>
+                        </div>
+                      </li>
+                      <li>
+                        <div 
+                          className={`nav-item ${activeTab === 'kpis' && activeKpiSubTab === 'crm_activities' ? 'active' : ''}`} 
+                          onClick={() => { setActiveTab('kpis'); setActiveKpiSubTab('crm_activities'); }}
+                        >
+                          <Briefcase size={18} />
+                          <span>CRM Activities</span>
+                        </div>
+                      </li>
+                      <li>
+                        <div 
+                          className={`nav-item ${activeTab === 'kpis' && activeKpiSubTab === 'mapping' ? 'active' : ''}`} 
+                          onClick={() => { setActiveTab('kpis'); setActiveKpiSubTab('mapping'); }}
+                        >
+                          <Link2 size={18} />
+                          <span>Recruiter & Dialpad Mapping</span>
+                        </div>
+                      </li>
+                      <li>
+                        <div 
+                          className={`nav-item ${activeTab === 'kpis' && activeKpiSubTab === 'settings' ? 'active' : ''}`} 
+                          onClick={() => { setActiveTab('kpis'); setActiveKpiSubTab('settings'); }}
+                        >
+                          <Settings size={18} />
+                          <span>KPI Target Settings</span>
+                        </div>
+                      </li>
+                      <li>
+                        <div 
+                          className={`nav-item ${activeTab === 'kpis' && activeKpiSubTab === 'webhook_logs' ? 'active' : ''}`} 
+                          onClick={() => { setActiveTab('kpis'); setActiveKpiSubTab('webhook_logs'); }}
+                        >
+                          <Radio size={18} />
+                          <span>Webhook Logs</span>
+                        </div>
+                      </li>
+                      {currentUser.permissions.role === 'admin' && (
+                        <li>
+                          <div 
+                            className={`nav-item ${activeTab === 'kpis' && activeKpiSubTab === 'import_data' ? 'active' : ''}`} 
+                            onClick={() => { setActiveTab('kpis'); setActiveKpiSubTab('import_data'); }}
+                          >
+                            <FileSpreadsheet size={18} />
+                            <span>Import Data</span>
+                          </div>
+                        </li>
+                      )}
                     </div>
                   )}
  
@@ -3596,6 +3678,8 @@ export default function App() {
               currentUser={currentUser}
               onShowToast={handleShowToast}
               placements={scopedPlacements}
+              activeSubTabProp={activeKpiSubTab}
+              setActiveSubTabProp={setActiveKpiSubTab}
             />
           )}
           </Suspense>

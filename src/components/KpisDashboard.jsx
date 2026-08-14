@@ -230,7 +230,15 @@ const renderPercentageBadge = (pct) => {
   );
 };
 
-export default function KpisDashboard({ staff, companies, currentUser, onShowToast, placements = [] }) {
+export default function KpisDashboard({ 
+  staff, 
+  companies, 
+  currentUser, 
+  onShowToast, 
+  placements = [],
+  activeSubTabProp,
+  setActiveSubTabProp
+}) {
   const staffMap = useMemo(() => new Map(staff.map(s => [s.id, s])), [staff]);
 
   // Helper to determine if a staff member is tracked in KPIs
@@ -255,7 +263,9 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
   const [hasRealCalls, setHasRealCalls] = useState(false);
 
   // Dashboard view states
-  const [activeSubTab, setActiveSubTab] = useState('overview'); // 'overview' | 'performance' | 'calls' | 'mapping'
+  const [localActiveSubTab, setLocalActiveSubTab] = useState('overview');
+  const activeSubTab = activeSubTabProp || localActiveSubTab;
+  const setActiveSubTab = setActiveSubTabProp || setLocalActiveSubTab;
 
   // Call Logs time filtering states
   const [callsTimeRange, setCallsTimeRange] = useState('today'); // today, yesterday, this_week, this_month, custom
@@ -1489,7 +1499,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     let isMounted = true;
     
     async function loadCrmData() {
-      if (activeSubTab !== 'crm_activities' && activeSubTab !== 'opportunities' && activeSubTab !== 'jobs') return;
+      if (activeSubTab !== 'crm_activities') return;
       const windowChanged = lastCrmWindowRef.current.start !== effectiveCrmWindow.start || lastCrmWindowRef.current.end !== effectiveCrmWindow.end;
       if (crmDocs.length === 0 || windowChanged) {
         setIsLoadingCrm(true);
@@ -1814,6 +1824,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         cvsSent: 0,
         speculativeCvs: 0,
         interviews: 0,
+        opportunities: 0,
         jobsTaken: 0,
         placementsCount: 0
       };
@@ -2001,6 +2012,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         if (doc.cvsSent) stats.cvsSent += doc.cvsSent;
         if (doc.speculativeCvs) stats.speculativeCvs += doc.speculativeCvs;
         if (doc.interviews) stats.interviews += doc.interviews;
+        if (doc.opportunities) stats.opportunities += doc.opportunities;
         if (doc.jobsTaken) stats.jobsTaken += doc.jobsTaken;
       }
     });
@@ -2026,6 +2038,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
     let totalSpeculativeCvs = 0;
     let totalInterviews = 0;
     let totalJobsTaken = 0;
+    let totalOpportunities = 0;
     let totalPlacements = 0;
 
     Object.values(recruiterStats).forEach(r => {
@@ -2033,6 +2046,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       totalSpeculativeCvs += r.speculativeCvs;
       totalInterviews += r.interviews;
       totalJobsTaken += r.jobsTaken;
+      totalOpportunities += r.opportunities;
       totalPlacements += r.placementsCount;
     });
 
@@ -2082,6 +2096,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       totalSpeculativeCvs,
       totalInterviews,
       totalJobsTaken,
+      totalOpportunities,
       totalPlacements
     };
   }, [filteredStaffList, displayCallsList, qandleDocs, kpiDocs, placements, overviewDateRangeWindow]);
@@ -2145,6 +2160,9 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
       } else if (overviewSortField === 'interviews') {
         valA = a.interviews;
         valB = b.interviews;
+      } else if (overviewSortField === 'opportunities') {
+        valA = a.opportunities;
+        valB = b.opportunities;
       } else if (overviewSortField === 'jobsTaken') {
         valA = a.jobsTaken;
         valB = b.jobsTaken;
@@ -2383,15 +2401,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         };
       })
       .filter(doc => {
-        let targetFilter = 'all';
-        if (activeSubTab === 'opportunities') {
-          targetFilter = 'opportunity';
-        } else if (activeSubTab === 'jobs') {
-          targetFilter = 'job_taken';
-        } else {
-          targetFilter = crmActivityFilter;
-        }
-        if (targetFilter !== 'all' && doc.activityType !== targetFilter) return false;
+        if (crmActivityFilter !== 'all' && doc.activityType !== crmActivityFilter) return false;
         if (selectedStaffId !== 'all' && doc.recruiterId !== selectedStaffId) return false;
         if (selectedDept !== 'all' && doc.department !== selectedDept) return false;
         return true;
@@ -2637,44 +2647,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
         >
           💼 CRM Activities
         </button>
-        <button
-          onClick={() => {
-            setActiveSubTab('opportunities');
-            setCrmPage(1);
-          }}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: 700,
-            border: 'none',
-            cursor: 'pointer',
-            backgroundColor: activeSubTab === 'opportunities' ? 'var(--primary)' : 'var(--bg-secondary)',
-            color: activeSubTab === 'opportunities' ? '#fff' : 'var(--text-secondary)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-          }}
-        >
-          📈 Opportunities
-        </button>
-        <button
-          onClick={() => {
-            setActiveSubTab('jobs');
-            setCrmPage(1);
-          }}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: 700,
-            border: 'none',
-            cursor: 'pointer',
-            backgroundColor: activeSubTab === 'jobs' ? 'var(--primary)' : 'var(--bg-secondary)',
-            color: activeSubTab === 'jobs' ? '#fff' : 'var(--text-secondary)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-          }}
-        >
-          📋 Jobs / Vacancies
-        </button>
+        {/* Deleted separate sub-tab buttons for opportunities and jobs */}
         <button
           onClick={() => {
             setActiveSubTab('mapping');
@@ -2911,78 +2884,84 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           </div>
 
           {/* 2. SUMMARY CARDS GRID */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginTop: '8px' }}>
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Calls</span>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--text-primary)', margin: '6px 0' }}>{overviewStats.totalCalls}</div>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{overviewDateRangeWindow.start} to {overviewDateRangeWindow.end}</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginTop: '8px' }}>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Calls</span>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', margin: '4px 0' }}>{overviewStats.totalCalls}</div>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{overviewDateRangeWindow.start} to {overviewDateRangeWindow.end}</span>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Connected</span>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--success)', margin: '6px 0' }}>{overviewStats.connectRate}%</div>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{overviewStats.totalConnected} connected calls</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Connected</span>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--success)', margin: '4px 0' }}>{overviewStats.connectRate}%</div>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{overviewStats.totalConnected} connected</span>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Callbacks (CB)</span>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--warning)', margin: '6px 0' }}>{overviewStats.totalCallbacks}</div>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>AI identified callback queries</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Callbacks (CB)</span>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--warning)', margin: '4px 0' }}>{overviewStats.totalCallbacks}</div>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>AI callback queries</span>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Alpha (A)</span>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--primary)', margin: '6px 0' }}>{overviewStats.totalAlpha}</div>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Opportunity signals captured</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Alpha (A)</span>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--primary)', margin: '4px 0' }}>{overviewStats.totalAlpha}</div>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Opportunity signals</span>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Avg Talk Time</span>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--text-primary)', margin: '6px 0' }}>{Math.floor(overviewStats.avgTalkTime / 60)}m {overviewStats.avgTalkTime % 60}s</div>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Average connected duration</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Avg Talk Time</span>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', margin: '4px 0' }}>{Math.floor(overviewStats.avgTalkTime / 60)}m {overviewStats.avgTalkTime % 60}s</div>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Avg connected duration</span>
             </div>
           </div>
           
           {/* CRM SUMMARY CARDS GRID */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginTop: '16px', marginBottom: '16px' }}>
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>CVs Shared</span>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--text-primary)', margin: '6px 0' }}>{overviewStats.totalCvsSent}</div>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>CV Shared for Vacancies</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginTop: '12px', marginBottom: '12px' }}>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>CVs Shared</span>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', margin: '4px 0' }}>{overviewStats.totalCvsSent}</div>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>CV Shared for Vacancies</span>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Speculative CVs</span>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--text-primary)', margin: '6px 0' }}>{overviewStats.totalSpeculativeCvs}</div>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Speculative candidate sends</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Speculative CVs</span>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', margin: '4px 0' }}>{overviewStats.totalSpeculativeCvs}</div>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Speculative candidate sends</span>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Interviews</span>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--primary)', margin: '6px 0' }}>{overviewStats.totalInterviews}</div>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Interviews organized</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Interviews</span>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--primary)', margin: '4px 0' }}>{overviewStats.totalInterviews}</div>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Interviews organized</span>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Vacancies</span>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--warning)', margin: '6px 0' }}>{overviewStats.totalJobsTaken}</div>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Jobs taken over / created</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Opportunities</span>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--success)', margin: '4px 0' }}>{overviewStats.totalOpportunities}</div>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Opportunities generated</span>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Placements</span>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--success)', margin: '6px 0' }}>{overviewStats.totalPlacements}</div>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>CRM placements registered</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Vacancies</span>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--warning)', margin: '4px 0' }}>{overviewStats.totalJobsTaken}</div>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Jobs taken over / created</span>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Placements</span>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--success)', margin: '4px 0' }}>{overviewStats.totalPlacements}</div>
+              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>CRM placements registered</span>
             </div>
           </div>
 
           {/* 3. RECRUITER PERFORMANCE CARD */}
-          <div style={{ backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruiter Performance</h3>
+          <div style={{ backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruiter Performance</h3>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: '11px', fontWeight: 700 }}>
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: '10px', fontWeight: 700 }}>
                     {[
                       { id: 'recruiter', label: 'Recruiter' },
                       { id: 'calls', label: 'Calls' },
@@ -3001,6 +2980,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                       { id: 'cvsSent', label: 'CVs Shared' },
                       { id: 'speculativeCvs', label: 'Spec CVs' },
                       { id: 'interviews', label: 'Interviews' },
+                      { id: 'opportunities', label: 'Opps' },
                       { id: 'jobsTaken', label: 'Vacancies' },
                       { id: 'placementsCount', label: 'Placements' }
                     ].map(col => (
@@ -3016,7 +2996,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                         }}
                         style={{
                           textAlign: col.id === 'recruiter' ? 'left' : 'center',
-                          padding: '10px 12px',
+                          padding: '6px 8px',
                           cursor: 'pointer',
                           whiteSpace: 'nowrap',
                           userSelect: 'none'
@@ -3030,62 +3010,65 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                 <tbody>
                   {sortedRecruiterRows.length === 0 ? (
                     <tr>
-                      <td colSpan={19} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                      <td colSpan={20} style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
                         No recruiters match the filter criteria or date range.
                       </td>
                     </tr>
                   ) : (
                     sortedRecruiterRows.map(row => (
                       <tr key={row.staff.id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background-color 0.2s' }}>
-                        <td style={{ padding: '12px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                        <td style={{ padding: '6px 8px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                           {row.staff.fullName || row.staff.full_name}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                           {renderClickableCount(row.calls, row.staff.id, row.staff.fullName || row.staff.full_name, 'all', 'var(--text-primary)')}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                           {renderClickableCount(row.connected, row.staff.id, row.staff.fullName || row.staff.full_name, 'connected', 'var(--success)')}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                           {renderClickableCount(row.clientCalls, row.staff.id, row.staff.fullName || row.staff.full_name, 'client', 'var(--text-primary)')}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                           {renderClickableCount(row.candidateCalls, row.staff.id, row.staff.fullName || row.staff.full_name, 'candidate', 'var(--text-primary)')}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 600 }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 600 }}>
                           {Math.floor(row.talkTimeSeconds / 60)}m {row.talkTimeSeconds % 60}s
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center', color: 'var(--primary)', fontWeight: 600 }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center', color: 'var(--primary)', fontWeight: 600 }}>
                           {Math.floor(row.qandleProductiveSeconds / 3600)}h {Math.floor((row.qandleProductiveSeconds % 3600) / 60)}m
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>{row.qandleArrival}</td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>{row.qandleLeft}</td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)' }}>{row.lastCallTime}</td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>{row.qandleArrival}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>{row.qandleLeft}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)' }}>{row.lastCallTime}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                           {renderClickableCount(row.over5m, row.staff.id, row.staff.fullName || row.staff.full_name, 'over5m', 'var(--text-primary)')}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                           {renderClickableCount(row.over10m, row.staff.id, row.staff.fullName || row.staff.full_name, 'over10m', 'var(--text-primary)')}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                           {renderClickableCount(row.callbacks, row.staff.id, row.staff.fullName || row.staff.full_name, 'callback', 'var(--warning)')}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                           {renderClickableCount(row.alpha, row.staff.id, row.staff.fullName || row.staff.full_name, 'alpha', 'var(--primary)')}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)' }}>
                           {row.cvsSent}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)' }}>
                           {row.speculativeCvs}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 700, color: 'var(--primary)' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--primary)' }}>
                           {row.interviews}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 700, color: 'var(--warning)' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--success)' }}>
+                          {row.opportunities}
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--warning)' }}>
                           {row.jobsTaken}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 700, color: 'var(--success)' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--success)' }}>
                           {row.placementsCount}
                         </td>
                       </tr>
@@ -4749,24 +4732,16 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
             )}
           </div>
         </>
-      ) : (activeSubTab === 'crm_activities' || activeSubTab === 'opportunities' || activeSubTab === 'jobs') ? (
+      ) : activeSubTab === 'crm_activities' ? (
         <>
           {/* 1. HEADER */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
             <div>
               <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                {activeSubTab === 'opportunities' 
-                  ? 'Recruitly CRM Opportunity Logs' 
-                  : activeSubTab === 'jobs'
-                    ? 'Recruitly CRM Job/Vacancy Logs'
-                    : 'Recruitly CRM Activity Logs'}
+                Recruitly CRM Activity Logs
               </h2>
               <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                {activeSubTab === 'opportunities' 
-                  ? '💼 Track real-time opportunity creation by recruiters.' 
-                  : activeSubTab === 'jobs'
-                    ? '💼 Track real-time job/vacancy creation by recruiters.'
-                    : '💼 Track real-time recruiter activities including CV shares, interviews, job creation, and placement registries.'}
+                💼 Track real-time recruiter activities including CV shares, speculative CVs, interviews, opportunities, job creation, and placement registries.
               </span>
             </div>
             <div>
@@ -4779,7 +4754,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
           {/* 2. SECONDARY TABS & FILTERS */}
           <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '16px' }}>
             {/* Date Preset Row */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: activeSubTab === 'crm_activities' ? '1px solid var(--border-color)' : 'none', paddingBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Calendar size={16} color="var(--primary)" />
                 <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Date Range:</span>
@@ -4895,9 +4870,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
                       setCrmSearch(e.target.value);
                       setCrmPage(1);
                     }}
-                    placeholder={`Type to search ${
-                      activeSubTab === 'opportunities' ? 'opportunities' : activeSubTab === 'jobs' ? 'jobs/vacancies' : 'activities'
-                    }...`}
+                    placeholder="Type to search activities..."
                     className="form-input"
                     style={{ paddingLeft: '32px', fontSize: '12px', height: '34px' }}
                   />
@@ -4906,9 +4879,7 @@ export default function KpisDashboard({ staff, companies, currentUser, onShowToa
               
               <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                 <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                  Found {filteredAndSearchedCrm.length} relevant {
-                    activeSubTab === 'opportunities' ? 'opportunities' : activeSubTab === 'jobs' ? 'jobs/vacancies' : 'activities'
-                  }
+                  Found {filteredAndSearchedCrm.length} relevant activities
                 </span>
                 {crmLastRefreshed && !isLoadingCrm && (
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>

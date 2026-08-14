@@ -4905,7 +4905,9 @@ export default function KpisDashboard({
                 <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 600 }}>Loading CRM logs...</span>
               </div>
             ) : filteredAndSearchedCrm.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
                 No Recruitly CRM activities found matching the current selections.
+              </div>
             ) : (
               <>
                 <div style={{ overflowX: 'auto' }}>

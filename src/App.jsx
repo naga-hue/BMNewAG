@@ -41,7 +41,8 @@ import {
   FileSpreadsheet,
   Link2,
   Clock,
-  Phone
+  Phone,
+  Settings
 } from 'lucide-react';
 
 import { initialCompanies } from './mockData';

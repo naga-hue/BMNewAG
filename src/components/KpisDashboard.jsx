@@ -1315,12 +1315,21 @@ export default function KpisDashboard({
 
   // Load KPI documents from Firestore collections filtered by active date range (instantly aggregates in millisecond speeds)
   useEffect(() => {
+    let isMounted = true;
     async function loadKpiData() {
       const dateChanged = lastDateRangeRef.current.start !== dateRangeWindow.start || lastDateRangeRef.current.end !== dateRangeWindow.end;
       if (kpiDocs.length === 0 || dateChanged) {
         setIsLoading(true);
         lastDateRangeRef.current = { start: dateRangeWindow.start, end: dateRangeWindow.end };
       }
+
+      // 4-second safety timeout to clear the spinner and show cached data
+      const safetyTimeout = setTimeout(() => {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }, 4000);
+
       try {
         const start = dateRangeWindow.start < overviewDateRangeWindow.start ? dateRangeWindow.start : overviewDateRangeWindow.start;
         const end = dateRangeWindow.end > overviewDateRangeWindow.end ? dateRangeWindow.end : overviewDateRangeWindow.end;
@@ -1332,6 +1341,8 @@ export default function KpisDashboard({
           where('date', '<=', end)
         );
         const kpiSnapshot = await getDocs(kpiQuery);
+        if (!isMounted) return;
+
         const kpiList = [];
         kpiSnapshot.forEach(doc => {
           kpiList.push({ id: doc.id, ...doc.data() });
@@ -1340,12 +1351,20 @@ export default function KpisDashboard({
         setKpiLastRefreshed(new Date().toLocaleTimeString());
       } catch (e) {
         console.error('Error loading KPI data:', e);
-        onShowToast?.('Failed to load call performance data from database', 'error');
+        if (isMounted) {
+          onShowToast?.('Failed to load call performance data from database', 'error');
+        }
       } finally {
-        setIsLoading(false);
+        clearTimeout(safetyTimeout);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     }
     loadKpiData();
+    return () => {
+      isMounted = false;
+    };
   }, [dateRangeWindow.start, dateRangeWindow.end, overviewDateRangeWindow.start, overviewDateRangeWindow.end, pollTrigger]);
 
   // Load Dialpad calls dynamically with real-time updates when effectiveCallsWindow changes
@@ -1358,6 +1377,14 @@ export default function KpisDashboard({
         setIsLoadingCalls(true);
         lastCallsWindowRef.current = { start: effectiveCallsWindow.start, end: effectiveCallsWindow.end };
       }
+
+      // 4-second safety timeout
+      const safetyTimeout = setTimeout(() => {
+        if (isMounted) {
+          setIsLoadingCalls(false);
+        }
+      }, 4000);
+
       const { start, end } = effectiveCallsWindow;
       
       try {
@@ -1412,6 +1439,11 @@ export default function KpisDashboard({
             setIsLoadingCalls(false);
           }
         }
+      } finally {
+        clearTimeout(safetyTimeout);
+        if (isMounted) {
+          setIsLoadingCalls(false);
+        }
       }
     }
 
@@ -1433,6 +1465,14 @@ export default function KpisDashboard({
         setIsLoadingQandle(true);
         lastQandleWindowRef.current = { start: effectiveQandleWindow.start, end: effectiveQandleWindow.end };
       }
+
+      // 4-second safety timeout
+      const safetyTimeout = setTimeout(() => {
+        if (isMounted) {
+          setIsLoadingQandle(false);
+        }
+      }, 4000);
+
       const { start, end } = effectiveQandleWindow;
       
       try {
@@ -1487,6 +1527,11 @@ export default function KpisDashboard({
             setIsLoadingQandle(false);
           }
         }
+      } finally {
+        clearTimeout(safetyTimeout);
+        if (isMounted) {
+          setIsLoadingQandle(false);
+        }
       }
     }
     
@@ -1505,6 +1550,14 @@ export default function KpisDashboard({
         setIsLoadingCrm(true);
         lastCrmWindowRef.current = { start: effectiveCrmWindow.start, end: effectiveCrmWindow.end };
       }
+
+      // 4-second safety timeout
+      const safetyTimeout = setTimeout(() => {
+        if (isMounted) {
+          setIsLoadingCrm(false);
+        }
+      }, 4000);
+
       const { start, end } = effectiveCrmWindow;
       
       try {
@@ -1558,6 +1611,11 @@ export default function KpisDashboard({
             onShowToast?.('Failed to load CRM activities', 'error');
             setIsLoadingCrm(false);
           }
+        }
+      } finally {
+        clearTimeout(safetyTimeout);
+        if (isMounted) {
+          setIsLoadingCrm(false);
         }
       }
     }
@@ -2525,27 +2583,7 @@ export default function KpisDashboard({
     return `${prefix} Group Performance Dashboard`;
   }, [timeRange, selectedStaffId, selectedDept, staff]);
 
-  if (isLoading) {
-    return (
-      <div className="tab-pane active" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '350px', flexDirection: 'column', gap: '16px' }}>
-        <div style={{
-          width: '40px',
-          height: '40px',
-          borderRadius: '50%',
-          border: '4px solid var(--border-color)',
-          borderTopColor: 'var(--primary)',
-          animation: 'spin 1s linear infinite'
-        }}></div>
-        <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 600 }}>Loading call statistics & KPIs...</span>
-        <style>{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}</style>
-      </div>
-    );
-  }
+
 
   return (
     <div className="tab-pane active" style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '16px' }}>
@@ -2823,7 +2861,20 @@ export default function KpisDashboard({
       )}
 
       {activeSubTab === 'overview' ? (
-        <>
+        isLoading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '350px', flexDirection: 'column', gap: '16px', backgroundColor: 'var(--bg-card)', borderRadius: '8px', padding: '40px', border: '1px solid var(--border-color)', width: '100%' }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              border: '4px solid var(--border-color)',
+              borderTopColor: 'var(--primary)',
+              animation: 'spin 1s linear infinite'
+            }}></div>
+            <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 600 }}>Loading call statistics & KPIs...</span>
+          </div>
+        ) : (
+          <>
           {/* 1. TOP HEADER & FILTERS */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
             <div>
@@ -3415,8 +3466,21 @@ export default function KpisDashboard({
             </div>
           </div>
         </>
-      ) : activeSubTab === 'performance' ? (
-        <>
+      )) : activeSubTab === 'performance' ? (
+        isLoading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '350px', flexDirection: 'column', gap: '16px', backgroundColor: 'var(--bg-card)', borderRadius: '8px', padding: '40px', border: '1px solid var(--border-color)', width: '100%' }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              border: '4px solid var(--border-color)',
+              borderTopColor: 'var(--primary)',
+              animation: 'spin 1s linear infinite'
+            }}></div>
+            <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 600 }}>Loading performance scorecard...</span>
+          </div>
+        ) : (
+          <>
           {/* 1. TOP HEADER & PERFORMANCE ALERTS */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div>
@@ -3859,7 +3923,7 @@ export default function KpisDashboard({
         </div>
       </>
     )}</>
-      ) : activeSubTab === 'calls' ? (
+      )) : activeSubTab === 'calls' ? (
         <>
           {/* 1. HEADER */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>

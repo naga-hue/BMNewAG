@@ -354,30 +354,14 @@ export default async function handler(req, res) {
   }
 
   // --- RUN SYNC LOGIC ---
-  // Time gate (7 AM - 7 PM UK Time)
   const bypassTimecheck = req.query.bypassTimecheck === 'true';
-  if (!bypassTimecheck) {
-    const now = new Date();
-    const formatter = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Europe/London',
-      hour: 'numeric',
-      hour12: false
-    });
-    const ukHour = parseInt(formatter.format(now), 10);
-    
-    if (ukHour < 7 || ukHour >= 19) {
-      console.log(`[Qandle Sync] Outside UK work hours (Current UK hour: ${ukHour}). Skipping sync.`);
-      return res.status(200).json({ success: true, message: `Skipped: Outside 7 AM - 7 PM UK hours` });
-    }
-  }
-
   const CLIENT_ID = process.env.QANDLE_CLIENT_ID || "87654456789231";
   const CLIENT_SECRET = process.env.QANDLE_CLIENT_SECRET || "ghru4545gjdf8f5fff0ff6se5";
   const BASE_URL = process.env.QANDLE_BASE_URL || "https://talent.qandle.com";
 
   try {
     const firestore = initFirestore();
-    
+
     const staffSnap = await firestore.collection('staff').get();
     const staffList = [];
     staffSnap.forEach(sDoc => {
@@ -388,6 +372,70 @@ export default async function handler(req, res) {
     });
 
     console.log(`[Qandle Sync] Loaded ${staffList.length} active staff profiles.`);
+
+    // Time timezone and work hours shift filter
+    if (!bypassTimecheck) {
+      let anyStaffWorking = false;
+      const now = new Date();
+      for (const s of staffList) {
+        const timezone = s.timezone || (String(s.employeeCode || s.employee_code || '').startsWith('THIND') || String(s.employeeCode || s.employee_code || '').startsWith('HRIND') ? 'Asia/Kolkata' : 'Europe/London');
+        const workHoursStart = s.workHoursStart || '08:00';
+        const workHoursEnd = s.workHoursEnd || '18:00';
+
+        try {
+          const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone,
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          });
+          const localTimeStr = formatter.format(now);
+          
+          let isWorking = false;
+          if (workHoursStart < workHoursEnd) {
+            isWorking = localTimeStr >= workHoursStart && localTimeStr <= workHoursEnd;
+          } else {
+            isWorking = localTimeStr >= workHoursStart || localTimeStr <= workHoursEnd;
+          }
+          if (isWorking) {
+            anyStaffWorking = true;
+            break;
+          }
+        } catch (tzErr) {
+          console.error(`[Qandle Sync] Invalid timezone "${timezone}" for ${s.fullName}:`, tzErr);
+        }
+      }
+
+      if (!anyStaffWorking) {
+        console.log('[Qandle Sync] No active staff members are currently within their shift hours. Skipping sync.');
+        return res.status(200).json({ success: true, message: 'Skipped: Outside shift hours for all staff' });
+      }
+    }
+
+    // 2-minute Rate-Limiting Cooldown Check
+    const bypassCooldown = req.query.bypassCooldown === 'true';
+    if (!bypassCooldown) {
+      try {
+        const syncRef = firestore.collection('metadata').doc('qandle_sync_state');
+        const syncSnap = await syncRef.get();
+        if (syncSnap.exists) {
+          const lastSyncedAt = syncSnap.data().lastSyncedAt;
+          if (lastSyncedAt) {
+            const diffMs = Date.now() - new Date(lastSyncedAt).getTime();
+            if (diffMs > 0 && diffMs < 120000) { // 2 minutes
+              console.log(`[Qandle Sync] Rate-limit cooldown active. Already synced ${Math.round(diffMs / 1000)}s ago. Skipping.`);
+              return res.status(200).json({
+                success: true,
+                message: `Sync skipped: Cooldown active. Already synced ${Math.round(diffMs / 1000)}s ago.`
+              });
+            }
+          }
+        }
+        await syncRef.set({ lastSyncedAt: new Date().toISOString() }, { merge: true });
+      } catch (cooldownErr) {
+        console.error('[Qandle Sync] Cooldown check failed:', cooldownErr);
+      }
+    }
 
     const authRes = await fetch(BASE_URL + "/oauth/access-token", {
       method: "POST",
@@ -438,6 +486,38 @@ export default async function handler(req, res) {
       });
 
       if (!matchedEmp) continue;
+
+      // Timezone and work hours shift filter
+      if (!bypassTimecheck) {
+        const timezone = s.timezone || (String(s.employeeCode || s.employee_code || '').startsWith('THIND') || String(s.employeeCode || s.employee_code || '').startsWith('HRIND') ? 'Asia/Kolkata' : 'Europe/London');
+        const workHoursStart = s.workHoursStart || '08:00';
+        const workHoursEnd = s.workHoursEnd || '18:00';
+
+        let isWorkingNow = true;
+        try {
+          const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone,
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          });
+          const localTimeStr = formatter.format(new Date()); // Format: "HH:MM"
+          
+          if (workHoursStart < workHoursEnd) {
+            isWorkingNow = localTimeStr >= workHoursStart && localTimeStr <= workHoursEnd;
+          } else {
+            isWorkingNow = localTimeStr >= workHoursStart || localTimeStr <= workHoursEnd;
+          }
+        } catch (tzErr) {
+          console.error(`Invalid timezone "${timezone}" for ${s.fullName || s.full_name}:`, tzErr);
+        }
+
+        if (!isWorkingNow) {
+          console.log(`[Qandle Sync] Skipping ${s.fullName || s.full_name} (Local time outside shift: ${workHoursStart}-${workHoursEnd} in ${timezone})`);
+          continue;
+        }
+      }
+
       matchedCount++;
       matchedStaffList.push({ staff: s, matchedEmp });
 

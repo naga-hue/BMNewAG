@@ -1,4 +1,4 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense, useMemo } from 'react';
 import { 
   Bell,
   LayoutDashboard, 
@@ -752,7 +752,9 @@ export default function App() {
     };
   };
 
-  const { scopedCompanies, scopedStaff, scopedLeaves, scopedPlacements, scopedExpenses } = getScopedData();
+  const { scopedCompanies, scopedStaff, scopedLeaves, scopedPlacements, scopedExpenses } = useMemo(() => {
+    return getScopedData();
+  }, [currentUser, scopingViewMode, companies, staff, leaveRequests, placements, expenses]);
 
   // Update selectedCompany when companies list updates
   useEffect(() => {

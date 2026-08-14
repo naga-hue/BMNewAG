@@ -167,7 +167,10 @@ export default async function handler(req, res) {
       candidateId,
       contactId,
       companyId,
-      jobId
+      jobId,
+      contactName,
+      contactJobTitle,
+      contactEmail
     } = req.body;
 
     // Fallback support for default Zapier key mappings (_1, _2, _3, _4, "")
@@ -254,6 +257,120 @@ export default async function handler(req, res) {
     const isoTimestamp = eventTime.toISOString();
     const dateKey = isoTimestamp.substring(0, 10); // YYYY-MM-DD
 
+    // CRM Metadata Lookup & Enrichment via API Key
+    let resolvedContactName = contactName || req.body.contactName || req.body.clientContact || '';
+    let resolvedContactJobTitle = contactJobTitle || req.body.contactJobTitle || '';
+    let resolvedContactEmail = contactEmail || req.body.contactEmail || '';
+
+    let resolvedCandidateId = candidateId || req.body.candidate_id || req.body.candidate_ID || '';
+    let resolvedContactId = contactId || req.body.contact_id || req.body.contact_ID || '';
+    let resolvedCompanyId = companyId || req.body.company_id || req.body.company_ID || '';
+    let resolvedJobId = jobId || req.body.job_id || req.body.job_ID || '';
+    let resolvedJobTitle = jobTitle || '';
+    let resolvedClientCompany = clientCompany || '';
+
+    let apiKey = null;
+    if (matchedStaff.companyId) {
+      const compDoc = await firestore.collection('companies').doc(matchedStaff.companyId).get();
+      if (compDoc.exists) {
+        apiKey = compDoc.data().recruitlyApiKey;
+      }
+    }
+    if (!apiKey) {
+      const humresSnap = await firestore.collection('companies')
+        .where('name', '>=', 'Humres')
+        .limit(10)
+        .get();
+      humresSnap.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.name && data.name.toLowerCase().includes('humres') && data.recruitlyApiKey) {
+          apiKey = data.recruitlyApiKey;
+        }
+      });
+    }
+
+    if (apiKey) {
+      // A. If candidate ID exists but missing contact or job ID, fetch submissions
+      if (resolvedCandidateId && (!resolvedContactId || !resolvedJobId) && (normalizedType === 'cv_sent' || normalizedType === 'speculative_cv')) {
+        try {
+          const pipeUrl = `https://api.recruitly.io/api/candidate/submissions?apiKey=${apiKey}&candidateId=${resolvedCandidateId}`;
+          const pipeRes = await fetch(pipeUrl).then(r => r.json());
+          if (pipeRes && pipeRes.success && Array.isArray(pipeRes.data) && pipeRes.data.length > 0) {
+            let matchedSub = null;
+            if (resolvedJobTitle || resolvedClientCompany) {
+              const targetTitle = resolvedJobTitle.toLowerCase();
+              const targetComp = resolvedClientCompany.toLowerCase();
+              matchedSub = pipeRes.data.find(sub => {
+                const subJob = (sub.jobName || sub.jobTitle || '').toLowerCase();
+                const subComp = (sub.companyName || sub.clientCompany || '').toLowerCase();
+                return (targetTitle && subJob.includes(targetTitle)) || (targetComp && subComp.includes(targetComp));
+              });
+            }
+            if (!matchedSub) {
+              matchedSub = pipeRes.data[0];
+            }
+            if (matchedSub) {
+              if (!resolvedJobId) resolvedJobId = matchedSub.jobId || '';
+              if (!resolvedJobTitle) resolvedJobTitle = matchedSub.jobName || matchedSub.jobTitle || '';
+              if (!resolvedCompanyId) resolvedCompanyId = matchedSub.companyId || '';
+              if (!resolvedClientCompany) resolvedClientCompany = matchedSub.companyName || '';
+              if (!resolvedContactId) resolvedContactId = matchedSub.contactId || '';
+              if (!resolvedContactName) resolvedContactName = matchedSub.contactName || '';
+            }
+          }
+        } catch (e) {
+          console.warn('[CRM Ingest] Candidate submissions lookup failed:', e);
+        }
+      }
+
+      // B. If job ID exists but contact/company details are missing
+      if (resolvedJobId && (!resolvedContactId || !resolvedCompanyId || !resolvedClientCompany || !resolvedJobTitle)) {
+        try {
+          const jobUrl = `https://api.recruitly.io/api/nova/jobs/${resolvedJobId}?apiKey=${apiKey}`;
+          const jobRes = await fetch(jobUrl).then(r => r.json());
+          if (jobRes && jobRes.success && jobRes.data) {
+            const jobData = jobRes.data;
+            if (!resolvedJobTitle) resolvedJobTitle = jobData.title || '';
+            if (!resolvedCompanyId) resolvedCompanyId = jobData.companyId || '';
+            if (!resolvedClientCompany) resolvedClientCompany = jobData.companyName || '';
+            if (!resolvedContactId) resolvedContactId = jobData.contactId || '';
+            if (!resolvedContactName) resolvedContactName = jobData.contactName || '';
+          }
+        } catch (e) {
+          console.warn(`[CRM Ingest] Job lookup failed for ID ${resolvedJobId}:`, e);
+        }
+      }
+
+      // C. If company ID exists but company name is missing
+      if (resolvedCompanyId && !resolvedClientCompany) {
+        try {
+          const companyUrl = `https://api.recruitly.io/api/nova/companies/${resolvedCompanyId}?apiKey=${apiKey}`;
+          const companyRes = await fetch(companyUrl).then(r => r.json());
+          if (companyRes && companyRes.success && companyRes.data) {
+            resolvedClientCompany = companyRes.data.name || '';
+          }
+        } catch (e) {
+          console.warn(`[CRM Ingest] Company lookup failed for ID ${resolvedCompanyId}:`, e);
+        }
+      }
+
+      // D. Fetch Contact details if contact ID exists
+      if (resolvedContactId) {
+        try {
+          const contactUrl = `https://api.recruitly.io/api/nova/contacts/${resolvedContactId}?apiKey=${apiKey}`;
+          const contactRes = await fetch(contactUrl).then(r => r.json());
+          if (contactRes && contactRes.success && contactRes.data) {
+            const contactData = contactRes.data;
+            resolvedContactName = contactData.fullName || `${contactData.firstName || ''} ${contactData.lastName || ''}`.trim();
+            resolvedContactJobTitle = contactData.jobTitle || '';
+            resolvedContactEmail = contactData.email || '';
+          }
+        } catch (e) {
+          console.warn(`[CRM Ingest] Contact details fetch failed for ID ${resolvedContactId}:`, e);
+        }
+      }
+    }
+
     // 3. Save raw CRM activity log
     const activityRef = firestore.collection('crm_activities').doc();
     const activityData = {
@@ -261,21 +378,24 @@ export default async function handler(req, res) {
       recruiterName: matchedStaff.fullName,
       activityType: normalizedType,
       candidateName: candidateName || '',
-      clientCompany: clientCompany || '',
-      jobTitle: jobTitle || '',
+      clientCompany: resolvedClientCompany || clientCompany || '',
+      jobTitle: resolvedJobTitle || jobTitle || '',
       placementValue: Number(value || 0),
       timestamp: isoTimestamp,
       dateKey,
       createdAt: new Date().toISOString(),
-      candidateId: candidateId || req.body.candidate_id || req.body.candidate_ID || '',
-      contactId: contactId || req.body.contact_id || req.body.contact_ID || '',
-      companyId: companyId || req.body.company_id || req.body.company_ID || '',
-      jobId: jobId || req.body.job_id || req.body.job_ID || '',
+      candidateId: resolvedCandidateId,
+      contactId: resolvedContactId,
+      companyId: resolvedCompanyId,
+      jobId: resolvedJobId,
+      contactName: resolvedContactName || '',
+      contactJobTitle: resolvedContactJobTitle || '',
+      contactEmail: resolvedContactEmail || '',
       rawPayload: req.body || {}
     };
 
     await activityRef.set(activityData);
-    console.log(`[CRM Ingest] Saved raw activity: ${activityRef.id}`);
+    console.log(`[CRM Ingest] Saved enriched activity: ${activityRef.id}`);
 
     // 4. Update the daily scorecards (kpiDaily) with merge rules
     const kpiDocId = `${matchedStaff.id}_${dateKey}`;

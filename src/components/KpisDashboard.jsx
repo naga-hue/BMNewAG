@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { db } from '../services/firebase';
-import { collection, getDocs, query, where, limit, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, query, where, limit, orderBy, onSnapshot, getDocsFromCache, getDocsFromServer } from 'firebase/firestore';
 import { useBoundStore } from '../store/useBoundStore';
 import WebhookLogsTab from './WebhookLogsTab';
 import CRMImporterTab from './CRMImporterTab';
@@ -342,6 +342,38 @@ export default function KpisDashboard({
     return () => clearTimeout(handler);
   }, [crmSearch]);
 
+  // Background polling for Qandle sync every 3 minutes
+  useEffect(() => {
+    let intervalId = null;
+
+    const runSilentSync = async () => {
+      // Only run if active tab is overview or qandle
+      if (activeSubTab !== 'overview' && activeSubTab !== 'qandle') return;
+
+      try {
+        const secret = 'qandle-talent-kpi-hub-key-2026';
+        // Run with bypassTimecheck=false to respect timezone and shift hours filtering
+        const res = await fetch(`/api/qandle/sync?secret=${secret}&bypassTimecheck=false`);
+        const data = await res.json();
+        if (res.ok && data.success) {
+          // If data was updated or synced, trigger a refresh of Qandle docs in the dashboard
+          setQandleRefreshTrigger(prev => prev + 1);
+        }
+      } catch (err) {
+        console.error('Background Qandle sync error:', err);
+      }
+    };
+
+    if (activeSubTab === 'overview' || activeSubTab === 'qandle') {
+      // Set interval for 3 minutes (180,000ms)
+      intervalId = setInterval(runSilentSync, 180000);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [activeSubTab]);
+
   // Performance Scorecard sorting states
   const [perfSortField, setPerfSortField] = useState('totalCalls'); // 'recruiter' | 'division' | 'totalCalls' | 'totalTalkTime' | 'callsOver5Min' | 'cvsSent' | 'interviews' | 'jobsTaken'
   const [perfSortDirection, setPerfSortDirection] = useState('desc'); // 'asc' | 'desc'
@@ -422,6 +454,14 @@ export default function KpisDashboard({
   const [editingQandleEmail, setEditingQandleEmail] = useState('');
   const [editingDialpadEmail, setEditingDialpadEmail] = useState('');
   const [editingRecruitlyEmail, setEditingRecruitlyEmail] = useState('');
+  const [editingTimezone, setEditingTimezone] = useState('Europe/London');
+  const [editingWorkHoursStart, setEditingWorkHoursStart] = useState('08:00');
+  const [editingWorkHoursEnd, setEditingWorkHoursEnd] = useState('18:00');
+  const [selectedMappingStaffIds, setSelectedMappingStaffIds] = useState([]);
+  const [isBulkEditingMapping, setIsBulkEditingMapping] = useState(false);
+  const [bulkTimezone, setBulkTimezone] = useState('Europe/London');
+  const [bulkWorkHoursStart, setBulkWorkHoursStart] = useState('08:00');
+  const [bulkWorkHoursEnd, setBulkWorkHoursEnd] = useState('18:00');
 
   // KPI Targets edit states
   const [editingTargetsStaffId, setEditingTargetsStaffId] = useState(null);
@@ -522,15 +562,42 @@ export default function KpisDashboard({
         additionalEmails: editingAliases.trim(),
         qandleEmail: editingQandleEmail.trim().toLowerCase(),
         dialpadEmail: editingDialpadEmail.trim().toLowerCase(),
-        recruitlyEmail: editingRecruitlyEmail.trim().toLowerCase()
+        recruitlyEmail: editingRecruitlyEmail.trim().toLowerCase(),
+        timezone: editingTimezone,
+        workHoursStart: editingWorkHoursStart,
+        workHoursEnd: editingWorkHoursEnd
       };
 
       await useBoundStore.getState().updateStaff(updated);
-      onShowToast?.(`Integration mappings updated for ${staffMember.fullName}`, 'success');
+      onShowToast?.(`Integration mappings and shift settings updated for ${staffMember.fullName}`, 'success');
       setEditingStaffId(null);
     } catch (e) {
       console.error('Error updating matching mappings:', e);
       onShowToast?.('Failed to update matching mappings', 'error');
+    }
+  };
+
+  const handleBulkSaveShifts = async () => {
+    if (selectedMappingStaffIds.length === 0) return;
+    try {
+      for (const staffId of selectedMappingStaffIds) {
+        const staffMember = staff.find(s => s.id === staffId);
+        if (staffMember) {
+          const updated = {
+            ...staffMember,
+            timezone: bulkTimezone,
+            workHoursStart: bulkWorkHoursStart,
+            workHoursEnd: bulkWorkHoursEnd
+          };
+          await useBoundStore.getState().updateStaff(updated);
+        }
+      }
+      onShowToast?.(`Updated timezone and work hours for ${selectedMappingStaffIds.length} recruiters`, 'success');
+      setSelectedMappingStaffIds([]);
+      setIsBulkEditingMapping(false);
+    } catch (err) {
+      console.error("Error bulk updating shifts:", err);
+      onShowToast?.("Failed to bulk update timezone and work hours", "error");
     }
   };
 
@@ -1340,7 +1407,26 @@ export default function KpisDashboard({
           where('date', '>=', start),
           where('date', '<=', end)
         );
-        const kpiSnapshot = await getDocs(kpiQuery);
+
+        // Try Cache first (instant response)
+        try {
+          const cacheSnapshot = await getDocsFromCache(kpiQuery);
+          if (cacheSnapshot && !cacheSnapshot.empty) {
+            const kpiList = [];
+            cacheSnapshot.forEach(doc => {
+              kpiList.push({ id: doc.id, ...doc.data() });
+            });
+            if (isMounted) {
+              setKpiDocs(kpiList);
+              setIsLoading(false); // Clear spinner instantly
+            }
+          }
+        } catch (cacheErr) {
+          console.log('[Cache] KPI Daily cache lookup bypassed/failed:', cacheErr);
+        }
+
+        // Fetch from Server in background
+        const kpiSnapshot = await getDocsFromServer(kpiQuery);
         if (!isMounted) return;
 
         const kpiList = [];
@@ -1386,7 +1472,7 @@ export default function KpisDashboard({
       }, 4000);
 
       const { start, end } = effectiveCallsWindow;
-      
+
       try {
         console.log(`[Calls] Querying call history from ${start} to ${end}...`);
         const callsQuery = query(
@@ -1397,7 +1483,45 @@ export default function KpisDashboard({
           limit(2000)
         );
 
-        const snapshot = await getDocs(callsQuery);
+        // Try Cache first (instant response)
+        try {
+          const cacheSnapshot = await getDocsFromCache(callsQuery);
+          if (cacheSnapshot && !cacheSnapshot.empty) {
+            const callsList = [];
+            cacheSnapshot.forEach(doc => {
+              callsList.push({ id: doc.id, ...doc.data() });
+            });
+            if (isMounted) {
+              setLiveCalls(callsList);
+              setIsLoadingCalls(false);
+            }
+          }
+        } catch (cacheErr) {
+          // Try fallback cache lookup (no orderBy)
+          try {
+            const callsQueryFallback = query(
+              collection(db, 'dialpad_calls'),
+              where('dateStarted', '>=', start),
+              where('dateStarted', '<=', end + 'T23:59:59Z'),
+              limit(2000)
+            );
+            const cacheFallbackSnapshot = await getDocsFromCache(callsQueryFallback);
+            if (cacheFallbackSnapshot && !cacheFallbackSnapshot.empty) {
+              const callsList = [];
+              cacheFallbackSnapshot.forEach(doc => {
+                callsList.push({ id: doc.id, ...doc.data() });
+              });
+              callsList.sort((a, b) => b.dateStarted.localeCompare(a.dateStarted));
+              if (isMounted) {
+                setLiveCalls(callsList);
+                setIsLoadingCalls(false);
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Fetch from Server in background
+        const snapshot = await getDocsFromServer(callsQuery);
         if (!isMounted) return;
 
         const callsList = [];
@@ -1420,7 +1544,7 @@ export default function KpisDashboard({
             limit(2000)
           );
           
-          const fallbackSnapshot = await getDocs(callsQueryFallback);
+          const fallbackSnapshot = await getDocsFromServer(callsQueryFallback);
           if (!isMounted) return;
 
           const callsList = [];
@@ -1485,7 +1609,45 @@ export default function KpisDashboard({
           limit(1000)
         );
 
-        const snapshot = await getDocs(qandleQuery);
+        // Try Cache first (instant response)
+        try {
+          const cacheSnapshot = await getDocsFromCache(qandleQuery);
+          if (cacheSnapshot && !cacheSnapshot.empty) {
+            const activitiesList = [];
+            cacheSnapshot.forEach(doc => {
+              activitiesList.push({ id: doc.id, ...doc.data() });
+            });
+            if (isMounted) {
+              setQandleDocs(activitiesList);
+              setIsLoadingQandle(false);
+            }
+          }
+        } catch (cacheErr) {
+          // Try fallback cache lookup (no orderBy)
+          try {
+            const qandleQueryFallback = query(
+              collection(db, 'qandle_activities'),
+              where('date', '>=', start),
+              where('date', '<=', end),
+              limit(1000)
+            );
+            const cacheFallbackSnapshot = await getDocsFromCache(qandleQueryFallback);
+            if (cacheFallbackSnapshot && !cacheFallbackSnapshot.empty) {
+              const activitiesList = [];
+              cacheFallbackSnapshot.forEach(doc => {
+                activitiesList.push({ id: doc.id, ...doc.data() });
+              });
+              activitiesList.sort((a, b) => b.date.localeCompare(a.date));
+              if (isMounted) {
+                setQandleDocs(activitiesList);
+                setIsLoadingQandle(false);
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Fetch from Server in background
+        const snapshot = await getDocsFromServer(qandleQuery);
         if (!isMounted) return;
 
         const activitiesList = [];
@@ -1508,7 +1670,7 @@ export default function KpisDashboard({
             limit(1000)
           );
           
-          const fallbackSnapshot = await getDocs(qandleQueryFallback);
+          const fallbackSnapshot = await getDocsFromServer(qandleQueryFallback);
           if (!isMounted) return;
 
           const activitiesList = [];
@@ -1570,7 +1732,45 @@ export default function KpisDashboard({
           limit(1000)
         );
 
-        const snapshot = await getDocs(crmQuery);
+        // Try Cache first (instant response)
+        try {
+          const cacheSnapshot = await getDocsFromCache(crmQuery);
+          if (cacheSnapshot && !cacheSnapshot.empty) {
+            const activitiesList = [];
+            cacheSnapshot.forEach(doc => {
+              activitiesList.push({ id: doc.id, ...doc.data() });
+            });
+            if (isMounted) {
+              setCrmDocs(activitiesList);
+              setIsLoadingCrm(false);
+            }
+          }
+        } catch (cacheErr) {
+          // Try fallback cache lookup (no orderBy)
+          try {
+            const crmQueryFallback = query(
+              collection(db, 'crm_activities'),
+              where('dateKey', '>=', start),
+              where('dateKey', '<=', end),
+              limit(1000)
+            );
+            const cacheFallbackSnapshot = await getDocsFromCache(crmQueryFallback);
+            if (cacheFallbackSnapshot && !cacheFallbackSnapshot.empty) {
+              const activitiesList = [];
+              cacheFallbackSnapshot.forEach(doc => {
+                activitiesList.push({ id: doc.id, ...doc.data() });
+              });
+              activitiesList.sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+              if (isMounted) {
+                setCrmDocs(activitiesList);
+                setIsLoadingCrm(false);
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Fetch from Server in background
+        const snapshot = await getDocsFromServer(crmQuery);
         if (!isMounted) return;
 
         const activitiesList = [];
@@ -1593,7 +1793,7 @@ export default function KpisDashboard({
             limit(1000)
           );
           
-          const fallbackSnapshot = await getDocs(crmQueryFallback);
+          const fallbackSnapshot = await getDocsFromServer(crmQueryFallback);
           if (!isMounted) return;
 
           const activitiesList = [];
@@ -2588,275 +2788,101 @@ export default function KpisDashboard({
   return (
     <div className="tab-pane active" style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '16px' }}>
       
-      {/* 0. SUB-TAB TOGGLE NAVIGATION */}
-      <div style={{
-        display: 'flex',
-        gap: '12px',
-        borderBottom: '1px solid var(--border-color)',
-        paddingBottom: '14px',
-        marginBottom: '4px'
-      }}>
-        <button
-          onClick={() => setActiveSubTab('overview')}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: 700,
-            border: 'none',
-            cursor: 'pointer',
-            backgroundColor: activeSubTab === 'overview' ? 'var(--primary)' : 'var(--bg-secondary)',
-            color: activeSubTab === 'overview' ? '#fff' : 'var(--text-secondary)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-          }}
-        >
-          📊 Recruiter Overview
-        </button>
-        <button
-          onClick={() => setActiveSubTab('performance')}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: 700,
-            border: 'none',
-            cursor: 'pointer',
-            backgroundColor: activeSubTab === 'performance' ? 'var(--primary)' : 'var(--bg-secondary)',
-            color: activeSubTab === 'performance' ? '#fff' : 'var(--text-secondary)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-          }}
-        >
-          📈 Performance Scorecard
-        </button>
-        <button
-          onClick={() => {
-            setActiveSubTab('calls');
-            setCallLogsPage(1);
-          }}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: 700,
-            border: 'none',
-            cursor: 'pointer',
-            backgroundColor: activeSubTab === 'calls' ? 'var(--primary)' : 'var(--bg-secondary)',
-            color: activeSubTab === 'calls' ? '#fff' : 'var(--text-secondary)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-          }}
-        >
-          📞 Dialpad Call Logs
-        </button>
-        <button
-          onClick={() => {
-            setActiveSubTab('qandle');
-            setQandlePage(1);
-          }}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: 700,
-            border: 'none',
-            cursor: 'pointer',
-            backgroundColor: activeSubTab === 'qandle' ? 'var(--primary)' : 'var(--bg-secondary)',
-            color: activeSubTab === 'qandle' ? '#fff' : 'var(--text-secondary)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-          }}
-        >
-          ⏰ Qandle Attendance
-        </button>
-        <button
-          onClick={() => {
-            setActiveSubTab('crm_activities');
-            setCrmPage(1);
-          }}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: 700,
-            border: 'none',
-            cursor: 'pointer',
-            backgroundColor: activeSubTab === 'crm_activities' ? 'var(--primary)' : 'var(--bg-secondary)',
-            color: activeSubTab === 'crm_activities' ? '#fff' : 'var(--text-secondary)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-          }}
-        >
-          💼 CRM Activities
-        </button>
-        {/* Deleted separate sub-tab buttons for opportunities and jobs */}
-        <button
-          onClick={() => {
-            setActiveSubTab('mapping');
-            setEditingStaffId(null);
-          }}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: 700,
-            border: 'none',
-            cursor: 'pointer',
-            backgroundColor: activeSubTab === 'mapping' ? 'var(--primary)' : 'var(--bg-secondary)',
-            color: activeSubTab === 'mapping' ? '#fff' : 'var(--text-secondary)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-          }}
-        >
-          🔗 Recruiter & Dialpad Mapping
-        </button>
-        <button
-          onClick={() => {
-            setActiveSubTab('settings');
-            setEditingStaffId(null);
-          }}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: 700,
-            border: 'none',
-            cursor: 'pointer',
-            backgroundColor: activeSubTab === 'settings' ? 'var(--primary)' : 'var(--bg-secondary)',
-            color: activeSubTab === 'settings' ? '#fff' : 'var(--text-secondary)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-          }}
-        >
-          ⚙️ KPI Target Settings
-        </button>
-
-        <button
-          onClick={() => {
-            setActiveSubTab('webhook_logs');
-          }}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: 700,
-            border: 'none',
-            cursor: 'pointer',
-            backgroundColor: activeSubTab === 'webhook_logs' ? 'var(--primary)' : 'var(--bg-secondary)',
-            color: activeSubTab === 'webhook_logs' ? '#fff' : 'var(--text-secondary)',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-          }}
-        >
-          📡 Webhook Logs
-        </button>
-
-        {userRole === 'admin' && (
-          <button
-            onClick={() => {
-              setActiveSubTab('import_data');
-            }}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: 700,
-              border: 'none',
-              cursor: 'pointer',
-              backgroundColor: activeSubTab === 'import_data' ? 'var(--primary)' : 'var(--bg-secondary)',
-              color: activeSubTab === 'import_data' ? '#fff' : 'var(--text-secondary)',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-            }}
-          >
-            📂 Import Data
-          </button>
-        )}
-      </div>
-
-      {/* 2. DIRECTORY & COMPANY FILTERS PANEL (WITH ROLE-BASED ACCESS CONTROL) */}
-      {(activeSubTab === 'overview' || activeSubTab === 'performance') && (
-        <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
-            <Filter size={16} color="var(--primary)" />
-            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-              {userRole === 'admin' && 'Top Management - Company Filters'}
-              {userRole === 'director' && 'Director Access - Team Filters'}
-              {userRole === 'manager' && `Team Lead - ${userDept} Division Filters`}
-              {userRole === 'recruiter' && 'My Access Scopes'}
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-            
-            {/* Department Filter (Visible to Admin, Director, or Team Manager) */}
-            {(userRole === 'admin' || userRole === 'director' || currentUser?.permissions?.dataScope === 'team') && (
-              <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
-                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                  Division / Department:
-                </label>
-                <select
-                  value={selectedDept}
-                  onChange={(e) => {
-                    setSelectedDept(e.target.value);
-                    setSelectedStaffId('all'); // reset staff filter when dept changes
-                  }}
-                  className="select-filter"
-                  style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                >
-                  <option value="all">-- All Departments --</option>
-                  {departments.map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* User Filter (Visible to Admin and Manager) */}
-            {userRole !== 'recruiter' && (
-              <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
-                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                  Select Individual Staff:
-                </label>
-                <select
-                  value={selectedStaffId}
-                  onChange={(e) => setSelectedStaffId(e.target.value)}
-                  className="select-filter"
-                  style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                >
-                  <option value="all">
-                    {selectedDept === 'all' ? '-- All Personnel --' : `-- All in ${selectedDept} --`}
-                  </option>
-                  {filteredStaffList.map(s => (
-                    <option key={s.id} value={s.id}>{s.fullName} ({s.department})</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Company Filter (Visible to All) */}
-            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
-              <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                Filter by Employer / Company:
-              </label>
-              <select
-                value={selectedCompanyId}
-                onChange={(e) => {
-                  setSelectedCompanyId(e.target.value);
-                  setSelectedStaffId('all'); // Reset individual staff select when company changes
-                }}
-                className="select-filter"
-                style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-              >
-                <option value="all">-- All Companies --</option>
-                {Array.isArray(companies) && companies.map(c => (
-                  <option key={c.id} value={c.id}>{c.name || c.legalName || 'Unnamed Company'}</option>
-                ))}
-              </select>
+      {/* 2. DIRECTORY & COMPANY FILTERS PANEL (COMPACT & BORDERLESS) */}
+      {(activeSubTab === 'overview' || activeSubTab === 'performance' || activeSubTab === 'calls' || activeSubTab === 'qandle' || activeSubTab === 'crm_activities') && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px',
+          backgroundColor: 'var(--bg-secondary)',
+          padding: '6px 12px',
+          borderRadius: '6px',
+          border: '1px solid var(--border-color)',
+          marginBottom: '2px',
+          marginTop: '-4px'
+        }}>
+          {/* Left side: Role Badge & Filter Selectors */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)' }}>
+              <Filter size={13} color="var(--primary)" />
+              <span>
+                {userRole === 'admin' && 'Admin Scope'}
+                {userRole === 'director' && 'Director Scope'}
+                {userRole === 'manager' && 'Lead Scope'}
+                {userRole === 'recruiter' && 'My Scope'}
+              </span>
             </div>
 
-            {/* Recruiter Static Scope Info */}
-            {userRole === 'recruiter' && (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  🔒 Logged in as Recruiter. Access is restricted to personal logs.
-                </span>
-              </div>
-            )}
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* Department Selector */}
+              {(userRole === 'admin' || userRole === 'director' || currentUser?.permissions?.dataScope === 'team') && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Dept:</span>
+                  <select
+                    value={selectedDept}
+                    onChange={(e) => {
+                      setSelectedDept(e.target.value);
+                      setSelectedStaffId('all'); // reset staff filter when dept changes
+                    }}
+                    className="select-filter"
+                    style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', height: '24px' }}
+                  >
+                    <option value="all">All Departments</option>
+                    {departments.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
+              {/* User Filter */}
+              {userRole !== 'recruiter' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Staff:</span>
+                  <select
+                    value={selectedStaffId}
+                    onChange={(e) => setSelectedStaffId(e.target.value)}
+                    className="select-filter"
+                    style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', height: '24px' }}
+                  >
+                    <option value="all">
+                      {selectedDept === 'all' ? 'All Personnel' : `All in ${selectedDept}`}
+                    </option>
+                    {filteredStaffList.map(s => (
+                      <option key={s.id} value={s.id}>{s.fullName}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Company Filter */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Company:</span>
+                <select
+                  value={selectedCompanyId}
+                  onChange={(e) => {
+                    setSelectedCompanyId(e.target.value);
+                    setSelectedStaffId('all'); // Reset individual staff select when company changes
+                  }}
+                  className="select-filter"
+                  style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', height: '24px' }}
+                >
+                  <option value="all">All Companies</option>
+                  {Array.isArray(companies) && companies.map(c => (
+                    <option key={c.id} value={c.id}>{c.name || c.legalName || 'Unnamed Company'}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
+          
+          {userRole === 'recruiter' && (
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              🔒 Access restricted to personal logs
+            </span>
+          )}
         </div>
       )}
 
@@ -2876,15 +2902,12 @@ export default function KpisDashboard({
         ) : (
           <>
           {/* 1. TOP HEADER & FILTERS */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruiter Daily Activity & Overview Report</h2>
-              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>💡 Phone calls and attendance metrics consolidated in real-time</span>
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', marginBottom: '8px' }}>
+            <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruiter Daily Activity & Overview</h3>
 
             {/* Global Date Filter Controls */}
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', gap: '6px', backgroundColor: 'var(--bg-secondary)', padding: '4px', borderRadius: '6px', border: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-secondary)', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
                 {[
                   { id: 'today', label: 'Today' },
                   { id: 'yesterday', label: 'Yesterday' },
@@ -2898,13 +2921,13 @@ export default function KpisDashboard({
                     onClick={() => setOverviewTimeRange(btn.id)}
                     className="btn-secondary"
                     style={{
-                      padding: '6px 12px',
-                      fontSize: '11px',
+                      padding: '4px 8px',
+                      fontSize: '10px',
                       border: 'none',
                       backgroundColor: overviewTimeRange === btn.id ? 'var(--primary)' : 'transparent',
                       color: overviewTimeRange === btn.id ? 'white' : 'var(--text-secondary)',
                       fontWeight: 600,
-                      borderRadius: '4px'
+                      borderRadius: '3px'
                     }}
                   >
                     {btn.label}
@@ -2913,96 +2936,88 @@ export default function KpisDashboard({
               </div>
 
               {overviewTimeRange === 'custom' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--bg-secondary)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
                   <input
                     type="date"
                     value={overviewCustomStartDate}
                     onChange={(e) => setOverviewCustomStartDate(e.target.value)}
                     className="form-input"
-                    style={{ fontSize: '11px', height: '24px', padding: '2px 4px', width: '110px' }}
+                    style={{ fontSize: '10px', height: '22px', padding: '1px 3px', width: '100px' }}
                   />
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>to</span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>to</span>
                   <input
                     type="date"
                     value={overviewCustomEndDate}
                     onChange={(e) => setOverviewCustomEndDate(e.target.value)}
                     className="form-input"
-                    style={{ fontSize: '11px', height: '24px', padding: '2px 4px', width: '110px' }}
+                    style={{ fontSize: '10px', height: '22px', padding: '1px 3px', width: '100px' }}
                   />
                 </div>
               )}
             </div>
           </div>
 
-          {/* 2. SUMMARY CARDS GRID */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginTop: '8px' }}>
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Calls</span>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', margin: '4px 0' }}>{overviewStats.totalCalls}</div>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{overviewDateRangeWindow.start} to {overviewDateRangeWindow.end}</span>
+          {/* 2. SUMMARY CARDS GRID (CONSOLIDATED & COMPACT) */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+            gap: '8px',
+            marginTop: '8px',
+            marginBottom: '8px'
+          }}>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Calls</span>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>{overviewStats.totalCalls}</div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Connected</span>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--success)', margin: '4px 0' }}>{overviewStats.connectRate}%</div>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{overviewStats.totalConnected} connected</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Connected</span>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--success)', marginTop: '2px' }}>{overviewStats.connectRate}%</div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Callbacks (CB)</span>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--warning)', margin: '4px 0' }}>{overviewStats.totalCallbacks}</div>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>AI callback queries</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Callbacks (CB)</span>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--warning)', marginTop: '2px' }}>{overviewStats.totalCallbacks}</div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Alpha (A)</span>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--primary)', margin: '4px 0' }}>{overviewStats.totalAlpha}</div>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Opportunity signals</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Alpha (A)</span>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--primary)', marginTop: '2px' }}>{overviewStats.totalAlpha}</div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Avg Talk Time</span>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', margin: '4px 0' }}>{Math.floor(overviewStats.avgTalkTime / 60)}m {overviewStats.avgTalkTime % 60}s</div>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Avg connected duration</span>
-            </div>
-          </div>
-          
-          {/* CRM SUMMARY CARDS GRID */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginTop: '12px', marginBottom: '12px' }}>
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>CVs Shared</span>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', margin: '4px 0' }}>{overviewStats.totalCvsSent}</div>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>CV Shared for Vacancies</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Avg Talk Time</span>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>{Math.floor(overviewStats.avgTalkTime / 60)}m {overviewStats.avgTalkTime % 60}s</div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Speculative CVs</span>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', margin: '4px 0' }}>{overviewStats.totalSpeculativeCvs}</div>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Speculative candidate sends</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>CVs Shared</span>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>{overviewStats.totalCvsSent}</div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Interviews</span>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--primary)', margin: '4px 0' }}>{overviewStats.totalInterviews}</div>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Interviews organized</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Spec CVs</span>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>{overviewStats.totalSpeculativeCvs}</div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Opportunities</span>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--success)', margin: '4px 0' }}>{overviewStats.totalOpportunities}</div>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Opportunities generated</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Interviews</span>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--primary)', marginTop: '2px' }}>{overviewStats.totalInterviews}</div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Vacancies</span>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--warning)', margin: '4px 0' }}>{overviewStats.totalJobsTaken}</div>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Jobs taken over / created</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Opportunities</span>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--success)', marginTop: '2px' }}>{overviewStats.totalOpportunities}</div>
             </div>
 
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Placements</span>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--success)', margin: '4px 0' }}>{overviewStats.totalPlacements}</div>
-              <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>CRM placements registered</span>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Vacancies</span>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--warning)', marginTop: '2px' }}>{overviewStats.totalJobsTaken}</div>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Placements</span>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--success)', marginTop: '2px' }}>{overviewStats.totalPlacements}</div>
             </div>
           </div>
 
@@ -3482,125 +3497,120 @@ export default function KpisDashboard({
         ) : (
           <>
           {/* 1. TOP HEADER & PERFORMANCE ALERTS */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>Performance & Activity Scorecard</h2>
-          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>💡 {dashboardSubtitle}</span>
-        </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', marginBottom: '8px' }}>
+            <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>Performance & Activity Scorecard</h3>
 
-        {/* Global Time Filter Controls */}
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', gap: '6px', backgroundColor: 'var(--bg-secondary)', padding: '4px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-            {[
-              { id: 'today', label: 'Today' },
-              { id: 'this_week', label: 'This Week' },
-              { id: 'this_month', label: 'This Month' },
-              { id: 'ytd', label: 'Year to Date' },
-              { id: 'custom', label: 'Custom' }
-            ].map(btn => (
-              <button
-                key={btn.id}
-                onClick={() => setTimeRange(btn.id)}
-                className="btn-secondary"
-                style={{
-                  padding: '6px 12px',
-                  fontSize: '11px',
-                  border: 'none',
-                  backgroundColor: timeRange === btn.id ? 'var(--primary)' : 'transparent',
-                  color: timeRange === btn.id ? 'white' : 'var(--text-secondary)',
-                  fontWeight: 600,
-                  borderRadius: '4px'
-                }}
-              >
-                {btn.label}
-              </button>
-            ))}
-          </div>
+            {/* Global Time Filter Controls */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-secondary)', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                {[
+                  { id: 'today', label: 'Today' },
+                  { id: 'this_week', label: 'This Week' },
+                  { id: 'this_month', label: 'This Month' },
+                  { id: 'ytd', label: 'Year to Date' },
+                  { id: 'custom', label: 'Custom' }
+                ].map(btn => (
+                  <button
+                    key={btn.id}
+                    onClick={() => setTimeRange(btn.id)}
+                    className="btn-secondary"
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '10px',
+                      border: 'none',
+                      backgroundColor: timeRange === btn.id ? 'var(--primary)' : 'transparent',
+                      color: timeRange === btn.id ? 'white' : 'var(--text-secondary)',
+                      fontWeight: 600,
+                      borderRadius: '3px'
+                    }}
+                  >
+                    {btn.label}
+                  </button>
+                ))}
+              </div>
 
-          {timeRange === 'custom' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--bg-secondary)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <input
-                type="date"
-                value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                className="form-input"
-                style={{ fontSize: '11px', height: '24px', padding: '2px 4px', width: '110px' }}
-              />
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>to</span>
-              <input
-                type="date"
-                value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                className="form-input"
-                style={{ fontSize: '11px', height: '24px', padding: '2px 4px', width: '110px' }}
-              />
+              {timeRange === 'custom' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="form-input"
+                    style={{ fontSize: '10px', height: '22px', padding: '1px 3px', width: '100px' }}
+                  />
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>to</span>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="form-input"
+                    style={{ fontSize: '10px', height: '22px', padding: '1px 3px', width: '100px' }}
+                  />
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {/* 2. DIRECTORY FILTERS PANEL DELETED - LIFTED GLOBALLY */}
+          {/* 3. PERFORMANCE STATS CARDS (DIALPAD & RECRUITLY SPLIT - COMPACT) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '10px' }}>
+            
+            {/* Card 1: Dialpad Call Count */}
+            <div className="card" style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ padding: '8px', borderRadius: '6px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Phone size={16} />
+              </div>
+              <div>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>Dialpad Calls</span>
+                <h3 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 750 }}>{aggregatedStats.totalCalls}</h3>
+                <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                  {aggregatedStats.inbound} In / {aggregatedStats.outbound} Out
+                </span>
+              </div>
+            </div>
 
-      {/* 3. PERFORMANCE STATS CARDS (DIALPAD & RECRUITLY SPLIT) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
-        
-        {/* Card 1: Dialpad Call Count */}
-        <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)' }}>
-            <Phone size={24} />
-          </div>
-          <div>
-            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>Dialpad Call Count</span>
-            <h3 style={{ margin: '4px 0 0 0', fontSize: '22px', fontWeight: 700 }}>{aggregatedStats.totalCalls}</h3>
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-              📞 {aggregatedStats.inbound} Inbound / {aggregatedStats.outbound} Outbound
-            </span>
-          </div>
-        </div>
+            {/* Card 2: Phone Talk Time */}
+            <div className="card" style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ padding: '8px', borderRadius: '6px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Clock size={16} />
+              </div>
+              <div>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>Total Duration</span>
+                <h3 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 750 }}>{formatDuration(aggregatedStats.totalTalkTime)}</h3>
+                <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                  Avg {formatDuration(Math.round(aggregatedStats.totalTalkTime / (aggregatedStats.totalCalls || 1)))}/call
+                </span>
+              </div>
+            </div>
 
-        {/* Card 2: Phone Talk Time */}
-        <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)' }}>
-            <Clock size={24} />
-          </div>
-          <div>
-            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>Total Phone Duration</span>
-            <h3 style={{ margin: '4px 0 0 0', fontSize: '22px', fontWeight: 700 }}>{formatDuration(aggregatedStats.totalTalkTime)}</h3>
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-              ⏱️ Avg {formatDuration(Math.round(aggregatedStats.totalTalkTime / (aggregatedStats.totalCalls || 1)))} / call
-            </span>
-          </div>
-        </div>
+            {/* Card 3: Quality Calls */}
+            <div className="card" style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ padding: '8px', borderRadius: '6px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <TrendingUp size={16} />
+              </div>
+              <div>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>Quality Calls</span>
+                <h3 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 750 }}>{aggregatedStats.callsOver5Min}</h3>
+                <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                  {aggregatedStats.callsOver5Min} &gt; 5m / {aggregatedStats.callsOver10Min} &gt; 10m
+                </span>
+              </div>
+            </div>
 
-        {/* Card 3: Quality Calls (>5m & >10m) */}
-        <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)' }}>
-            <TrendingUp size={24} />
-          </div>
-          <div>
-            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>Quality Call Benchmarks</span>
-            <h3 style={{ margin: '4px 0 0 0', fontSize: '22px', fontWeight: 700 }}>{aggregatedStats.callsOver5Min}</h3>
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-              ⚡ {aggregatedStats.callsOver5Min} calls &gt; 5m / {aggregatedStats.callsOver10Min} &gt; 10m
-            </span>
-          </div>
-        </div>
+            {/* Card 4: CRM Activity */}
+            <div className="card" style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ padding: '8px', borderRadius: '6px', backgroundColor: 'rgba(236, 72, 153, 0.1)', color: '#ec4899', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Briefcase size={16} />
+              </div>
+              <div>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>CRM Activities</span>
+                <h3 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 750 }}>{aggregatedStats.cvsSent} / {aggregatedStats.interviews}</h3>
+                <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                  {aggregatedStats.cvsSent} CVs / {aggregatedStats.interviews} Int / {aggregatedStats.jobsTaken} Vac
+                </span>
+              </div>
+            </div>
 
-        {/* Card 4: CVs & Placements (CRM Activity) */}
-        <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: 'rgba(236, 72, 153, 0.1)', color: '#ec4899' }}>
-            <Briefcase size={24} />
           </div>
-          <div>
-            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>Recruitly CRM Activity</span>
-            <h3 style={{ margin: '4px 0 0 0', fontSize: '22px', fontWeight: 700 }}>{aggregatedStats.cvsSent} / {aggregatedStats.interviews}</h3>
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-              📄 {aggregatedStats.cvsSent} CVs / {aggregatedStats.interviews} Interviews / {aggregatedStats.jobsTaken} Jobs
-            </span>
-          </div>
-        </div>
-
-      </div>
 
       {/* 4. LEADERBOARD AND TEAM COMPARISON SECTION */}
       {userRole !== 'recruiter' && (
@@ -3926,40 +3936,42 @@ export default function KpisDashboard({
       )) : activeSubTab === 'calls' ? (
         <>
           {/* 1. HEADER */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>Dialpad Call logs & Recordings</h2>
-              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                🎥 Browse, filter, listen to recordings, and view transcripts for recruiter phone calls.
-              </span>
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', marginBottom: '8px' }}>
+            <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>Dialpad Call Logs & Recordings</h3>
             {hasRealCalls ? (
-              <span style={{ fontSize: '11px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>
+              <span style={{ fontSize: '10px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
                 🟢 LIVE WEBHOOK DATA
               </span>
             ) : (
-              <span style={{ fontSize: '11px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)', padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>
+              <span style={{ fontSize: '10px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
                 💡 DEMO MODE (WAITING FOR WEBHOOK EVENT)
               </span>
             )}
           </div>
 
-          {/* 2. FILTERS PANEL */}
-          <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {/* Date range filters row */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Calendar size={16} color="var(--primary)" />
-                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Date Range:</span>
-              </div>
-              
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* 2. COMPACT FILTERS ROW */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '8px',
+            backgroundColor: 'var(--bg-secondary)',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            border: '1px solid var(--border-color)',
+            marginBottom: '10px'
+          }}>
+            {/* Left: Date Presets */}
+            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)' }}>Range:</span>
+              <div style={{ display: 'flex', gap: '2px', backgroundColor: 'var(--bg-card)', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
                 {[
                   { id: 'today', label: 'Today' },
                   { id: 'yesterday', label: 'Yesterday' },
                   { id: 'this_week', label: 'This Week' },
                   { id: 'this_month', label: 'This Month' },
-                  { id: 'custom', label: 'Custom Range' }
+                  { id: 'custom', label: 'Custom' }
                 ].map(btn => (
                   <button
                     key={btn.id}
@@ -3969,123 +3981,52 @@ export default function KpisDashboard({
                     }}
                     className="btn-secondary"
                     style={{
-                      padding: '6px 12px',
-                      fontSize: '11px',
+                      padding: '3px 8px',
+                      fontSize: '10px',
                       border: 'none',
-                      backgroundColor: callsTimeRange === btn.id ? 'var(--primary)' : 'var(--bg-secondary)',
+                      backgroundColor: callsTimeRange === btn.id ? 'var(--primary)' : 'transparent',
                       color: callsTimeRange === btn.id ? 'white' : 'var(--text-secondary)',
                       fontWeight: 600,
-                      borderRadius: '4px'
+                      borderRadius: '3px'
                     }}
                   >
                     {btn.label}
                   </button>
                 ))}
-
-                {callsTimeRange === 'custom' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '10px' }}>
-                    <input
-                      type="date"
-                      value={callsCustomStartDate}
-                      onChange={(e) => {
-                        setCallsCustomStartDate(e.target.value);
-                        setCallLogsPage(1);
-                      }}
-                      className="form-input"
-                      style={{ fontSize: '11px', height: '28px', padding: '2px 6px', width: '120px' }}
-                    />
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>to</span>
-                    <input
-                      type="date"
-                      value={callsCustomEndDate}
-                      onChange={(e) => {
-                        setCallsCustomEndDate(e.target.value);
-                        setCallLogsPage(1);
-                      }}
-                      className="form-input"
-                      style={{ fontSize: '11px', height: '28px', padding: '2px 6px', width: '120px' }}
-                    />
-                  </div>
-                )}
               </div>
-            </div>
 
-            {/* Department/Staff/Search row */}
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-              
-              {/* Search text input */}
-              <div className="form-group" style={{ flex: 1.5, minWidth: '220px' }}>
-                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                  Search by caller, recipient, or number:
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }} />
+              {callsTimeRange === 'custom' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'var(--bg-card)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
                   <input
-                    type="text"
-                    placeholder="Type to search..."
-                    value={callLogsSearch}
+                    type="date"
+                    value={callsCustomStartDate}
                     onChange={(e) => {
-                      setCallLogsSearch(e.target.value);
+                      setCallsCustomStartDate(e.target.value);
                       setCallLogsPage(1);
                     }}
                     className="form-input"
-                    style={{ paddingLeft: '32px', fontSize: '12px', height: '34px' }}
+                    style={{ fontSize: '10px', height: '22px', padding: '1px 3px', width: '100px' }}
+                  />
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>to</span>
+                  <input
+                    type="date"
+                    value={callsCustomEndDate}
+                    onChange={(e) => {
+                      setCallsCustomEndDate(e.target.value);
+                      setCallLogsPage(1);
+                    }}
+                    className="form-input"
+                    style={{ fontSize: '10px', height: '22px', padding: '1px 3px', width: '100px' }}
                   />
                 </div>
-              </div>
-
-              {/* Department selection */}
-              {(userRole === 'admin' || userRole === 'director' || currentUser?.permissions?.dataScope === 'team') && (
-                <div className="form-group" style={{ flex: 1, minWidth: '160px' }}>
-                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                    Department Division:
-                  </label>
-                  <select
-                    value={selectedDept}
-                    onChange={(e) => {
-                      setSelectedDept(e.target.value);
-                      setSelectedStaffId('all');
-                      setCallLogsPage(1);
-                    }}
-                    className="select-filter"
-                    style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                  >
-                    <option value="all">-- All Departments --</option>
-                    {departments.map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
               )}
+            </div>
 
-              {/* Staff Recruiter selection */}
-              {userRole !== 'recruiter' && (
-                <div className="form-group" style={{ flex: 1, minWidth: '160px' }}>
-                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                    Recruiter Profile:
-                  </label>
-                  <select
-                    value={selectedStaffId}
-                    onChange={(e) => {
-                      setSelectedStaffId(e.target.value);
-                      setCallLogsPage(1);
-                    }}
-                    className="select-filter"
-                    style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                  >
-                    <option value="all">-- All Recruiters --</option>
-                    {filteredStaffList.map(s => (
-                      <option key={s.id} value={s.id}>{s.fullName}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Direction selector */}
-              <div className="form-group" style={{ flex: 0.8, minWidth: '130px' }}>
-                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                  Call Direction:
-                </label>
+            {/* Right: Search & Direction */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              {/* Call Direction */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>Dir:</span>
                 <select
                   value={callLogsDirection}
                   onChange={(e) => {
@@ -4093,7 +4034,7 @@ export default function KpisDashboard({
                     setCallLogsPage(1);
                   }}
                   className="select-filter"
-                  style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                  style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', height: '24px' }}
                 >
                   <option value="all">All Directions</option>
                   <option value="inbound">Inbound</option>
@@ -4101,6 +4042,21 @@ export default function KpisDashboard({
                 </select>
               </div>
 
+              {/* Search text input */}
+              <div style={{ position: 'relative', width: '180px' }}>
+                <Search size={12} style={{ position: 'absolute', left: '8px', top: '6px', color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  placeholder="Search caller/number..."
+                  value={callLogsSearch}
+                  onChange={(e) => {
+                    setCallLogsSearch(e.target.value);
+                    setCallLogsPage(1);
+                  }}
+                  className="form-input"
+                  style={{ paddingLeft: '26px', fontSize: '11px', height: '24px', width: '100%' }}
+                />
+              </div>
             </div>
           </div>
 
@@ -4394,21 +4350,16 @@ export default function KpisDashboard({
       ) : activeSubTab === 'qandle' ? (
         <>
           {/* 1. HEADER */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>Qandle Attendance & Productivity Logs</h2>
-              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                ⏰ Monitor check-in times, productive hours, active desk time, and effectiveness ratings.
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', marginBottom: '8px' }}>
+            <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>Qandle Attendance & Productivity Logs</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {syncQandleSuccess && (
-                <span style={{ fontSize: '12px', color: 'var(--success)', fontWeight: 600 }}>
+                <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 600 }}>
                   ✓ {syncQandleSuccess}
                 </span>
               )}
               {syncQandleError && (
-                <span style={{ fontSize: '12px', color: 'var(--error)', fontWeight: 600 }}>
+                <span style={{ fontSize: '11px', color: 'var(--error)', fontWeight: 600 }}>
                   ⚠ {syncQandleError}
                 </span>
               )}
@@ -4419,10 +4370,10 @@ export default function KpisDashboard({
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 12px',
+                  gap: '4px',
+                  padding: '4px 8px',
                   borderRadius: '4px',
-                  fontSize: '12px',
+                  fontSize: '10px',
                   fontWeight: 600,
                   opacity: isSyncingQandle ? 0.6 : 1,
                   cursor: isSyncingQandle ? 'not-allowed' : 'pointer'
@@ -4438,34 +4389,41 @@ export default function KpisDashboard({
                   }
                 `}</style>
                 <RefreshCw 
-                  size={14} 
+                  size={12} 
                   className={isSyncingQandle ? 'qandle-spin-icon' : ''} 
                   style={{ transition: 'transform 0.2s' }}
                 />
                 {isSyncingQandle ? 'Syncing...' : 'Sync Qandle'}
               </button>
-              <span style={{ fontSize: '11px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>
+              <span style={{ fontSize: '10px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
                 🟢 SYNCED DATABASE RECORDS
               </span>
             </div>
           </div>
 
-          {/* 2. FILTERS PANEL */}
-          <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {/* Date range filters row */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Calendar size={16} color="var(--primary)" />
-                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Date Range:</span>
-              </div>
-              
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* 2. COMPACT FILTERS ROW */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '8px',
+            backgroundColor: 'var(--bg-secondary)',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            border: '1px solid var(--border-color)',
+            marginBottom: '10px'
+          }}>
+            {/* Left: Date Presets */}
+            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)' }}>Range:</span>
+              <div style={{ display: 'flex', gap: '2px', backgroundColor: 'var(--bg-card)', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
                 {[
                   { id: 'today', label: 'Today' },
                   { id: 'yesterday', label: 'Yesterday' },
                   { id: 'this_week', label: 'This Week' },
                   { id: 'this_month', label: 'This Month' },
-                  { id: 'custom', label: 'Custom Range' }
+                  { id: 'custom', label: 'Custom' }
                 ].map(btn => (
                   <button
                     key={btn.id}
@@ -4473,121 +4431,65 @@ export default function KpisDashboard({
                       setQandleTimeRange(btn.id);
                       setQandlePage(1);
                     }}
+                    className="btn-secondary"
                     style={{
-                      padding: '5px 12px',
-                      borderRadius: '4px',
-                      fontSize: '11px',
+                      padding: '3px 8px',
+                      fontSize: '10px',
+                      border: 'none',
+                      backgroundColor: qandleTimeRange === btn.id ? 'var(--primary)' : 'transparent',
+                      color: qandleTimeRange === btn.id ? 'white' : 'var(--text-secondary)',
                       fontWeight: 600,
-                      border: '1px solid var(--border-color)',
-                      cursor: 'pointer',
-                      backgroundColor: qandleTimeRange === btn.id ? 'var(--primary)' : 'var(--bg-secondary)',
-                      color: qandleTimeRange === btn.id ? '#fff' : 'var(--text-primary)',
-                      transition: 'all 0.15s ease'
+                      borderRadius: '3px'
                     }}
                   >
                     {btn.label}
                   </button>
                 ))}
-
-                {qandleTimeRange === 'custom' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '10px' }}>
-                    <input
-                      type="date"
-                      value={qandleCustomStartDate}
-                      onChange={(e) => {
-                        setQandleCustomStartDate(e.target.value);
-                        setQandlePage(1);
-                      }}
-                      className="form-input"
-                      style={{ fontSize: '11px', height: '28px', padding: '2px 6px', width: '120px' }}
-                    />
-                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>to</span>
-                    <input
-                      type="date"
-                      value={qandleCustomEndDate}
-                      onChange={(e) => {
-                        setQandleCustomEndDate(e.target.value);
-                        setQandlePage(1);
-                      }}
-                      className="form-input"
-                      style={{ fontSize: '11px', height: '28px', padding: '2px 6px', width: '120px' }}
-                    />
-                  </div>
-                )}
               </div>
-            </div>
 
-            {/* Department/Staff/Search row */}
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-              
-              {/* Search text input */}
-              <div className="form-group" style={{ flex: 1.5, minWidth: '220px' }}>
-                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                  Search by recruiter name or employee code:
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }} />
+              {qandleTimeRange === 'custom' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'var(--bg-card)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
                   <input
-                    type="text"
-                    placeholder="Type to search..."
-                    value={qandleSearch}
+                    type="date"
+                    value={qandleCustomStartDate}
                     onChange={(e) => {
-                      setQandleSearch(e.target.value);
+                      setQandleCustomStartDate(e.target.value);
                       setQandlePage(1);
                     }}
                     className="form-input"
-                    style={{ paddingLeft: '32px', fontSize: '12px', height: '34px' }}
+                    style={{ fontSize: '10px', height: '22px', padding: '1px 3px', width: '100px' }}
+                  />
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>to</span>
+                  <input
+                    type="date"
+                    value={qandleCustomEndDate}
+                    onChange={(e) => {
+                      setQandleCustomEndDate(e.target.value);
+                      setQandlePage(1);
+                    }}
+                    className="form-input"
+                    style={{ fontSize: '10px', height: '22px', padding: '1px 3px', width: '100px' }}
                   />
                 </div>
+              )}
+            </div>
+
+            {/* Right: Search */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', width: '220px' }}>
+                <Search size={12} style={{ position: 'absolute', left: '8px', top: '6px', color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  placeholder="Search recruiter or code..."
+                  value={qandleSearch}
+                  onChange={(e) => {
+                    setQandleSearch(e.target.value);
+                    setQandlePage(1);
+                  }}
+                  className="form-input"
+                  style={{ paddingLeft: '26px', fontSize: '11px', height: '24px', width: '100%' }}
+                />
               </div>
-
-              {/* Department selection */}
-              {(userRole === 'admin' || userRole === 'director' || currentUser?.permissions?.dataScope === 'team') && (
-                <div className="form-group" style={{ flex: 1, minWidth: '160px' }}>
-                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                    Department Division:
-                  </label>
-                  <select
-                    value={selectedDept}
-                    onChange={(e) => {
-                      setSelectedDept(e.target.value);
-                      setSelectedStaffId('all');
-                      setQandlePage(1);
-                    }}
-                    className="select-filter"
-                    style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                  >
-                    <option value="all">-- All Departments --</option>
-                    {departments.map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Staff Recruiter selection */}
-              {userRole !== 'recruiter' && (
-                <div className="form-group" style={{ flex: 1, minWidth: '160px' }}>
-                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                    Recruiter Profile:
-                  </label>
-                  <select
-                    value={selectedStaffId}
-                    onChange={(e) => {
-                      setSelectedStaffId(e.target.value);
-                      setQandlePage(1);
-                    }}
-                    className="select-filter"
-                    style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                  >
-                    <option value="all">-- All Recruiters --</option>
-                    {filteredStaffList.map(s => (
-                      <option key={s.id} value={s.id}>{s.fullName}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
             </div>
           </div>
 
@@ -4799,63 +4701,64 @@ export default function KpisDashboard({
       ) : activeSubTab === 'crm_activities' ? (
         <>
           {/* 1. HEADER */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                Recruitly CRM Activity Logs
-              </h2>
-              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                💼 Track real-time recruiter activities including CV shares, speculative CVs, interviews, opportunities, job creation, and placement registries.
-              </span>
-            </div>
-            <div>
-              <span style={{ fontSize: '11px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)', padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', marginBottom: '8px' }}>
+            <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruitly CRM Activity Logs</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '10px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
                 📡 LIVE ZAPIER Webhook Pipeline
               </span>
             </div>
           </div>
 
           {/* 2. SECONDARY TABS & FILTERS */}
-          <div className="card" style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '16px' }}>
-            {/* Date Preset Row */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Calendar size={16} color="var(--primary)" />
-                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Date Range:</span>
-              </div>
-              
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                {[
-                  { id: 'today', label: 'Today' },
-                  { id: 'yesterday', label: 'Yesterday' },
-                  { id: 'this_week', label: 'This Week' },
-                  { id: 'this_month', label: 'This Month' },
-                  { id: 'custom', label: 'Custom Range' }
-                ].map(btn => (
-                  <button
-                    key={btn.id}
-                    onClick={() => {
-                      setCrmTimeRange(btn.id);
-                      setCrmPage(1);
-                    }}
-                    style={{
-                      padding: '5px 12px',
-                      borderRadius: '4px',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      border: '1px solid var(--border-color)',
-                      cursor: 'pointer',
-                      backgroundColor: crmTimeRange === btn.id ? 'var(--primary)' : 'var(--bg-secondary)',
-                      color: crmTimeRange === btn.id ? '#fff' : 'var(--text-primary)',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    {btn.label}
-                  </button>
-                ))}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            backgroundColor: 'var(--bg-secondary)',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            border: '1px solid var(--border-color)',
+            marginBottom: '10px'
+          }}>
+            {/* Row 1: Range preset + Search */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              {/* Left: Date presets */}
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)' }}>Range:</span>
+                <div style={{ display: 'flex', gap: '2px', backgroundColor: 'var(--bg-card)', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                  {[
+                    { id: 'today', label: 'Today' },
+                    { id: 'yesterday', label: 'Yesterday' },
+                    { id: 'this_week', label: 'This Week' },
+                    { id: 'this_month', label: 'This Month' },
+                    { id: 'custom', label: 'Custom' }
+                  ].map(btn => (
+                    <button
+                      key={btn.id}
+                      onClick={() => {
+                        setCrmTimeRange(btn.id);
+                        setCrmPage(1);
+                      }}
+                      style={{
+                        padding: '3px 8px',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        border: 'none',
+                        cursor: 'pointer',
+                        borderRadius: '3px',
+                        backgroundColor: crmTimeRange === btn.id ? 'var(--primary)' : 'transparent',
+                        color: crmTimeRange === btn.id ? 'white' : 'var(--text-secondary)',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {btn.label}
+                    </button>
+                  ))}
+                </div>
 
                 {crmTimeRange === 'custom' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'var(--bg-card)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
                     <input
                       type="date"
                       value={crmCustomStartDate}
@@ -4864,9 +4767,9 @@ export default function KpisDashboard({
                         setCrmPage(1);
                       }}
                       className="form-input"
-                      style={{ fontSize: '11px', height: '28px', padding: '2px 6px', width: '120px' }}
+                      style={{ fontSize: '10px', height: '22px', padding: '1px 3px', width: '100px' }}
                     />
-                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>to</span>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>to</span>
                     <input
                       type="date"
                       value={crmCustomEndDate}
@@ -4875,23 +4778,41 @@ export default function KpisDashboard({
                         setCrmPage(1);
                       }}
                       className="form-input"
-                      style={{ fontSize: '11px', height: '28px', padding: '2px 6px', width: '120px' }}
+                      style={{ fontSize: '10px', height: '22px', padding: '1px 3px', width: '100px' }}
                     />
                   </div>
                 )}
               </div>
+
+              {/* Right: Search */}
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div style={{ position: 'relative', width: '220px' }}>
+                  <Search size={12} style={{ position: 'absolute', left: '8px', top: '6px', color: 'var(--text-muted)' }} />
+                  <input
+                    type="text"
+                    value={crmSearch}
+                    onChange={(e) => {
+                      setCrmSearch(e.target.value);
+                      setCrmPage(1);
+                    }}
+                    placeholder="Search candidate, job, recruiter..."
+                    className="form-input"
+                    style={{ paddingLeft: '26px', fontSize: '11px', height: '24px', width: '100%' }}
+                  />
+                </div>
+              </div>
             </div>
 
-            {/* Filter Pills row */}
-            {activeSubTab === 'crm_activities' && (
-              <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px', borderBottom: '1px solid var(--border-color)' }}>
+            {/* Row 2: Filter Pills & Counts */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
+              <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', paddingBottom: '2px', flex: 1 }}>
                 {[
-                  { id: 'all', label: '📦 All Activities' },
-                  { id: 'cv_sent', label: '📄 CV Shared for Job' },
-                  { id: 'speculative_cv', label: '📨 Speculative CVs' },
-                  { id: 'interview', label: '🤝 Interviews Organized' },
-                  { id: 'opportunity', label: '📈 Opportunities' },
-                  { id: 'job_taken', label: '📋 Jobs / Vacancies' },
+                  { id: 'all', label: 'All' },
+                  { id: 'cv_sent', label: '📄 CV Shared' },
+                  { id: 'speculative_cv', label: '📨 Speculative' },
+                  { id: 'interview', label: '🤝 Interview' },
+                  { id: 'opportunity', label: '📈 Opps' },
+                  { id: 'job_taken', label: '📋 Jobs' },
                   { id: 'placement', label: '🏆 Placements' }
                 ].map(tab => (
                   <button
@@ -4901,14 +4822,14 @@ export default function KpisDashboard({
                       setCrmPage(1);
                     }}
                     style={{
-                      padding: '6px 12px',
-                      borderRadius: '20px',
-                      fontSize: '12px',
+                      padding: '3px 10px',
+                      borderRadius: '12px',
+                      fontSize: '10px',
                       fontWeight: 600,
                       border: '1px solid var(--border-color)',
                       cursor: 'pointer',
-                      backgroundColor: crmActivityFilter === tab.id ? 'var(--primary)' : 'var(--bg-secondary)',
-                      color: crmActivityFilter === tab.id ? '#fff' : 'var(--text-primary)',
+                      backgroundColor: crmActivityFilter === tab.id ? 'var(--primary)' : 'var(--bg-card)',
+                      color: crmActivityFilter === tab.id ? '#fff' : 'var(--text-secondary)',
                       transition: 'all 0.15s ease',
                       whiteSpace: 'nowrap'
                     }}
@@ -4917,37 +4838,13 @@ export default function KpisDashboard({
                   </button>
                 ))}
               </div>
-            )}
-
-            {/* Search Input and Metadata Counts Row */}
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div className="form-group" style={{ flex: 1, minWidth: '240px' }}>
-                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                  Search by recruiter, candidate, client company, or job title:
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }} />
-                  <input
-                    type="text"
-                    value={crmSearch}
-                    onChange={(e) => {
-                      setCrmSearch(e.target.value);
-                      setCrmPage(1);
-                    }}
-                    placeholder="Type to search activities..."
-                    className="form-input"
-                    style={{ paddingLeft: '32px', fontSize: '12px', height: '34px' }}
-                  />
-                </div>
-              </div>
-              
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                  Found {filteredAndSearchedCrm.length} relevant activities
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '11px' }}>
+                <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  Found {filteredAndSearchedCrm.length} activities
                 </span>
                 {crmLastRefreshed && !isLoadingCrm && (
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    • Last refreshed at {crmLastRefreshed}
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    • Refreshed {crmLastRefreshed}
                   </span>
                 )}
               </div>
@@ -5022,6 +4919,15 @@ export default function KpisDashboard({
                           style={{ padding: '12px 16px', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}
                         >
                           Client Company {crmSortField === 'clientCompany' && (crmSortDirection === 'asc' ? '▲' : '▼')}
+                        </th>
+                        <th 
+                          onClick={() => {
+                            setCrmSortField('contactName');
+                            setCrmSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                          }}
+                          style={{ padding: '12px 16px', color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          Client Contact {crmSortField === 'contactName' && (crmSortDirection === 'asc' ? '▲' : '▼')}
                         </th>
                         <th 
                           onClick={() => {
@@ -5122,6 +5028,16 @@ export default function KpisDashboard({
                                 />
                               ) : '-'}
                             </td>
+                            <td style={{ padding: '12px 16px' }}>
+                              {doc.contactName ? (
+                                <div>
+                                  <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{doc.contactName}</div>
+                                  {doc.contactJobTitle && (
+                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{doc.contactJobTitle}</div>
+                                  )}
+                                </div>
+                              ) : '-'}
+                            </td>
                             <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>
                               {doc.jobTitle || '-'}
                             </td>
@@ -5172,11 +5088,39 @@ export default function KpisDashboard({
       ) : activeSubTab === 'mapping' ? (
         /* Recruiter Dialpad Mapping View */
         <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-          <div style={{ marginBottom: '16px' }}>
-            <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruiter Platform Integration Mapping</h4>
-            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-              Configure matching user credentials for Qandle (Attendance), Dialpad (Calls), and Recruitly (CRM) for each recruiter.
-            </p>
+          <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>Recruiter Platform Integration Mapping</h4>
+              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                Configure matching user credentials for Qandle (Attendance), Dialpad (Calls), and Recruitly (CRM) for each recruiter.
+              </p>
+            </div>
+
+            {/* Bulk set shifts button */}
+            {selectedMappingStaffIds.length > 0 && (
+              <button
+                onClick={() => {
+                  setIsBulkEditingMapping(true);
+                  setBulkTimezone('Europe/London');
+                  setBulkWorkHoursStart('08:00');
+                  setBulkWorkHoursEnd('18:00');
+                }}
+                className="btn-secondary"
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: 'var(--primary)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                }}
+              >
+                🕒 Bulk Set Shift & Timezone ({selectedMappingStaffIds.length})
+              </button>
+            )}
           </div>
 
           <div style={{ position: 'relative', marginBottom: '16px', maxWidth: '380px' }}>
@@ -5195,10 +5139,44 @@ export default function KpisDashboard({
             <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
+                  <th style={{ padding: '10px 0', width: '40px', textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={
+                        staff.filter(s => s.status !== 'exited').filter(s => {
+                          if (mappingSearch) {
+                            return s.fullName.toLowerCase().includes(mappingSearch.toLowerCase());
+                          }
+                          return true;
+                        }).length > 0 &&
+                        staff.filter(s => s.status !== 'exited').filter(s => {
+                          if (mappingSearch) {
+                            return s.fullName.toLowerCase().includes(mappingSearch.toLowerCase());
+                          }
+                          return true;
+                        }).every(s => selectedMappingStaffIds.includes(s.id))
+                      }
+                      onChange={(e) => {
+                        const list = staff.filter(s => s.status !== 'exited').filter(s => {
+                          if (mappingSearch) {
+                            return s.fullName.toLowerCase().includes(mappingSearch.toLowerCase());
+                          }
+                          return true;
+                        });
+                        if (e.target.checked) {
+                          setSelectedMappingStaffIds(list.map(s => s.id));
+                        } else {
+                          setSelectedMappingStaffIds([]);
+                        }
+                      }}
+                      style={{ cursor: 'pointer', width: '15px', height: '15px' }}
+                    />
+                  </th>
                   <th style={{ padding: '10px', minWidth: '150px' }}>Recruiter</th>
                   <th style={{ minWidth: '180px' }}>⏰ Qandle Mapping</th>
                   <th style={{ minWidth: '220px' }}>📞 Dialpad Mapping</th>
                   <th style={{ minWidth: '180px' }}>💼 Recruitly Mapping</th>
+                  <th style={{ minWidth: '180px' }}>🕒 Shift & Timezone</th>
                   <th style={{ textAlign: 'center', minWidth: '100px' }}>KPI Tracking</th>
                   <th style={{ textAlign: 'center', minWidth: '120px' }}>Actions</th>
                 </tr>
@@ -5218,6 +5196,20 @@ export default function KpisDashboard({
 
                     return (
                       <tr key={s.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '10px 0', textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedMappingStaffIds.includes(s.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedMappingStaffIds(prev => [...prev, s.id]);
+                              } else {
+                                setSelectedMappingStaffIds(prev => prev.filter(id => id !== s.id));
+                              }
+                            }}
+                            style={{ cursor: 'pointer', width: '15px', height: '15px' }}
+                          />
+                        </td>
                         <td style={{ padding: '12px 10px' }}>
                           <span style={{ fontWeight: 600, display: 'block' }}>👤 {s.fullName}</span>
                           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{s.department || 'No department'}</span>
@@ -5304,6 +5296,49 @@ export default function KpisDashboard({
                             </span>
                           )}
                         </td>
+                        <td>
+                          {isEditing ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <select
+                                className="form-input"
+                                value={editingTimezone}
+                                onChange={(e) => setEditingTimezone(e.target.value)}
+                                style={{ width: '100%', fontSize: '12px', height: '32px', padding: '4px' }}
+                              >
+                                <option value="Europe/London">Europe/London (UK)</option>
+                                <option value="Asia/Kolkata">Asia/Kolkata (India)</option>
+                                <option value="Africa/Johannesburg">Africa/Johannesburg (SA)</option>
+                                <option value="UTC">UTC</option>
+                              </select>
+                              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                <input
+                                  type="time"
+                                  className="form-input"
+                                  value={editingWorkHoursStart}
+                                  onChange={(e) => setEditingWorkHoursStart(e.target.value)}
+                                  style={{ width: '50%', fontSize: '11px', height: '28px', padding: '2px' }}
+                                />
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>to</span>
+                                <input
+                                  type="time"
+                                  className="form-input"
+                                  value={editingWorkHoursEnd}
+                                  onChange={(e) => setEditingWorkHoursEnd(e.target.value)}
+                                  style={{ width: '50%', fontSize: '11px', height: '28px', padding: '2px' }}
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                🕒 {s.workHoursStart || '08:00'} - {s.workHoursEnd || '18:00'}
+                              </span>
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                🌍 {s.timezone || (String(s.employeeCode || s.employee_code || '').startsWith('THIND') || String(s.employeeCode || s.employee_code || '').startsWith('HRIND') ? 'Asia/Kolkata' : 'Europe/London')}
+                              </span>
+                            </div>
+                          )}
+                        </td>
                         <td style={{ textAlign: 'center' }}>
                           <input
                             type="checkbox"
@@ -5356,6 +5391,9 @@ export default function KpisDashboard({
                                 setEditingQandleEmail(s.qandleEmail || '');
                                 setEditingDialpadEmail(s.dialpadEmail || '');
                                 setEditingRecruitlyEmail(s.recruitlyEmail || '');
+                                setEditingTimezone(s.timezone || (String(s.employeeCode || s.employee_code || '').startsWith('THIND') || String(s.employeeCode || s.employee_code || '').startsWith('HRIND') ? 'Asia/Kolkata' : 'Europe/London'));
+                                setEditingWorkHoursStart(s.workHoursStart || '08:00');
+                                setEditingWorkHoursEnd(s.workHoursEnd || '18:00');
                               }}
                               className="btn-secondary"
                               style={{ padding: '4px 8px', fontSize: '11px' }}
@@ -5374,7 +5412,7 @@ export default function KpisDashboard({
       ) : activeSubTab === 'webhook_logs' ? (
         <WebhookLogsTab onShowToast={onShowToast} />
       ) : activeSubTab === 'import_data' ? (
-        <CRMImporterTab onShowToast={onShowToast} staff={staff} />
+        <CRMImporterTab onShowToast={onShowToast} staff={staff} companies={companies} />
       ) : (
         /* KPI Targets Settings View */
         <div className="card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
@@ -5738,6 +5776,156 @@ export default function KpisDashboard({
           </div>
         );
       })()}
+
+      {/* BULB SHIFT EDITOR MODAL */}
+      {isBulkEditingMapping && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px',
+          backdropFilter: 'blur(3px)'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-primary)',
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '460px',
+            border: '1px solid var(--border-color)',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid var(--border-color)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              backgroundColor: 'var(--bg-secondary)'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  🕒 Bulk Configure Work Shifts
+                </h3>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Setting shift details for **{selectedMappingStaffIds.length} Selected Recruiters**
+                </span>
+              </div>
+              <button
+                onClick={() => setIsBulkEditingMapping(false)}
+                style={{
+                  border: 'none',
+                  background: 'none',
+                  fontSize: '18px',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label className="form-label" style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: 600 }}>
+                  Timezone
+                </label>
+                <select
+                  value={bulkTimezone}
+                  onChange={(e) => setBulkTimezone(e.target.value)}
+                  className="form-input"
+                  style={{ width: '100%', fontSize: '12px', height: '36px' }}
+                >
+                  <option value="Europe/London">UK Time (Europe/London)</option>
+                  <option value="Asia/Kolkata">India Time (Asia/Kolkata)</option>
+                  <option value="Africa/Johannesburg">South Africa Time (Africa/Johannesburg)</option>
+                  <option value="UTC">UTC</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ flex: 1 }}>
+                  <label className="form-label" style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: 600 }}>
+                    Shift Start (Local)
+                  </label>
+                  <input
+                    type="time"
+                    className="form-input"
+                    value={bulkWorkHoursStart}
+                    onChange={(e) => setBulkWorkHoursStart(e.target.value)}
+                    style={{ width: '100%', fontSize: '12px', height: '36px' }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label className="form-label" style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: 600 }}>
+                    Shift End (Local)
+                  </label>
+                  <input
+                    type="time"
+                    className="form-input"
+                    value={bulkWorkHoursEnd}
+                    onChange={(e) => setBulkWorkHoursEnd(e.target.value)}
+                    style={{ width: '100%', fontSize: '12px', height: '36px' }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '12px 20px',
+              borderTop: '1px solid var(--border-color)',
+              backgroundColor: 'var(--bg-secondary)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '12px'
+            }}>
+              <button
+                onClick={() => setIsBulkEditingMapping(false)}
+                className="btn-secondary"
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '12px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-primary)',
+                  color: 'var(--text-primary)'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkSaveShifts}
+                className="btn-primary"
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '12px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  border: 'none',
+                  backgroundColor: 'var(--primary)',
+                  color: '#fff',
+                  fontWeight: 600
+                }}
+              >
+                Apply to {selectedMappingStaffIds.length} Recruiters
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 6. CALL DETAIL AUDIO PLAYBACK & TRANSCRIPT MODAL */}
       {activeCallDetail && (

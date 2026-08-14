@@ -3,11 +3,12 @@ import { db } from '../services/firebase';
 import { collection, writeBatch, doc, increment } from 'firebase/firestore';
 import { Upload, CheckCircle2, AlertTriangle, Play, Loader2, Info } from 'lucide-react';
 
-export default function CRMImporterTab({ onShowToast, staff = [] }) {
+export default function CRMImporterTab({ onShowToast, staff = [], companies = [] }) {
   const [csvFile, setCsvFile] = useState(null);
   const [headers, setHeaders] = useState([]);
   const [parsedRows, setParsedRows] = useState([]);
   const [isParsing, setIsParsing] = useState(false);
+  const [enrichCrmData, setEnrichCrmData] = useState(false);
 
   // Mappings
   const [mappings, setMappings] = useState({
@@ -16,6 +17,7 @@ export default function CRMImporterTab({ onShowToast, staff = [] }) {
     candidateName: '',
     candidateEmail: '',
     clientCompany: '',
+    contactName: '',
     jobTitle: '',
     value: '',
     activityTypeColumn: '',
@@ -33,6 +35,7 @@ export default function CRMImporterTab({ onShowToast, staff = [] }) {
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [importSummary, setImportSummary] = useState(null);
+  const [enrichmentStatusText, setEnrichmentStatusText] = useState('');
 
   // Simple CSV quote-aware line splitter
   const parseCSVLine = (line) => {
@@ -98,7 +101,8 @@ export default function CRMImporterTab({ onShowToast, staff = [] }) {
         recruiterKey: parsedHeaders[lowerHeaders.findIndex(h => h.includes('recruiter') || h.includes('consultant') || h.includes('user') || h.includes('staff') || h.includes('owner'))] || '',
         candidateName: parsedHeaders[lowerHeaders.findIndex(h => h.includes('candidate') || h.includes('candidate name') || h.includes('person'))] || '',
         candidateEmail: parsedHeaders[lowerHeaders.findIndex(h => h.includes('email') || h.includes('candidate email'))] || '',
-        clientCompany: parsedHeaders[lowerHeaders.findIndex(h => h.includes('client') || h.includes('company') || h.includes('employer'))] || '',
+        clientCompany: parsedHeaders[lowerHeaders.findIndex(h => h.includes('client') || h.includes('company') || h.includes('employer') || h.includes('organisation'))] || '',
+        contactName: parsedHeaders[lowerHeaders.findIndex(h => h.includes('contact') || h.includes('attention') || h.includes('contact name') || h.includes('client contact'))] || '',
         jobTitle: parsedHeaders[lowerHeaders.findIndex(h => h.includes('job') || h.includes('vacancy') || h.includes('role') || h.includes('opportunity'))] || '',
         value: parsedHeaders[lowerHeaders.findIndex(h => h.includes('value') || h.includes('net') || h.includes('salary') || h.includes('fee') || h.includes('amount'))] || '',
         activityTypeColumn: parsedHeaders[lowerHeaders.findIndex(h => h.includes('type') || h.includes('activity') || h.includes('event'))] || '',
@@ -279,6 +283,57 @@ export default function CRMImporterTab({ onShowToast, staff = [] }) {
           activityType = mixedMappings[colVal] || singleActivityType;
         }
 
+        // 3b. Optional CRM Enrichment
+        let crmCandidateId = '';
+        let crmCompanyId = '';
+        let crmContactId = '';
+        let crmJobId = '';
+        let crmContactName = '';
+        let crmContactJobTitle = '';
+        let crmContactEmail = '';
+        let crmClientCompany = '';
+        let crmJobTitle = '';
+
+        if (enrichCrmData && recruiter && recruiter.companyId) {
+          const candName = row[mappings.candidateName] || '';
+          const clientComp = row[mappings.clientCompany] || '';
+          setEnrichmentStatusText(`Enriching row ${i + 1} of ${total}: ${candName} at ${clientComp}...`);
+          try {
+            const enrichRes = await fetch('/api/crm/enrich', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                companyId: recruiter.companyId,
+                candidateEmail: row[mappings.candidateEmail] || '',
+                candidateName: candName,
+                clientCompany: clientComp,
+                contactName: row[mappings.contactName] || '',
+                jobTitle: row[mappings.jobTitle] || ''
+              })
+            });
+            if (enrichRes.ok) {
+              const enrichData = await enrichRes.json();
+              if (enrichData.success) {
+                crmCandidateId = enrichData.candidateId || '';
+                crmCompanyId = enrichData.companyId || '';
+                crmContactId = enrichData.contactId || '';
+                crmJobId = enrichData.jobId || '';
+                crmContactName = enrichData.contactName || '';
+                crmContactJobTitle = enrichData.contactJobTitle || '';
+                crmContactEmail = enrichData.contactEmail || '';
+                crmClientCompany = enrichData.clientCompany || '';
+                crmJobTitle = enrichData.jobTitle || '';
+              }
+            }
+          } catch (enrichErr) {
+            console.error(`Row ${i} CRM enrichment failed:`, enrichErr);
+          }
+
+          // Increment progress row-by-row since api calls add latency
+          const progress = Math.round((i / total) * 100);
+          setImportProgress(progress);
+        }
+
         // 4. Save CRM activity log
         const activityRef = doc(collection(db, 'crm_activities'));
         const activityData = {
@@ -287,12 +342,19 @@ export default function CRMImporterTab({ onShowToast, staff = [] }) {
           activityType,
           candidateName: row[mappings.candidateName] || '',
           candidateEmail: row[mappings.candidateEmail] || '',
-          clientCompany: row[mappings.clientCompany] || '',
-          jobTitle: row[mappings.jobTitle] || '',
+          clientCompany: crmClientCompany || row[mappings.clientCompany] || '',
+          jobTitle: crmJobTitle || row[mappings.jobTitle] || '',
           placementValue: Number(row[mappings.value] || 0),
           timestamp: timestampIso,
           dateKey,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          candidateId: crmCandidateId,
+          companyId: crmCompanyId,
+          contactId: crmContactId,
+          jobId: crmJobId,
+          contactName: crmContactName || row[mappings.contactName] || '',
+          contactJobTitle: crmContactJobTitle || '',
+          contactEmail: crmContactEmail || ''
         };
         batch.set(activityRef, activityData);
         opCount++;
@@ -341,7 +403,11 @@ export default function CRMImporterTab({ onShowToast, staff = [] }) {
             createdAt: timestampIso,
             date: dateKey,
             startDate: dateKey,
-            scoredDate: dateKey
+            scoredDate: dateKey,
+            candidateId: crmCandidateId,
+            companyId: crmCompanyId,
+            contactId: crmContactId,
+            jobId: crmJobId
           };
           batch.set(placementRef, placementData);
           opCount++;
@@ -411,6 +477,24 @@ export default function CRMImporterTab({ onShowToast, staff = [] }) {
           </span>
         </label>
       </div>
+
+      {csvFile && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'left' }}>
+          <input 
+            type="checkbox" 
+            id="enrich-crm-checkbox" 
+            checked={enrichCrmData} 
+            onChange={e => setEnrichCrmData(e.target.checked)} 
+            style={{ cursor: 'pointer', width: '16px', height: '16px', flexShrink: 0 }}
+          />
+          <label htmlFor="enrich-crm-checkbox" style={{ fontSize: '13px', cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span>Enrich with Recruitly CRM Data via API</span>
+            <span style={{ fontSize: '11px', fontWeight: 400, color: 'var(--text-secondary)' }}>
+              Queries Recruitly dynamically to match and associate Candidate, Company, Contact, and Job Pipeline IDs.
+            </span>
+          </label>
+        </div>
+      )}
 
       {isParsing && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
@@ -483,6 +567,22 @@ export default function CRMImporterTab({ onShowToast, staff = [] }) {
                 className="form-input" 
                 value={mappings.clientCompany}
                 onChange={e => setMappings(prev => ({ ...prev, clientCompany: e.target.value }))}
+                style={{ width: '100%', height: '34px', fontSize: '13px' }}
+              >
+                <option value="">-- Ignore (Optional) --</option>
+                {headers.map(h => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </div>
+
+            {/* CONTACT NAME */}
+            <div className="form-group">
+              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                Contact Name Column
+              </label>
+              <select 
+                className="form-input" 
+                value={mappings.contactName}
+                onChange={e => setMappings(prev => ({ ...prev, contactName: e.target.value }))}
                 style={{ width: '100%', height: '34px', fontSize: '13px' }}
               >
                 <option value="">-- Ignore (Optional) --</option>
@@ -757,6 +857,11 @@ export default function CRMImporterTab({ onShowToast, staff = [] }) {
               <div style={{ width: '100%', height: '8px', borderRadius: '4px', backgroundColor: 'var(--border-color)', overflow: 'hidden' }}>
                 <div style={{ width: `${importProgress}%`, height: '100%', backgroundColor: 'var(--primary)', transition: 'width 0.2s ease' }} />
               </div>
+              {enrichCrmData && enrichmentStatusText && (
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontStyle: 'italic', marginTop: '2px', textAlign: 'left' }}>
+                  {enrichmentStatusText}
+                </div>
+              )}
             </div>
           )}
 

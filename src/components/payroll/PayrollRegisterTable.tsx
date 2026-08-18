@@ -22,6 +22,7 @@ interface PayrollRegisterTableProps {
   onDeleteExpense: (id: string) => Promise<any>;
   onShowToast: (msg: string, type?: string) => void;
   currentUser?: any;
+  scopingViewMode?: string;
 }
 
 export default function PayrollRegisterTable({
@@ -39,9 +40,10 @@ export default function PayrollRegisterTable({
   onSaveExpense,
   onDeleteExpense,
   onShowToast,
-  currentUser
+  currentUser,
+  scopingViewMode
 }: PayrollRegisterTableProps) {
-  const isRecruiter = currentUser?.permissions?.role === 'recruiter';
+  const isRecruiter = currentUser?.permissions?.role === 'recruiter' || scopingViewMode === 'self';
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCompanyId, setSelectedCompanyId] = useState<string[]>(['all']);
   const [selectedDept, setSelectedDept] = useState<string[]>(['all']);

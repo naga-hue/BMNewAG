@@ -3606,6 +3606,7 @@ export default function App() {
               onDeleteExpense={handleDeleteExpense}
               onShowToast={handleShowToast}
               currentUser={currentUser}
+              scopingViewMode={scopingViewMode}
             />
           )}
 

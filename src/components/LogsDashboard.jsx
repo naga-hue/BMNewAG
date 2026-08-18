@@ -461,6 +461,8 @@ export default function LogsDashboard({
                 <option value="cron-tomorrow-anniversary">Management Anniversary Alerts (1d before)</option>
                 <option value="cron-dayof-birthday">Direct Employee Birthday Wishes</option>
                 <option value="cron-dayof-anniversary">Direct Employee Anniversary Wishes</option>
+                <option value="cron-daily-absences-report">Daily Absences Table Report</option>
+                <option value="cron-manager-leave-alert">Manager Leave Notification</option>
               </select>
             </div>
           </div>
@@ -498,6 +500,14 @@ export default function LogsDashboard({
                     triggerLabel = 'AI Celebration';
                     badgeBg = 'rgba(16, 185, 129, 0.08)';
                     badgeText = '#10b981';
+                  } else if (email.triggerType === 'cron-daily-absences-report') {
+                    triggerLabel = 'Absence Summary';
+                    badgeBg = 'rgba(14, 165, 233, 0.08)';
+                    badgeText = '#0ea5e9';
+                  } else if (email.triggerType === 'cron-manager-leave-alert') {
+                    triggerLabel = 'Manager Leave Alert';
+                    badgeBg = 'rgba(139, 92, 246, 0.08)';
+                    badgeText = '#8b5cf6';
                   }
 
                   const toAddresses = Array.isArray(email.to) ? email.to.join(', ') : String(email.to || '');
@@ -659,6 +669,56 @@ export default function LogsDashboard({
                     onChange={e => setSettingsForm(prev => ({ ...prev, alertCoworkers: e.target.checked }))}
                     style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                   />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: 0 }} />
+
+          {/* Toggle 3: Daily leave reminders */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <label style={{ fontSize: '14px', fontWeight: 700, display: 'block', color: 'var(--text-primary)' }}>Daily Absence & Leave Reports</label>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Automatically email absence reports daily at 6:30 AM UK time showing who is currently on leave.</span>
+              </div>
+              <input 
+                type="checkbox" 
+                checked={settingsForm.alertLeaveStatus !== false}
+                onChange={e => setSettingsForm(prev => ({ ...prev, alertLeaveStatus: e.target.checked }))}
+                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+              />
+            </div>
+
+            {(settingsForm.alertLeaveStatus !== false) && (
+              <div style={{ marginTop: '16px', paddingLeft: '16px', borderLeft: '2px solid var(--accent)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Alert Leave Managers */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <label style={{ fontSize: '13px', fontWeight: 600, display: 'block' }}>Alert department/reporting managers</label>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Notify managers at 7:00 AM if any of their direct reports are on leave today.</span>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    checked={settingsForm.alertLeaveManagers !== false}
+                    onChange={e => setSettingsForm(prev => ({ ...prev, alertLeaveManagers: e.target.checked }))}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                  />
+                </div>
+
+                {/* Director leave emails */}
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>Email complete daily absence table to designated directors/admins</label>
+                  <input 
+                    type="text" 
+                    className="form-input"
+                    placeholder="e.g. director1@company.com, admin@company.com"
+                    value={settingsForm.leaveManagementEmails || ''}
+                    onChange={e => setSettingsForm(prev => ({ ...prev, leaveManagementEmails: e.target.value }))}
+                    style={{ width: '100%' }}
+                  />
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Comma separated list of emails. These recipients will receive the daily table detailing on-leave staff, start/end dates, and remaining balances.</span>
                 </div>
               </div>
             )}

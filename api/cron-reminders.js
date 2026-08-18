@@ -41,6 +41,10 @@ export default async function handler(req, res) {
     const activeStaff = rawStaffList.filter(s => s.status !== 'exited');
     logs.push(`Found ${activeStaff.length} active staff members and ${companiesList.length} companies.`);
 
+    logs.push("Fetching leave requests and leave policies from Firestore REST API...");
+    const leaveRequestsList = await fetchCollection(projectId, 'leaveRequests') || [];
+    const leavePoliciesList = await fetchCollection(projectId, 'leavePolicies') || [];
+
     // 2. Fetch Email Reminders Configuration Settings from Firestore REST
     logs.push("Fetching email reminders configuration settings...");
     const settings = await fetchDocument(projectId, 'settings', 'email_reminders') || {
@@ -70,6 +74,26 @@ export default async function handler(req, res) {
     const tmDay = tomorrow.getDate();
 
     logs.push(`Running search for Today (${tdMonth + 1}/${tdDay}) and Tomorrow (${tmMonth + 1}/${tmDay})...`);
+
+    // Calculate UK timezone-safe today date string (YYYY-MM-DD) for leaves
+    const formatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/London',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    const formattedParts = formatter.formatToParts(today);
+    const dd = formattedParts.find(p => p.type === 'day').value;
+    const mm = formattedParts.find(p => p.type === 'month').value;
+    const yyyy = formattedParts.find(p => p.type === 'year').value;
+    const todayStr = `${yyyy}-${mm}-${dd}`;
+    logs.push(`London date string for active leave checks: ${todayStr}`);
+
+    const activeLeavesToday = leaveRequestsList.filter(req => {
+      if (req.status !== 'approved') return false;
+      return todayStr >= req.startDate && todayStr <= req.endDate;
+    });
+    logs.push(`Found ${activeLeavesToday.length} active approved leave requests for today.`);
 
     // 4. Process matches
     for (const s of activeStaff) {
@@ -242,6 +266,164 @@ Humres Admin Hub`;
       }
     }
 
+    // ----------------------------------------------------
+    // ACTION C: Daily Leave Reminder Alerts
+    // ----------------------------------------------------
+    const alertLeaveStatus = settings.alertLeaveStatus !== false;
+    if (alertLeaveStatus && activeLeavesToday.length > 0) {
+      logs.push(`Processing daily leave reminders for ${activeLeavesToday.length} active leaves...`);
+
+      // 1. Send complete table summary to directors / leaveManagementEmails
+      const leaveRecipients = (settings.leaveManagementEmails || '')
+        .split(',')
+        .map(e => e.trim())
+        .filter(Boolean);
+
+      if (leaveRecipients.length > 0) {
+        let tableRows = '';
+        activeLeavesToday.forEach(req => {
+          const s = activeStaff.find(member => member.id === req.staffId);
+          if (s) {
+            const comp = companiesList.find(c => c.id === s.companyId);
+            const compName = comp ? comp.name : 'Group Company';
+            
+            const policy = leavePoliciesList.find(p => p.id === s.leavePolicyId);
+            const memberLeaves = leaveRequestsList.filter(r => r.staffId === s.id && r.status === 'approved');
+            const annualTaken = memberLeaves.filter(r => r.leaveType === 'annual').reduce((sum, r) => sum + (parseFloat(r.totalDays) || 0), 0);
+            const annualAllowed = resolveAnnualAllowance(s, policy);
+            const annualRemaining = Math.max(0, annualAllowed - annualTaken);
+
+            tableRows += `
+              <tr style="border-bottom: 1px solid #cbd5e1;">
+                <td style="padding: 10px; font-weight: bold; color: #1e293b;">${s.fullName}</td>
+                <td style="padding: 10px; color: #475569;">${s.department || 'N/A'}</td>
+                <td style="padding: 10px; color: #475569;">${compName}</td>
+                <td style="padding: 10px; color: #0284c7; font-weight: 500;">${req.startDate}</td>
+                <td style="padding: 10px; color: #0284c7; font-weight: 500;">${req.endDate}</td>
+                <td style="padding: 10px; color: #475569; text-transform: capitalize;">${req.leaveType}</td>
+                <td style="padding: 10px; text-align: center; color: #475569;">${annualAllowed} days</td>
+                <td style="padding: 10px; text-align: center; font-weight: bold; color: ${annualRemaining < 5 ? '#ef4444' : '#10b981'};">${annualRemaining} days</td>
+              </tr>
+            `;
+          }
+        });
+
+        const htmlBody = `
+          <div style="font-family: Arial, sans-serif; font-size: 14px; color: #334155; max-width: 800px;">
+            <h2 style="color: #0f172a; border-bottom: 2px solid #0284c7; padding-bottom: 8px;">Daily Staff Absence & Leave Summary</h2>
+            <p>Dear Management Team,</p>
+            <p>Below is the summary of staff members who are currently on leave today (<strong>${todayStr}</strong>):</p>
+            
+            <table style="width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px;">
+              <thead>
+                <tr style="background-color: #f8fafc; border-bottom: 2px solid #cbd5e1; text-align: left;">
+                  <th style="padding: 10px; color: #334155;">Employee Name</th>
+                  <th style="padding: 10px; color: #334155;">Department</th>
+                  <th style="padding: 10px; color: #334155;">Company</th>
+                  <th style="padding: 10px; color: #334155;">Start Date</th>
+                  <th style="padding: 10px; color: #334155;">End Date</th>
+                  <th style="padding: 10px; color: #334155;">Leave Type</th>
+                  <th style="padding: 10px; text-align: center; color: #334155;">Allocated</th>
+                  <th style="padding: 10px; text-align: center; color: #334155;">Remaining Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tableRows}
+              </tbody>
+            </table>
+            
+            <p style="margin-top: 24px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 12px;">
+              This is an automated report generated by the Humres Admin Hub.
+            </p>
+          </div>
+        `;
+
+        logs.push(`Sending daily leaves table summary to directors: ${leaveRecipients.join(', ')}`);
+        try {
+          await sendGraphEmailWithCC(accessToken, senderEmail, leaveRecipients, [], `[Daily Absence Report] Staff on Leave - ${todayStr}`, htmlBody);
+          await saveSentEmailREST(projectId, {
+            to: leaveRecipients,
+            subject: `[Daily Absence Report] Staff on Leave - ${todayStr}`,
+            body: htmlBody,
+            timestamp: new Date().toISOString(),
+            triggerType: 'cron-daily-absences-report',
+            sender: senderEmail
+          });
+        } catch (err) {
+          logs.push(`[Error] Failed to send daily absence summary email: ${err.message}`);
+        }
+      }
+
+      // 2. Alert reporting/line managers if enabled
+      if (settings.alertLeaveManagers !== false) {
+        for (const req of activeLeavesToday) {
+          const s = activeStaff.find(member => member.id === req.staffId);
+          if (s) {
+            const managerIds = s.reportingManagerIds || (s.reportingManagerId ? [s.reportingManagerId] : []);
+            const dottedIds = s.dottedLineManagerIds || [];
+            const allManagerIds = [...new Set([...managerIds, ...dottedIds])];
+
+            const managerEmails = [];
+            allManagerIds.forEach(mId => {
+              const mObj = activeStaff.find(member => member.id === mId);
+              const mEmail = mObj?.businessEmail || mObj?.personalEmail;
+              if (mEmail && !managerEmails.includes(mEmail)) {
+                managerEmails.push(mEmail);
+              }
+            });
+
+            if (managerEmails.length > 0) {
+              const comp = companiesList.find(c => c.id === s.companyId);
+              const compName = comp ? comp.name : 'Group Company';
+              
+              const policy = leavePoliciesList.find(p => p.id === s.leavePolicyId);
+              const memberLeaves = leaveRequestsList.filter(r => r.staffId === s.id && r.status === 'approved');
+              const annualTaken = memberLeaves.filter(r => r.leaveType === 'annual').reduce((sum, r) => sum + (parseFloat(r.totalDays) || 0), 0);
+              const annualAllowed = resolveAnnualAllowance(s, policy);
+              const annualRemaining = Math.max(0, annualAllowed - annualTaken);
+
+              const managerHtml = `
+                <div style="font-family: Arial, sans-serif; font-size: 14px; color: #334155; max-width: 600px;">
+                  <h3 style="color: #0f172a; border-bottom: 2px solid #f59e0b; padding-bottom: 6px;">Team Member Absence Notification</h3>
+                  <p>Hi,</p>
+                  <p>This is a reminder that your direct report, <strong>${s.fullName}</strong> (${s.jobTitle || 'Team Member'}), is on leave today (<strong>${todayStr}</strong>).</p>
+                  
+                  <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 6px; margin: 16px 0;">
+                    <strong style="display: block; margin-bottom: 8px; color: #1e293b;">Absence Details:</strong>
+                    <ul style="margin: 0; padding-left: 20px; color: #475569; line-height: 1.6;">
+                      <li><strong>Leave Type:</strong> <span style="text-transform: capitalize;">${req.leaveType}</span></li>
+                      <li><strong>Duration:</strong> ${req.startDate} to ${req.endDate} (${req.totalDays} days)</li>
+                      <li><strong>Current Allocated Leave:</strong> ${annualAllowed} days</li>
+                      <li><strong>Current Leave Balance:</strong> ${annualRemaining} days remaining</li>
+                      ${req.notes ? `<li><strong>Notes:</strong> ${req.notes}</li>` : ''}
+                    </ul>
+                  </div>
+
+                  <p>Please adjust task assignments and team resource scheduling accordingly.</p>
+                  <p>Best regards,<br>Humres Admin Hub</p>
+                </div>
+              `;
+
+              logs.push(`Sending manager absence alert for ${s.fullName} to: ${managerEmails.join(', ')}`);
+              try {
+                await sendGraphEmailWithCC(accessToken, senderEmail, managerEmails, [], `[Absence Alert] Direct Report on Leave: ${s.fullName}`, managerHtml);
+                await saveSentEmailREST(projectId, {
+                  to: managerEmails,
+                  subject: `[Absence Alert] Direct Report on Leave: ${s.fullName}`,
+                  body: managerHtml,
+                  timestamp: new Date().toISOString(),
+                  triggerType: 'cron-manager-leave-alert',
+                  sender: senderEmail
+                });
+              } catch (err) {
+                logs.push(`[Error] Failed manager absence alert for ${s.fullName}: ${err.message}`);
+              }
+            }
+          }
+        }
+      }
+    }
+
     logs.push("Cron execution finished successfully.");
     return res.status(200).json({ success: true, logs });
 
@@ -348,11 +530,13 @@ function sendGraphEmailWithCC(accessToken, senderEmail, toEmails, ccEmails, subj
       emailAddress: { address: email }
     }));
 
+    const isHtml = bodyText.includes('<html>') || bodyText.includes('</div>') || bodyText.includes('</table>') || bodyText.includes('<br>');
+
     const emailPayload = JSON.stringify({
       message: {
         subject: subject,
         body: {
-          contentType: 'Text',
+          contentType: isHtml ? 'HTML' : 'Text',
           content: bodyText
         },
         toRecipients,
@@ -568,4 +752,24 @@ function saveSentEmailREST(projectId, emailLog) {
     req.write(payload);
     req.end();
   });
+}
+
+function resolveAnnualAllowance(member, policy) {
+  if (!policy) return 20;
+  if (policy.name?.toLowerCase().includes('global recruiters')) {
+    if (!member.startDate) return 20;
+    const parts = parseDateParts(member.startDate);
+    if (!parts) return 20;
+
+    const start = new Date(parts.year, parts.month, parts.day);
+    const today = new Date();
+    let years = today.getFullYear() - start.getFullYear();
+    const m = today.getMonth() - start.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < start.getDate())) {
+      years--;
+    }
+    const calculated = 20 + Math.max(0, years);
+    return Math.min(25, calculated);
+  }
+  return parseInt(policy.annualAllowance, 10) || 20;
 }

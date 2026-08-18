@@ -163,7 +163,10 @@ export default function App() {
     alertCoworkers: false,
     sendToEmployee: true,
     alertManagementDayBefore: true,
-    sendGreetingsDayOf: true
+    sendGreetingsDayOf: true,
+    alertLeaveStatus: true,
+    leaveManagementEmails: 'groupadmin@globalrecruiters.ae',
+    alertLeaveManagers: true
   });
   const payrollRecords = useBoundStore(state => state.payrollRecords);
   const payrollPolicies = useBoundStore(state => state.payrollPolicies);
@@ -845,7 +848,10 @@ export default function App() {
       alertCoworkers: false,
       sendToEmployee: true,
       alertManagementDayBefore: true,
-      sendGreetingsDayOf: true
+      sendGreetingsDayOf: true,
+      alertLeaveStatus: true,
+      leaveManagementEmails: 'groupadmin@globalrecruiters.ae',
+      alertLeaveManagers: true
     });
     return () => unsubscribe();
   }, []);

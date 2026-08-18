@@ -328,6 +328,12 @@ export default function KpisDashboard({
   const [crmCustomEndDate, setCrmCustomEndDate] = useState('');
   const [crmActivityFilter, setCrmActivityFilter] = useState('all'); // 'all' | 'cv_sent' | 'speculative_cv' | 'interview' | 'opportunity' | 'placement'
 
+  // CRM Detail Modal States
+  const [selectedCrmActivity, setSelectedCrmActivity] = useState(null);
+  const [candidateActivities, setCandidateActivities] = useState([]);
+  const [clientActivities, setClientActivities] = useState([]);
+  const [isLoadingModalHistory, setIsLoadingModalHistory] = useState(false);
+
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedQandleSearch(qandleSearch);
@@ -1346,6 +1352,8 @@ export default function KpisDashboard({
   const lastCallsWindowRef = useRef({ start: '', end: '' });
   const lastQandleWindowRef = useRef({ start: '', end: '' });
   const lastCrmWindowRef = useRef({ start: '', end: '' });
+  const activeModalActivityIdRef = useRef(null);
+
 
   // Option C: Visibility-Aware Smart Polling every 2 minutes for "Today's" data
   useEffect(() => {

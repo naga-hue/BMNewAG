@@ -99,7 +99,7 @@ export default function App() {
       return ['whats_important', 'dashboard', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'credit_control', 'cashflow', 'expenses', 'vendors', 'crm', 'logs', 'reports', 'rbac'];
     }
     if (role === 'manager') {
-      return ['whats_important', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'crm', 'expenses', 'reports'];
+      return ['whats_important', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'crm', 'expenses', 'vendors', 'reports'];
     }
     return ['directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'expenses', 'vendors', 'crm'];
   };
@@ -124,7 +124,7 @@ export default function App() {
   const DEFAULT_ADMIN_USER = {
     id: 'super-admin',
     fullName: 'Naga Kandasamy',
-    businessEmail: 'naga@globalrecruiters.ae',
+    businessEmail: 'naga@humres.co.uk',
     permissions: {
       role: 'admin',
       dataScope: 'all',
@@ -230,10 +230,11 @@ export default function App() {
       } else if (storedId && useBoundStore.getState().staff.length > 0) {
         const found = useBoundStore.getState().staff.find(s => s.id === storedId);
         if (found) {
-          const role = found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter';
+          const isNaga = found.businessEmail?.toLowerCase() === 'naga@humres.co.uk' || found.businessEmail?.toLowerCase() === 'naga.admin@humres.co.uk';
+          const role = isNaga ? 'admin' : (found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter');
           const permissions = found.permissions || {
             role,
-            dataScope: role === 'manager' ? 'department' : 'self',
+            dataScope: role === 'admin' ? 'all' : (role === 'manager' ? 'department' : 'self'),
             allowedModules: getDefaultAllowedModules(role)
           };
           setCurrentUser({ ...found, permissions });
@@ -250,10 +251,11 @@ export default function App() {
         if (storedId && storedId !== 'super-admin') {
           const found = staffList.find(s => s.id === storedId);
           if (found) {
-            const role = found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter';
+            const isNaga = found.businessEmail?.toLowerCase() === 'naga@humres.co.uk' || found.businessEmail?.toLowerCase() === 'naga.admin@humres.co.uk';
+            const role = isNaga ? 'admin' : (found.department === 'Finance' || found.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter');
             const permissions = found.permissions || {
               role,
-              dataScope: role === 'manager' ? 'department' : 'self',
+              dataScope: role === 'admin' ? 'all' : (role === 'manager' ? 'department' : 'self'),
               allowedModules: getDefaultAllowedModules(role)
             };
             setCurrentUser({ ...found, permissions });
@@ -1712,7 +1714,7 @@ export default function App() {
             const password = e.target.password.value;
 
             // 1. Check Super Admin
-            if ((email === DEFAULT_ADMIN_USER.businessEmail.toLowerCase() || email === 'naga@gloablrecruiters.ae') && (password === 'admin123' || password === 'Welcome123')) {
+            if ((email === DEFAULT_ADMIN_USER.businessEmail.toLowerCase() || email === 'naga@gloablrecruiters.ae' || email === 'naga@globalrecruiters.ae') && (password === 'admin123' || password === 'Welcome123')) {
               setCurrentUser(DEFAULT_ADMIN_USER);
               localStorage.setItem('bm-logged-in-user-id', 'super-admin');
               handleShowToast("Welcome back, Super Admin!", "success");
@@ -1724,10 +1726,11 @@ export default function App() {
             if (foundStaff) {
               const correctPassword = foundStaff.password || 'Welcome123';
               if (correctPassword === password) {
-                const role = foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter';
+                const isNaga = foundStaff.businessEmail?.toLowerCase() === 'naga@humres.co.uk' || foundStaff.businessEmail?.toLowerCase() === 'naga.admin@humres.co.uk';
+                const role = isNaga ? 'admin' : (foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter');
                 const updatedPermissions = foundStaff.permissions || {
                   role,
-                  dataScope: role === 'manager' ? 'department' : 'self',
+                  dataScope: role === 'admin' ? 'all' : (foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self'),
                   allowedModules: getDefaultAllowedModules(role)
                 };
                 setCurrentUser({
@@ -2186,7 +2189,7 @@ export default function App() {
                         <li>
                           <div className={`nav-item ${activeTab === 'vendors' ? 'active' : ''}`} onClick={() => setActiveTab('vendors')}>
                             <Laptop size={18} />
-                            <span>Accounts Payable</span>
+                            <span>Vendors & Assets</span>
                           </div>
                         </li>
                       )}
@@ -2554,10 +2557,11 @@ export default function App() {
                     } else {
                       const selectedMember = staff.find(st => st.id === val);
                       if (selectedMember) {
-                        const role = selectedMember.department === 'Finance' || selectedMember.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter';
+                        const isNaga = selectedMember.businessEmail?.toLowerCase() === 'naga@humres.co.uk' || selectedMember.businessEmail?.toLowerCase() === 'naga.admin@humres.co.uk';
+                        const role = isNaga ? 'admin' : (selectedMember.department === 'Finance' || selectedMember.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter');
                         const updatedPermissions = selectedMember.permissions || {
                           role,
-                          dataScope: role === 'manager' ? 'department' : 'self',
+                          dataScope: role === 'admin' ? 'all' : (role === 'manager' ? 'department' : 'self'),
                           allowedModules: getDefaultAllowedModules(role)
                         };
                         setCurrentUser({

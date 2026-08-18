@@ -32,6 +32,31 @@ export default function CommissionsMatrix({
   const [matrixCompany, setMatrixCompany] = useState<string[]>(['all']);
   const [matrixDept, setMatrixDept] = useState<string[]>(['all']);
   const [expandedExitedMatrix, setExpandedExitedMatrix] = useState(false);
+  const [selectedBreakdown, setSelectedBreakdown] = useState<{
+    recruiterName: string;
+    monthLabel: string;
+    value: number;
+    measure: string;
+    placements: any[];
+    policyName: string;
+  } | null>(null);
+
+  const handleCellClick = (member: Staff, policy: any, monthStr: string, value: number) => {
+    const calc = calculateCashReceivedCommission(member, policy, monthStr, staff, companies, placements);
+    const monthLabel = new Date(`${monthStr}-02`).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    const allPlacements = [
+      ...(calc.currentPlacements || []).map(p => ({ ...p, type: 'current' })),
+      ...(calc.releasedPlacements || []).map(p => ({ ...p, type: 'released' }))
+    ];
+    setSelectedBreakdown({
+      recruiterName: member.fullName,
+      monthLabel,
+      value,
+      measure: matrixMeasure === 'payout' ? 'Net Payable Payout (Cash)' : 'Base Earned Commission',
+      placements: allPlacements,
+      policyName: policy ? policy.name : 'None'
+    });
+  };
 
   const allAvailableDepts = useMemo(() => {
     const depts: string[] = [];
@@ -292,7 +317,21 @@ export default function CommissionsMatrix({
                   {matrixMonths.map(m => {
                     const val = row.monthlyValues[m];
                     return (
-                      <td key={m} style={{ textAlign: 'right', padding: '12px', color: val > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                      <td 
+                        key={m} 
+                        style={{ 
+                          textAlign: 'right', 
+                          padding: '12px', 
+                          color: val > 0 ? 'var(--text-primary)' : 'var(--text-muted)',
+                          cursor: val > 0 ? 'pointer' : 'default',
+                          textDecoration: val > 0 ? 'underline' : 'none'
+                        }}
+                        onClick={() => {
+                          if (val > 0) {
+                            handleCellClick(row.member, row.policy, `${matrixYear}-${m}`, val);
+                          }
+                        }}
+                      >
                         {val > 0 ? formatGBP(val) : '—'}
                       </td>
                     );
@@ -351,6 +390,169 @@ export default function CommissionsMatrix({
           )}
         </table>
       </div>
+
+      {selectedBreakdown && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-primary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '850px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)',
+            overflow: 'hidden'
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: '20px 24px',
+              borderBottom: '1px solid var(--border-color)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              backgroundColor: 'var(--bg-secondary)'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Commission Breakdown & Details
+                </h3>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  {selectedBreakdown.recruiterName} • {selectedBreakdown.monthLabel}
+                </span>
+              </div>
+              <button 
+                onClick={() => setSelectedBreakdown(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-secondary)',
+                  fontSize: '20px',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content */}
+            <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              {/* Summary Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
+                <div style={{ padding: '16px', backgroundColor: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600 }}>Active Scheme</span>
+                  <div style={{ fontSize: '13px', fontWeight: 700, marginTop: '4px', color: 'var(--accent)' }}>{selectedBreakdown.policyName}</div>
+                </div>
+                <div style={{ padding: '16px', backgroundColor: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600 }}>Measure Mode</span>
+                  <div style={{ fontSize: '13px', fontWeight: 700, marginTop: '4px' }}>{selectedBreakdown.measure}</div>
+                </div>
+                <div style={{ padding: '16px', backgroundColor: 'rgba(99, 102, 241, 0.05)', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+                  <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--accent)', fontWeight: 600 }}>Calculated Total</span>
+                  <div style={{ fontSize: '18px', fontWeight: 800, marginTop: '4px', color: 'var(--text-primary)' }}>{formatGBP(selectedBreakdown.value)}</div>
+                </div>
+              </div>
+
+              {/* Placements Table */}
+              <div>
+                <h4 style={{ fontSize: '13px', fontWeight: 700, margin: '0 0 12px 0', color: 'var(--text-primary)' }}>
+                  Contributing Placement Splits
+                </h4>
+                {selectedBreakdown.placements.length === 0 ? (
+                  <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-secondary)', borderRadius: '8px', border: '1px dotted var(--border-color)' }}>
+                    No placements registered for this commission cycle.
+                  </div>
+                ) : (
+                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontWeight: 700 }}>
+                          <th style={{ padding: '10px 12px' }}>Placement ID</th>
+                          <th style={{ padding: '10px 12px' }}>Candidate / Client</th>
+                          <th style={{ padding: '10px 12px' }}>Start Date</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'right' }}>Net Invoice</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'center' }}>Split %</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'right' }}>Your Share</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'center' }}>Status</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--accent)' }}>Comm. Share</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedBreakdown.placements.map((p, idx) => {
+                          const statusLabel = p.paymentStatus === 'paid' ? 'Paid' : 'Unpaid (Withheld)';
+                          const statusColor = p.paymentStatus === 'paid' ? 'var(--success)' : 'var(--warning)';
+                          const statusBg = p.paymentStatus === 'paid' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)';
+                          
+                          return (
+                            <tr key={idx} style={{ borderBottom: idx < selectedBreakdown.placements.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
+                              <td style={{ padding: '10px 12px', fontWeight: 600 }}>{p.placementId}</td>
+                              <td style={{ padding: '10px 12px' }}>
+                                <div style={{ fontWeight: 600 }}>{p.candidateName}</div>
+                                <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{p.clientCompany}</div>
+                              </td>
+                              <td style={{ padding: '10px 12px' }}>{new Date(p.startDate).toLocaleDateString()}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right' }}>{formatGBP(p.netScoreValue)}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600 }}>{p.mySplitPct}%</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right' }}>{formatGBP(p.myBillingShare)}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                <span style={{
+                                  fontSize: '9px',
+                                  fontWeight: 700,
+                                  color: statusColor,
+                                  backgroundColor: statusBg,
+                                  padding: '2px 6px',
+                                  borderRadius: '4px'
+                                }}>
+                                  {statusLabel}
+                                </span>
+                              </td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>
+                                {formatGBP(p.myCommShare)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              padding: '16px 24px',
+              borderTop: '1px solid var(--border-color)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              backgroundColor: 'var(--bg-secondary)'
+            }}>
+              <button 
+                className="btn-secondary"
+                onClick={() => setSelectedBreakdown(null)}
+                style={{ padding: '8px 16px', fontSize: '12px' }}
+              >
+                Close Breakdown
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

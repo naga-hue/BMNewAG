@@ -335,10 +335,8 @@ export default function AiChatbot({ assetAssignments = [], onShowToast }) {
         totalExpenses: expensesBreakdown.totalExpenses,
         expensesByPayeeSummary: expensesBreakdown.expensesByPayeeSummary,
         expensesByNominalSummary: expensesBreakdown.expensesByNominalSummary,
-        expensesTransactionsList: expensesBreakdown.transactions,
         revenueGeneratedNet: revenueBreakdown.revenueNet,
         revenueGeneratedGross: revenueBreakdown.revenueGross,
-        placementsList: revenueBreakdown.placementsList,
         assignedLicenses: getStaffLicenses(s),
         leavePolicyName: policy ? policy.name : 'None',
         annualLeaveAllowed: annualAllowed,
@@ -347,7 +345,7 @@ export default function AiChatbot({ assetAssignments = [], onShowToast }) {
         sickLeaveAllowed: sickAllowed,
         sickLeaveTaken: sickTaken,
         sickLeaveRemaining: sickRemaining,
-        leaveRequestsHistory: approvedLeaves.map(r => ({ type: r.leaveType, start: r.startDate, end: r.endDate, days: r.totalDays }))
+        leaveRequestsHistory: approvedLeaves.slice(-3).map(r => ({ type: r.leaveType, start: r.startDate, end: r.endDate, days: r.totalDays }))
       };
     });
 
@@ -416,9 +414,10 @@ export default function AiChatbot({ assetAssignments = [], onShowToast }) {
       startDate: c.startDate || 'N/A'
     }));
 
-    // 5. Unreconciled Expenses
+    // 5. Unreconciled Expenses (limited to recent 30 for token optimization)
     const unreconciledExpenses = expenses
       .filter(e => !e.isReconciled)
+      .slice(-30)
       .map(e => ({
         date: e.date,
         payee: e.payee,
@@ -427,8 +426,8 @@ export default function AiChatbot({ assetAssignments = [], onShowToast }) {
         nominalCode: e.nominalCode || 'Unassigned'
       }));
 
-    // 6. Placements (Revenue, sales performance, and recruiter splits)
-    const placementsSummary = placements.map(p => {
+    // 6. Placements (limited to recent 80 for token optimization)
+    const placementsSummary = placements.slice(-80).map(p => {
       let splitsInfo = [];
       if (p.splits && p.splits.length > 0) {
         splitsInfo = p.splits.map(sp => {

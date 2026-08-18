@@ -3,7 +3,7 @@ import { useBoundStore } from '../store/useBoundStore';
 import { FX_RATES, toGBP } from '../utils/currency';
 import { Sparkles, MessageSquare, X, Send, Bot, User, CornerDownLeft, Info, HelpCircle, Mic, MicOff } from 'lucide-react';
 
-export default function AiChatbot({ assetAssignments = [] }) {
+export default function AiChatbot({ assetAssignments = [], onShowToast }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
     {
@@ -604,6 +604,122 @@ export default function AiChatbot({ assetAssignments = [] }) {
     }
   };
 
+  const parseActionBlock = (content) => {
+    if (!content) return null;
+    const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
+    const match = content.match(jsonRegex);
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[1].trim());
+        if (parsed && parsed.action === 'CREATE_COMPANY' && parsed.company) {
+          return parsed;
+        }
+      } catch (e) {
+        console.error("Failed to parse action JSON:", e);
+      }
+    }
+    return null;
+  };
+
+  const renderActionCard = (content) => {
+    const actionData = parseActionBlock(content);
+    if (!actionData) return null;
+
+    const { company } = actionData;
+    const isAlreadyCreated = companies.some(c => c.name?.toLowerCase() === company.name?.toLowerCase() || c.registrationNumber === company.registrationNumber);
+
+    const handleApply = async () => {
+      try {
+        const newCompany = {
+          id: `comp-${Date.now()}`,
+          name: company.name || 'Unnamed Company',
+          legalName: company.legalName || company.name || 'Unnamed Legal Entity',
+          country: company.country || 'United Kingdom',
+          registrationNumber: company.registrationNumber || 'Not Provided',
+          registrationDate: company.registrationDate || '',
+          vatNumber: company.vatNumber || '',
+          notes: company.notes || 'Created via AI Assistant',
+          includeInConsolidation: true,
+          pointOfContact: company.pointOfContact && company.pointOfContact.name ? {
+            name: company.pointOfContact.name,
+            role: company.pointOfContact.role || 'Contact Person',
+            email: company.pointOfContact.email || '',
+            phone: company.pointOfContact.phone || ''
+          } : null,
+          hasInsurance: false,
+          insurance: null,
+          documents: [],
+          complianceTasks: [],
+          departments: [],
+          bankAccounts: [],
+          vatFrequency: 'none',
+          vatStartMonth: 1,
+          vatDueDateDays: 37
+        };
+
+        await useBoundStore.getState().updateCompany(newCompany);
+        if (onShowToast) {
+          onShowToast(`Entity "${newCompany.name}" registered successfully via AI!`, 'success');
+        }
+      } catch (err) {
+        console.error("AI company creation failed:", err);
+        if (onShowToast) {
+          onShowToast(`Failed to register entity: ${err.message}`, 'warning');
+        }
+      }
+    };
+
+    return (
+      <div style={{
+        marginTop: '8px',
+        padding: '12px',
+        borderRadius: '8px',
+        backgroundColor: 'rgba(99, 102, 241, 0.08)',
+        border: '1px dashed var(--primary)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        color: 'var(--text-primary)'
+      }}>
+        <div style={{ fontWeight: 600, fontSize: '11px', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Sparkles size={12} style={{ color: '#fbbf24' }} /> Proposed Group Entity
+        </div>
+        <div style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div><strong>Trade Name:</strong> {company.name}</div>
+          {company.legalName && <div><strong>Legal Name:</strong> {company.legalName}</div>}
+          <div><strong>Jurisdiction:</strong> {company.country}</div>
+          {company.registrationNumber && <div><strong>Reg Number:</strong> {company.registrationNumber}</div>}
+          {company.pointOfContact?.name && (
+            <div><strong>Contact:</strong> {company.pointOfContact.name} ({company.pointOfContact.role})</div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={handleApply}
+          disabled={isAlreadyCreated}
+          style={{
+            marginTop: '4px',
+            padding: '6px 12px',
+            backgroundColor: isAlreadyCreated ? 'var(--border-color)' : 'var(--primary)',
+            color: isAlreadyCreated ? 'var(--text-muted)' : 'white',
+            border: 'none',
+            borderRadius: '4px',
+            fontSize: '11px',
+            fontWeight: 600,
+            cursor: isAlreadyCreated ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '4px',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          {isAlreadyCreated ? 'Registered ✓' : 'Register Entity'}
+        </button>
+      </div>
+    );
+  };
+
   // Helper to convert Markdown (Headers, bullet lists, bold, italics, tables) into structured React elements
   const formatMsgText = (text) => {
     if (!text) return '';
@@ -868,20 +984,22 @@ export default function AiChatbot({ assetAssignments = [] }) {
                 </div>
 
                 {/* Text Bubble */}
-                <div
-                  style={{
-                    maxWidth: '80%',
-                    padding: '10px 14px',
-                    borderRadius: '12px',
-                    fontSize: '12px',
-                    lineHeight: '1.5',
-                    backgroundColor: msg.role === 'user' ? 'var(--primary)' : 'var(--bg-card)',
-                    color: msg.role === 'user' ? 'white' : 'var(--text-primary)',
-                    border: msg.role === 'user' ? 'none' : '1px solid var(--border-color)',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
-                  }}
-                >
-                  {formatMsgText(msg.content)}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '80%' }}>
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '12px',
+                      fontSize: '12px',
+                      lineHeight: '1.5',
+                      backgroundColor: msg.role === 'user' ? 'var(--primary)' : 'var(--bg-card)',
+                      color: msg.role === 'user' ? 'white' : 'var(--text-primary)',
+                      border: msg.role === 'user' ? 'none' : '1px solid var(--border-color)',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+                    }}
+                  >
+                    {formatMsgText(msg.content)}
+                  </div>
+                  {msg.role !== 'user' && renderActionCard(msg.content)}
                 </div>
               </div>
             ))}

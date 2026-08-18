@@ -10,7 +10,9 @@ import {
   Check,
   UploadCloud,
   Trash2,
-  FileText
+  FileText,
+  Sparkles,
+  HelpCircle
 } from 'lucide-react';
 
 const COUNTRIES = [
@@ -22,6 +24,9 @@ const COUNTRIES = [
 
 export default function CompanyForm({ company, isOpen, onClose, onSave, onShowToast }) {
   const [currentStep, setCurrentStep] = useState(1);
+  const [isFormHelpOpen, setIsFormHelpOpen] = useState(true);
+  const [aiInput, setAiInput] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
   
   // Form state
   const [name, setName] = useState('');
@@ -275,495 +280,732 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
     onClose();
   };
 
+  const handleAiExtract = async () => {
+    if (!aiInput.trim()) {
+      onShowToast("Please enter some text description first.", "warning");
+      return;
+    }
+
+    setAiLoading(true);
+    try {
+      const res = await fetch('/api/ai-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: "COMMAND_EXTRACT_COMPANY: " + aiInput.trim()
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to extract details from AI.");
+      }
+
+      const data = await res.json();
+      const responseText = data.response || '';
+      
+      let parsed = null;
+      try {
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+        } else {
+          parsed = JSON.parse(responseText);
+        }
+      } catch (e) {
+        console.error("Failed to parse AI output:", responseText);
+        throw new Error("AI returned an invalid response format.");
+      }
+
+      if (parsed) {
+        if (parsed.name) setName(parsed.name);
+        if (parsed.legalName) setLegalName(parsed.legalName);
+        if (parsed.country) {
+          const matchedCountry = COUNTRIES.find(c => c.name.toLowerCase() === parsed.country.toLowerCase());
+          if (matchedCountry) setCountry(matchedCountry.name);
+        }
+        if (parsed.registrationNumber) setRegistrationNumber(parsed.registrationNumber);
+        if (parsed.registrationDate) setRegistrationDate(parsed.registrationDate);
+        if (parsed.vatNumber) setVatNumber(parsed.vatNumber);
+        if (parsed.notes) setNotes(parsed.notes);
+        
+        if (parsed.pocName || parsed.pocRole || parsed.pocEmail || parsed.pocPhone) {
+          setPocName(parsed.pocName || '');
+          setPocRole(parsed.pocRole || '');
+          setPocEmail(parsed.pocEmail || '');
+          setPocPhone(parsed.pocPhone || '');
+        }
+        
+        onShowToast("Successfully extracted and populated form fields!", "success");
+        setCurrentStep(1);
+        setAiInput('');
+      } else {
+        throw new Error("Could not extract any fields.");
+      }
+    } catch (err) {
+      console.error(err);
+      onShowToast(err.message || "Failed to process AI request.", "warning");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   return (
     <div className="form-wizard-overlay" onClick={onClose}>
-      <div className="form-wizard-card" onClick={(e) => e.stopPropagation()}>
-        
-        {/* Wizard Header */}
-        <div className="wizard-header">
-          <div className="wizard-title">
-            <h2>{company ? `Edit Entity: ${company.name}` : 'Register New Group Entity'}</h2>
-          </div>
-          <button className="btn-close" onClick={onClose} aria-label="Cancel">
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Wizard Step Indicators */}
-        <div className="wizard-steps-indicator">
-          {[
-            { step: 1, label: 'Profile' },
-            { step: 2, label: 'Tax & License' },
-            { step: 3, label: 'Contact' },
-            { step: 4, label: 'Insurance' },
-            { step: 5, label: 'Documents' }
-          ].map(s => (
-            <div 
-              key={s.step} 
-              className={`wizard-step ${currentStep === s.step ? 'active' : ''} ${currentStep > s.step ? 'completed' : ''}`}
-            >
-              <div className="step-number">
-                {currentStep > s.step ? <Check size={12} /> : s.step}
-              </div>
-              <span className="step-label" style={{ display: 'none' }}>{s.label}</span>
+      <div 
+        className="form-wizard-card" 
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          display: 'flex',
+          flexDirection: 'row',
+          width: isFormHelpOpen ? '980px' : '620px',
+          maxWidth: '95vw',
+          height: '680px',
+          maxHeight: '90vh',
+          padding: 0,
+          overflow: 'hidden',
+          transition: 'width 0.2s ease'
+        }}
+      >
+        {/* Left Panel: Wizard Form */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
+          height: '100%',
+          overflow: 'hidden',
+          backgroundColor: 'var(--bg-card)'
+        }}>
+          {/* Wizard Header */}
+          <div className="wizard-header" style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="wizard-title">
+              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>{company ? `Edit Entity: ${company.name}` : 'Register New Group Entity'}</h2>
             </div>
-          ))}
-        </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button 
+                type="button" 
+                onClick={() => setIsFormHelpOpen(!isFormHelpOpen)} 
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '5px 10px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  backgroundColor: isFormHelpOpen ? 'rgba(99, 102, 241, 0.12)' : 'var(--bg-secondary)',
+                  color: 'var(--primary)',
+                  border: '1px solid rgba(99, 102, 241, 0.2)',
+                  cursor: 'pointer'
+                }}
+                title={isFormHelpOpen ? "Hide Help Guide" : "Show Help Guide"}
+              >
+                <HelpCircle size={14} />
+                <span>{isFormHelpOpen ? 'Hide Help' : 'Help Guide'}</span>
+              </button>
+              <button className="btn-close" onClick={onClose} aria-label="Cancel" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '4px', color: 'var(--text-muted)' }}>
+                <X size={18} />
+              </button>
+            </div>
+          </div>
 
-        {/* Wizard Form Content */}
-        <div className="wizard-content">
-          <form onSubmit={handleSubmit}>
-            
-            {/* STEP 1: Entity Profile */}
-            {currentStep === 1 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--accent)' }}>Corporate Identity</h3>
-                
-                <div className="form-group">
-                  <label className="form-label">Operating Trade Name <span>*</span></label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    placeholder="e.g. Humres Recruitment" 
-                    value={name} 
-                    onChange={(e) => setName(e.target.value)} 
-                    required 
-                  />
+          {/* Wizard Step Indicators */}
+          <div className="wizard-steps-indicator" style={{ padding: '12px 20px', backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', margin: 0 }}>
+            {[
+              { step: 1, label: 'Profile' },
+              { step: 2, label: 'Tax & License' },
+              { step: 3, label: 'Contact' },
+              { step: 4, label: 'Insurance' },
+              { step: 5, label: 'Documents' }
+            ].map(s => (
+              <div 
+                key={s.step} 
+                className={`wizard-step ${currentStep === s.step ? 'active' : ''} ${currentStep > s.step ? 'completed' : ''}`}
+              >
+                <div className="step-number">
+                  {currentStep > s.step ? <Check size={12} /> : s.step}
                 </div>
+                <span className="step-label" style={{ display: 'none' }}>{s.label}</span>
+              </div>
+            ))}
+          </div>
 
-                <div className="form-group">
-                  <label className="form-label">Registered Legal Name <span>*</span></label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    placeholder="e.g. Humres Technical Recruitment Limited" 
-                    value={legalName} 
-                    onChange={(e) => setLegalName(e.target.value)} 
-                    required 
-                  />
-                </div>
-
-                <div className="form-group-row">
+          {/* Wizard Form Content */}
+          <div className="wizard-content" style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+            <form onSubmit={handleSubmit}>
+              
+              {/* STEP 1: Entity Profile */}
+              {currentStep === 1 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--accent)' }}>Corporate Identity</h3>
+                  
                   <div className="form-group">
-                    <label className="form-label">Incorporation Jurisdiction <span>*</span></label>
-                    <select 
-                      className="select-filter" 
-                      value={country} 
-                      onChange={(e) => setCountry(e.target.value)}
-                      style={{ width: '100%', padding: '10px' }}
-                    >
-                      <option value="United Kingdom">United Kingdom</option>
-                      <option value="United States">United States</option>
-                      <option value="United Arab Emirates">United Arab Emirates</option>
-                      <option value="India">India</option>
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Registration Number <span>*</span></label>
+                    <label className="form-label">Operating Trade Name <span>*</span></label>
                     <input 
                       type="text" 
                       className="form-input" 
-                      placeholder="e.g. 08239472" 
-                      value={registrationNumber} 
-                      onChange={(e) => setRegistrationNumber(e.target.value)} 
+                      placeholder="e.g. Humres Recruitment" 
+                      value={name} 
+                      onChange={(e) => setName(e.target.value)} 
                       required 
                     />
                   </div>
-                </div>
 
-                <div className="form-group">
-                  <label className="form-label">Date of Incorporation / Registration</label>
-                  <input 
-                    type="date" 
-                    className="form-input" 
-                    value={registrationDate} 
-                    onChange={(e) => setRegistrationDate(e.target.value)} 
-                  />
-                </div>
+                  <div className="form-group">
+                    <label className="form-label">Registered Legal Name <span>*</span></label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="e.g. Humres Technical Recruitment Limited" 
+                      value={legalName} 
+                      onChange={(e) => setLegalName(e.target.value)} 
+                      required 
+                    />
+                  </div>
 
-                <div className="form-group">
-                  <label className="form-label">Brief Description / Notes</label>
-                  <textarea 
-                    className="form-input" 
-                    rows="3" 
-                    placeholder="Internal notes, specific division focuses, etc." 
-                    value={notes} 
-                    onChange={(e) => setNotes(e.target.value)} 
-                    style={{ resize: 'vertical' }}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Recruitly CRM API Key</label>
-                  <input 
-                    type="password" 
-                    className="form-input" 
-                    placeholder="Enter Recruitly API key for this company tenant" 
-                    value={recruitlyApiKey} 
-                    onChange={(e) => setRecruitlyApiKey(e.target.value)} 
-                  />
-                </div>
-
-                <div className="form-group" style={{ marginTop: '12px' }}>
-                  <label className="form-label">Dialpad Tenant API Token</label>
-                  <input 
-                    type="password" 
-                    className="form-input" 
-                    placeholder="Enter Dialpad API key/token for this company" 
-                    value={dialpadApiKey} 
-                    onChange={(e) => setDialpadApiKey(e.target.value)} 
-                  />
-                  <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
-                    Used for Dialpad call integrations. Humres, Huntech, and Strata share a tenant, while Totaco uses a separate tenant.
-                  </small>
-                </div>
-                
-                <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '8px', display: 'flex', marginTop: '12px' }}>
-                  <input 
-                    type="checkbox" 
-                    id="includeInConsolidation"
-                    checked={includeInConsolidation} 
-                    onChange={(e) => setIncludeInConsolidation(e.target.checked)} 
-                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                  />
-                  <label htmlFor="includeInConsolidation" className="form-label" style={{ margin: 0, cursor: 'pointer', fontWeight: 600 }}>
-                    Include in Consolidated Group Financial Reports (P&L, Cashflow, and Overhead calculations)
-                  </label>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 2: Tax & Licensing */}
-            {currentStep === 2 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--accent)' }}>Taxation & Compliance Codes</h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                  Please supply the official tax identification details for the <strong>{country}</strong> jurisdiction.
-                </p>
-
-                <div className="form-group">
-                  <label className="form-label">{activeCountry.taxLabel}</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    placeholder={activeCountry.placeholder} 
-                    value={vatNumber} 
-                    onChange={(e) => setVatNumber(e.target.value)} 
-                  />
-                </div>
-
-                <div className="form-group" style={{ marginTop: '16px' }}>
-                  <label className="form-label">VAT Scheme / Filing Frequency</label>
-                  <select 
-                    className="select-filter"
-                    value={vatFrequency}
-                    onChange={(e) => setVatFrequency(e.target.value)}
-                    style={{ width: '100%', padding: '10px' }}
-                  >
-                    <option value="none">No VAT Obligations</option>
-                    <option value="monthly">Monthly VAT Return</option>
-                    <option value="quarterly">Quarterly VAT Return</option>
-                    <option value="annually">Annual VAT Return</option>
-                  </select>
-                </div>
-
-                {vatFrequency !== 'none' && (
-                  <div className="form-group-row" style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
-                    <div className="form-group" style={{ flex: 1 }}>
-                      <label className="form-label">Cycle Start Month</label>
-                      <select
-                        className="select-filter"
-                        value={vatStartMonth}
-                        onChange={(e) => setVatStartMonth(e.target.value)}
+                  <div className="form-group-row">
+                    <div className="form-group">
+                      <label className="form-label">Incorporation Jurisdiction <span>*</span></label>
+                      <select 
+                        className="select-filter" 
+                        value={country} 
+                        onChange={(e) => setCountry(e.target.value)}
                         style={{ width: '100%', padding: '10px' }}
                       >
-                        <option value="1">January (Jan/Apr/Jul/Oct)</option>
-                        <option value="2">February (Feb/May/Aug/Nov)</option>
-                        <option value="3">March (Mar/Jun/Sep/Dec)</option>
-                        <option value="4">April (Apr/Jul/Oct/Jan)</option>
-                        <option value="5">May (May/Aug/Nov/Feb)</option>
-                        <option value="6">June (Jun/Sep/Dec/Mar)</option>
-                        <option value="7">July (Jul/Oct/Jan/Apr)</option>
-                        <option value="8">August (Aug/Nov/Feb/May)</option>
-                        <option value="9">September (Sep/Dec/Mar/Jun)</option>
-                        <option value="10">October (Oct/Jan/Apr/Jul)</option>
-                        <option value="11">November (Nov/Feb/May/Aug)</option>
-                        <option value="12">December (Dec/Mar/Jun/Sep)</option>
+                        <option value="United Kingdom">United Kingdom</option>
+                        <option value="United States">United States</option>
+                        <option value="United Arab Emirates">United Arab Emirates</option>
+                        <option value="India">India</option>
                       </select>
                     </div>
 
-                    <div className="form-group" style={{ flex: 1 }}>
-                      <label className="form-label">Deadline (Days after period end)</label>
-                      <input
-                        type="number"
-                        className="form-input"
-                        placeholder="e.g. 37 for UK HMRC"
-                        value={vatDueDateDays}
-                        onChange={(e) => setVatDueDateDays(e.target.value)}
-                        min="1"
+                    <div className="form-group">
+                      <label className="form-label">Registration Number <span>*</span></label>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        placeholder="e.g. 08239472" 
+                        value={registrationNumber} 
+                        onChange={(e) => setRegistrationNumber(e.target.value)} 
+                        required 
                       />
                     </div>
                   </div>
-                )}
 
-                <div className="alert-item" style={{ borderLeftColor: 'var(--info)', background: 'var(--info-light)', marginTop: '20px' }}>
-                  <ClipboardList size={18} style={{ color: 'var(--info)', flexShrink: 0 }} />
-                  <div className="alert-content" style={{ fontSize: '12px' }}>
-                    <div className="alert-title" style={{ fontWeight: 600 }}>Country-Specific Regulatory Reminders:</div>
-                    {country === 'United Kingdom' && <div className="alert-desc">UK entities must comply with Companies House regulations and supply valid VAT registrations if turnover exceeds registration thresholds.</div>}
-                    {country === 'United States' && <div className="alert-desc">US LLCs require a Federal Employer Identification Number (EIN) issued by the IRS for taxation and corporate banking transactions.</div>}
-                    {country === 'United Arab Emirates' && <div className="alert-desc">UAE entities must obtain a Tax Registration Number (TRN) issued by the Federal Tax Authority for VAT compliance.</div>}
-                    {country === 'India' && <div className="alert-desc">Indian private limited companies must record their 15-digit GSTIN (GST Identification Number) for state-specific operations.</div>}
+                  <div className="form-group">
+                    <label className="form-label">Date of Incorporation / Registration</label>
+                    <input 
+                      type="date" 
+                      className="form-input" 
+                      value={registrationDate} 
+                      onChange={(e) => setRegistrationDate(e.target.value)} 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Brief Description / Notes</label>
+                    <textarea 
+                      className="form-input" 
+                      rows="3" 
+                      placeholder="Internal notes, specific division focuses, etc." 
+                      value={notes} 
+                      onChange={(e) => setNotes(e.target.value)} 
+                      style={{ resize: 'vertical' }}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Recruitly CRM API Key</label>
+                    <input 
+                      type="password" 
+                      className="form-input" 
+                      placeholder="Enter Recruitly API key for this company tenant" 
+                      value={recruitlyApiKey} 
+                      onChange={(e) => setRecruitlyApiKey(e.target.value)} 
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginTop: '12px' }}>
+                    <label className="form-label">Dialpad Tenant API Token</label>
+                    <input 
+                      type="password" 
+                      className="form-input" 
+                      placeholder="Enter Dialpad API key/token for this company" 
+                      value={dialpadApiKey} 
+                      onChange={(e) => setDialpadApiKey(e.target.value)} 
+                    />
+                    <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                      Used for Dialpad call integrations. Humres, Huntech, and Strata share a tenant, while Totaco uses a separate tenant.
+                    </small>
+                  </div>
+                  
+                  <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '8px', display: 'flex', marginTop: '12px' }}>
+                    <input 
+                      type="checkbox" 
+                      id="includeInConsolidation"
+                      checked={includeInConsolidation} 
+                      onChange={(e) => setIncludeInConsolidation(e.target.checked)} 
+                      style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                    />
+                    <label htmlFor="includeInConsolidation" className="form-label" style={{ margin: 0, cursor: 'pointer', fontWeight: 600 }}>
+                      Include in Consolidated Group Financial Reports (P&L, Cashflow, and Overhead calculations)
+                    </label>
                   </div>
                 </div>
+              )}
 
-                {!company && (
-                  <div className="alert-item" style={{ borderLeftColor: 'var(--success)', background: 'var(--success-light)', marginTop: '12px' }}>
-                    <Check size={18} style={{ color: 'var(--success)', flexShrink: 0 }} />
+              {/* STEP 2: Taxation & Compliance */}
+              {currentStep === 2 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--accent)' }}>Taxation & Compliance Codes</h3>
+                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                    Please supply the official tax identification details for the <strong>{country}</strong> jurisdiction.
+                  </p>
+
+                  <div className="form-group">
+                    <label className="form-label">{activeCountry.taxLabel}</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder={activeCountry.placeholder} 
+                      value={vatNumber} 
+                      onChange={(e) => setVatNumber(e.target.value)} 
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginTop: '16px' }}>
+                    <label className="form-label">VAT Scheme / Filing Frequency</label>
+                    <select 
+                      className="select-filter"
+                      value={vatFrequency}
+                      onChange={(e) => setVatFrequency(e.target.value)}
+                      style={{ width: '100%', padding: '10px' }}
+                    >
+                      <option value="none">No VAT Obligations</option>
+                      <option value="monthly">Monthly VAT Return</option>
+                      <option value="quarterly">Quarterly VAT Return</option>
+                      <option value="annually">Annual VAT Return</option>
+                    </select>
+                  </div>
+
+                  {vatFrequency !== 'none' && (
+                    <div className="form-group-row" style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label className="form-label">Cycle Start Month</label>
+                        <select
+                          className="select-filter"
+                          value={vatStartMonth}
+                          onChange={(e) => setVatStartMonth(e.target.value)}
+                          style={{ width: '100%', padding: '10px' }}
+                        >
+                          <option value="1">January (Jan/Apr/Jul/Oct)</option>
+                          <option value="2">February (Feb/May/Aug/Nov)</option>
+                          <option value="3">March (Mar/Jun/Sep/Dec)</option>
+                          <option value="4">April (Apr/Jul/Oct/Jan)</option>
+                          <option value="5">May (May/Aug/Nov/Feb)</option>
+                          <option value="6">June (Jun/Sep/Dec/Mar)</option>
+                          <option value="7">July (Jul/Oct/Jan/Apr)</option>
+                          <option value="8">August (Aug/Nov/Feb/May)</option>
+                          <option value="9">September (Sep/Dec/Mar/Jun)</option>
+                          <option value="10">October (Oct/Jan/Apr/Jul)</option>
+                          <option value="11">November (Nov/Feb/May/Aug)</option>
+                          <option value="12">December (Dec/Mar/Jun/Sep)</option>
+                        </select>
+                      </div>
+
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label className="form-label">Deadline (Days after period end)</label>
+                        <input
+                          type="number"
+                          className="form-input"
+                          placeholder="e.g. 37 for UK HMRC"
+                          value={vatDueDateDays}
+                          onChange={(e) => setVatDueDateDays(e.target.value)}
+                          min="1"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="alert-item" style={{ borderLeftColor: 'var(--info)', background: 'var(--info-light)', marginTop: '20px' }}>
+                    <ClipboardList size={18} style={{ color: 'var(--info)', flexShrink: 0 }} />
                     <div className="alert-content" style={{ fontSize: '12px' }}>
-                      <div className="alert-title" style={{ fontWeight: 600 }}>Automated Statutory Pre-seed:</div>
-                      <div className="alert-desc">Saving this new company will automatically pre-seed standard <strong>{country}</strong> compliance tasks (e.g. VAT and Accounts deadlines) to your dashboard.</div>
+                      <div className="alert-title" style={{ fontWeight: 600 }}>Country-Specific Regulatory Reminders:</div>
+                      {country === 'United Kingdom' && <div className="alert-desc">UK entities must comply with Companies House regulations and supply valid VAT registrations if turnover exceeds registration thresholds.</div>}
+                      {country === 'United States' && <div className="alert-desc">US LLCs require a Federal Employer Identification Number (EIN) issued by the IRS for taxation and corporate banking transactions.</div>}
+                      {country === 'United Arab Emirates' && <div className="alert-desc">UAE entities must obtain a Tax Registration Number (TRN) issued by the Federal Tax Authority for VAT compliance.</div>}
+                      {country === 'India' && <div className="alert-desc">Indian private limited companies must record their 15-digit GSTIN (GST Identification Number) for state-specific operations.</div>}
                     </div>
                   </div>
-                )}
-              </div>
-            )}
 
-            {/* STEP 3: Point of Contact */}
-            {currentStep === 3 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--accent)' }}>Primary Corporate Contact</h3>
-                
-                <div className="form-group">
-                  <label className="form-label">Contact Full Name <span>*</span></label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    placeholder="e.g. Jane Smith" 
-                    value={pocName} 
-                    onChange={(e) => setPocName(e.target.value)} 
-                    required 
-                  />
+                  {!company && (
+                    <div className="alert-item" style={{ borderLeftColor: 'var(--success)', background: 'var(--success-light)', marginTop: '12px' }}>
+                      <Check size={18} style={{ color: 'var(--success)', flexShrink: 0 }} />
+                      <div className="alert-content" style={{ fontSize: '12px' }}>
+                        <div className="alert-title" style={{ fontWeight: 600 }}>Automated Statutory Pre-seed:</div>
+                        <div className="alert-desc">Saving this new company will automatically pre-seed standard <strong>{country}</strong> compliance tasks (e.g. VAT and Accounts deadlines) to your dashboard.</div>
+                      </div>
+                    </div>
+                  )}
                 </div>
+              )}
 
-                <div className="form-group">
-                  <label className="form-label">Job Title / Position <span>*</span></label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    placeholder="e.g. Operations Director" 
-                    value={pocRole} 
-                    onChange={(e) => setPocRole(e.target.value)} 
-                    required 
-                  />
-                </div>
-
-                <div className="form-group-row">
+              {/* STEP 3: Contact */}
+              {currentStep === 3 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--accent)' }}>Primary Corporate Contact</h3>
+                  
                   <div className="form-group">
-                    <label className="form-label">Work Email Address <span>*</span></label>
+                    <label className="form-label">Contact Full Name <span>*</span></label>
                     <input 
-                      type="email" 
+                      type="text" 
                       className="form-input" 
-                      placeholder="e.g. j.smith@company.com" 
-                      value={pocEmail} 
-                      onChange={(e) => setPocEmail(e.target.value)} 
+                      placeholder="e.g. Jane Smith" 
+                      value={pocName} 
+                      onChange={(e) => setPocName(e.target.value)} 
                       required 
                     />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Direct Phone Number</label>
+                    <label className="form-label">Job Title / Position <span>*</span></label>
                     <input 
-                      type="tel" 
+                      type="text" 
                       className="form-input" 
-                      placeholder="e.g. +44 7700 900077" 
-                      value={pocPhone} 
-                      onChange={(e) => setPocPhone(e.target.value)} 
+                      placeholder="e.g. Operations Director" 
+                      value={pocRole} 
+                      onChange={(e) => setPocRole(e.target.value)} 
+                      required 
                     />
                   </div>
-                </div>
-              </div>
-            )}
 
-            {/* STEP 4: Insurance Portfolio */}
-            {currentStep === 4 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--accent)' }}>Commercial Liability Insurance</h3>
-                
-                <label className="form-checkbox">
-                  <input 
-                    type="checkbox" 
-                    checked={hasInsurance} 
-                    onChange={(e) => setHasInsurance(e.target.checked)} 
-                  />
-                  <span>This entity holds an active commercial liability insurance policy</span>
-                </label>
-
-                {hasInsurance && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', animation: 'fadeIn 0.25s' }}>
-                    <div className="form-group-row">
-                      <div className="form-group">
-                        <label className="form-label">Insurance Provider <span>*</span></label>
-                        <input 
-                          type="text" 
-                          className="form-input" 
-                          placeholder="e.g. AXA Commercial" 
-                          value={insProvider} 
-                          onChange={(e) => setInsProvider(e.target.value)} 
-                          required 
-                        />
-                      </div>
-
-                      <div className="form-group">
-                        <label className="form-label">Policy Number <span>*</span></label>
-                        <input 
-                          type="text" 
-                          className="form-input" 
-                          placeholder="e.g. AXA-992-8812" 
-                          value={insPolicyNumber} 
-                          onChange={(e) => setInsPolicyNumber(e.target.value)} 
-                          required 
-                        />
-                      </div>
-                    </div>
-
+                  <div className="form-group-row">
                     <div className="form-group">
-                      <label className="form-label">Coverage Limit Amount <span>*</span></label>
+                      <label className="form-label">Work Email Address <span>*</span></label>
                       <input 
-                        type="text" 
+                        type="email" 
                         className="form-input" 
-                        placeholder={country === 'United Kingdom' ? 'e.g. £5,000,000' : country === 'United States' ? 'e.g. $2,000,000' : country === 'India' ? 'e.g. ₹2,50,00,000' : 'e.g. AED 10,000,000'} 
-                        value={insCoverageAmount} 
-                        onChange={(e) => setInsCoverageAmount(e.target.value)} 
+                        placeholder="e.g. j.smith@company.com" 
+                        value={pocEmail} 
+                        onChange={(e) => setPocEmail(e.target.value)} 
                         required 
                       />
                     </div>
 
-                    <div className="form-group-row">
-                      <div className="form-group">
-                        <label className="form-label">Policy Start Date <span>*</span></label>
-                        <input 
-                          type="date" 
-                          className="form-input" 
-                          value={insStartDate} 
-                          onChange={(e) => setInsStartDate(e.target.value)} 
-                          required 
-                        />
-                      </div>
-
-                      <div className="form-group">
-                        <label className="form-label">Policy Expiry Date <span>*</span></label>
-                        <input 
-                          type="date" 
-                          className="form-input" 
-                          value={insExpiryDate} 
-                          onChange={(e) => setInsExpiryDate(e.target.value)} 
-                          required 
-                        />
-                      </div>
+                    <div className="form-group">
+                      <label className="form-label">Direct Phone Number</label>
+                      <input 
+                        type="tel" 
+                        className="form-input" 
+                        placeholder="e.g. +44 7700 900077" 
+                        value={pocPhone} 
+                        onChange={(e) => setPocPhone(e.target.value)} 
+                      />
                     </div>
                   </div>
-                )}
-              </div>
-            )}
-
-            {/* STEP 5: Document Library Checklist */}
-            {currentStep === 5 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '8px', color: 'var(--accent)' }}>Document Attachment Checklist</h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                  Provide initial scans of Certificate of Incorporation, VAT Certificate, License, and Insurance.
-                </p>
-
-                {/* Upload Zone */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <span className="form-label">Select Document Category</span>
-                  <select 
-                    className="select-filter" 
-                    value={uploadDocType}
-                    onChange={(e) => setUploadDocType(e.target.value)}
-                    style={{ padding: '6px 28px 6px 10px', fontSize: '12px', width: '200px' }}
-                  >
-                    <option value="registration">Registration Certificate</option>
-                    <option value="vat">VAT / GST / Tax Cert</option>
-                    <option value="license">License Certificate</option>
-                    <option value="insurance">Insurance Policy Cert</option>
-                    <option value="other">Other Attachment</option>
-                  </select>
                 </div>
+              )}
 
-                <div 
-                  className="upload-zone"
-                  onClick={() => document.getElementById('wizard-file-uploader').click()}
-                >
-                  <input 
-                    type="file" 
-                    id="wizard-file-uploader" 
-                    style={{ display: 'none' }}
-                    onChange={handleFileSelect}
-                  />
-                  <UploadCloud size={32} className="upload-icon" />
-                  <span className="upload-text">Select document to mock upload</span>
-                  <span className="upload-subtext">Will be attached category: {uploadDocType.toUpperCase()}</span>
-                </div>
+              {/* STEP 4: Insurance */}
+              {currentStep === 4 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--accent)' }}>Commercial Liability Insurance</h3>
+                  
+                  <label className="form-checkbox">
+                    <input 
+                      type="checkbox" 
+                      checked={hasInsurance} 
+                      onChange={(e) => setHasInsurance(e.target.checked)} 
+                    />
+                    <span>This entity holds an active commercial liability insurance policy</span>
+                  </label>
 
-                {/* Attached Files List */}
-                {documents.length > 0 && (
-                  <div style={{ marginTop: '20px' }}>
-                    <span className="form-label" style={{ display: 'block', marginBottom: '8px' }}>Attached Files ({documents.length})</span>
-                    <div className="doc-list" style={{ maxHeight: '180px', overflowY: 'auto' }}>
-                      {documents.map(doc => (
-                        <div className="doc-card" key={doc.id}>
-                          <div className="doc-info">
-                            <FileText size={16} style={{ color: 'var(--primary)' }} />
-                            <div className="doc-name-group">
-                              <span className="doc-name" style={{ fontSize: '12px', maxWidth: '220px' }}>{doc.name}</span>
-                              <span className="doc-meta">{doc.type.toUpperCase()} &bull; {doc.fileSize}</span>
-                            </div>
-                          </div>
-                          <button 
-                            type="button" 
-                            className="btn-icon delete" 
-                            onClick={() => handleDeleteDoc(doc.id)}
-                            title="Remove attachment"
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                  {hasInsurance && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', animation: 'fadeIn 0.25s' }}>
+                      <div className="form-group-row">
+                        <div className="form-group">
+                          <label className="form-label">Insurance Provider <span>*</span></label>
+                          <input 
+                            type="text" 
+                            className="form-input" 
+                            placeholder="e.g. AXA Commercial" 
+                            value={insProvider} 
+                            onChange={(e) => setInsProvider(e.target.value)} 
+                            required 
+                          />
                         </div>
-                      ))}
+
+                        <div className="form-group">
+                          <label className="form-label">Policy Number <span>*</span></label>
+                          <input 
+                            type="text" 
+                            className="form-input" 
+                            placeholder="e.g. AXA-992-8812" 
+                            value={insPolicyNumber} 
+                            onChange={(e) => setInsPolicyNumber(e.target.value)} 
+                            required 
+                          />
+                        </div>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Coverage Limit Amount <span>*</span></label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          placeholder={country === 'United Kingdom' ? 'e.g. £5,000,000' : country === 'United States' ? 'e.g. $2,000,000' : country === 'India' ? 'e.g. ₹2,50,00,000' : 'e.g. AED 10,000,000'} 
+                          value={insCoverageAmount} 
+                          onChange={(e) => setInsCoverageAmount(e.target.value)} 
+                          required 
+                        />
+                      </div>
+
+                      <div className="form-group-row">
+                        <div className="form-group">
+                          <label className="form-label">Policy Start Date <span>*</span></label>
+                          <input 
+                            type="date" 
+                            className="form-input" 
+                            value={insStartDate} 
+                            onChange={(e) => setInsStartDate(e.target.value)} 
+                            required 
+                          />
+                        </div>
+
+                        <div className="form-group">
+                          <label className="form-label">Policy Expiry Date <span>*</span></label>
+                          <input 
+                            type="date" 
+                            className="form-input" 
+                            value={insExpiryDate} 
+                            onChange={(e) => setInsExpiryDate(e.target.value)} 
+                            required 
+                          />
+                        </div>
+                      </div>
                     </div>
+                  )}
+                </div>
+              )}
+
+              {/* STEP 5: Documents */}
+              {currentStep === 5 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '8px', color: 'var(--accent)' }}>Document Attachment Checklist</h3>
+                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                    Provide initial scans of Certificate of Incorporation, VAT Certificate, License, and Insurance.
+                  </p>
+
+                  {/* Upload Zone */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <span className="form-label">Select Document Category</span>
+                    <select 
+                      className="select-filter" 
+                      value={uploadDocType}
+                      onChange={(e) => setUploadDocType(e.target.value)}
+                      style={{ padding: '6px 28px 6px 10px', fontSize: '12px', width: '200px' }}
+                    >
+                      <option value="registration">Registration Certificate</option>
+                      <option value="vat">VAT / GST / Tax Cert</option>
+                      <option value="license">License Certificate</option>
+                      <option value="insurance">Insurance Policy Cert</option>
+                      <option value="other">Other Attachment</option>
+                    </select>
                   </div>
-                )}
-              </div>
+
+                  <div 
+                    className="upload-zone"
+                    onClick={() => document.getElementById('wizard-file-uploader').click()}
+                  >
+                    <input 
+                      type="file" 
+                      id="wizard-file-uploader" 
+                      style={{ display: 'none' }}
+                      onChange={handleFileSelect}
+                    />
+                    <UploadCloud size={32} className="upload-icon" />
+                    <span className="upload-text">Select document to mock upload</span>
+                    <span className="upload-subtext">Will be attached category: {uploadDocType.toUpperCase()}</span>
+                  </div>
+
+                  {/* Attached Files List */}
+                  {documents.length > 0 && (
+                    <div style={{ marginTop: '20px' }}>
+                      <span className="form-label" style={{ display: 'block', marginBottom: '8px' }}>Attached Files ({documents.length})</span>
+                      <div className="doc-list" style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                        {documents.map(doc => (
+                          <div className="doc-card" key={doc.id}>
+                            <div className="doc-info">
+                              <FileText size={16} style={{ color: 'var(--primary)' }} />
+                              <div className="doc-name-group">
+                                <span className="doc-name" style={{ fontSize: '12px', maxWidth: '220px' }}>{doc.name}</span>
+                                <span className="doc-meta">{doc.type.toUpperCase()} &bull; {doc.fileSize}</span>
+                              </div>
+                            </div>
+                            <button 
+                              type="button" 
+                              className="btn-icon delete" 
+                              onClick={() => handleDeleteDoc(doc.id)}
+                              title="Remove attachment"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+            </form>
+          </div>
+
+          {/* Wizard Footer */}
+          <div className="wizard-footer" style={{ padding: '16px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', backgroundColor: 'var(--bg-secondary)', margin: 0 }}>
+            {currentStep > 1 ? (
+              <button type="button" className="btn-secondary" onClick={handleBack}>
+                <ArrowLeft size={16} /> Back
+              </button>
+            ) : (
+              <button type="button" className="btn-secondary" onClick={onClose}>
+                Cancel
+              </button>
             )}
 
-          </form>
+            {currentStep < 5 ? (
+              <button type="button" className="btn-primary" onClick={handleNext} disabled={!canGoNext()}>
+                Next <ArrowRight size={16} />
+              </button>
+            ) : (
+              <button type="button" className="btn-primary" onClick={handleSubmit} disabled={!canGoNext()}>
+                Save Company details
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Wizard Footer */}
-        <div className="wizard-footer">
-          {currentStep > 1 ? (
-            <button type="button" className="btn-secondary" onClick={handleBack}>
-              <ArrowLeft size={16} /> Back
-            </button>
-          ) : (
-            <button type="button" className="btn-secondary" onClick={onClose}>
-              Cancel
-            </button>
-          )}
+        {/* Right Panel: Step-aware Help & AI assistant */}
+        {isFormHelpOpen && (
+          <div style={{
+            width: '360px',
+            backgroundColor: 'var(--bg-secondary)',
+            borderLeft: '1px solid var(--border-color)',
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            overflow: 'hidden'
+          }}>
+            {/* Help Section Header */}
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: 'var(--bg-card)' }}>
+              <HelpCircle size={16} style={{ color: 'var(--primary)' }} />
+              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>Form Help & Assistant</span>
+            </div>
 
-          {currentStep < 5 ? (
-            <button type="button" className="btn-primary" onClick={handleNext} disabled={!canGoNext()}>
-              Next <ArrowRight size={16} />
-            </button>
-          ) : (
-            <button type="button" className="btn-primary" onClick={handleSubmit} disabled={!canGoNext()}>
-              Save Company details
-            </button>
-          )}
-        </div>
+            {/* Help Content Panel */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              
+              {/* Step-Aware Help text */}
+              <div style={{ backgroundColor: 'var(--bg-card)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '11px', lineHeight: '1.4', color: 'var(--text-secondary)' }}>
+                <span style={{ display: 'block', fontWeight: 700, marginBottom: '6px', color: 'var(--primary)', fontSize: '12px' }}>
+                  {currentStep === 1 && "Step 1: Corporate Profile"}
+                  {currentStep === 2 && "Step 2: Tax & Licensing"}
+                  {currentStep === 3 && "Step 3: Point of Contact"}
+                  {currentStep === 4 && "Step 4: Insurance Portfolio"}
+                  {currentStep === 5 && "Step 5: Document Library"}
+                </span>
 
+                {currentStep === 1 && (
+                  <ul style={{ paddingLeft: '16px', margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <li><strong>Trade Name:</strong> Brand name displayed in active headers.</li>
+                    <li><strong>Legal Name:</strong> Incorporated statutory name for reports.</li>
+                    <li><strong>Jurisdiction:</strong> Establishes the governing regulatory frameworks.</li>
+                    <li><strong>CRM & Dialpad API keys:</strong> Connects automated sync endpoints.</li>
+                  </ul>
+                )}
+
+                {currentStep === 2 && (
+                  <ul style={{ paddingLeft: '16px', margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <li><strong>Tax ID / VAT:</strong>
+                      <ul style={{ paddingLeft: '12px', marginTop: '4px', listStyleType: 'circle' }}>
+                        <li>UK: 9-digit HMRC VAT Reg (GBxxxxxxxxx).</li>
+                        <li>US: 9-digit IRS EIN (xx-xxxxxxx).</li>
+                        <li>UAE: 15-digit TRN (100xxxxxxxxxxxx).</li>
+                        <li>India: 15-digit GSTIN (27xxxxxxxxxxxZx).</li>
+                      </ul>
+                    </li>
+                    <li><strong>Filing Frequency:</strong> Used to schedule automated compliance task reminders.</li>
+                  </ul>
+                )}
+
+                {currentStep === 3 && (
+                  <p style={{ margin: 0 }}>
+                    Provide a point of contact (POC) representing this corporate entity. Operations and IT clearances will query this contact during offboarding cycles.
+                  </p>
+                )}
+
+                {currentStep === 4 && (
+                  <p style={{ margin: 0 }}>
+                    Record liability policies held by this group entity. Minimum coverages are required for standard business operations and auditor clearance.
+                  </p>
+                )}
+
+                {currentStep === 5 && (
+                  <p style={{ margin: 0 }}>
+                    Attach scanned documents (Certificate of Incorporation, VAT Certificate, License, and Active Policy Cover) to satisfy audit trail requirements.
+                  </p>
+                )}
+              </div>
+
+              {/* AI Form Assistant box */}
+              <div style={{ marginTop: 'auto', backgroundColor: 'var(--bg-card)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-primary)' }}>
+                  <Sparkles size={14} style={{ color: '#fbbf24' }} /> Register with AI Assistant
+                </span>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                  Paste a short description of the company and let AI fill out the fields.
+                </span>
+                <textarea
+                  value={aiInput}
+                  onChange={(e) => setAiInput(e.target.value)}
+                  placeholder="e.g. Register Acme Corp in the UK, registration 08239281, VAT GB1234567, contact Bob Jones bob@acme.com"
+                  rows={4}
+                  style={{
+                    width: '100%',
+                    fontSize: '11px',
+                    padding: '6px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
+                    resize: 'none'
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={handleAiExtract}
+                  disabled={aiLoading || !aiInput.trim()}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: aiLoading || !aiInput.trim() ? 'var(--border-color)' : 'var(--primary)',
+                    color: aiLoading || !aiInput.trim() ? 'white' : 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: aiLoading || !aiInput.trim() ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  {aiLoading ? "Extracting..." : "Generate Details"}
+                </button>
+              </div>
+
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

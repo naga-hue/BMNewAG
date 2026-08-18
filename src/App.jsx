@@ -41,8 +41,9 @@ import {
   FileSpreadsheet,
   Link2,
   Clock,
-  Phone,
-  Settings
+  Phone, 
+  Settings,
+  HelpCircle
 } from 'lucide-react';
 
 import { initialCompanies } from './mockData';
@@ -439,6 +440,7 @@ export default function App() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
+  const [isDirectoryHelpOpen, setIsDirectoryHelpOpen] = useState(false);
 
   // UI staff interaction states
   const [selectedStaff, setSelectedStaff] = useState(null);
@@ -2689,11 +2691,33 @@ export default function App() {
                  )}
                </div>
              ) : activeTab === 'directory' || activeTab === 'dashboard' ? (
-               hasWritePermission(currentUser, 'directory') && (
-                 <button className="btn-primary" onClick={handleOpenCreate}>
-                   <Plus size={16} /> Register Entity
-                 </button>
-               )
+               <div style={{ display: 'flex', gap: '8px' }}>
+                 {activeTab === 'directory' && (
+                   <button 
+                     type="button" 
+                     className="btn-secondary" 
+                     onClick={() => setIsDirectoryHelpOpen(true)}
+                     style={{
+                       display: 'flex',
+                       alignItems: 'center',
+                       gap: '6px',
+                       padding: '8px 16px',
+                       fontSize: '12px',
+                       fontWeight: 600,
+                       borderRadius: '8px',
+                       cursor: 'pointer'
+                     }}
+                   >
+                     <HelpCircle size={14} style={{ color: 'var(--primary)' }} />
+                     <span>Help</span>
+                   </button>
+                 )}
+                 {hasWritePermission(currentUser, 'directory') && (
+                   <button className="btn-primary" onClick={handleOpenCreate}>
+                     <Plus size={16} /> Register Entity
+                   </button>
+                 )}
+               </div>
              ) : null}
           </div>
         </header>
@@ -3817,9 +3841,81 @@ export default function App() {
         setSelectedStaff={setSelectedStaff}
       />
 
+      {/* Directory Help Drawer */}
+      <div className={`slide-over-overlay ${isDirectoryHelpOpen ? 'active' : ''}`} onClick={() => setIsDirectoryHelpOpen(false)}>
+        <div className="slide-over-panel" onClick={(e) => e.stopPropagation()} style={{ width: '480px', maxWidth: '90vw' }}>
+          
+          {/* Panel Header */}
+          <div className="panel-header" style={{ padding: '24px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <HelpCircle size={20} style={{ color: 'var(--primary)' }} />
+              <h2 style={{ fontSize: '18px', margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>Company Directory Help</h2>
+            </div>
+            <button className="btn-close" onClick={() => setIsDirectoryHelpOpen(false)} aria-label="Close Help" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '4px', color: 'var(--text-muted)' }}>
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Panel Body */}
+          <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', flex: 1, height: 'calc(100% - 70px)' }}>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent)' }}>Overview</h3>
+              <p style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-secondary)', margin: 0 }}>
+                The Company Directory manages all legal entities, subsidiaries, and joint ventures under the group structure. You can track incorporation details, regulatory compliance states, and active corporate insurance.
+              </p>
+            </div>
+
+            <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: 0 }} />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent)' }}>Core Management Actions</h3>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>1. Registering an Entity</div>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, paddingLeft: '8px', borderLeft: '2px solid var(--primary)' }}>
+                  Click <strong>"Register Entity"</strong> at the top right of the directory. Complete the 5-step wizard covering Corporate Identity, Tax IDs, Point of Contact details, Insurance limits, and mock-uploading critical PDF documents (Incorporation Certificate, VAT cert, etc.).
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>2. Modifying Details</div>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, paddingLeft: '8px', borderLeft: '2px solid var(--primary)' }}>
+                  Click the <strong>Edit icon</strong> on any card or list row. The multi-step wizard will open containing current database details, allowing you to update specific fields or add documents.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>3. Removing/Deleting Entities</div>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, paddingLeft: '8px', borderLeft: '2px solid var(--primary)' }}>
+                  Click the <strong>Delete icon (trash)</strong> on any card or list row. You will be prompted to confirm deletion. Only master admins or directory write-privileged users can delete entities.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>4. AI Chatbot Integration</div>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, paddingLeft: '8px', borderLeft: '2px solid var(--primary)' }}>
+                  Open the floating AI Chatbot on the bottom right of the screen. You can say: <em>"Register a company named Acme Services in the UK, registration 123456"</em>. The AI chatbot will present a dedicated card with a <strong>"Register Entity"</strong> button to let you directly add the company to the database with a single click.
+                </p>
+              </div>
+            </div>
+
+            <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: 0 }} />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent)' }}>Compliance Reminders</h3>
+              <p style={{ fontSize: '12px', lineHeight: '1.4', color: 'var(--text-secondary)', margin: 0 }}>
+                Statutory filing compliance (VAT quarterly runs, annual returns) is tracked per entity. Incomplete records, expired insurance, or overdue VAT tasks will trigger warning/critical indicators on the card profiles automatically.
+              </p>
+            </div>
+            
+          </div>
+        </div>
+      </div>
+
       {/* Super Admin AI Chatbot Widget */}
       {(currentUser?.id === 'super-admin' || currentUser?.permissions?.role === 'admin') && (
-        <AiChatbot assetAssignments={assetAssignments} />
+        <AiChatbot assetAssignments={assetAssignments} onShowToast={handleShowToast} />
       )}
 
       {/* Micro-interaction Toasts list */}

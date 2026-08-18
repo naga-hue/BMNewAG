@@ -80,7 +80,30 @@ INSTRUCTIONS:
 8. If they ask about staff bank details or why they can't add them, explain clearly that according to the system architecture and data model, company bank accounts are supported under the Cashflow/Company modules, but bank details are NOT supported/mapped on employee profiles in the directory.
 9. Keep your answers brief, professional, well-formatted (using bullet points and bold styling where appropriate).
 10. If data is not available, state it clearly.
-11. If you require more information or need to clarify the user's intent to answer their question correctly, do not refuse to answer or give up. Instead, talk back to the user, ask them clarifying questions, and prompt them for the specific inputs or details you need.`;
+11. If you require more information or need to clarify the user's intent to answer their question correctly, do not refuse to answer or give up. Instead, talk back to the user, ask them clarifying questions, and prompt them for the specific inputs or details you need.
+12. If the user asks you to register, create, add, or record a new company, you MUST first explain that you can help them create the record, and then include a raw JSON block at the bottom of your reply matching this exact format:
+\`\`\`json
+{
+  "action": "CREATE_COMPANY",
+  "company": {
+    "name": "Trade name",
+    "legalName": "Legal corporate name",
+    "country": "United Kingdom | United States | United Arab Emirates | India",
+    "registrationNumber": "registration number if provided, else empty",
+    "registrationDate": "YYYY-MM-DD if provided, else empty",
+    "vatNumber": "tax/vat/trn number if provided, else empty",
+    "notes": "any notes or description",
+    "pointOfContact": {
+      "name": "POC name if provided, else empty",
+      "role": "POC job title if provided, else empty",
+      "email": "POC email if provided, else empty",
+      "phone": "POC phone if provided, else empty"
+    }
+  }
+}
+\`\`\`
+Infer the country if they mention currency or cities (e.g. London -> United Kingdom, Dubai -> United Arab Emirates, Mumbai -> India, New York -> United States).
+13. SPECIAL COMMAND - FIELD EXTRACTION: If the user prompt starts with "COMMAND_EXTRACT_COMPANY:", you are in field extraction mode. Extract all company fields from the text following that prefix. Output ONLY a valid JSON object containing the extracted fields (with keys: name, legalName, country, registrationNumber, registrationDate, vatNumber, notes, pocName, pocRole, pocEmail, pocPhone). DO NOT include any conversational text or explanation. Output ONLY the JSON block.`;
 
     // Map message history
     const messages = [

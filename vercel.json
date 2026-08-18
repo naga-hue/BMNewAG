@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/qandle/sync",
-      "schedule": "0 * * * *"
+      "schedule": "0 0 * * *"
     }
   ],
   "functions": {
@@ -15,6 +15,10 @@
     }
   },
   "rewrites": [
+    {
+      "source": "/api/crm/enrich",
+      "destination": "/api/crm/activity?mode=enrich"
+    },
     {
       "source": "/api/qandle/ingest",
       "destination": "/api/qandle/sync"

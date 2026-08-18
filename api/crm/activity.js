@@ -1,3 +1,4 @@
+import https from 'https';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
@@ -96,6 +97,27 @@ function initFirestore() {
   return db;
 }
 
+// REST HTTP get helper
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            reject(new Error(`Failed to parse json: ${e.message}`));
+          }
+        } else {
+          resolve({ success: false, statusCode: res.statusCode, body });
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
 // Dot-insensitive email normalizer
 function normalizeEmail(emailStr) {
   if (!emailStr) return '';
@@ -140,6 +162,219 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  // Determine if this is a CRM enrichment request
+  const urlObj = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+  const isEnrich = urlObj.pathname.endsWith('/enrich') || urlObj.searchParams.get('mode') === 'enrich' || req.query?.mode === 'enrich';
+
+  if (isEnrich) {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    try {
+      const { companyId, candidateEmail, candidateName, clientCompany, contactName, jobTitle } = req.body;
+
+      if (!companyId) {
+        return res.status(400).json({ error: 'Missing companyId parameter' });
+      }
+
+      const firestore = initFirestore();
+
+      // 1. Fetch API Key for this company tenant
+      const compDoc = await firestore.collection('companies').doc(companyId).get();
+      let apiKey = null;
+
+      if (compDoc.exists) {
+        apiKey = compDoc.data().recruitlyApiKey;
+      }
+
+      // Fallback: If no company matches, try to find a company containing "humres"
+      if (!apiKey) {
+        const humresSnap = await firestore.collection('companies')
+          .where('name', '>=', 'Humres')
+          .limit(10)
+          .get();
+        
+        humresSnap.forEach(docSnap => {
+          const data = docSnap.data();
+          if (data.name && data.name.toLowerCase().includes('humres') && data.recruitlyApiKey) {
+            apiKey = data.recruitlyApiKey;
+          }
+        });
+      }
+
+      if (!apiKey) {
+        return res.status(400).json({ error: 'No Recruitly API Key configured for this company tenant.' });
+      }
+
+      // Results to return
+      let resolvedCandidateId = '';
+      let resolvedCompanyId = '';
+      let resolvedContactId = '';
+      let resolvedJobId = '';
+
+      // 2. Candidate Lookup
+      if (candidateEmail || candidateName) {
+        const queryStr = candidateEmail ? candidateEmail : candidateName;
+        try {
+          const candUrl = `https://api.recruitly.io/api/candidate/search?apiKey=${apiKey}&query=${encodeURIComponent(queryStr)}`;
+          const candRes = await fetchJson(candUrl);
+          if (candRes && candRes.data && candRes.data.length > 0) {
+            resolvedCandidateId = candRes.data[0].id || '';
+          }
+        } catch (e) {
+          console.error('[CRM Enrich] Candidate lookup failed:', e);
+        }
+      }
+
+      // 3. Company Lookup
+      if (clientCompany) {
+        try {
+          const compUrl = `https://api.recruitly.io/api/company/search?apiKey=${apiKey}&query=${encodeURIComponent(clientCompany)}`;
+          const compRes = await fetchJson(compUrl);
+          if (compRes && compRes.data && compRes.data.length > 0) {
+            resolvedCompanyId = compRes.data[0].id || '';
+          }
+        } catch (e) {
+          console.error('[CRM Enrich] Company lookup failed:', e);
+        }
+      }
+
+      // 4. Contact Lookup
+      if (contactName) {
+        try {
+          const contactUrl = `https://api.recruitly.io/api/contact/search?apiKey=${apiKey}&query=${encodeURIComponent(contactName)}`;
+          const contactRes = await fetchJson(contactUrl);
+          if (contactRes && contactRes.data && contactRes.data.length > 0) {
+            let match = contactRes.data[0];
+            if (resolvedCompanyId) {
+              const filtered = contactRes.data.find(c => c.companyId === resolvedCompanyId);
+              if (filtered) match = filtered;
+            }
+            resolvedContactId = match.id || '';
+          }
+        } catch (e) {
+          console.error('[CRM Enrich] Contact lookup failed:', e);
+        }
+      }
+
+      // 5. Job / Submission Lookup
+      if (resolvedCandidateId) {
+        try {
+          const pipeUrl = `https://api.recruitly.io/api/candidate/submissions?apiKey=${apiKey}&candidateId=${resolvedCandidateId}`;
+          const pipeRes = await fetchJson(pipeUrl);
+          if (pipeRes && pipeRes.success && Array.isArray(pipeRes.data) && pipeRes.data.length > 0) {
+            let matchedSub = null;
+            if (jobTitle || clientCompany) {
+              const targetTitle = (jobTitle || '').toLowerCase();
+              const targetComp = (clientCompany || '').toLowerCase();
+              
+              matchedSub = pipeRes.data.find(sub => {
+                const subJob = (sub.jobName || sub.jobTitle || '').toLowerCase();
+                const subComp = (sub.companyName || sub.clientCompany || '').toLowerCase();
+                return (targetTitle && subJob.includes(targetTitle)) || (targetComp && subComp.includes(targetComp));
+              });
+            }
+            if (!matchedSub) {
+              matchedSub = pipeRes.data[0];
+            }
+            resolvedJobId = matchedSub.jobId || '';
+            if (matchedSub.companyId && !resolvedCompanyId) {
+              resolvedCompanyId = matchedSub.companyId;
+            }
+            if (matchedSub.contactId && !resolvedContactId) {
+              resolvedContactId = matchedSub.contactId;
+            }
+          }
+        } catch (e) {
+          console.warn('[CRM Enrich] Candidate submissions lookup failed, trying job title search fallback:', e);
+        }
+      }
+
+      // Fallback Job Lookup by Job Title
+      if (!resolvedJobId && jobTitle) {
+        try {
+          const jobSearchUrl = `https://api.recruitly.io/api/nova/jobs/search?apiKey=${apiKey}&query=${encodeURIComponent(jobTitle)}`;
+          const jobRes = await fetchJson(jobSearchUrl);
+          if (jobRes && jobRes.success && Array.isArray(jobRes.data) && jobRes.data.length > 0) {
+            let matchedJob = jobRes.data[0];
+            if (resolvedCompanyId) {
+              const filtered = jobRes.data.find(j => j.companyId === resolvedCompanyId);
+              if (filtered) matchedJob = filtered;
+            }
+            resolvedJobId = matchedJob.id || '';
+          }
+        } catch (e) {
+          console.error('[CRM Enrich] Job search fallback failed:', e);
+        }
+      }
+
+      // Fetch detailed properties of contact, job, company
+      let resolvedContactName = contactName || '';
+      let resolvedContactJobTitle = '';
+      let resolvedContactEmail = '';
+
+      if (resolvedContactId) {
+        try {
+          const contactUrl = `https://api.recruitly.io/api/nova/contacts/${resolvedContactId}?apiKey=${apiKey}`;
+          const contactRes = await fetchJson(contactUrl);
+          if (contactRes && contactRes.success && contactRes.data) {
+            const contactData = contactRes.data;
+            resolvedContactName = contactData.fullName || `${contactData.firstName || ''} ${contactData.lastName || ''}`.trim();
+            resolvedContactJobTitle = contactData.jobTitle || '';
+            resolvedContactEmail = contactData.email || '';
+          }
+        } catch (e) {
+          console.error('[CRM Enrich] Contact details fetch failed:', e);
+        }
+      }
+
+      let resolvedJobTitle = jobTitle || '';
+      if (resolvedJobId && !resolvedJobTitle) {
+        try {
+          const jobUrl = `https://api.recruitly.io/api/nova/jobs/${resolvedJobId}?apiKey=${apiKey}`;
+          const jobRes = await fetchJson(jobUrl);
+          if (jobRes && jobRes.success && jobRes.data) {
+            resolvedJobTitle = jobRes.data.title || '';
+          }
+        } catch (e) {
+          console.error('[CRM Enrich] Job details fetch failed:', e);
+        }
+      }
+
+      let resolvedClientCompany = clientCompany || '';
+      if (resolvedCompanyId && !resolvedClientCompany) {
+        try {
+          const companyUrl = `https://api.recruitly.io/api/nova/companies/${resolvedCompanyId}?apiKey=${apiKey}`;
+          const companyRes = await fetchJson(companyUrl);
+          if (companyRes && companyRes.success && companyRes.data) {
+            resolvedClientCompany = companyRes.data.name || '';
+          }
+        } catch (e) {
+          console.error('[CRM Enrich] Company details fetch failed:', e);
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        candidateId: resolvedCandidateId,
+        companyId: resolvedCompanyId,
+        contactId: resolvedContactId,
+        jobId: resolvedJobId,
+        contactName: resolvedContactName,
+        contactJobTitle: resolvedContactJobTitle,
+        contactEmail: resolvedContactEmail,
+        clientCompany: resolvedClientCompany,
+        jobTitle: resolvedJobTitle
+      });
+
+    } catch (error) {
+      console.error('[CRM Enrich] Internal execution error:', error);
+      return res.status(500).json({ error: error.message || 'Internal server error during CRM enrichment' });
+    }
+  }
+
+  // --- Normal Activity Webhook logic ---
   if (req.method === 'GET') {
     return res.status(200).json({ ok: true, service: 'recruitly-crm-activity-ingestion' });
   }

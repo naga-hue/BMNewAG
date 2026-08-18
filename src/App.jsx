@@ -43,7 +43,8 @@ import {
   Clock,
   Phone, 
   Settings,
-  HelpCircle
+  HelpCircle,
+  X
 } from 'lucide-react';
 
 import { initialCompanies } from './mockData';

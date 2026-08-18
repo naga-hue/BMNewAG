@@ -293,7 +293,7 @@ export default function AiRemindersModal({
                   style={{ width: '100%', padding: '8px 12px', marginTop: '4px' }}
                 >
                   <option value="">-- Choose Staff Member --</option>
-                  {staff.map(s => {
+                  {staff.filter(s => s.status !== 'exited').map(s => {
                     const comp = companies.find(c => c.id === s.companyId);
                     return (
                       <option key={s.id} value={s.id}>

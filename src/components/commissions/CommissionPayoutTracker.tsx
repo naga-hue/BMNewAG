@@ -233,7 +233,7 @@ export default function CommissionPayoutTracker({
             style={{ minWidth: '150px', padding: '8px', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '13px' }}
           >
             <option value="all">All Recruiters</option>
-            {staff.map(s => (
+            {staff.filter(s => s.status !== 'exited').map(s => (
               <option key={s.id} value={s.id}>{s.fullName}</option>
             ))}
           </select>

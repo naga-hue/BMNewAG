@@ -339,7 +339,7 @@ Sent automatically via Humres Group Business Management Suite.`;
               ) : (
                 <>
                   <option value="">-- Choose Employee --</option>
-                  {staff.map(s => {
+                  {staff.filter(s => s.status !== 'exited').map(s => {
                     const comp = companies.find(c => c.id === s.companyId);
                     return (
                       <option key={s.id} value={s.id}>

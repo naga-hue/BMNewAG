@@ -2639,7 +2639,7 @@ export default function App() {
                   }}
                 >
                   <option value="super-admin">Super Admin (All Access)</option>
-                  {staff.map(st => (
+                  {staff.filter(st => st.status !== 'exited').map(st => (
                     <option key={st.id} value={st.id}>
                       {st.fullName} ({st.permissions?.role || 'Recruiter'})
                     </option>

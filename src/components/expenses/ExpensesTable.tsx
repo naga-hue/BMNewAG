@@ -1091,7 +1091,7 @@ export default function ExpensesTable({
                   ))}
                 </optgroup>
                 <optgroup label="Staff / Consultants">
-                  {staff.map(s => (
+                  {staff.filter(s => s.status !== 'exited').map(s => (
                     <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
                   ))}
                 </optgroup>
@@ -1413,7 +1413,7 @@ export default function ExpensesTable({
                           ))}
                         </optgroup>
                         <optgroup label="Staff / Consultants">
-                          {staff.map(s => (
+                          {staff.filter(s => s.status !== 'exited').map(s => (
                             <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
                           ))}
                         </optgroup>
@@ -2364,7 +2364,7 @@ export default function ExpensesTable({
                       style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
                     >
                       <option value="">-- Choose Staff Member --</option>
-                      {staff.map(s => (
+                      {staff.filter(s => s.status !== 'exited').map(s => (
                         <option key={s.id} value={s.id}>{s.fullName}</option>
                       ))}
                     </select>

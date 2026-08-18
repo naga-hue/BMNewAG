@@ -376,7 +376,7 @@ export default function ExpenseClaimForm({
               ))}
             </optgroup>
             <optgroup label="Staff / Consultants">
-              {staff.map(s => (
+              {staff.filter(s => s.status !== 'exited').map(s => (
                 <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
               ))}
             </optgroup>

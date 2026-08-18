@@ -507,7 +507,7 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
                           ))}
                         </optgroup>
                         <optgroup label="Staff / Salary Profiles">
-                          {staff.map(s => (
+                          {staff.filter(s => s.status !== 'exited').map(s => (
                             <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
                           ))}
                         </optgroup>

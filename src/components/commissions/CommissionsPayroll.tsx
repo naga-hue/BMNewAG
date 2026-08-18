@@ -275,7 +275,7 @@ export default function CommissionsPayroll({
               onChange={(e) => setStaffFilter(e.target.value)}
             >
               <option value="all">All Staff Allocated</option>
-              {staff.map(s => (
+              {staff.filter(s => s.status !== 'exited').map(s => (
                 <option key={s.id} value={s.id}>{s.fullName}</option>
               ))}
             </select>

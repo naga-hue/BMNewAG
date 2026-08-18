@@ -34,7 +34,7 @@ export default function LeaveRequestsDesk({
 }: LeaveRequestsDeskProps) {
   const isAdminOrHr = currentUser?.permissions?.role === 'admin' || currentUser?.permissions?.role === 'hr_admin';
   const canApprove = ['admin', 'hr_admin', 'director', 'manager'].includes(currentUser?.permissions?.role);
-  const selectableStaff = isAdminOrHr ? staff : staff.filter(s => s.id === currentUser?.id);
+  const selectableStaff = (isAdminOrHr ? staff : staff.filter(s => s.id === currentUser?.id)).filter(s => s.status !== 'exited');
   const [showReqForm, setShowReqForm] = useState(false);
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   const [reqType, setReqType] = useState('annual');

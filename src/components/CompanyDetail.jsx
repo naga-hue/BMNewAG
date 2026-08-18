@@ -953,7 +953,7 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {(company.departments || []).map((dept, index) => {
-                      const companyStaff = staff.filter(s => s.companyId === company.id);
+                      const companyStaff = staff.filter(s => s.companyId === company.id && s.status !== 'exited');
                       return (
                         <div 
                           key={index} 

@@ -1572,7 +1572,7 @@ simplicityExpiryTotal: invoices.filter(inv => inv.invoiceType === 'simplicity' &
                 style={{ width: '100%', padding: '6px 10px', height: '34px', fontSize: '12.5px' }}
               >
                 <option value="all">All Recruiters</option>
-                {staff.map(s => (
+                {staff.filter(s => s.status !== 'exited').map(s => (
                   <option key={s.id} value={s.id}>{s.fullName}</option>
                 ))}
               </select>

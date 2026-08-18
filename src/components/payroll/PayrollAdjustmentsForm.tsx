@@ -621,10 +621,10 @@ export default function PayrollAdjustmentsForm({
                   <th style={{ width: '40px', textAlign: 'center' }}>
                     <input 
                       type="checkbox"
-                      checked={staff.length > 0 && staff.every(s => selectedPayrollStaffIds.includes(s.id))}
+                      checked={staff.filter(s => s.status !== 'exited').length > 0 && staff.filter(s => s.status !== 'exited').every(s => selectedPayrollStaffIds.includes(s.id))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedPayrollStaffIds(staff.map(s => s.id));
+                          setSelectedPayrollStaffIds(staff.filter(s => s.status !== 'exited').map(s => s.id));
                         } else {
                           setSelectedPayrollStaffIds([]);
                         }
@@ -636,7 +636,7 @@ export default function PayrollAdjustmentsForm({
                 </tr>
               </thead>
               <tbody>
-                {staff.map(s => {
+                {staff.filter(s => s.status !== 'exited').map(s => {
                   const isChecked = selectedPayrollStaffIds.includes(s.id);
                   return (
                     <tr 

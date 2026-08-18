@@ -916,7 +916,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                           ))}
                         </optgroup>
                         <optgroup label="Staff / Consultants">
-                          {staff.map(s => (
+                          {staff.filter(s => s.status !== 'exited').map(s => (
                             <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
                           ))}
                         </optgroup>
@@ -1740,7 +1740,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                       style={{ width: '100%', padding: '8px', fontSize: '13px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
                     >
                       <option value="">-- Select Employee --</option>
-                      {staff.map(s => (
+                      {staff.filter(s => s.status !== 'exited').map(s => (
                         <option key={s.id} value={s.id}>{s.fullName}</option>
                       ))}
                     </select>

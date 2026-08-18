@@ -62,37 +62,37 @@ export default async function handler(req, res) {
       const company = companiesList.find(c => c.id === s.companyId);
       const companyName = company?.name || 'Group Company';
 
-      // Parse Birthday
+      // Parse Birthday using timezone-safe parser
       let bdayMatchToday = false;
       let bdayMatchTomorrow = false;
       let bdayAge = 0;
       if (s.dateOfBirth) {
-        const dob = new Date(s.dateOfBirth);
-        if (!isNaN(dob.getTime())) {
-          if (dob.getMonth() === tdMonth && dob.getDate() === tdDay) {
+        const parts = parseDateParts(s.dateOfBirth);
+        if (parts) {
+          if (parts.month === tdMonth && parts.day === tdDay) {
             bdayMatchToday = true;
-            bdayAge = today.getFullYear() - dob.getFullYear();
+            bdayAge = today.getFullYear() - parts.year;
           }
-          if (dob.getMonth() === tmMonth && dob.getDate() === tmDay) {
+          if (parts.month === tmMonth && parts.day === tmDay) {
             bdayMatchTomorrow = true;
-            bdayAge = tomorrow.getFullYear() - dob.getFullYear();
+            bdayAge = tomorrow.getFullYear() - parts.year;
           }
         }
       }
 
-      // Parse Anniversary
+      // Parse Anniversary using timezone-safe parser
       let annivMatchToday = false;
       let annivMatchTomorrow = false;
       let annivYears = 0;
       if (s.startDate) {
-        const joinDate = new Date(s.startDate);
-        if (!isNaN(joinDate.getTime())) {
-          if (joinDate.getMonth() === tdMonth && joinDate.getDate() === tdDay) {
-            annivYears = today.getFullYear() - joinDate.getFullYear();
+        const parts = parseDateParts(s.startDate);
+        if (parts) {
+          if (parts.month === tdMonth && parts.day === tdDay) {
+            annivYears = today.getFullYear() - parts.year;
             if (annivYears > 0) annivMatchToday = true;
           }
-          if (joinDate.getMonth() === tmMonth && joinDate.getDate() === tmDay) {
-            annivYears = tomorrow.getFullYear() - joinDate.getFullYear();
+          if (parts.month === tmMonth && parts.day === tmDay) {
+            annivYears = tomorrow.getFullYear() - parts.year;
             if (annivYears > 0) annivMatchTomorrow = true;
           }
         }
@@ -322,20 +322,24 @@ function sendGraphEmailWithCC(accessToken, senderEmail, toEmails, ccEmails, subj
 }
 
 async function generateGreetingAI(employeeName, jobTitle, companyName, reminderType, startDate, apiKey) {
-  const prompt = `Generate a ${reminderType === 'birthday' ? 'birthday greeting' : 'work anniversary celebration email'} for ${employeeName}.
+  const prompt = `Generate a highly personalized, creative, and sincere ${reminderType === 'birthday' ? 'birthday greeting' : 'work anniversary celebration'} email for our colleague, ${employeeName}.
 Job Title: ${jobTitle || 'Team Member'}
 Company: ${companyName || 'Group Company'}
 ${reminderType === 'anniversary' && startDate ? `Joined on: ${startDate}` : ''}
 
-Output the result strictly in JSON format with two keys: "subject" and "body". 
-CRITICAL: The body must be a brief, warm 2-liner wish and reminder (e.g. Line 1: A warm greeting wish, Line 2: A quick reminder or thank you/congratulatory note). Keep it concise, professional, and signed off from the team. Keep the text clean without any markdown formatting or HTML codes.`;
+Output the result strictly in JSON format with two keys: "subject" and "body".
+CRITICAL instructions for the content:
+1. Make the email body feel authentic, warm, and highly engaging. Do NOT use generic template formulas (like "Dear [Name], Happy birthday...").
+2. Tailor it specifically to their name, job title, and company. Let the length be a natural, warm paragraph (approx 3-5 sentences) that sounds like it was written by a thoughtful colleague.
+3. Keep the tone professional, friendly, and celebratory.
+4. Keep the text clean without any markdown formatting or HTML codes. Do not include sign-off placeholders like "[Your Name]". Sign off naturally as "The Group Team" or "Your Colleagues at ${companyName}".`;
 
   const payload = JSON.stringify({
     model: 'deepseek-chat',
     messages: [
       {
         role: 'system',
-        content: 'You are an inspiring HR assistant. You draft short 2-liner wishes and reminders for staff. You respond strictly in JSON format with keys "subject" and "body".'
+        content: 'You are a warm, highly creative HR assistant. You draft custom, engaging, and non-generic birthday and work anniversary wishes for staff. You respond strictly in JSON format with keys "subject" and "body".'
       },
       {
         role: 'user',
@@ -384,4 +388,23 @@ CRITICAL: The body must be a brief, warm 2-liner wish and reminder (e.g. Line 1:
     apiReq.write(payload);
     apiReq.end();
   });
+}
+
+function parseDateParts(dateStr) {
+  if (!dateStr) return null;
+  const parts = dateStr.split(/[-/]/);
+  if (parts.length === 3) {
+    let year = parseInt(parts[0], 10);
+    let month = parseInt(parts[1], 10) - 1; // 0-indexed
+    let day = parseInt(parts[2], 10);
+
+    if (year < 1000) {
+      // It's probably DD-MM-YYYY or DD/MM/YYYY
+      day = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10) - 1;
+      year = parseInt(parts[2], 10);
+    }
+    return { year, month, day };
+  }
+  return null;
 }

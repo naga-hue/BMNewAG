@@ -33,20 +33,24 @@ export default async function handler(req, res) {
   }
 
   try {
-    const prompt = `Generate a ${reminderType === 'birthday' ? 'birthday greeting' : 'work anniversary celebration email'} for ${employeeName}.
+    const prompt = `Generate a highly personalized, creative, and sincere ${reminderType === 'birthday' ? 'birthday greeting' : 'work anniversary celebration'} email for our colleague, ${employeeName}.
 Job Title: ${jobTitle || 'Team Member'}
 Company: ${companyName || 'Group Company'}
 ${reminderType === 'anniversary' && startDate ? `Joined on: ${startDate}` : ''}
 
-Output the result strictly in JSON format with two keys: "subject" and "body". 
-CRITICAL: The body must be a brief, warm 2-liner wish and reminder (e.g. Line 1: A warm greeting wish, Line 2: A quick reminder or thank you/congratulatory note). Keep it concise, professional, and signed off from the team. Keep the text clean without any markdown formatting or HTML codes.`;
+Output the result strictly in JSON format with two keys: "subject" and "body".
+CRITICAL instructions for the content:
+1. Make the email body feel authentic, warm, and highly engaging. Do NOT use generic template formulas (like "Dear [Name], Happy birthday...").
+2. Tailor it specifically to their name, job title, and company. Let the length be a natural, warm paragraph (approx 3-5 sentences) that sounds like it was written by a thoughtful colleague.
+3. Keep the tone professional, friendly, and celebratory.
+4. Keep the text clean without any markdown formatting or HTML codes. Do not include sign-off placeholders like "[Your Name]". Sign off naturally as "The Group Team" or "Your Colleagues at ${companyName}".`;
 
     const payload = JSON.stringify({
       model: 'deepseek-chat',
       messages: [
         {
           role: 'system',
-          content: 'You are an inspiring HR assistant. You draft short 2-liner wishes and reminders for staff. You respond strictly in JSON format with keys "subject" and "body".'
+          content: 'You are a warm, highly creative HR assistant. You draft custom, engaging, and non-generic birthday and work anniversary wishes for staff. You respond strictly in JSON format with keys "subject" and "body".'
         },
         {
           role: 'user',

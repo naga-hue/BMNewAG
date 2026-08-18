@@ -82,6 +82,24 @@ export default function AiRemindersModal({
       return;
     }
 
+    // Calculate exact anniversary years / age timezone-safely
+    let eventYears = 0;
+    if (reminderType === 'anniversary' && selectedStaffMember.startDate) {
+      const parts = selectedStaffMember.startDate.split(/[-/]/);
+      if (parts.length === 3) {
+        let year = parseInt(parts[0], 10);
+        if (year < 1000) year = parseInt(parts[2], 10);
+        eventYears = new Date().getFullYear() - year;
+      }
+    } else if (reminderType === 'birthday' && selectedStaffMember.dateOfBirth) {
+      const parts = selectedStaffMember.dateOfBirth.split(/[-/]/);
+      if (parts.length === 3) {
+        let year = parseInt(parts[0], 10);
+        if (year < 1000) year = parseInt(parts[2], 10);
+        eventYears = new Date().getFullYear() - year;
+      }
+    }
+
     setLoading(true);
     try {
       const response = await fetch('/api/generate-greeting', {
@@ -94,7 +112,8 @@ export default function AiRemindersModal({
           jobTitle: selectedStaffMember.jobTitle || 'Team Member',
           companyName: selectedCompany?.name || 'Group Company',
           reminderType: reminderType,
-          startDate: selectedStaffMember.startDate || ''
+          startDate: selectedStaffMember.startDate || '',
+          years: eventYears
         })
       });
 

@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { employeeName, jobTitle, companyName, reminderType, startDate } = req.body;
+  const { employeeName, jobTitle, companyName, reminderType, startDate, years } = req.body;
 
   if (!employeeName || !reminderType) {
     return res.status(400).json({ error: 'Missing required fields: employeeName, reminderType' });
@@ -36,6 +36,7 @@ export default async function handler(req, res) {
     const prompt = `Generate a highly personalized, creative, and sincere ${reminderType === 'birthday' ? 'birthday greeting' : 'work anniversary celebration'} email for our colleague, ${employeeName}.
 Job Title: ${jobTitle || 'Team Member'}
 Company: ${companyName || 'Group Company'}
+${reminderType === 'anniversary' && years ? `Celebrating exactly: ${years} Years at the company` : ''}
 ${reminderType === 'anniversary' && startDate ? `Joined on: ${startDate}` : ''}
 
 Output the result strictly in JSON format with two keys: "subject" and "body".

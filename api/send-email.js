@@ -50,12 +50,77 @@ export default async function handler(req, res) {
     console.log(`Sending email via Microsoft Graph API to: ${toEmails.join(', ')}`);
     await sendGraphEmail(accessToken, senderEmail, toEmails, subject, body);
 
+    // Log the sent email to Firestore
+    const projectId = process.env.VITE_FIREBASE_PROJECT_ID || 'humres-management-hub';
+    try {
+      await saveSentEmailREST(projectId, {
+        to: toEmails,
+        subject: subject,
+        body: body,
+        timestamp: new Date().toISOString(),
+        triggerType: req.body.triggerType || 'manual',
+        sender: senderEmail
+      });
+      console.log("Sent email logged to Firestore successfully.");
+    } catch (err) {
+      console.error("Failed to log sent email to Firestore:", err);
+    }
+
     console.log("Email sent successfully!");
     return res.status(200).json({ success: true, message: 'Email sent successfully!' });
   } catch (error) {
     console.error("Error sending email:", error);
     return res.status(500).json({ error: error.message || 'Failed to send email' });
   }
+}
+
+function saveSentEmailREST(projectId, emailLog) {
+  return new Promise((resolve, reject) => {
+    const fields = {};
+    for (const [key, val] of Object.entries(emailLog)) {
+      if (Array.isArray(val)) {
+        fields[key] = {
+          arrayValue: {
+            values: val.map(v => ({ stringValue: String(v) }))
+          }
+        };
+      } else if (typeof val === 'boolean') {
+        fields[key] = { booleanValue: val };
+      } else if (typeof val === 'number') {
+        fields[key] = { doubleValue: val };
+      } else {
+        fields[key] = { stringValue: String(val) };
+      }
+    }
+
+    const payload = JSON.stringify({ fields });
+    const options = {
+      hostname: 'firestore.googleapis.com',
+      port: 443,
+      path: `/v1/projects/${projectId}/databases/(default)/documents/sent_emails`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200 || res.statusCode === 201) {
+          resolve();
+        } else {
+          reject(new Error(`Firestore save document failed: status ${res.statusCode}: ${body}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
 }
 
 function refreshAccessToken(clientId, clientSecret, refreshToken) {

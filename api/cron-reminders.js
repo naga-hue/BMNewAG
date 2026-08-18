@@ -41,7 +41,21 @@ export default async function handler(req, res) {
     const activeStaff = rawStaffList.filter(s => s.status !== 'exited');
     logs.push(`Found ${activeStaff.length} active staff members and ${companiesList.length} companies.`);
 
-    // 2. Refresh MS365 Token
+    // 2. Fetch Email Reminders Configuration Settings from Firestore REST
+    logs.push("Fetching email reminders configuration settings...");
+    const settings = await fetchDocument(projectId, 'settings', 'email_reminders') || {
+      managementEmails: managementEmailsStr,
+      alertManagers: true,
+      alertCoworkers: false,
+      sendToEmployee: true,
+      alertManagementDayBefore: true,
+      sendGreetingsDayOf: true
+    };
+
+    const alertManagementDayBefore = settings.alertManagementDayBefore !== false;
+    const sendGreetingsDayOf = settings.sendGreetingsDayOf !== false;
+
+    // 3. Refresh MS365 Token
     logs.push("Refreshing Microsoft 365 Outlook connection access token...");
     const accessToken = await refreshAccessToken(clientId, clientSecret, refreshToken);
 
@@ -57,7 +71,7 @@ export default async function handler(req, res) {
 
     logs.push(`Running search for Today (${tdMonth + 1}/${tdDay}) and Tomorrow (${tmMonth + 1}/${tmDay})...`);
 
-    // 3. Process matches
+    // 4. Process matches
     for (const s of activeStaff) {
       const company = companiesList.find(c => c.id === s.companyId);
       const companyName = company?.name || 'Group Company';
@@ -103,7 +117,7 @@ export default async function handler(req, res) {
       // ----------------------------------------------------
       // ACTION A: Management Prep Reminders (1 Day Before)
       // ----------------------------------------------------
-      if (bdayMatchTomorrow || annivMatchTomorrow) {
+      if (alertManagementDayBefore && (bdayMatchTomorrow || annivMatchTomorrow)) {
         const eventLabel = bdayMatchTomorrow 
           ? `Birthday (turning ${bdayAge})` 
           : `Work Anniversary (${annivYears} Years)`;
@@ -123,14 +137,56 @@ Employee Details:
 Best regards,
 Humres Admin Hub`;
 
-        logs.push(`Sending management reminder alert for tomorrow's event to: ${managementEmails.join(', ')}`);
-        await sendGraphEmailWithCC(accessToken, senderEmail, managementEmails, [], subject, bodyText);
+        // Compile recipient alert list
+        const alertRecipients = [];
+
+        // 1) Management emails from settings
+        const configEmails = (settings.managementEmails || '')
+          .split(',')
+          .map(e => e.trim())
+          .filter(Boolean);
+        configEmails.forEach(e => {
+          if (!alertRecipients.includes(e)) alertRecipients.push(e);
+        });
+
+        // 2) Direct Line/Reporting manager of the employee
+        if (settings.alertManagers !== false) {
+          const managerIds = s.reportingManagerIds || (s.reportingManagerId ? [s.reportingManagerId] : []);
+          const dottedIds = s.dottedLineManagerIds || [];
+          const allManagerIds = [...new Set([...managerIds, ...dottedIds])];
+
+          allManagerIds.forEach(mId => {
+            const mObj = activeStaff.find(member => member.id === mId);
+            const mEmail = mObj?.businessEmail || mObj?.personalEmail;
+            if (mEmail && !alertRecipients.includes(mEmail)) {
+              alertRecipients.push(mEmail);
+            }
+          });
+        }
+
+        if (alertRecipients.length > 0) {
+          logs.push(`Sending tomorrow's event management alert to: ${alertRecipients.join(', ')}`);
+          try {
+            await sendGraphEmailWithCC(accessToken, senderEmail, alertRecipients, [], subject, bodyText);
+            // Log to Firestore sent_emails
+            await saveSentEmailREST(projectId, {
+              to: alertRecipients,
+              subject: subject,
+              body: bodyText,
+              timestamp: new Date().toISOString(),
+              triggerType: bdayMatchTomorrow ? 'cron-tomorrow-birthday' : 'cron-tomorrow-anniversary',
+              sender: senderEmail
+            });
+          } catch (err) {
+            logs.push(`[Error] Failed tomorrow's alert for ${s.fullName}: ${err.message}`);
+          }
+        }
       }
 
       // ----------------------------------------------------
       // ACTION B: Automated Wish Email (On the Day of Event)
       // ----------------------------------------------------
-      if (bdayMatchToday || annivMatchToday) {
+      if (sendGreetingsDayOf && (bdayMatchToday || annivMatchToday)) {
         const eventType = bdayMatchToday ? 'birthday' : 'anniversary';
         logs.push(`Generating AI celebration greeting for ${s.fullName} (${eventType}) via DeepSeek...`);
         
@@ -144,28 +200,42 @@ Humres Admin Hub`;
             deepseekKey
           );
 
-          // Find coworkers at the SAME company to CC
-          const coworkers = activeStaff.filter(
-            c => c.companyId === s.companyId && c.id !== s.id
-          );
-          const coworkerEmails = coworkers
-            .map(c => c.businessEmail || c.personalEmail)
-            .filter(Boolean);
+          // Find coworkers at the SAME company to CC if enabled
+          let ccRecipients = [];
+          if (settings.alertCoworkers === true) {
+            const coworkers = activeStaff.filter(c => c.companyId === s.companyId && c.id !== s.id);
+            ccRecipients = coworkers.map(c => c.businessEmail || c.personalEmail).filter(Boolean);
+          }
 
-          if (!celebratedEmail) {
-            logs.push(`[Error] Staff ${s.fullName} has no email configured. Skipped automated wish email.`);
+          const toRecipients = [];
+          if (settings.sendToEmployee !== false && celebratedEmail) {
+            toRecipients.push(celebratedEmail);
+          }
+
+          if (toRecipients.length === 0 && ccRecipients.length === 0) {
+            logs.push(`[Skip] No recipients configured for day-of wish for ${s.fullName}.`);
             continue;
           }
 
-          logs.push(`Sending AI Wish email directly to celebrated staff: ${celebratedEmail} (CC: ${coworkerEmails.length} coworkers at ${companyName})`);
+          logs.push(`Sending AI Wish email directly to: ${toRecipients.join(', ')} (CC: ${ccRecipients.length} coworkers at ${companyName})`);
           await sendGraphEmailWithCC(
             accessToken, 
             senderEmail, 
-            [celebratedEmail], 
-            coworkerEmails, 
+            toRecipients.length > 0 ? toRecipients : ccRecipients, 
+            toRecipients.length > 0 ? ccRecipients : [], 
             wish.subject, 
             wish.body
           );
+
+          // Log to Firestore sent_emails
+          await saveSentEmailREST(projectId, {
+            to: [...toRecipients, ...ccRecipients],
+            subject: wish.subject,
+            body: wish.body,
+            timestamp: new Date().toISOString(),
+            triggerType: bdayMatchToday ? 'cron-dayof-birthday' : 'cron-dayof-anniversary',
+            sender: senderEmail
+          });
         } catch (err) {
           logs.push(`[Error] Failed to process AI wish for ${s.fullName}: ${err.message}`);
         }
@@ -407,4 +477,95 @@ function parseDateParts(dateStr) {
     return { year, month, day };
   }
   return null;
+}
+
+function fetchDocument(projectId, collectionName, documentId) {
+  return new Promise((resolve) => {
+    const options = {
+      hostname: 'firestore.googleapis.com',
+      port: 443,
+      path: `/v1/projects/${projectId}/databases/(default)/documents/${collectionName}/${documentId}`,
+      method: 'GET'
+    };
+
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            const data = JSON.parse(body);
+            const fields = data.fields || {};
+            const obj = { id: data.name.split('/').pop() };
+            for (const [key, val] of Object.entries(fields)) {
+              if (val.stringValue !== undefined) obj[key] = val.stringValue;
+              else if (val.integerValue !== undefined) obj[key] = parseInt(val.integerValue, 10);
+              else if (val.doubleValue !== undefined) obj[key] = parseFloat(val.doubleValue);
+              else if (val.booleanValue !== undefined) obj[key] = val.booleanValue;
+              else if (val.arrayValue !== undefined) {
+                obj[key] = (val.arrayValue.values || []).map(v => v.stringValue || v.integerValue || v.doubleValue || v.booleanValue);
+              }
+            }
+            resolve(obj);
+          } catch (e) {
+            resolve(null);
+          }
+        } else {
+          resolve(null);
+        }
+      });
+    });
+
+    req.on('error', () => resolve(null));
+    req.end();
+  });
+}
+
+function saveSentEmailREST(projectId, emailLog) {
+  return new Promise((resolve, reject) => {
+    const fields = {};
+    for (const [key, val] of Object.entries(emailLog)) {
+      if (Array.isArray(val)) {
+        fields[key] = {
+          arrayValue: {
+            values: val.map(v => ({ stringValue: String(v) }))
+          }
+        };
+      } else if (typeof val === 'boolean') {
+        fields[key] = { booleanValue: val };
+      } else if (typeof val === 'number') {
+        fields[key] = { doubleValue: val };
+      } else {
+        fields[key] = { stringValue: String(val) };
+      }
+    }
+
+    const payload = JSON.stringify({ fields });
+    const options = {
+      hostname: 'firestore.googleapis.com',
+      port: 443,
+      path: `/v1/projects/${projectId}/databases/(default)/documents/sent_emails`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200 || res.statusCode === 201) {
+          resolve();
+        } else {
+          reject(new Error(`Firestore save document failed: status ${res.statusCode}: ${body}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
 }

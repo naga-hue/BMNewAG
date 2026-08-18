@@ -156,6 +156,15 @@ export default function App() {
   const expenses = useBoundStore(state => state.expenses);
   const nominalCodes = useBoundStore(state => state.nominalCodes);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [sentEmails, setSentEmails] = useState([]);
+  const [reminderSettings, setReminderSettings] = useState({
+    managementEmails: 'groupadmin@globalrecruiters.ae',
+    alertManagers: true,
+    alertCoworkers: false,
+    sendToEmployee: true,
+    alertManagementDayBefore: true,
+    sendGreetingsDayOf: true
+  });
   const payrollRecords = useBoundStore(state => state.payrollRecords);
   const payrollPolicies = useBoundStore(state => state.payrollPolicies);
 
@@ -815,6 +824,29 @@ export default function App() {
     const unsubscribe = firebaseService.subscribeAuditLogs((updatedList) => {
       setAuditLogs(updatedList);
     }, []);
+    return () => unsubscribe();
+  }, []);
+
+  // Sync sent emails
+  useEffect(() => {
+    const unsubscribe = firebaseService.subscribeSentEmails((updatedList) => {
+      setSentEmails(updatedList);
+    }, []);
+    return () => unsubscribe();
+  }, []);
+
+  // Sync reminder settings
+  useEffect(() => {
+    const unsubscribe = firebaseService.subscribeReminderSettings((settings) => {
+      setReminderSettings(settings);
+    }, {
+      managementEmails: 'groupadmin@globalrecruiters.ae',
+      alertManagers: true,
+      alertCoworkers: false,
+      sendToEmployee: true,
+      alertManagementDayBefore: true,
+      sendGreetingsDayOf: true
+    });
     return () => unsubscribe();
   }, []);
 
@@ -1531,6 +1563,17 @@ export default function App() {
       setAuditLogs([]);
     } catch (err) {
       console.error("Error clearing logs:", err);
+    }
+  };
+
+  const handleSaveReminderSettings = async (settings) => {
+    try {
+      await firebaseService.saveReminderSettings(settings);
+      setReminderSettings(settings);
+      handleShowToast("Reminder settings saved successfully!", "success");
+    } catch (err) {
+      console.error("Error saving reminder settings:", err);
+      handleShowToast("Failed to save reminder settings.", "error");
     }
   };
 
@@ -3658,6 +3701,10 @@ export default function App() {
               auditLogs={auditLogs}
               onClearLogs={handleClearAuditLogs}
               onShowToast={handleShowToast}
+              sentEmails={sentEmails}
+              reminderSettings={reminderSettings}
+              onSaveReminderSettings={handleSaveReminderSettings}
+              staff={staff}
             />
           )}
 

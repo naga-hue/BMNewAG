@@ -80,6 +80,10 @@ export interface FirebaseServiceInterface {
   saveCrmCandidate(candidate: CrmCandidate): Promise<CrmCandidate>;
   deleteCrmCandidate(candidateId: string): Promise<boolean>;
   uploadCandidateCv(candidateId: string, file: File): Promise<string>;
+  subscribeSentEmails(onUpdate: (emails: any[]) => void, fallbackData?: any[]): () => void;
+  saveSentEmail(emailLog: any): Promise<any>;
+  subscribeReminderSettings(onUpdate: (settings: any) => void, fallbackData?: any): () => void;
+  saveReminderSettings(settings: any): Promise<any>;
 }
 
 // Check if Firebase configuration is provided
@@ -1639,6 +1643,99 @@ export const firebaseService: FirebaseServiceInterface = {
         };
         reader.readAsDataURL(file);
       });
+    }
+  },
+
+  subscribeSentEmails(onUpdate, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-sent-emails');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
+    if (isConfigured && db) {
+      const refCol = collection(db, 'sent_emails');
+      return onSnapshot(refCol, (snapshot) => {
+        const list = [];
+        snapshot.forEach((doc) => {
+          list.push({ id: doc.id, ...doc.data() });
+        });
+        localStorage.setItem('bm-sent-emails', JSON.stringify(list));
+        onUpdate(list);
+      }, (error) => {
+        console.error("Firestore sent_emails snapshot error:", error);
+      });
+    } else {
+      return () => {};
+    }
+  },
+
+  async saveSentEmail(emailLog) {
+    if (isConfigured && db) {
+      const docRef = doc(collection(db, 'sent_emails'));
+      const data = { ...emailLog, id: docRef.id };
+      await setDoc(docRef, data);
+      return data;
+    } else {
+      const local = localStorage.getItem('bm-sent-emails');
+      const list = local ? JSON.parse(local) : [];
+      const newLog = { ...emailLog, id: 'email-' + Date.now() };
+      list.unshift(newLog);
+      localStorage.setItem('bm-sent-emails', JSON.stringify(list));
+      return newLog;
+    }
+  },
+
+  subscribeReminderSettings(onUpdate, fallbackData = {
+    managementEmails: 'groupadmin@globalrecruiters.ae',
+    alertManagers: true,
+    alertCoworkers: false,
+    sendToEmployee: true,
+    alertManagementDayBefore: true,
+    sendGreetingsDayOf: true
+  }) {
+    const localCache = localStorage.getItem('bm-reminder-settings');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
+    if (isConfigured && db) {
+      const docRef = doc(db, 'settings', 'email_reminders');
+      return onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          localStorage.setItem('bm-reminder-settings', JSON.stringify(data));
+          onUpdate(data);
+        } else {
+          onUpdate(fallbackData);
+        }
+      }, (error) => {
+        console.error("Firestore settings/email_reminders snapshot error:", error);
+      });
+    } else {
+      return () => {};
+    }
+  },
+
+  async saveReminderSettings(settings) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'settings', 'email_reminders');
+      await setDoc(docRef, settings, { merge: true });
+      return settings;
+    } else {
+      localStorage.setItem('bm-reminder-settings', JSON.stringify(settings));
+      return settings;
     }
   }
 };

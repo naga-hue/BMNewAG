@@ -289,8 +289,35 @@ export default function PayrollRegisterTable({
       commissionPolicies
     );
     setSelectedCell({ staffMember, month });
-    setIsReconciled(cell.isReconciled);
-    setBasicSalaryOverride(cell.basic.toFixed(2));
+
+    let autoReconciled = cell.isReconciled;
+    let autoBasic = cell.basic;
+    let autoExpenseId = '';
+    let autoNotes = cell.notes;
+
+    const record = payrollRecords.find(r => r.staffId === staffMember.id && r.month === month);
+
+    if (cell.isReconciled) {
+      autoExpenseId = record?.linkedExpenseId || '';
+    } else {
+      const matchedExpense = expenses.find(e => {
+        const payeeLower = (e.payee || '').toLowerCase();
+        const staffLower = (staffMember.fullName || '').toLowerCase();
+        const isNameMatch = payeeLower.includes(staffLower) || staffLower.includes(payeeLower);
+        const nom = (e.nominalCode || '').toLowerCase();
+        const isSalaryNominal = nom.includes('salary') || nom.includes('wage') || nom.includes('500') || nom.includes('1001') || nom.includes('freelance');
+        return isNameMatch && isSalaryNominal && e.plMonth === month && !e.linkedPayrollCellId;
+      });
+      if (matchedExpense) {
+        autoReconciled = true;
+        autoBasic = matchedExpense.amount;
+        autoExpenseId = matchedExpense.id;
+        autoNotes = `Auto-detected match: Linked to expense payment of £${matchedExpense.amount.toLocaleString()} on ${matchedExpense.date}. ${cell.notes}`.trim();
+      }
+    }
+
+    setIsReconciled(autoReconciled);
+    setBasicSalaryOverride(autoBasic.toFixed(2));
     setCommissionOverride(cell.commission.toFixed(2));
     setEmployerNi((cell.employerNi || 0).toFixed(2));
     setEmployerPension((cell.employerPension || 0).toFixed(2));
@@ -299,16 +326,15 @@ export default function PayrollRegisterTable({
     setReimbursementsInput((cell.reimbursements || 0).toFixed(2));
     setBonusOverride((cell.bonus || 0).toFixed(2));
     
-    const record = payrollRecords.find(r => r.staffId === staffMember.id && r.month === month);
     setBonusCurrency(record?.bonusCurrency || 'GBP');
     setBonusAmountInput((record?.bonusAmountEntered !== undefined ? record.bonusAmountEntered : (cell.bonus || 0)).toFixed(2));
     setReimbursementsCurrency(record?.reimbursementsCurrency || 'GBP');
     setReimbursementsAmountInput((record?.reimbursementsAmountEntered !== undefined ? record.reimbursementsAmountEntered : (cell.reimbursements || 0)).toFixed(2));
     
-    setLinkedExpenseId(record?.linkedExpenseId || '');
+    setLinkedExpenseId(autoExpenseId);
     setInitialLinkedExpenseId(record?.linkedExpenseId || '');
     
-    setReconcileNotes(cell.notes);
+    setReconcileNotes(autoNotes);
     setBookExpense(true);
   };
 
@@ -672,9 +698,31 @@ export default function PayrollRegisterTable({
       <>
         {MONTHS.map(m => {
           const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
-          annualSum += cell.total;
+          
+          let isReconciled = cell.isReconciled;
+          let displayTotal = cell.total;
+          let displayBasic = cell.basic;
+          
           const targetId = `${s.id}_${m}`;
           const record = payrollRecords.find(r => r.id === targetId);
+
+          if (!isReconciled) {
+            const matchedExpense = expenses.find(e => {
+              const payeeLower = (e.payee || '').toLowerCase();
+              const staffLower = (s.fullName || '').toLowerCase();
+              const isNameMatch = payeeLower.includes(staffLower) || staffLower.includes(payeeLower);
+              const nom = (e.nominalCode || '').toLowerCase();
+              const isSalaryNominal = nom.includes('salary') || nom.includes('wage') || nom.includes('500') || nom.includes('1001') || nom.includes('freelance');
+              return isNameMatch && isSalaryNominal && e.plMonth === m && !e.linkedPayrollCellId;
+            });
+            if (matchedExpense) {
+              isReconciled = true;
+              displayTotal = matchedExpense.amount + cell.commission;
+              displayBasic = matchedExpense.amount;
+            }
+          }
+
+          annualSum += displayTotal;
           const isSubmitted = !!record?.invoicesSubmitted;
 
           return (
@@ -685,19 +733,19 @@ export default function PayrollRegisterTable({
                 textAlign: 'center', 
                 cursor: 'pointer', 
                 fontSize: '11px',
-                fontWeight: cell.isReconciled ? 600 : 400,
+                fontWeight: isReconciled ? 600 : 400,
                 position: 'relative',
                 transition: 'all 0.15s'
               }}
-              className={`payroll-cell ${cell.isReconciled ? 'reconciled' : 'projected'}`}
+              className={`payroll-cell ${isReconciled ? 'reconciled' : 'projected'}`}
               title={`${s.fullName} - ${m}
-Salary (Gross): £${Math.round(cell.basic).toLocaleString()}
+Salary (Gross): £${Math.round(displayBasic).toLocaleString()}
 Comm: £${Math.round(cell.commission).toLocaleString()}
 ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements).toLocaleString()}\n` : ''}${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleString()}\n` : ''}${cell.employerPension > 0 ? `Employer Pension: £${Math.round(cell.employerPension).toLocaleString()}\n` : ''}${cell.employeeTaxNic > 0 ? `Employee Tax/NIC: £${Math.round(cell.employeeTaxNic).toLocaleString()}\n` : ''}${cell.employeePension > 0 ? `Employee Pension: £${Math.round(cell.employeePension).toLocaleString()}\n` : ''}Click to edit override`}
             >
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                <span>£{Math.round(cell.total).toLocaleString()}</span>
-                {cell.isReconciled ? (
+                <span>£{Math.round(displayTotal).toLocaleString()}</span>
+                {isReconciled ? (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', fontSize: '8px', fontWeight: 700, color: 'var(--success)', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '1px 4px', borderRadius: '3px' }}>
                     <CheckCircle2 size={7} /> Paid
                   </span>

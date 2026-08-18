@@ -166,7 +166,8 @@ export default function App() {
     sendGreetingsDayOf: true,
     alertLeaveStatus: true,
     leaveManagementEmails: 'groupadmin@globalrecruiters.ae',
-    alertLeaveManagers: true
+    alertLeaveManagers: true,
+    payrollInvoiceEmails: 'groupadmin@globalrecruiters.ae'
   });
   const payrollRecords = useBoundStore(state => state.payrollRecords);
   const payrollPolicies = useBoundStore(state => state.payrollPolicies);
@@ -3607,6 +3608,7 @@ export default function App() {
               onShowToast={handleShowToast}
               currentUser={currentUser}
               scopingViewMode={scopingViewMode}
+              reminderSettings={reminderSettings}
             />
           )}
 

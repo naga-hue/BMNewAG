@@ -5,6 +5,7 @@ import MultiSelectFilter from '../MultiSelectFilter';
 import { Company, Staff, Placement, Expense, NominalCode } from '../../types';
 import { symbolMap, MONTHS, getBusinessDaysInMonth, getCellData, calculateCommissionForRecruiter } from './utils';
 import { FX_RATES } from '../../utils/currency';
+import { jsPDF } from 'jspdf';
 
 interface PayrollRegisterTableProps {
   companies: Company[];
@@ -23,6 +24,7 @@ interface PayrollRegisterTableProps {
   onShowToast: (msg: string, type?: string) => void;
   currentUser?: any;
   scopingViewMode?: string;
+  reminderSettings?: any;
 }
 
 export default function PayrollRegisterTable({
@@ -41,7 +43,8 @@ export default function PayrollRegisterTable({
   onDeleteExpense,
   onShowToast,
   currentUser,
-  scopingViewMode
+  scopingViewMode,
+  reminderSettings
 }: PayrollRegisterTableProps) {
   const isRecruiter = currentUser?.permissions?.role === 'recruiter' || scopingViewMode === 'self';
   const [searchTerm, setSearchTerm] = useState('');
@@ -803,11 +806,152 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                 const monthLabel = new Date(recruiterSelectedMonth + '-02').toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
                 const subject = `[Payroll Invoices] Submitted by ${recruiterStaff.fullName} - ${monthLabel}`;
                 
+                // Helper to generate professional PDF invoice bytes
+                const createPdfBase64 = (invoiceTitle, pdfItems, currencySym, totalSum) => {
+                  const doc = new jsPDF();
+                  
+                  // Primary Header Brand Color
+                  doc.setFillColor(15, 23, 42); // slate-900 dark slate
+                  doc.rect(0, 0, 210, 40, 'F');
+                  
+                  doc.setTextColor(255, 255, 255);
+                  doc.setFont("Helvetica", "bold");
+                  doc.setFontSize(18);
+                  doc.text(invoiceTitle, 20, 26);
+                  
+                  // Meta details section
+                  doc.setTextColor(71, 85, 105);
+                  doc.setFont("Helvetica", "normal");
+                  doc.setFontSize(10);
+                  doc.text(`Employee Name:  ${recruiterStaff.fullName}`, 20, 55);
+                  doc.text(`Job Title:      ${recruiterStaff.jobTitle || 'Recruiter'}`, 20, 62);
+                  doc.text(`Billing Month:  ${monthLabel}`, 20, 69);
+                  doc.text(`Date Generated: ${new Date().toLocaleDateString()}`, 20, 76);
+                  
+                  // Separation Line
+                  doc.setDrawColor(226, 232, 240);
+                  doc.setLineWidth(0.5);
+                  doc.line(20, 83, 190, 83);
+                  
+                  // Table headers
+                  doc.setFont("Helvetica", "bold");
+                  doc.setTextColor(15, 23, 42);
+                  doc.text("Line Description", 20, 93);
+                  doc.text("Amount Due", 150, 93);
+                  
+                  doc.line(20, 98, 190, 98);
+                  
+                  // Table contents
+                  doc.setFont("Helvetica", "normal");
+                  doc.setTextColor(51, 65, 85);
+                  let y = 108;
+                  pdfItems.forEach(item => {
+                    const splitDesc = doc.splitTextToSize(item.description, 110);
+                    doc.text(splitDesc, 20, y);
+                    doc.text(`${currencySym}${Number(item.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 150, y);
+                    y += 10 + (splitDesc.length - 1) * 5;
+                  });
+                  
+                  doc.line(20, y - 5, 190, y - 5);
+                  
+                  // Sum total
+                  doc.setFont("Helvetica", "bold");
+                  doc.setTextColor(15, 23, 42);
+                  doc.text("Total Payout Amount:", 20, y + 5);
+                  doc.text(`${currencySym}${Number(totalSum).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 150, y + 5);
+                  
+                  // Branded footer
+                  doc.setFont("Helvetica", "italic");
+                  doc.setFontSize(8);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("This invoice is automatically compiled and submitted via the Humres Management Platform.", 20, 275);
+                  
+                  return doc.output('datauristring').split(',')[1];
+                };
+
+                // 1. Generate Salary Invoice PDF
+                const salaryItems = [
+                  { description: `Monthly Basic Salary Payout (${recruiterStaff.currency || 'GBP'})`, amount: salaryVal }
+                ];
+                const salaryBase64 = createPdfBase64("BASIC SALARY INVOICE", salaryItems, currencySymbol, salaryVal);
+
+                // 2. Generate Commissions Invoice PDF
+                const commissionPolicy = commissionPolicies.find(p => p.id === recruiterStaff.commissionPolicyId);
+                let targetStaffIds = [recruiterStaff.id];
+                if (commissionPolicy?.type === 'manager') {
+                  if (commissionPolicy.assignedDepartments && commissionPolicy.assignedDepartments.length > 0) {
+                    const deptStaff = staff.filter(s => commissionPolicy.assignedDepartments.includes(s.department));
+                    targetStaffIds = Array.from(new Set([recruiterStaff.id, ...deptStaff.map(s => s.id)]));
+                  } else {
+                    const teamMembers = staff.filter(s => {
+                      const mgrIds = s.reportingManagerIds || (s.reportingManagerId ? [s.reportingManagerId] : []);
+                      return mgrIds.includes(recruiterStaff.id);
+                    });
+                    targetStaffIds = [recruiterStaff.id, ...teamMembers.map(s => s.id)];
+                  }
+                }
+
+                const activeSplits = [];
+                placements.forEach(p => {
+                  if (!p.startDate || p.status === 'dns') return;
+                  const pMonth = p.commissionPaidMonth ? p.commissionPaidMonth : (() => {
+                    const d = new Date(p.startDate);
+                    d.setMonth(d.getMonth() + 1);
+                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                  })();
+                  if (pMonth !== recruiterSelectedMonth) return;
+                  p.splits?.forEach(s => {
+                    if (targetStaffIds.includes(s.staffId)) {
+                      activeSplits.push({
+                        description: `Split share (${s.percentage}%) on Placement ${p.placementId} (Cand: ${p.candidateName}, Client: ${p.clientCompany})`,
+                        amount: (p.netScoreValue * s.percentage) / 100
+                      });
+                    }
+                  });
+                });
+
+                if (activeSplits.length === 0) {
+                  activeSplits.push({ description: 'No placement splits registered this month', amount: 0 });
+                }
+                const commissionBase64 = createPdfBase64("SALES COMMISSIONS INVOICE", activeSplits, "£", commissionVal);
+
+                // 3. Generate Reimbursements Invoice PDF
+                const expenseItems = staffExpenses.map(e => ({
+                  description: `${e.date} - ${e.description || e.payee} (${e.nominalCode})`,
+                  amount: e.amount
+                }));
+                if (expenseItems.length === 0) {
+                  expenseItems.push({ description: 'No approved expense reimbursement claims this month', amount: 0 });
+                }
+                const reimbursementsBase64 = createPdfBase64("APPROVED EXPENSES REIMBURSEMENT", expenseItems, "£", reimbursementsVal);
+
+                // Construct Graph API Attachments array
+                const attachments = [
+                  {
+                    "@odata.type": "#microsoft.graph.fileAttachment",
+                    "name": `Salary_Invoice_${recruiterStaff.fullName.replace(/\s+/g, '_')}_${recruiterSelectedMonth}.pdf`,
+                    "contentType": "application/pdf",
+                    "contentBytes": salaryBase64
+                  },
+                  {
+                    "@odata.type": "#microsoft.graph.fileAttachment",
+                    "name": `Commissions_Invoice_${recruiterStaff.fullName.replace(/\s+/g, '_')}_${recruiterSelectedMonth}.pdf`,
+                    "contentType": "application/pdf",
+                    "contentBytes": commissionBase64
+                  },
+                  {
+                    "@odata.type": "#microsoft.graph.fileAttachment",
+                    "name": `Reimbursements_Invoice_${recruiterStaff.fullName.replace(/\s+/g, '_')}_${recruiterSelectedMonth}.pdf`,
+                    "contentType": "application/pdf",
+                    "contentBytes": reimbursementsBase64
+                  }
+                ];
+
                 const emailHtml = `
                   <div style="font-family: Arial, sans-serif; font-size: 14px; color: #334155; max-width: 600px;">
                     <h2 style="color: #0f172a; border-bottom: 2px solid #6366f1; padding-bottom: 8px;">Recruiter Payroll Invoice Submission</h2>
                     <p>Dear Accounts Team,</p>
-                    <p>My monthly payroll details and invoice packet for <strong>${monthLabel}</strong> has been reviewed and submitted for processing.</p>
+                    <p>My monthly payroll details and invoice packet for <strong>${monthLabel}</strong> has been reviewed and submitted for processing. Please find the three detailed invoice PDFs attached.</p>
                     
                     <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 6px; margin: 16px 0;">
                       <strong style="display: block; margin-bottom: 8px; color: #1e293b;">Invoice Components Summary:</strong>
@@ -844,13 +988,16 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                   </div>
                 `;
 
+                const invoiceRecipients = reminderSettings?.payrollInvoiceEmails || 'groupadmin@globalrecruiters.ae';
+
                 const emailRes = await fetch('/api/send-email', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
-                    recipient: 'groupadmin@globalrecruiters.ae',
+                    recipient: invoiceRecipients,
                     subject: subject,
                     body: emailHtml,
+                    attachments: attachments,
                     triggerType: 'recruiter-invoice-packet'
                   })
                 });

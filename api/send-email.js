@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { recipient, subject, body } = req.body;
+  const { recipient, subject, body, attachments } = req.body;
 
   if (!recipient || !subject || !body) {
     return res.status(400).json({ error: 'Missing required fields: recipient, subject, body' });
@@ -48,7 +48,7 @@ export default async function handler(req, res) {
     const accessToken = await refreshAccessToken(clientId, clientSecret, refreshToken);
 
     console.log(`Sending email via Microsoft Graph API to: ${toEmails.join(', ')}`);
-    await sendGraphEmail(accessToken, senderEmail, toEmails, subject, body);
+    await sendGraphEmail(accessToken, senderEmail, toEmails, subject, body, attachments);
 
     // Log the sent email to Firestore
     const projectId = process.env.VITE_FIREBASE_PROJECT_ID || 'humres-management-hub';
@@ -165,20 +165,23 @@ function refreshAccessToken(clientId, clientSecret, refreshToken) {
   });
 }
 
-function sendGraphEmail(accessToken, senderEmail, toEmails, subject, bodyText) {
+function sendGraphEmail(accessToken, senderEmail, toEmails, subject, bodyText, attachments) {
   return new Promise((resolve, reject) => {
     const toRecipients = toEmails.map(email => ({
       emailAddress: { address: email }
     }));
 
+    const isHtml = /<[a-z][\s\S]*>/i.test(bodyText);
+
     const emailPayload = JSON.stringify({
       message: {
         subject: subject,
         body: {
-          contentType: 'Text',
+          contentType: isHtml ? 'HTML' : 'Text',
           content: bodyText
         },
-        toRecipients: toRecipients
+        toRecipients: toRecipients,
+        attachments: attachments || []
       },
       saveToSentItems: 'true'
     });

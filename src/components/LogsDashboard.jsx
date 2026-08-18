@@ -726,6 +726,26 @@ export default function LogsDashboard({
 
           <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: 0 }} />
 
+          {/* Recruiter Payroll Invoices */}
+          <div>
+            <label style={{ fontSize: '14px', fontWeight: 700, display: 'block', color: 'var(--text-primary)' }}>Recruiter Payroll Invoices</label>
+            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Configure who should receive the automated invoice packets submitted by recruiters.</span>
+            <div style={{ marginTop: '12px' }}>
+              <label style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>Email recipients for recruiter invoice packets</label>
+              <input 
+                type="text" 
+                className="form-input"
+                placeholder="e.g. accounts@globalrecruiters.ae, groupadmin@globalrecruiters.ae"
+                value={settingsForm.payrollInvoiceEmails || ''}
+                onChange={e => setSettingsForm(prev => ({ ...prev, payrollInvoiceEmails: e.target.value }))}
+                style={{ width: '100%' }}
+              />
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Comma separated list of emails. All automated recruiter invoice PDF submissions will be sent to these addresses.</span>
+            </div>
+          </div>
+
+          <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: 0 }} />
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
             <button 
               type="submit" 

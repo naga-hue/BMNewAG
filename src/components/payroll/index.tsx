@@ -26,6 +26,7 @@ interface PayrollDashboardProps {
   onShowToast: (msg: string, type?: string) => void;
   currentUser?: any;
   scopingViewMode?: string;
+  reminderSettings?: any;
 }
 
 export default function PayrollDashboard({
@@ -48,7 +49,8 @@ export default function PayrollDashboard({
   onDeleteExpense = async () => {},
   onShowToast,
   currentUser,
-  scopingViewMode
+  scopingViewMode,
+  reminderSettings
 }: PayrollDashboardProps) {
   const [activeSubTab, setActiveSubTab] = useState('grid'); // grid, policies, rates
   const isRecruiter = currentUser?.permissions?.role === 'recruiter' || scopingViewMode === 'self';
@@ -135,6 +137,7 @@ export default function PayrollDashboard({
           onShowToast={onShowToast}
           currentUser={currentUser}
           scopingViewMode={scopingViewMode}
+          reminderSettings={reminderSettings}
         />
       )}
 

@@ -1700,7 +1700,8 @@ export const firebaseService: FirebaseServiceInterface = {
     sendGreetingsDayOf: true,
     alertLeaveStatus: true,
     leaveManagementEmails: 'groupadmin@globalrecruiters.ae',
-    alertLeaveManagers: true
+    alertLeaveManagers: true,
+    payrollInvoiceEmails: 'groupadmin@globalrecruiters.ae'
   }) {
     const localCache = localStorage.getItem('bm-reminder-settings');
     if (localCache) {

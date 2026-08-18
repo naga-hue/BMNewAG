@@ -52,6 +52,7 @@ export default function PayrollRegisterTable({
   const [recruiterSelectedMonth, setRecruiterSelectedMonth] = useState('2026-08');
   const [submittingInvoices, setSubmittingInvoices] = useState(false);
   const [showExitedRoster, setShowExitedRoster] = useState(false);
+  const [detailBreakdownType, setDetailBreakdownType] = useState<string | null>(null); // null, 'salary', 'commission', 'expenses'
 
   // Selected cell for override modal
   const [selectedCell, setSelectedCell] = useState<any>(null); // { staffMember, month }
@@ -889,58 +890,85 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
                   
-                  <div style={{
-                    backgroundColor: 'var(--bg-primary)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                    padding: '16px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between'
-                  }}>
+                  <div 
+                    onClick={() => setDetailBreakdownType('salary')}
+                    style={{
+                      backgroundColor: 'var(--bg-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      transition: 'transform 0.15s, box-shadow 0.15s'
+                    }}
+                    className="hover-card"
+                  >
                     <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>1. Basic Salary</span>
                     <h3 style={{ margin: '8px 0', fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
                       {currencySymbol}{salaryVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </h3>
-                    <span style={{ fontSize: '11px', color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      ● Calculated (Local Currency)
-                    </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        ● Calculated (Local Currency)
+                      </span>
+                      <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: 600 }}>🔍 Details</span>
+                    </div>
                   </div>
 
-                  <div style={{
-                    backgroundColor: 'var(--bg-primary)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                    padding: '16px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between'
-                  }}>
+                  <div 
+                    onClick={() => setDetailBreakdownType('commission')}
+                    style={{
+                      backgroundColor: 'var(--bg-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      transition: 'transform 0.15s, box-shadow 0.15s'
+                    }}
+                    className="hover-card"
+                  >
                     <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>2. Sales Commissions</span>
                     <h3 style={{ margin: '8px 0', fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
                       £{commissionVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </h3>
-                    <span style={{ fontSize: '11px', color: 'var(--success)' }}>
-                      ● Auto-calculated from placements
-                    </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--success)' }}>
+                        ● Auto-calculated from placements
+                      </span>
+                      <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: 600 }}>🔍 Details</span>
+                    </div>
                   </div>
 
-                  <div style={{
-                    backgroundColor: 'var(--bg-primary)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                    padding: '16px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between'
-                  }}>
+                  <div 
+                    onClick={() => setDetailBreakdownType('expenses')}
+                    style={{
+                      backgroundColor: 'var(--bg-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      transition: 'transform 0.15s, box-shadow 0.15s'
+                    }}
+                    className="hover-card"
+                  >
                     <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>3. Approved Expenses</span>
                     <h3 style={{ margin: '8px 0', fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
                       £{reimbursementsVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </h3>
-                    <span style={{ fontSize: '11px', color: reimbursementsVal > 0 ? 'var(--success)' : 'var(--text-secondary)' }}>
-                      ● {reimbursementsVal > 0 ? 'Approved claims found' : 'No claims this month'}
-                    </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                      <span style={{ fontSize: '11px', color: reimbursementsVal > 0 ? 'var(--success)' : 'var(--text-secondary)' }}>
+                        ● {reimbursementsVal > 0 ? 'Approved claims found' : 'No claims this month'}
+                      </span>
+                      <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: 600 }}>🔍 Details</span>
+                    </div>
                   </div>
                 </div>
 
@@ -1859,6 +1887,236 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
               >
                 Perform Bulk Reconciliation ({bulkMatches.filter(m => m.checked).length})
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailBreakdownType && (
+        <div className="form-wizard-overlay" onClick={() => setDetailBreakdownType(null)}>
+          <div className="form-wizard-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '750px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="wizard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 className="wizard-title" style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>
+                {detailBreakdownType === 'salary' && '📋 Basic Salary Calculation Details'}
+                {detailBreakdownType === 'commission' && '💰 Sales Commission Placement Splits'}
+                {detailBreakdownType === 'expenses' && '✈️ Approved Expense Reimbursements'}
+              </h2>
+              <button type="button" className="btn-close" onClick={() => setDetailBreakdownType(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>✕</button>
+            </div>
+
+            <div className="wizard-content" style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {(() => {
+                const recruiterStaff = staff.find(s => s.id === currentUser?.id);
+                if (!recruiterStaff) return <p style={{ color: 'var(--danger)', fontSize: '12px' }}>No user profile loaded.</p>;
+
+                const cell = getCellData(
+                  recruiterStaff,
+                  recruiterSelectedMonth,
+                  payrollRecords,
+                  payrollPolicies,
+                  leaveRequests,
+                  holidays,
+                  staff,
+                  companies,
+                  placements,
+                  commissionPolicies
+                );
+
+                const targetId = `${currentUser.id}_${recruiterSelectedMonth}`;
+                const record = payrollRecords.find(r => r.id === targetId);
+                const currencySymbol = symbolMap[recruiterStaff.currency || 'GBP'] || '£';
+
+                const staffExpenses = expenses.filter(e => {
+                  const matchStaff = e.recipientId === currentUser?.id;
+                  const matchMonth = e.plMonth === recruiterSelectedMonth;
+                  return matchStaff && matchMonth;
+                });
+                const dynamicReimbursements = staffExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+                const reimbursementsVal = record?.isReconciled ? (record.reimbursements || 0) : dynamicReimbursements;
+
+                if (detailBreakdownType === 'salary') {
+                  const annualBase = Number(recruiterStaff.salary || 0);
+                  const monthlyBase = annualBase / 12;
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', backgroundColor: 'var(--bg-secondary)', padding: '16px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                        <div>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Annual Base Salary:</span>
+                          <h4 style={{ margin: '4px 0 0 0', fontSize: '16px', fontWeight: 700 }}>{currencySymbol}{annualBase.toLocaleString()} / year</h4>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Monthly Base Calculation:</span>
+                          <h4 style={{ margin: '4px 0 0 0', fontSize: '16px', fontWeight: 700 }}>{currencySymbol}{monthlyBase.toLocaleString(undefined, { minimumFractionDigits: 2 })} / month</h4>
+                        </div>
+                      </div>
+
+                      <div style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px' }}>
+                        <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 700 }}>Calculation Summary</h4>
+                        <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                          Your monthly salary is calculated by dividing your annual base salary by 12, as configured in your profile. 
+                          It is paid in your profile's configured local currency (<strong>{recruiterStaff.currency || 'GBP'}</strong>).
+                        </p>
+                        {record?.isReconciled && (
+                          <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '12px', fontSize: '12px', color: 'var(--success)' }}>
+                            ● This month has been marked as reconciled and locked by management at: <strong>{currencySymbol}{Number(record.basicSalary).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (detailBreakdownType === 'commission') {
+                  const policy = commissionPolicies.find(p => p.id === recruiterStaff.commissionPolicyId);
+                  
+                  let targetStaffIds = [recruiterStaff.id];
+                  if (policy?.type === 'manager') {
+                    if (policy.assignedDepartments && policy.assignedDepartments.length > 0) {
+                      const deptStaff = staff.filter(s => policy.assignedDepartments.includes(s.department));
+                      targetStaffIds = Array.from(new Set([recruiterStaff.id, ...deptStaff.map(s => s.id)]));
+                    } else {
+                      const teamMembers = staff.filter(s => {
+                        const mgrIds = s.reportingManagerIds || (s.reportingManagerId ? [s.reportingManagerId] : []);
+                        return mgrIds.includes(recruiterStaff.id);
+                      });
+                      targetStaffIds = [recruiterStaff.id, ...teamMembers.map(s => s.id)];
+                    }
+                  }
+
+                  const activeSplits = [];
+                  placements.forEach(p => {
+                    if (!p.startDate || p.status === 'dns') return;
+                    
+                    const pMonth = p.commissionPaidMonth ? p.commissionPaidMonth : (() => {
+                      const d = new Date(p.startDate);
+                      d.setMonth(d.getMonth() + 1);
+                      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                    })();
+
+                    if (pMonth !== recruiterSelectedMonth) return;
+
+                    p.splits?.forEach(s => {
+                      if (targetStaffIds.includes(s.staffId)) {
+                        const stName = staff.find(st => st.id === s.staffId)?.fullName || 'Team Member';
+                        activeSplits.push({
+                          id: p.id,
+                          placementId: p.placementId,
+                          candidate: p.candidateName,
+                          client: p.clientCompany,
+                          startDate: p.startDate,
+                          netValue: p.netScoreValue,
+                          percentage: s.percentage,
+                          share: (p.netScoreValue * s.percentage) / 100,
+                          staffName: stName
+                        });
+                      }
+                    });
+                  });
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ padding: '12px 16px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Commission Policy:</span>
+                          <strong style={{ display: 'block', fontSize: '13px' }}>{policy?.name || 'Standard Recruiter Policy'}</strong>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Total Commission:</span>
+                          <strong style={{ display: 'block', fontSize: '15px', color: 'var(--accent)' }}>£{cell.commission.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                        </div>
+                      </div>
+
+                      {activeSplits.length === 0 ? (
+                        <p style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)', fontSize: '12px' }}>No qualifying placement splits found for this month.</p>
+                      ) : (
+                        <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                          <table className="entity-table dense" style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                                <th style={{ padding: '8px', textAlign: 'left' }}>Placement ID / Candidate</th>
+                                <th style={{ padding: '8px', textAlign: 'left' }}>Client Company</th>
+                                <th style={{ padding: '8px', textAlign: 'left' }}>Start Date</th>
+                                <th style={{ padding: '8px', textAlign: 'right' }}>Net Value</th>
+                                <th style={{ padding: '8px', textAlign: 'center' }}>Split %</th>
+                                <th style={{ padding: '8px', textAlign: 'right' }}>Your Share</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {activeSplits.map((item, idx) => (
+                                <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                  <td style={{ padding: '8px' }}>
+                                    <strong>{item.placementId}</strong>
+                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{item.candidate}</div>
+                                  </td>
+                                  <td style={{ padding: '8px' }}>{item.client}</td>
+                                  <td style={{ padding: '8px' }}>{item.startDate}</td>
+                                  <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace' }}>£{item.netValue.toLocaleString()}</td>
+                                  <td style={{ padding: '8px', textAlign: 'center' }}>{item.percentage}%</td>
+                                  <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>£{item.share.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (detailBreakdownType === 'expenses') {
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ padding: '12px 16px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Status:</span>
+                          <strong style={{ display: 'block', fontSize: '13px', color: 'var(--success)' }}>Approved Expense Claims</strong>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Total Reimbursements:</span>
+                          <strong style={{ display: 'block', fontSize: '15px', color: 'var(--accent)' }}>£{reimbursementsVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                        </div>
+                      </div>
+
+                      {staffExpenses.length === 0 ? (
+                        <p style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)', fontSize: '12px' }}>No approved reimbursement expense claims found for this month.</p>
+                      ) : (
+                        <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                          <table className="entity-table dense" style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                                <th style={{ padding: '8px', textAlign: 'left' }}>Date</th>
+                                <th style={{ padding: '8px', textAlign: 'left' }}>Nominal Category</th>
+                                <th style={{ padding: '8px', textAlign: 'left' }}>Description</th>
+                                <th style={{ padding: '8px', textAlign: 'right' }}>Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {staffExpenses.map((exp, idx) => {
+                                const nomObj = nominalCodes.find(n => n.code === exp.nominalCode);
+                                const nomLabel = nomObj ? `${exp.nominalCode} - ${nomObj.type || ''}` : exp.nominalCode;
+                                return (
+                                  <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                    <td style={{ padding: '8px' }}>{exp.date}</td>
+                                    <td style={{ padding: '8px' }}>{nomLabel}</td>
+                                    <td style={{ padding: '8px' }}>{exp.description || exp.payee}</td>
+                                    <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>£{exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+
+            <div className="wizard-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', padding: '12px 24px', borderTop: '1px solid var(--border-color)' }}>
+              <button type="button" className="btn-secondary" onClick={() => setDetailBreakdownType(null)}>Close</button>
             </div>
           </div>
         </div>

@@ -46,6 +46,9 @@ export default function PayrollRegisterTable({
   const [selectedCompanyId, setSelectedCompanyId] = useState<string[]>(['all']);
   const [selectedDept, setSelectedDept] = useState<string[]>(['all']);
   const [selectedStatus, setSelectedStatus] = useState('all'); // all, reconciled, projected
+  const [selectedInvoiceStatusFilter, setSelectedInvoiceStatusFilter] = useState('all'); // all, submitted, pending
+  const [recruiterSelectedMonth, setRecruiterSelectedMonth] = useState('2026-08');
+  const [submittingInvoices, setSubmittingInvoices] = useState(false);
   const [showExitedRoster, setShowExitedRoster] = useState(false);
 
   // Selected cell for override modal
@@ -583,6 +586,9 @@ export default function PayrollRegisterTable({
 
   const filteredStaff = useMemo(() => {
     return staff.filter(s => {
+      // If recruiter, only see themselves
+      if (isRecruiter && s.id !== currentUser?.id) return false;
+
       const matchesSearch = s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
                             (s.jobTitle || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCompany = selectedCompanyId.includes('all') || selectedCompanyId.includes(s.companyId);
@@ -595,9 +601,23 @@ export default function PayrollRegisterTable({
         if (selectedStatus === 'projected' && hasReconciled && cellStatuses.every(status => status === true)) return false;
       }
 
+      if (!isRecruiter && selectedInvoiceStatusFilter !== 'all') {
+        const hasSubmitted = MONTHS.some(m => {
+          const record = payrollRecords.find(r => r.staffId === s.id && r.month === m);
+          return !!record?.invoicesSubmitted && !record?.isReconciled;
+        });
+        const hasPending = MONTHS.some(m => {
+          const record = payrollRecords.find(r => r.staffId === s.id && r.month === m);
+          return !record?.invoicesSubmitted && !record?.isReconciled;
+        });
+
+        if (selectedInvoiceStatusFilter === 'submitted' && !hasSubmitted) return false;
+        if (selectedInvoiceStatusFilter === 'pending' && !hasPending) return false;
+      }
+
       return matchesSearch && matchesCompany && matchesDept;
     });
-  }, [staff, searchTerm, selectedCompanyId, selectedDept, selectedStatus, payrollRecords, payrollPolicies, leaveRequests, holidays, companies, placements, commissionPolicies]);
+  }, [staff, searchTerm, selectedCompanyId, selectedDept, selectedStatus, selectedInvoiceStatusFilter, payrollRecords, payrollPolicies, leaveRequests, holidays, companies, placements, commissionPolicies, isRecruiter, currentUser]);
 
   const activeStaffList = useMemo(() => filteredStaff.filter(s => s.status !== 'exited'), [filteredStaff]);
   const exitedStaffList = useMemo(() => filteredStaff.filter(s => s.status === 'exited'), [filteredStaff]);
@@ -647,6 +667,9 @@ export default function PayrollRegisterTable({
         {MONTHS.map(m => {
           const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
           annualSum += cell.total;
+          const targetId = `${s.id}_${m}`;
+          const record = payrollRecords.find(r => r.id === targetId);
+          const isSubmitted = !!record?.invoicesSubmitted;
 
           return (
             <td 
@@ -672,6 +695,10 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', fontSize: '8px', fontWeight: 700, color: 'var(--success)', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '1px 4px', borderRadius: '3px' }}>
                     <CheckCircle2 size={7} /> Paid
                   </span>
+                ) : isSubmitted ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', fontSize: '8px', fontWeight: 700, color: 'var(--primary)', backgroundColor: 'rgba(59, 130, 246, 0.1)', padding: '1px 4px', borderRadius: '3px' }} title={`Invoices submitted on ${new Date(record.invoicesSubmittedAt || '').toLocaleString()}`}>
+                    📤 Submitted
+                  </span>
                 ) : (
                   <span style={{ fontSize: '8px', color: 'var(--text-muted)' }}>Proj</span>
                 )}
@@ -696,7 +723,291 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      
+
+      {isRecruiter && (
+        <div style={{
+          backgroundColor: 'var(--bg-secondary)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '8px',
+          padding: '20px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+          animation: 'fadeIn 0.2s'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>📤 Monthly Invoice Submission Checklist</h4>
+              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>Verify your calculated basic salary, commissions, and reimbursements before sending to the accounts team.</p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 600 }}>Select Month:</span>
+              <select
+                className="select-filter"
+                value={recruiterSelectedMonth}
+                onChange={(e) => setRecruiterSelectedMonth(e.target.value)}
+                style={{ padding: '6px 12px' }}
+              >
+                {MONTHS.map(m => {
+                  const label = new Date(m + '-02').toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+                  return <option key={m} value={m}>{label}</option>;
+                })}
+              </select>
+            </div>
+          </div>
+
+          {(() => {
+            const recruiterStaff = staff.find(s => s.id === currentUser?.id);
+            if (!recruiterStaff) return <p style={{ color: 'var(--danger)', fontSize: '12px' }}>Error: Recruiter staff profile not found.</p>;
+
+            const cell = getCellData(
+              recruiterStaff,
+              recruiterSelectedMonth,
+              payrollRecords,
+              payrollPolicies,
+              leaveRequests,
+              holidays,
+              staff,
+              companies,
+              placements,
+              commissionPolicies
+            );
+
+            const targetId = `${currentUser.id}_${recruiterSelectedMonth}`;
+            const record = payrollRecords.find(r => r.id === targetId);
+
+            const staffExpenses = expenses.filter(e => {
+              const matchStaff = e.recipientId === currentUser?.id;
+              const matchMonth = e.plMonth === recruiterSelectedMonth;
+              return matchStaff && matchMonth;
+            });
+            const dynamicReimbursements = staffExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+            
+            const salaryVal = cell.basic;
+            const commissionVal = cell.commission;
+            const reimbursementsVal = record?.isReconciled ? (record.reimbursements || 0) : dynamicReimbursements;
+            const bonusVal = record?.bonus || 0;
+            const currencySymbol = symbolMap[recruiterStaff.currency || 'GBP'] || '£';
+
+            const totalPay = salaryVal + commissionVal + reimbursementsVal + bonusVal;
+
+            const isSubmitted = !!record?.invoicesSubmitted;
+            const submittedAt = record?.invoicesSubmittedAt;
+
+            const handleSendInvoices = async () => {
+              setSubmittingInvoices(true);
+              try {
+                const monthLabel = new Date(recruiterSelectedMonth + '-02').toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+                const subject = `[Payroll Invoices] Submitted by ${recruiterStaff.fullName} - ${monthLabel}`;
+                
+                const emailHtml = `
+                  <div style="font-family: Arial, sans-serif; font-size: 14px; color: #334155; max-width: 600px;">
+                    <h2 style="color: #0f172a; border-bottom: 2px solid #6366f1; padding-bottom: 8px;">Recruiter Payroll Invoice Submission</h2>
+                    <p>Dear Accounts Team,</p>
+                    <p>My monthly payroll details and invoice packet for <strong>${monthLabel}</strong> has been reviewed and submitted for processing.</p>
+                    
+                    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 6px; margin: 16px 0;">
+                      <strong style="display: block; margin-bottom: 8px; color: #1e293b;">Invoice Components Summary:</strong>
+                      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                        <tbody>
+                          <tr style="border-bottom: 1px solid #e2e8f0;">
+                            <td style="padding: 8px 0; color: #475569;">1. Basic Salary Invoice (${recruiterStaff.currency || 'GBP'})</td>
+                            <td style="padding: 8px 0; text-align: right; font-weight: bold;">${currencySymbol}${salaryVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                          <tr style="border-bottom: 1px solid #e2e8f0;">
+                            <td style="padding: 8px 0; color: #475569;">2. Commissions Invoice (GBP)</td>
+                            <td style="padding: 8px 0; text-align: right; font-weight: bold;">£${commissionVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                          <tr style="border-bottom: 1px solid #e2e8f0;">
+                            <td style="padding: 8px 0; color: #475569;">3. Approved Reimbursements Invoice (GBP)</td>
+                            <td style="padding: 8px 0; text-align: right; font-weight: bold;">£${reimbursementsVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                          ${bonusVal > 0 ? `
+                          <tr style="border-bottom: 1px solid #e2e8f0;">
+                            <td style="padding: 8px 0; color: #475569;">4. Additional Management Bonus (GBP)</td>
+                            <td style="padding: 8px 0; text-align: right; font-weight: bold;">£${bonusVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                          ` : ''}
+                          <tr style="font-size: 14px; font-weight: bold;">
+                            <td style="padding: 12px 0 0 0; color: #0f172a;">Estimated Total Gross Payout</td>
+                            <td style="padding: 12px 0 0 0; text-align: right; color: #6366f1;">£${totalPay.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <p>Please reconcile and release payout. You can check the submitted checklist inside the Group Payroll dashboard.</p>
+                    <p>Best regards,<br><strong>${recruiterStaff.fullName}</strong></p>
+                  </div>
+                `;
+
+                const emailRes = await fetch('/api/send-email', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    recipient: 'groupadmin@globalrecruiters.ae',
+                    subject: subject,
+                    body: emailHtml,
+                    triggerType: 'recruiter-invoice-packet'
+                  })
+                });
+                
+                if (!emailRes.ok) {
+                  throw new Error(`Failed to send email (status ${emailRes.status})`);
+                }
+
+                const updatedRecord = {
+                  id: targetId,
+                  staffId: currentUser.id,
+                  month: recruiterSelectedMonth,
+                  basicSalary: cell.basic,
+                  commission: cell.commission,
+                  reimbursements: reimbursementsVal,
+                  isReconciled: record ? record.isReconciled : false,
+                  employerNi: cell.employerNi,
+                  employerPension: cell.employerPension,
+                  employeeTaxNic: cell.employeeTaxNic,
+                  employeePension: cell.employeePension,
+                  invoicesSubmitted: true,
+                  invoicesSubmittedAt: new Date().toISOString(),
+                  notes: record?.notes || 'Invoices submitted by recruiter.'
+                };
+                await onSavePayrollRecord(updatedRecord);
+
+                onShowToast("📤 Invoice packet sent to accounts successfully!", "success");
+              } catch (err: any) {
+                console.error(err);
+                onShowToast(`Submission failed: ${err.message}`, "warning");
+              } finally {
+                setSubmittingInvoices(false);
+              }
+            };
+
+            return (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                  
+                  <div style={{
+                    backgroundColor: 'var(--bg-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between'
+                  }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>1. Basic Salary</span>
+                    <h3 style={{ margin: '8px 0', fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {currencySymbol}{salaryVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </h3>
+                    <span style={{ fontSize: '11px', color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      ● Calculated (Local Currency)
+                    </span>
+                  </div>
+
+                  <div style={{
+                    backgroundColor: 'var(--bg-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between'
+                  }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>2. Sales Commissions</span>
+                    <h3 style={{ margin: '8px 0', fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      £{commissionVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </h3>
+                    <span style={{ fontSize: '11px', color: 'var(--success)' }}>
+                      ● Auto-calculated from placements
+                    </span>
+                  </div>
+
+                  <div style={{
+                    backgroundColor: 'var(--bg-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between'
+                  }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>3. Approved Expenses</span>
+                    <h3 style={{ margin: '8px 0', fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      £{reimbursementsVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </h3>
+                    <span style={{ fontSize: '11px', color: reimbursementsVal > 0 ? 'var(--success)' : 'var(--text-secondary)' }}>
+                      ● {reimbursementsVal > 0 ? 'Approved claims found' : 'No claims this month'}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  backgroundColor: 'rgba(255,255,255,0.02)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  padding: '12px 16px',
+                  marginTop: '4px',
+                  flexWrap: 'wrap',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600 }}>Submission Status:</span>
+                    {isSubmitted ? (
+                      <span style={{
+                        backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                        color: 'var(--success)',
+                        border: '1px solid rgba(16, 185, 129, 0.2)',
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}>
+                        <CheckCircle2 size={14} /> Submitted on {new Date(submittedAt || '').toLocaleDateString()}
+                      </span>
+                    ) : (
+                      <span style={{
+                        backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                        color: '#f59e0b',
+                        border: '1px solid rgba(245, 158, 11, 0.2)',
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontWeight: 700
+                      }}>
+                        ⏳ Pending Submission
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={isSubmitted || submittingInvoices}
+                    onClick={handleSendInvoices}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      cursor: isSubmitted ? 'not-allowed' : 'pointer',
+                      opacity: isSubmitted ? 0.6 : 1
+                    }}
+                  >
+                    {submittingInvoices ? 'Submitting...' : isSubmitted ? 'Invoices Sent to Accounts' : '📤 Send Invoice Packet'}
+                  </button>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Control Filter Bar */}
       <div className="controls-row" style={{ marginTop: 0 }}>
         <div className="search-filter-group" style={{ flexWrap: 'wrap', gap: '8px' }}>
@@ -741,6 +1052,18 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
             <option value="reconciled">Has Reconciled Months</option>
             <option value="projected">Projections Only</option>
           </select>
+
+          {!isRecruiter && (
+            <select 
+              className="select-filter"
+              value={selectedInvoiceStatusFilter}
+              onChange={(e) => setSelectedInvoiceStatusFilter(e.target.value)}
+            >
+              <option value="all">All Submission Statuses</option>
+              <option value="submitted">Invoices Submitted</option>
+              <option value="pending">Awaiting Invoices</option>
+            </select>
+          )}
 
           {!isRecruiter && (
             <>
@@ -971,6 +1294,33 @@ ${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements)
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {(() => {
+                const targetId = `${selectedCell.staffMember.id}_${selectedCell.month}`;
+                const record = payrollRecords.find(r => r.id === targetId);
+                if (record?.invoicesSubmitted) {
+                  return (
+                    <div style={{
+                      backgroundColor: 'rgba(59, 130, 246, 0.06)',
+                      border: '1px solid rgba(59, 130, 246, 0.2)',
+                      borderRadius: '6px',
+                      padding: '12px',
+                      fontSize: '12px',
+                      color: 'var(--text-primary)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px'
+                    }}>
+                      <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>📤 Invoices Submitted by Recruiter</span>
+                      </div>
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        Sent on: {new Date(record.invoicesSubmittedAt || '').toLocaleString()}
+                      </span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
               <div style={{ 
                 display: 'flex', 
                 justifyContent: 'space-between', 

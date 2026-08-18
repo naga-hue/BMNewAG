@@ -90,6 +90,8 @@ export interface PayrollRecord {
   employeePension: number;
   notes?: string;
   linkedExpenseId?: string;
+  invoicesSubmitted?: boolean;
+  invoicesSubmittedAt?: string;
 }
 
 export interface CrmClientCompany {

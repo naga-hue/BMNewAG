@@ -564,8 +564,8 @@ Yours sincerely,
     }
   };
 
-  // Filter available license pools (contracts with remaining seats and owned by company)
-  const companyContracts = contracts.filter(c => c.companyId === staffMember.companyId && c.quantityPurchased > 1);
+  // Filter available license pools (contracts with remaining seats)
+  const companyContracts = contracts.filter(c => c.quantityPurchased > 1);
   const availablePools = companyContracts.filter(c => {
     const assignedCount = assetAssignments.filter(a => a.contractId === c.id).length;
     const alreadyAssignedToMe = myAssignments.some(a => a.contractId === c.id);
@@ -2434,7 +2434,7 @@ Yours sincerely,
                 
                 {availablePools.length === 0 ? (
                   <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                    No available license pools found for this company ({companyName}). Register vendor contracts to add capacity.
+                    No available license pools found. Register vendor contracts to add capacity.
                   </p>
                 ) : (
                   <form onSubmit={handleAssignAsset} style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
@@ -2451,9 +2451,10 @@ Yours sincerely,
                         {availablePools.map(pool => {
                           const assignedCount = assetAssignments.filter(a => a.contractId === pool.id).length;
                           const left = pool.quantityPurchased - assignedCount;
+                          const poolCompName = companies.find(comp => comp.id === pool.companyId)?.name || 'Group';
                           return (
                             <option key={pool.id} value={pool.id}>
-                              {pool.name} ({left} seats left of {pool.quantityPurchased})
+                              {pool.name} ({poolCompName}) ({left} seats left of {pool.quantityPurchased})
                             </option>
                           );
                         })}

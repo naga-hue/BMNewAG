@@ -413,9 +413,10 @@ export default async function handler(req, res) {
         if (targetEmail) {
           const normTargetEmail = normalizeEmail(targetEmail);
           matchedStaff = staffList.find(s => {
+            const dialpadEmail = normalizeEmail(s.dialpadEmail);
             const busEmail = normalizeEmail(s.businessEmail);
             const persEmail = normalizeEmail(s.personalEmail);
-            if (busEmail === normTargetEmail || persEmail === normTargetEmail) return true;
+            if ((dialpadEmail && dialpadEmail === normTargetEmail) || busEmail === normTargetEmail || persEmail === normTargetEmail) return true;
             if (s.additionalEmails) {
               const extraList = s.additionalEmails.split(',').map(e => normalizeEmail(e)).filter(Boolean);
               if (extraList.includes(normTargetEmail)) return true;

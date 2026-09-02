@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { UploadCloud, Grid, Trash2, CheckCircle2, Clock, Check } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { useBoundStore } from '../../store/useBoundStore';
 import { parseAndStandardizeDate } from './shared';
 
@@ -139,67 +140,129 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
 
 
   const processBankStatementFile = (file: File) => {
+    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
-      if (lines.length < 2) {
-        onShowToast("Bank statement file is empty or invalid.", "warning");
-        return;
-      }
 
-      // Simple CSV line parser
-      const parseCSVLine = (txt: string) => {
-        const result: string[] = [];
-        let startIdx = 0;
-        let insideQuotes = false;
-        for (let i = 0; i < txt.length; i++) {
-          const char = txt[i];
-          if (char === '"') insideQuotes = !insideQuotes;
-          else if (char === ',' && !insideQuotes) {
-            let val = txt.substring(startIdx, i).trim();
-            if (val.startsWith('"') && val.endsWith('"')) val = val.substring(1, val.length - 1);
-            result.push(val);
-            startIdx = i + 1;
+    reader.onload = (event) => {
+      try {
+        let headers: string[] = [];
+        let rows: string[][] = [];
+
+        if (isExcel) {
+          const data = new Uint8Array(event.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+          const firstSheetName = workbook.SheetNames[0];
+          if (!firstSheetName) {
+            onShowToast("Excel statement file contains no worksheets.", "warning");
+            return;
+          }
+          const worksheet = workbook.Sheets[firstSheetName];
+          const sheetData = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, raw: false, dateNF: 'yyyy-mm-dd' });
+
+          if (!sheetData || sheetData.length < 2) {
+            onShowToast("Excel statement file is empty or invalid.", "warning");
+            return;
+          }
+
+          // Find the header row (first row with at least 2 non-empty cells)
+          let headerRowIdx = 0;
+          while (headerRowIdx < sheetData.length) {
+            const row = sheetData[headerRowIdx];
+            if (row && Array.isArray(row) && row.filter(c => c !== undefined && c !== null && String(c).trim() !== '').length >= 2) {
+              break;
+            }
+            headerRowIdx++;
+          }
+
+          if (headerRowIdx >= sheetData.length) {
+            onShowToast("Could not find table headers in the Excel file.", "warning");
+            return;
+          }
+
+          headers = (sheetData[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
+          const rawRows = sheetData.slice(headerRowIdx + 1);
+
+          rows = rawRows
+            .filter((r: any[]) => r && Array.isArray(r) && r.some((cell: any) => cell !== undefined && cell !== null && String(cell).trim() !== ''))
+            .map((r: any[]) => {
+              return headers.map((_, colIdx) => String(r[colIdx] !== undefined && r[colIdx] !== null ? r[colIdx] : '').trim());
+            });
+        } else {
+          // Plain Text / CSV Parsing
+          const text = event.target?.result as string;
+          const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+          if (lines.length < 2) {
+            onShowToast("Bank statement file is empty or invalid.", "warning");
+            return;
+          }
+
+          // Simple CSV line parser
+          const parseCSVLine = (txt: string) => {
+            const result: string[] = [];
+            let startIdx = 0;
+            let insideQuotes = false;
+            for (let i = 0; i < txt.length; i++) {
+              const char = txt[i];
+              if (char === '"') insideQuotes = !insideQuotes;
+              else if (char === ',' && !insideQuotes) {
+                let val = txt.substring(startIdx, i).trim();
+                if (val.startsWith('"') && val.endsWith('"')) val = val.substring(1, val.length - 1);
+                result.push(val);
+                startIdx = i + 1;
+              }
+            }
+            let lastVal = txt.substring(startIdx).trim();
+            if (lastVal.startsWith('"') && lastVal.endsWith('"')) lastVal = lastVal.substring(1, lastVal.length - 1);
+            result.push(lastVal);
+            return result;
+          };
+
+          headers = parseCSVLine(lines[0]);
+          for (let i = 1; i < lines.length; i++) {
+            const cols = parseCSVLine(lines[i]);
+            if (cols.length === headers.length) {
+              rows.push(cols);
+            }
           }
         }
-        let lastVal = txt.substring(startIdx).trim();
-        if (lastVal.startsWith('"') && lastVal.endsWith('"')) lastVal = lastVal.substring(1, lastVal.length - 1);
-        result.push(lastVal);
-        return result;
-      };
 
-      const headers = parseCSVLine(lines[0]);
-      const rows: string[][] = [];
-      for (let i = 1; i < lines.length; i++) {
-        const cols = parseCSVLine(lines[i]);
-        if (cols.length === headers.length) {
-          rows.push(cols);
+        if (rows.length === 0 || headers.length === 0) {
+          onShowToast("No valid transaction rows found in file.", "warning");
+          return;
         }
+
+        setCsvHeaders(headers);
+        setCsvRows(rows);
+        setCsvFile(file);
+
+        // Auto-detect columns
+        const initialMap: Record<string, string> = {};
+        const mappingsList = [
+          { key: 'date', labels: ['date', 'transaction date', 'booking date', 'val date', 'posted date', 'trans date'] },
+          { key: 'payee', labels: ['description', 'payee', 'beneficiary', 'details', 'name', 'narrative', 'party', 'counterparty'] },
+          { key: 'amount', labels: ['amount', 'value', 'transaction amount', 'net amount', 'price', 'paid out', 'debit', 'debit amount'] },
+          { key: 'reference', labels: ['reference', 'memo', 'ref', 'narrative', 'payment reference', 'type', 'id'] },
+          { key: 'nominal', labels: ['nominal', 'category', 'nominal code', 'account code', 'code'] }
+        ];
+
+        mappingsList.forEach(m => {
+          const idx = headers.findIndex(h => h && m.labels.some(lbl => h.toLowerCase() === lbl.toLowerCase() || h.toLowerCase().includes(lbl.toLowerCase())));
+          if (idx > -1) initialMap[m.key] = headers[idx];
+        });
+
+        setColumnMappings(initialMap);
+        setImportStep(2);
+      } catch (err: any) {
+        console.error("Error processing statement file:", err);
+        onShowToast(`Failed to parse file: ${err.message || 'Unknown error'}`, "danger");
       }
-
-      setCsvHeaders(headers);
-      setCsvRows(rows);
-      setCsvFile(file);
-
-      // Auto-detect columns
-      const initialMap: Record<string, string> = {};
-      const mappingsList = [
-        { key: 'date', labels: ['date', 'transaction date', 'booking date', 'val date'] },
-        { key: 'payee', labels: ['description', 'payee', 'beneficiary', 'details', 'name'] },
-        { key: 'amount', labels: ['amount', 'value', 'transaction amount', 'net amount', 'price'] },
-        { key: 'reference', labels: ['reference', 'memo', 'ref', 'narrative', 'payment reference'] }
-      ];
-
-      mappingsList.forEach(m => {
-        const idx = headers.findIndex(h => h && m.labels.some(lbl => h.toLowerCase() === lbl.toLowerCase()));
-        if (idx > -1) initialMap[m.key] = headers[idx];
-      });
-
-      setColumnMappings(initialMap);
-      setImportStep(2);
     };
-    reader.readAsText(file);
+
+    if (isExcel) {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsText(file);
+    }
   };
 
   const handleCSVDrop = (e: React.DragEvent) => {
@@ -474,20 +537,20 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
           <input 
             type="file" 
             id="statement-file-picker" 
-            accept=".csv" 
+            accept=".csv, .xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" 
             style={{ display: 'none' }}
             onChange={handleCSVSelect}
           />
           <UploadCloud size={48} className="upload-icon" style={{ marginBottom: '16px' }} />
-          <span className="upload-text" style={{ fontSize: '16px', fontWeight: 600 }}>Drag and drop statement CSV here or Browse</span>
-          <span className="upload-subtext" style={{ marginTop: '8px' }}>Supported header keys: Date, Description/Payee, Amount (credits & debits)...</span>
+          <span className="upload-text" style={{ fontSize: '16px', fontWeight: 600 }}>Drag and drop statement (CSV or Excel .xlsx / .xls) here or Browse</span>
+          <span className="upload-subtext" style={{ marginTop: '8px' }}>Supported file formats: CSV, XLSX, XLS &bull; Headers: Date, Description/Payee, Amount (credits & debits)...</span>
         </div>
       )}
 
       {importStep === 2 && (
         <div className="detail-section" style={{ animation: 'fadeIn 0.2s' }}>
           <div className="section-title">
-            <Grid size={16} /> Map CSV Headers
+            <Grid size={16} /> Map Statement Headers (CSV / Excel)
           </div>
           <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
             We parsed headers of file **{csvFile?.name}**. Map them to target categories below:

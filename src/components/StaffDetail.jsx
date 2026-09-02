@@ -21,7 +21,8 @@ import {
   Percent,
   Laptop,
   Unlock,
-  Printer
+  Printer,
+  ArrowRightLeft
 } from 'lucide-react';
 import { firebaseService } from '../services/firebase';
 import { toGBP } from '../utils/currency';
@@ -52,7 +53,8 @@ export default function StaffDetail({
   onSaveAssetAssignment,
   onDeleteAssetAssignment,
   placements = [],
-  letterTemplates = []
+  letterTemplates = [],
+  onOpenTransferModal
 }) {
   const [activeTab, setActiveTab] = useState('profile'); // profile, documents, leaves, commissions, assets
 
@@ -927,7 +929,7 @@ Yours sincerely,
       <div className="slide-over-panel" onClick={(e) => e.stopPropagation()}>
         
         {/* Panel Header */}
-        <div className="panel-header">
+        <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div className="panel-title">
             <span className="country-badge country-us" style={{ width: 'fit-content', marginBottom: '8px', background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>
               {staffMember.jobTitle}
@@ -945,9 +947,31 @@ Yours sincerely,
               {companyName} ({companyCountry}) &bull; {staffMember.department}
             </span>
           </div>
-          <button className="btn-close" onClick={onClose} aria-label="Close panel">
-            <X size={18} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {onOpenTransferModal && staffMember.status !== 'exited' && (
+              <button 
+                type="button"
+                className="btn-secondary"
+                onClick={() => onOpenTransferModal(staffMember)}
+                style={{ 
+                  padding: '6px 12px', 
+                  fontSize: '12px', 
+                  fontWeight: 600, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '6px',
+                  color: 'var(--primary)',
+                  borderColor: 'var(--primary)'
+                }}
+                title="Transfer employee to another company entity"
+              >
+                <ArrowRightLeft size={13} /> Transfer Company
+              </button>
+            )}
+            <button className="btn-close" onClick={onClose} aria-label="Close panel">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Tab Selector */}
@@ -1413,6 +1437,51 @@ Yours sincerely,
                           />
                           <span>Suspend payroll profile & set final payout processing</span>
                         </label>
+                      </div>
+                    </div>
+                  )}
+                  {staffMember.companyTransfers && staffMember.companyTransfers.length > 0 && (
+                    <div className="detail-section" style={{ gridColumn: 'span 2', padding: '16px', marginTop: '16px', borderLeft: '4px solid var(--primary)', backgroundColor: 'rgba(99, 102, 241, 0.03)' }}>
+                      <div className="section-title" style={{ color: 'var(--primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <ArrowRightLeft size={16} /> Inter-Company Transfer History ({staffMember.companyTransfers.length})
+                        </span>
+                      </div>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {staffMember.companyTransfers.map((t, idx) => (
+                          <div 
+                            key={t.id || idx}
+                            style={{
+                              padding: '12px',
+                              borderRadius: '6px',
+                              backgroundColor: 'var(--bg-secondary)',
+                              border: '1px solid var(--border-color)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {t.fromCompanyName} ➔ {t.toCompanyName}
+                              </span>
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                Transferred: {new Date(t.transferredAt || t.effectiveStartDate).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '16px', fontSize: '11px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                              <span>Exit from Old Entity: <strong>{t.exitDateFromPreviousCompany}</strong></span>
+                              <span>Effective in New Entity: <strong>{t.effectiveStartDate}</strong></span>
+                              {t.toDepartment && <span>Dept: <strong>{t.toDepartment}</strong></span>}
+                            </div>
+                            {t.notes && (
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '2px' }}>
+                                &ldquo;{t.notes}&rdquo;
+                              </div>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}

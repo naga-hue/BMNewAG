@@ -44,7 +44,8 @@ import {
   Phone, 
   Settings,
   HelpCircle,
-  X
+  X,
+  ArrowRightLeft
 } from 'lucide-react';
 
 import { initialCompanies } from './mockData';
@@ -62,6 +63,7 @@ import CompanyForm from './components/CompanyForm';
 import StaffDetail from './components/StaffDetail';
 import StaffForm from './components/StaffForm';
 import StaffExitModal from './components/StaffExitModal';
+import StaffTransferModal from './components/StaffTransferModal';
 import ExitEmailTriggerModal from './components/ExitEmailTriggerModal';
 import BulkStaffImportModal from './components/BulkStaffImportModal';
 import AiRemindersModal from './components/AiRemindersModal';
@@ -464,6 +466,8 @@ export default function App() {
   const [staffFormInitialStep, setStaffFormInitialStep] = useState(1);
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
   const [exitModalStaff, setExitModalStaff] = useState(null);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [transferModalStaff, setTransferModalStaff] = useState(null);
   
   // Exit notifications states
   const [exitSettings, setExitSettings] = useState({});
@@ -987,6 +991,12 @@ export default function App() {
     setEditingStaff(staffMember);
     setStaffFormInitialStep(1);
     setIsStaffFormOpen(true);
+  };
+
+  const handleOpenStaffTransfer = (staffMember, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    setTransferModalStaff(staffMember);
+    setIsTransferModalOpen(true);
   };
 
   const handleOpenStaffCreate = () => {
@@ -3402,6 +3412,16 @@ export default function App() {
                             >
                               <Edit3 size={12} />
                             </button>
+                            {s.status !== 'exited' && (
+                              <button 
+                                className="btn-icon" 
+                                title="Transfer to another company" 
+                                onClick={(e) => handleOpenStaffTransfer(s, e)}
+                                style={{ color: 'var(--primary)' }}
+                              >
+                                <ArrowRightLeft size={12} />
+                              </button>
+                            )}
                             <button 
                               className="btn-icon" 
                               title="Exit Formalities & IT Clearance" 
@@ -3521,6 +3541,16 @@ export default function App() {
                                 >
                                   <Edit3 size={12} />
                                 </button>
+                                {s.status !== 'exited' && (
+                                  <button 
+                                    className="btn-icon" 
+                                    title="Transfer to another company" 
+                                    onClick={(e) => handleOpenStaffTransfer(s, e)}
+                                    style={{ color: 'var(--primary)' }}
+                                  >
+                                    <ArrowRightLeft size={12} />
+                                  </button>
+                                )}
                                 <button 
                                   className="btn-icon" 
                                   title="Exit Formalities & IT Clearance" 
@@ -3816,6 +3846,7 @@ export default function App() {
         onDeleteAssetAssignment={handleDeleteAssetAssignment}
         placements={placements}
         letterTemplates={letterTemplates}
+        onOpenTransferModal={handleOpenStaffTransfer}
       />
 
       {/* Onboard / Edit Staff Wizard */}
@@ -3853,6 +3884,22 @@ export default function App() {
         staffMember={exitModalStaff}
         onSave={handleConfirmStaffExit}
         companies={companies}
+      />
+
+      {/* Inter-Company Staff Transfer Modal */}
+      <StaffTransferModal 
+        isOpen={isTransferModalOpen}
+        onClose={() => {
+          setIsTransferModalOpen(false);
+          setTransferModalStaff(null);
+        }}
+        staffMember={transferModalStaff}
+        companies={companies}
+        payrollPolicies={payrollPolicies}
+        leavePolicies={leavePolicies}
+        commissionPolicies={commissionPolicies}
+        onSave={handleSaveStaff}
+        onShowToast={handleShowToast}
       />
 
       {/* Exit Email Dispatch trigger modal */}

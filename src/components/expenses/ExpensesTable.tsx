@@ -60,6 +60,7 @@ export default function ExpensesTable({
   const [vendorFilter, setVendorFilter] = useState('all');
   const [plMonthFilter, setPlMonthFilter] = useState('all');
   const [bankAccountFilter, setBankAccountFilter] = useState('all');
+  const [allocationCenterFilter, setAllocationCenterFilter] = useState('all');
   const [companyFilter, setCompanyFilter] = useState<string[]>(['all']);
   const [deptFilter, setDeptFilter] = useState<string[]>(['all']);
   const [staffFilter, setStaffFilter] = useState('all');
@@ -350,6 +351,25 @@ export default function ExpensesTable({
     return depts.sort();
   }, [companies, staff]);
 
+  // Helper to resolve human-readable Allocation Center Target string
+  const getAllocationTargetLabel = (exp: any) => {
+    if (!exp) return 'Whole Corporate Group';
+    const type = exp.allocationType || 'group';
+    if (type === 'company') {
+      const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+      const names = targets.map((tid: string) => companies.find(c => c.id === tid)?.name || tid).filter(Boolean);
+      return names.length > 0 ? `Corp: ${names.sort().join(', ')}` : 'Corporate';
+    } else if (type === 'department') {
+      const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+      return targets.length > 0 ? `Dept: ${targets.sort().join(', ')}` : 'Department';
+    } else if (type === 'staff') {
+      const ids = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
+      const staffNames = ids.map((sid: string) => staff.find(s => s.id === sid)?.fullName || sid).filter(Boolean);
+      return staffNames.length > 0 ? `Staff: ${staffNames.sort().join(', ')}` : `Staff: ${ids.length} recruiters`;
+    }
+    return 'Whole Corporate Group';
+  };
+
   // Filter Ledger transactions list
   const filteredExpenses = useMemo(() => {
     return (expenses || []).filter(exp => {
@@ -372,6 +392,15 @@ export default function ExpensesTable({
 
       if (plMonthFilter !== 'all' && expPlMonth !== plMonthFilter) return false;
       if (bankAccountFilter !== 'all' && exp.bankAccountId !== bankAccountFilter) return false;
+
+      // Allocation Center Type filter
+      if (allocationCenterFilter !== 'all') {
+        const type = exp.allocationType || 'group';
+        if (allocationCenterFilter === 'company' && type !== 'company') return false;
+        if (allocationCenterFilter === 'department' && type !== 'department') return false;
+        if (allocationCenterFilter === 'staff' && type !== 'staff') return false;
+        if (allocationCenterFilter === 'group' && type !== 'group' && type !== 'all' && type !== 'corporate') return false;
+      }
 
       // Company filter
       if (!companyFilter.includes('all')) {
@@ -425,7 +454,7 @@ export default function ExpensesTable({
       return true;
     });
   }, [
-    expenses, nominalFilter, plMonthFilter, bankAccountFilter,
+    expenses, nominalFilter, plMonthFilter, bankAccountFilter, allocationCenterFilter,
     companyFilter, deptFilter, staffFilter, vendorFilter,
     reconciliationFilter, startDateFilter, endDateFilter, searchQuery
   ]);
@@ -445,8 +474,8 @@ export default function ExpensesTable({
         valA = String(a.bankAccountRef || '').toLowerCase();
         valB = String(b.bankAccountRef || '').toLowerCase();
       } else if (sortBy === 'allocation') {
-        valA = String(a.allocationType || '').toLowerCase();
-        valB = String(b.allocationType || '').toLowerCase();
+        valA = getAllocationTargetLabel(a).toLowerCase();
+        valB = getAllocationTargetLabel(b).toLowerCase();
       } else if (sortBy === 'reconciliation') {
         const getSortVal = (exp: any) => {
           if (exp.linkedPayrollCellId) return `payroll_${exp.linkedPayrollCellId}`;
@@ -468,7 +497,7 @@ export default function ExpensesTable({
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [filteredExpenses, sortBy, sortOrder]);
+  }, [filteredExpenses, sortBy, sortOrder, companies, staff]);
 
   const uniquePlMonths = useMemo(() => {
     return Array.from(new Set((expenses || []).map(e => e?.plMonth).filter(Boolean))).sort();
@@ -835,6 +864,20 @@ export default function ExpensesTable({
             {allBankAccounts.map(b => (
               <option key={b.id} value={b.id}>{b.ref}</option>
             ))}
+          </select>
+
+          <select 
+            className="select-filter"
+            value={allocationCenterFilter}
+            onChange={(e) => setAllocationCenterFilter(e.target.value)}
+            style={{ minWidth: '170px' }}
+            title="Filter by Allocation Center"
+          >
+            <option value="all">All Allocation Centers</option>
+            <option value="company">🏢 Company Level</option>
+            <option value="department">🏷️ Department Level</option>
+            <option value="staff">👤 Staff Direct</option>
+            <option value="group">🌐 Whole Corporate Group</option>
           </select>
 
           <MultiSelectFilter
@@ -1286,18 +1329,7 @@ export default function ExpensesTable({
               const symbol = symbolMap[exp.currency] || '£';
               
               // Resolve Allocation Label
-              let allocationLabel = 'Whole Corporate Group';
-              if (exp.allocationType === 'company') {
-                const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-                const names = targets.map(tid => companies.find(c => c.id === tid)?.name).filter(Boolean);
-                allocationLabel = names.length > 0 ? `Corp: ${names.join(', ')}` : 'Corporate';
-              } else if (exp.allocationType === 'department') {
-                const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-                allocationLabel = targets.length > 0 ? `Dept: ${targets.join(', ')}` : 'Department';
-              } else if (exp.allocationType === 'staff') {
-                const ids = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
-                allocationLabel = `Staff: ${ids.length} recruiters`;
-              }
+              const allocationLabel = getAllocationTargetLabel(exp);
 
               const matchedPl = placements.find(p => p.id === exp.linkedPlacementId);
               const isUnmappedRow = !exp.recipientType || exp.recipientType === 'other' || !exp.nominalCode;

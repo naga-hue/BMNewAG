@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { UploadCloud, Grid, Trash2, CheckCircle2, Clock, Check } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useBoundStore } from '../../store/useBoundStore';
-import { parseAndStandardizeDate } from './shared';
+import { parseAndStandardizeDate, symbolMap } from './shared';
+import { FX_RATES, toGBP } from '../../utils/currency';
 
 interface BankStatementImportProps {
   onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
@@ -70,6 +71,8 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
   const [statementCompanyId, setStatementCompanyId] = useState('');
   const [statementBankAccountId, setStatementBankAccountId] = useState('');
   const [statementAccountRef, setStatementAccountRef] = useState('Main Current Account');
+  const [statementCurrency, setStatementCurrency] = useState('GBP');
+  const [statementFxRate, setStatementFxRate] = useState<number>(1.0);
   const [categorizedRows, setCategorizedRows] = useState<CategorizedRow[]>([]);
 
   // Target allocation selector states
@@ -422,18 +425,20 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
         const target = isStaff ? row.selectedStaffIds : row.allocationTarget;
 
         const expenseId = `exp-stmt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        const amt = Math.abs(row.amount);
+        const cur = statementCurrency || 'GBP';
+        const rate = cur === 'GBP' ? 1.0 : (statementFxRate || FX_RATES[cur] || 1.0);
+
         const expenseData = {
           id: expenseId,
           date: row.date,
           plMonth: row.plMonth,
           payee: row.payee + (row.reference ? ` [Ref: ${row.reference}]` : ''),
           nominalCode: row.nominalCode,
-          amount: Math.abs(row.amount),
-          currency: (() => {
-            const comp = companies.find(c => c.id === (statementCompanyId || (companies[0] ? companies[0].id : '')));
-            const bank = comp?.bankAccounts?.find(b => b.id === statementBankAccountId);
-            return bank?.currency || 'GBP';
-          })(),
+          amount: amt,
+          currency: cur,
+          fxRate: rate,
+          amountGBP: amt * rate,
           taxRate: row.taxRate !== undefined ? row.taxRate : 0,
           recipientType: row.recipientType || 'other',
           recipientId: row.recipientId || '',
@@ -738,9 +743,14 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                     if (banks.length > 0) {
                       setStatementBankAccountId(banks[0].id);
                       setStatementAccountRef(`${banks[0].bankName} - ${banks[0].accountName}`);
+                      const cur = banks[0].currency || 'GBP';
+                      setStatementCurrency(cur);
+                      setStatementFxRate(FX_RATES[cur] || (cur === 'AED' ? 0.21 : 1.0));
                     } else {
                       setStatementBankAccountId('');
                       setStatementAccountRef('');
+                      setStatementCurrency('GBP');
+                      setStatementFxRate(1.0);
                     }
                   }}
                   style={{ width: '100%', padding: '8px' }}
@@ -769,8 +779,13 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                           const acc = activeCompBanks.find(b => b.id === bId);
                           if (acc) {
                             setStatementAccountRef(`${acc.bankName} - ${acc.accountName}`);
+                            const cur = acc.currency || 'GBP';
+                            setStatementCurrency(cur);
+                            setStatementFxRate(FX_RATES[cur] || (cur === 'AED' ? 0.21 : 1.0));
                           } else {
                             setStatementAccountRef('');
+                            setStatementCurrency('GBP');
+                            setStatementFxRate(1.0);
                           }
                         }}
                         style={{ width: '100%', padding: '8px' }}
@@ -792,6 +807,67 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                   );
                 })()}
               </div>
+            </div>
+
+            {/* Statement Currency and Historical Conversion Rate Configuration */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginTop: '16px', padding: '14px', backgroundColor: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontWeight: 600 }}>Statement Currency</label>
+                <select
+                  className="select-filter"
+                  value={statementCurrency}
+                  onChange={(e) => {
+                    const cur = e.target.value;
+                    setStatementCurrency(cur);
+                    setStatementFxRate(FX_RATES[cur] || (cur === 'AED' ? 0.21 : 1.0));
+                  }}
+                  style={{ width: '100%', padding: '8px', fontWeight: 600 }}
+                >
+                  <option value="GBP">GBP (£) - British Pound</option>
+                  <option value="AED">AED (AED) - UAE Dirham</option>
+                  <option value="USD">USD ($) - US Dollar</option>
+                  <option value="EUR">EUR (€) - Euro</option>
+                  <option value="INR">INR (₹) - Indian Rupee</option>
+                  <option value="ZAR">ZAR (R) - South African Rand</option>
+                </select>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                  Transactions will be categorized & stored natively in {statementCurrency}.
+                </span>
+              </div>
+
+              {statementCurrency !== 'GBP' && (
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Conversion Rate (FX to £ GBP)</span>
+                    <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 700 }}>
+                      1 {statementCurrency} = £{statementFxRate}
+                    </span>
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      className="form-input"
+                      value={statementFxRate}
+                      onChange={(e) => setStatementFxRate(parseFloat(e.target.value) || 0)}
+                      style={{ flex: 1, padding: '8px', fontWeight: 600 }}
+                      placeholder="e.g. 0.2120"
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '8px 12px', fontSize: '11px', whiteSpace: 'nowrap' }}
+                      title="Reset to current market live rate"
+                      onClick={() => setStatementFxRate(FX_RATES[statementCurrency] || (statementCurrency === 'AED' ? 0.21 : 1.0))}
+                    >
+                      ↺ Default
+                    </button>
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                    Adjust this rate if your bank or accounting period applied a specific historical exchange rate.
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -829,7 +905,12 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
               color: 'var(--text-secondary)'
             }}
           >
-            <span>🏦 <strong>Target Account:</strong> {companies.find(c => c.id === (statementCompanyId || (companies[0] ? companies[0].id : '')))?.name || 'Company'} — <em>{statementAccountRef}</em></span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+              <span>🏦 <strong>Target Account:</strong> {companies.find(c => c.id === (statementCompanyId || (companies[0] ? companies[0].id : '')))?.name || 'Company'} — <em>{statementAccountRef}</em></span>
+              <span style={{ padding: '2px 8px', borderRadius: '4px', backgroundColor: 'rgba(99, 102, 241, 0.12)', color: 'var(--primary)', fontWeight: 600 }}>
+                Statement Currency: {statementCurrency} {statementCurrency !== 'GBP' && `• FX: 1 ${statementCurrency} = £${statementFxRate}`}
+              </span>
+            </div>
           </div>
 
           <div className="table-container" style={{ maxHeight: '450px', overflowY: 'auto' }}>
@@ -839,7 +920,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                   <th>Status</th>
                   <th>Date</th>
                   <th>Description & Ref</th>
-                  <th style={{ textAlign: 'right' }}>Amount</th>
+                  <th style={{ textAlign: 'right' }}>Amount ({statementCurrency})</th>
                   <th>P&L Month</th>
                   <th>Nominal Category</th>
                   <th>Recipient Linkage</th>
@@ -871,7 +952,12 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                       )}
                     </td>
                     <td style={{ textAlign: 'right', fontWeight: 700, color: row.amount < 0 ? 'var(--danger)' : 'var(--success)' }}>
-                      £{row.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      {(symbolMap[statementCurrency] || `${statementCurrency} `)}{Math.abs(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      {statementCurrency !== 'GBP' && statementFxRate > 0 && (
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'normal', marginTop: '2px' }}>
+                          ≈ £{(Math.abs(row.amount) * statementFxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                      )}
                     </td>
 
                     {/* P&L Month Selector */}

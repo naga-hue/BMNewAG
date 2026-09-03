@@ -1635,7 +1635,7 @@ export default function ExpensesTable({
                       {exp.currency === 'GBP' ? (
                         `£${exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                       ) : (
-                        `£${toGBP(exp.amount, exp.currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${symbol}${exp.amount.toLocaleString()})`
+                        `£${(exp.amountGBP ?? toGBP(exp.amount, exp.currency, exp.fxRate)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${symbol}${exp.amount.toLocaleString()})`
                       )}
                     </td>
                   )}

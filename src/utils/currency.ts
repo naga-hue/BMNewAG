@@ -69,10 +69,8 @@ export async function fetchLiveFxRates(): Promise<boolean> {
  * Converts a currency value to GBP.
  * Forces clean numeric conversion to prevent string concatenation bugs.
  */
-export function toGBP(amount: any, cur: string = 'GBP'): number {
+export function toGBP(amount: any, cur: string = 'GBP', customRate?: number): number {
   if (amount === undefined || amount === null || amount === '') return 0;
-  const cleanCur = String(cur || 'GBP').toUpperCase().trim();
-  const rate = FX_RATES[cleanCur] || 1.0;
   
   // Clean string representations if necessary
   let numericAmt = 0;
@@ -81,7 +79,13 @@ export function toGBP(amount: any, cur: string = 'GBP'): number {
   } else {
     numericAmt = Number(amount) || 0;
   }
-  
+
+  if (customRate && customRate > 0) {
+    return numericAmt * customRate;
+  }
+
+  const cleanCur = String(cur || 'GBP').toUpperCase().trim();
+  const rate = FX_RATES[cleanCur] || 1.0;
   return numericAmt * rate;
 }
 

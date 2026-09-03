@@ -90,6 +90,105 @@ export function toGBP(amount: any, cur: string = 'GBP', customRate?: number): nu
 }
 
 /**
+ * In-memory and session cache for historical FX rates by currency and date.
+ */
+const historicalFxCache: Record<string, number> = {};
+
+/**
+ * Fetches the historical exchange rate for a given currency and transaction date (base GBP).
+ * If AED is requested, uses the official fixed peg to USD (3.6725) combined with European Central Bank (ECB) rates.
+ */
+export async function getHistoricalFxRate(currency: string, dateStr: string): Promise<number> {
+  const cur = (currency || 'GBP').toUpperCase().trim();
+  if (cur === 'GBP') return 1.0;
+
+  // Extract clean YYYY-MM-DD
+  let normalizedDate = dateStr ? dateStr.trim().substring(0, 10) : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+    const parsed = new Date(dateStr);
+    if (!isNaN(parsed.getTime())) {
+      normalizedDate = parsed.toISOString().substring(0, 10);
+    } else {
+      return FX_RATES[cur] || (cur === 'AED' ? 0.21 : 1.0);
+    }
+  }
+
+  // Prevent querying future dates
+  const today = new Date().toISOString().substring(0, 10);
+  if (normalizedDate > today) {
+    normalizedDate = today;
+  }
+
+  const cacheKey = `fx_${cur}_${normalizedDate}`;
+  if (historicalFxCache[cacheKey]) {
+    return historicalFxCache[cacheKey];
+  }
+
+  try {
+    const sessionVal = sessionStorage.getItem(cacheKey);
+    if (sessionVal) {
+      const parsedRate = parseFloat(sessionVal);
+      if (!isNaN(parsedRate) && parsedRate > 0) {
+        historicalFxCache[cacheKey] = parsedRate;
+        return parsedRate;
+      }
+    }
+  } catch {}
+
+  // 1. Primary: European Central Bank via Frankfurter API
+  try {
+    if (cur === 'AED') {
+      // AED is pegged to USD at 3.6725 AED = 1 USD
+      const res = await fetch(`https://api.frankfurter.dev/v1/${normalizedDate}?base=USD&symbols=GBP`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.rates?.GBP) {
+          const rate = Number(data.rates.GBP) / 3.6725;
+          historicalFxCache[cacheKey] = rate;
+          try { sessionStorage.setItem(cacheKey, String(rate)); } catch {}
+          return rate;
+        }
+      }
+    } else {
+      const res = await fetch(`https://api.frankfurter.dev/v1/${normalizedDate}?base=${cur}&symbols=GBP`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.rates?.GBP) {
+          const rate = Number(data.rates.GBP);
+          historicalFxCache[cacheKey] = rate;
+          try { sessionStorage.setItem(cacheKey, String(rate)); } catch {}
+          return rate;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`Frankfurter historical rate lookup failed for ${cur} on ${normalizedDate}:`, err);
+  }
+
+  // 2. Secondary fallback: Fawaz Ahmed Currency API on jsDelivr CDN
+  try {
+    const res = await fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${normalizedDate}/v1/currencies/${cur.toLowerCase()}.json`);
+    if (res.ok) {
+      const data = await res.json();
+      const rate = data?.[cur.toLowerCase()]?.gbp;
+      if (rate && !isNaN(Number(rate))) {
+        const numRate = Number(rate);
+        historicalFxCache[cacheKey] = numRate;
+        try { sessionStorage.setItem(cacheKey, String(numRate)); } catch {}
+        return numRate;
+      }
+    }
+  } catch (err) {
+    console.warn(`Fawaz CDN historical fallback failed for ${cur} on ${normalizedDate}:`, err);
+  }
+
+  // 3. Ultimate fallback: In-memory live or baseline FX rate
+  const fallback = FX_RATES[cur] || (cur === 'AED' ? 0.21 : 1.0);
+  historicalFxCache[cacheKey] = fallback;
+  return fallback;
+}
+
+/**
  * Formats a numeric value as a GBP currency string.
  */
 export function formatGBP(val: any): string {

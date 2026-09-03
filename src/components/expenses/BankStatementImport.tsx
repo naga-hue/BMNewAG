@@ -3,7 +3,7 @@ import { UploadCloud, Grid, Trash2, CheckCircle2, Clock, Check } from 'lucide-re
 import * as XLSX from 'xlsx';
 import { useBoundStore } from '../../store/useBoundStore';
 import { parseAndStandardizeDate, symbolMap } from './shared';
-import { FX_RATES, toGBP } from '../../utils/currency';
+import { FX_RATES, toGBP, getHistoricalFxRate } from '../../utils/currency';
 
 interface BankStatementImportProps {
   onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
@@ -29,6 +29,8 @@ interface CategorizedRow {
   linkedPayrollCellId?: string | null;
   allocationMode?: string;
   manualAllocationShares?: Record<string, number>;
+  fxRate?: number;
+  amountGBP?: number;
 }
 
 const EMPTY_ARRAY: any[] = [];
@@ -73,6 +75,8 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
   const [statementAccountRef, setStatementAccountRef] = useState('Main Current Account');
   const [statementCurrency, setStatementCurrency] = useState('GBP');
   const [statementFxRate, setStatementFxRate] = useState<number>(1.0);
+  const [fxCalculationMode, setFxCalculationMode] = useState<'date' | 'fixed'>('date');
+  const [isResolvingFx, setIsResolvingFx] = useState(false);
   const [categorizedRows, setCategorizedRows] = useState<CategorizedRow[]>([]);
 
   // Target allocation selector states
@@ -281,7 +285,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     }
   };
 
-  const handleApplyBankMappings = () => {
+  const handleApplyBankMappings = async () => {
     const activeCompanyId = statementCompanyId || (companies[0] ? companies[0].id : '');
     const activeCompany = companies.find(c => c.id === activeCompanyId);
     const activeCompanyBanks = activeCompany?.bankAccounts || [];
@@ -302,6 +306,31 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     const refColIdx = columnMappings.reference ? csvHeaders.indexOf(columnMappings.reference) : -1;
     const nominalColIdx = columnMappings.nominal ? csvHeaders.indexOf(columnMappings.nominal) : -1;
 
+    setIsResolvingFx(true);
+
+    // Resolve date-specific conversion rates for foreign currency
+    const dateRateCache: Record<string, number> = {};
+    if (statementCurrency !== 'GBP') {
+      if (fxCalculationMode === 'date') {
+        const uniqueDates = Array.from(new Set(csvRows.map(r => parseAndStandardizeDate(r[dateColIdx], dateFormat)).filter(Boolean)));
+        await Promise.all(uniqueDates.map(async (dStr) => {
+          try {
+            const rate = await getHistoricalFxRate(statementCurrency, dStr);
+            dateRateCache[dStr] = rate;
+          } catch {
+            dateRateCache[dStr] = statementFxRate || (statementCurrency === 'AED' ? 0.21 : 1.0);
+          }
+        }));
+      } else {
+        csvRows.forEach(r => {
+          const dStr = parseAndStandardizeDate(r[dateColIdx], dateFormat);
+          if (dStr) dateRateCache[dStr] = statementFxRate;
+        });
+      }
+    }
+
+    setIsResolvingFx(false);
+
     const parsedRows = csvRows.map((row, idx) => {
       const dateVal = row[dateColIdx] || '';
       const payeeVal = row[payeeColIdx] || '';
@@ -311,6 +340,10 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       
       const standardizedDate = parseAndStandardizeDate(dateVal, dateFormat);
       const yyyymm = standardizedDate ? standardizedDate.substring(0, 7) : new Date().toISOString().substring(0, 7);
+
+      // Resolve effective FX rate and GBP equivalent for this specific date
+      const rowFxRate = statementCurrency === 'GBP' ? 1.0 : (dateRateCache[standardizedDate] || statementFxRate || FX_RATES[statementCurrency] || 1.0);
+      const rowAmountGBP = Math.abs(amtVal) * rowFxRate;
 
       // Auto-detect recipient matching vendor name or staff member name
       let autoRecType = 'other';
@@ -394,7 +427,9 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
         selectedStaffIds: autoStaffIds,
         linkedPlacementId: '',
         isCredit: amtVal > 0,
-        committed: false
+        committed: false,
+        fxRate: rowFxRate,
+        amountGBP: rowAmountGBP
       };
     });
 
@@ -427,7 +462,8 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
         const expenseId = `exp-stmt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
         const amt = Math.abs(row.amount);
         const cur = statementCurrency || 'GBP';
-        const rate = cur === 'GBP' ? 1.0 : (statementFxRate || FX_RATES[cur] || 1.0);
+        const rate = cur === 'GBP' ? 1.0 : (row.fxRate || statementFxRate || FX_RATES[cur] || 1.0);
+        const gbpAmt = cur === 'GBP' ? amt : (row.amountGBP || (amt * rate));
 
         const expenseData = {
           id: expenseId,
@@ -438,7 +474,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
           amount: amt,
           currency: cur,
           fxRate: rate,
-          amountGBP: amt * rate,
+          amountGBP: gbpAmt,
           taxRate: row.taxRate !== undefined ? row.taxRate : 0,
           recipientType: row.recipientType || 'other',
           recipientId: row.recipientId || '',
@@ -693,36 +729,71 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
               </div>
 
               {statementCurrency !== 'GBP' && (
-                <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label" style={{ fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Conversion Rate (FX to £ GBP)</span>
-                    <span style={{ fontSize: '11.5px', color: 'var(--primary)', fontWeight: 800 }}>
-                      1 {statementCurrency} = £{statementFxRate}
-                    </span>
+                <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label className="form-label" style={{ fontWeight: 700, margin: 0 }}>
+                    Conversion Rate Calculation Method *
                   </label>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <input
-                      type="number"
-                      step="0.0001"
-                      className="form-input"
-                      value={statementFxRate}
-                      onChange={(e) => setStatementFxRate(parseFloat(e.target.value) || 0)}
-                      style={{ flex: 1, padding: '8px', fontWeight: 700 }}
-                      placeholder="e.g. 0.2120"
-                    />
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      style={{ padding: '8px 12px', fontSize: '11px', whiteSpace: 'nowrap' }}
-                      title="Reset to current market live rate"
-                      onClick={() => setStatementFxRate(FX_RATES[statementCurrency] || (statementCurrency === 'AED' ? 0.21 : 1.0))}
-                    >
-                      ↺ Default
-                    </button>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: fxCalculationMode === 'date' ? 'var(--primary)' : 'var(--text-primary)', margin: 0 }}>
+                      <input
+                        type="radio"
+                        name="fx-calc-mode"
+                        checked={fxCalculationMode === 'date'}
+                        onChange={() => setFxCalculationMode('date')}
+                        style={{ accentColor: 'var(--primary)', marginTop: '2px' }}
+                      />
+                      <div>
+                        <span>📅 Daily Rate by Transaction Date (Automatic Historical Rate)</span>
+                        <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', fontWeight: 'normal', marginTop: '1px' }}>
+                          Each transaction automatically retrieves the exact market/ECB exchange rate for its specific booking date.
+                        </div>
+                      </div>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: fxCalculationMode === 'fixed' ? 'var(--primary)' : 'var(--text-primary)', margin: 0 }}>
+                      <input
+                        type="radio"
+                        name="fx-calc-mode"
+                        checked={fxCalculationMode === 'fixed'}
+                        onChange={() => setFxCalculationMode('fixed')}
+                        style={{ accentColor: 'var(--primary)', marginTop: '2px' }}
+                      />
+                      <div>
+                        <span>🔒 Fixed Rate Across Entire Statement</span>
+                        <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', fontWeight: 'normal', marginTop: '1px' }}>
+                          Applies one single constant exchange rate to all rows in this file.
+                        </div>
+                      </div>
+                    </label>
                   </div>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                    Adjust this rate to match the historical bank rate for this statement period.
-                  </span>
+
+                  {fxCalculationMode === 'fixed' ? (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        className="form-input"
+                        value={statementFxRate}
+                        onChange={(e) => setStatementFxRate(parseFloat(e.target.value) || 0)}
+                        style={{ flex: 1, padding: '8px', fontWeight: 700 }}
+                        placeholder="e.g. 0.2120"
+                      />
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ padding: '8px 12px', fontSize: '11px', whiteSpace: 'nowrap' }}
+                        title="Reset to current market live rate"
+                        onClick={() => setStatementFxRate(FX_RATES[statementCurrency] || (statementCurrency === 'AED' ? 0.21 : 1.0))}
+                      >
+                        ↺ Default
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ padding: '8px 12px', backgroundColor: 'rgba(99, 102, 241, 0.08)', borderRadius: '6px', fontSize: '11px', color: 'var(--primary)', marginTop: '2px' }}>
+                      ⚡ <strong>Date-Specific Conversion Enabled:</strong> Each transaction date will look up and lock in the historical exchange rate on that day (Baseline reference today: 1 {statementCurrency} ≈ £{(FX_RATES[statementCurrency] || (statementCurrency === 'AED' ? 0.21 : 1.0)).toFixed(4)} GBP).
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -885,8 +956,14 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
           </div>
 
           <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
-            <button type="button" className="btn-primary" onClick={handleApplyBankMappings}>
-              Validate & Parse Rows
+            <button 
+              type="button" 
+              className="btn-primary" 
+              onClick={handleApplyBankMappings}
+              disabled={isResolvingFx}
+              style={{ minWidth: '200px' }}
+            >
+              {isResolvingFx ? '⏳ Calculating Date Rates...' : 'Validate & Parse Rows'}
             </button>
             <button type="button" className="btn-secondary" onClick={() => setImportStep(1)}>
               Back
@@ -941,23 +1018,31 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
 
                 {statementCurrency !== 'GBP' && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>FX:</span>
-                    <input
-                      type="number"
-                      step="0.0001"
-                      value={statementFxRate}
-                      onChange={(e) => setStatementFxRate(parseFloat(e.target.value) || 0)}
-                      style={{ width: '75px', padding: '3px 6px', fontSize: '11.5px', fontWeight: 700, borderRadius: '4px', border: '1px solid var(--border-color)', textAlign: 'right' }}
-                      title={`Exchange Rate: 1 ${statementCurrency} = £${statementFxRate}`}
-                    />
-                    <button
-                      type="button"
-                      style={{ border: 'none', background: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '11px', fontWeight: 600, padding: 0 }}
-                      title="Reset to default rate"
-                      onClick={() => setStatementFxRate(FX_RATES[statementCurrency] || (statementCurrency === 'AED' ? 0.21 : 1.0))}
-                    >
-                      ↺
-                    </button>
+                    {fxCalculationMode === 'date' ? (
+                      <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 600, padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(99, 102, 241, 0.1)' }}>
+                        📅 Converted per transaction date
+                      </span>
+                    ) : (
+                      <>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>FX:</span>
+                        <input
+                          type="number"
+                          step="0.0001"
+                          value={statementFxRate}
+                          onChange={(e) => setStatementFxRate(parseFloat(e.target.value) || 0)}
+                          style={{ width: '75px', padding: '3px 6px', fontSize: '11.5px', fontWeight: 700, borderRadius: '4px', border: '1px solid var(--border-color)', textAlign: 'right' }}
+                          title={`Exchange Rate: 1 ${statementCurrency} = £${statementFxRate}`}
+                        />
+                        <button
+                          type="button"
+                          style={{ border: 'none', background: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '11px', fontWeight: 600, padding: 0 }}
+                          title="Reset to default rate"
+                          onClick={() => setStatementFxRate(FX_RATES[statementCurrency] || (statementCurrency === 'AED' ? 0.21 : 1.0))}
+                        >
+                          ↺
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -1004,9 +1089,15 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                     </td>
                     <td style={{ textAlign: 'right', fontWeight: 700, color: row.amount < 0 ? 'var(--danger)' : 'var(--success)' }}>
                       {(symbolMap[statementCurrency] || `${statementCurrency} `)}{Math.abs(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      {statementCurrency !== 'GBP' && statementFxRate > 0 && (
-                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'normal', marginTop: '2px' }}>
-                          ≈ £{(Math.abs(row.amount) * statementFxRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {statementCurrency !== 'GBP' && (
+                        <div 
+                          style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'normal', marginTop: '2px' }} 
+                          title={`Historical FX Rate on ${row.date || 'transaction date'}: 1 ${statementCurrency} = £${(row.fxRate || statementFxRate)?.toFixed(6)}`}
+                        >
+                          ≈ £{(row.amountGBP || (Math.abs(row.amount) * (row.fxRate || statementFxRate || 1.0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <span style={{ fontSize: '9px', opacity: 0.85, marginLeft: '4px', backgroundColor: 'var(--bg-card)', padding: '1px 4px', borderRadius: '3px', border: '1px solid var(--border-color)' }}>
+                            @{(row.fxRate || statementFxRate || 1.0).toFixed(4)}
+                          </span>
                         </div>
                       )}
                     </td>

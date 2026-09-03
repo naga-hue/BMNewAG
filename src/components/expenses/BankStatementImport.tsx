@@ -555,11 +555,182 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       {importStep === 2 && (
         <div className="detail-section" style={{ animation: 'fadeIn 0.2s' }}>
           <div className="section-title">
-            <Grid size={16} /> Map Statement Headers (CSV / Excel)
+            <Grid size={16} /> Target Bank Account, Currency & Header Mapping
           </div>
           <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-            We parsed headers of file **{csvFile?.name}**. Map them to target categories below:
+            File: <strong>{csvFile?.name}</strong>. Configure your target account, currency, and map the statement columns below:
           </p>
+
+          {/* 1. Target Bank Account & Statement Currency Setup Card */}
+          <div 
+            style={{ 
+              backgroundColor: 'var(--bg-secondary)', 
+              border: '2px solid var(--primary)', 
+              borderRadius: 'var(--radius-md)', 
+              padding: '18px', 
+              marginBottom: '22px', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '14px',
+              boxShadow: '0 4px 12px rgba(99, 102, 241, 0.08)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🏦</span> 1. Target Bank Account & Statement Currency
+              </div>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', padding: '3px 8px', borderRadius: '4px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                File: <strong>{csvFile?.name}</strong>
+              </span>
+            </div>
+
+            <div className="form-group-row">
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 600 }}>Select Company *</label>
+                <select
+                  className="select-filter"
+                  value={statementCompanyId || (companies[0] ? companies[0].id : '')}
+                  onChange={(e) => {
+                    const compId = e.target.value;
+                    setStatementCompanyId(compId);
+                    const comp = companies.find(c => c.id === compId);
+                    const banks = comp?.bankAccounts || [];
+                    if (banks.length > 0) {
+                      setStatementBankAccountId(banks[0].id);
+                      setStatementAccountRef(`${banks[0].bankName} - ${banks[0].accountName}`);
+                      const cur = banks[0].currency || 'GBP';
+                      setStatementCurrency(cur);
+                      setStatementFxRate(FX_RATES[cur] || (cur === 'AED' ? 0.21 : 1.0));
+                    } else {
+                      setStatementBankAccountId('');
+                      setStatementAccountRef('');
+                      setStatementCurrency('GBP');
+                      setStatementFxRate(1.0);
+                    }
+                  }}
+                  style={{ width: '100%', padding: '8px' }}
+                  required
+                >
+                  {companies.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 600 }}>Select Bank Account *</label>
+                {(() => {
+                  const activeCompId = statementCompanyId || (companies[0] ? companies[0].id : '');
+                  const activeComp = companies.find(c => c.id === activeCompId);
+                  const activeCompBanks = activeComp?.bankAccounts || [];
+
+                  return (
+                    <>
+                      <select
+                        className="select-filter"
+                        value={statementBankAccountId}
+                        onChange={(e) => {
+                          const bId = e.target.value;
+                          setStatementBankAccountId(bId);
+                          const acc = activeCompBanks.find(b => b.id === bId);
+                          if (acc) {
+                            setStatementAccountRef(`${acc.bankName} - ${acc.accountName}`);
+                            const cur = acc.currency || 'GBP';
+                            setStatementCurrency(cur);
+                            setStatementFxRate(FX_RATES[cur] || (cur === 'AED' ? 0.21 : 1.0));
+                          } else {
+                            setStatementAccountRef('');
+                            setStatementCurrency('GBP');
+                            setStatementFxRate(1.0);
+                          }
+                        }}
+                        style={{ width: '100%', padding: '8px' }}
+                        required
+                      >
+                        <option value="">-- Select Bank Account --</option>
+                        {activeCompBanks.map(acc => (
+                          <option key={acc.id} value={acc.id}>
+                            {acc.bankName} - {acc.accountName} ({acc.currency})
+                          </option>
+                        ))}
+                      </select>
+                      {activeCompBanks.length === 0 && (
+                        <span style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '4px', display: 'block' }}>
+                          ⚠️ No bank accounts configured for this company. Please add one under the Companies tab first!
+                        </span>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Statement Currency and Historical Conversion Rate Configuration */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', padding: '14px', backgroundColor: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Statement Currency *
+                </label>
+                <select
+                  className="select-filter"
+                  value={statementCurrency}
+                  onChange={(e) => {
+                    const cur = e.target.value;
+                    setStatementCurrency(cur);
+                    setStatementFxRate(FX_RATES[cur] || (cur === 'AED' ? 0.21 : 1.0));
+                  }}
+                  style={{ width: '100%', padding: '8px', fontWeight: 700, borderColor: statementCurrency !== 'GBP' ? 'var(--primary)' : undefined }}
+                >
+                  <option value="GBP">GBP (£) - British Pound</option>
+                  <option value="AED">AED (AED) - UAE Dirham</option>
+                  <option value="USD">USD ($) - US Dollar</option>
+                  <option value="EUR">EUR (€) - Euro</option>
+                  <option value="INR">INR (₹) - Indian Rupee</option>
+                  <option value="ZAR">ZAR (R) - South African Rand</option>
+                </select>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                  Transactions will be categorized & stored natively in <strong>{statementCurrency}</strong>.
+                </span>
+              </div>
+
+              {statementCurrency !== 'GBP' && (
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Conversion Rate (FX to £ GBP)</span>
+                    <span style={{ fontSize: '11.5px', color: 'var(--primary)', fontWeight: 800 }}>
+                      1 {statementCurrency} = £{statementFxRate}
+                    </span>
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      className="form-input"
+                      value={statementFxRate}
+                      onChange={(e) => setStatementFxRate(parseFloat(e.target.value) || 0)}
+                      style={{ flex: 1, padding: '8px', fontWeight: 700 }}
+                      placeholder="e.g. 0.2120"
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '8px 12px', fontSize: '11px', whiteSpace: 'nowrap' }}
+                      title="Reset to current market live rate"
+                      onClick={() => setStatementFxRate(FX_RATES[statementCurrency] || (statementCurrency === 'AED' ? 0.21 : 1.0))}
+                    >
+                      ↺ Default
+                    </button>
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                    Adjust this rate to match the historical bank rate for this statement period.
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>📊</span> 2. Map Statement Column Headers
+          </div>
 
           <div className="form-group-row">
             {[
@@ -713,164 +884,6 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
             </div>
           </div>
 
-          {/* Target Bank Account and Reference Form */}
-          <div 
-            style={{ 
-              backgroundColor: 'var(--bg-secondary)', 
-              border: '1px solid var(--border-color)', 
-              borderRadius: 'var(--radius-md)', 
-              padding: '16px', 
-              marginTop: '20px', 
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '12px' 
-            }}
-          >
-            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent)' }}>
-              🏦 Bank Account & Statement Reference
-            </div>
-            <div className="form-group-row">
-              <div className="form-group">
-                <label className="form-label">Select Company *</label>
-                <select
-                  className="select-filter"
-                  value={statementCompanyId || (companies[0] ? companies[0].id : '')}
-                  onChange={(e) => {
-                    const compId = e.target.value;
-                    setStatementCompanyId(compId);
-                    const comp = companies.find(c => c.id === compId);
-                    const banks = comp?.bankAccounts || [];
-                    if (banks.length > 0) {
-                      setStatementBankAccountId(banks[0].id);
-                      setStatementAccountRef(`${banks[0].bankName} - ${banks[0].accountName}`);
-                      const cur = banks[0].currency || 'GBP';
-                      setStatementCurrency(cur);
-                      setStatementFxRate(FX_RATES[cur] || (cur === 'AED' ? 0.21 : 1.0));
-                    } else {
-                      setStatementBankAccountId('');
-                      setStatementAccountRef('');
-                      setStatementCurrency('GBP');
-                      setStatementFxRate(1.0);
-                    }
-                  }}
-                  style={{ width: '100%', padding: '8px' }}
-                  required
-                >
-                  {companies.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Select Bank Account *</label>
-                {(() => {
-                  const activeCompId = statementCompanyId || (companies[0] ? companies[0].id : '');
-                  const activeComp = companies.find(c => c.id === activeCompId);
-                  const activeCompBanks = activeComp?.bankAccounts || [];
-
-                  return (
-                    <>
-                      <select
-                        className="select-filter"
-                        value={statementBankAccountId}
-                        onChange={(e) => {
-                          const bId = e.target.value;
-                          setStatementBankAccountId(bId);
-                          const acc = activeCompBanks.find(b => b.id === bId);
-                          if (acc) {
-                            setStatementAccountRef(`${acc.bankName} - ${acc.accountName}`);
-                            const cur = acc.currency || 'GBP';
-                            setStatementCurrency(cur);
-                            setStatementFxRate(FX_RATES[cur] || (cur === 'AED' ? 0.21 : 1.0));
-                          } else {
-                            setStatementAccountRef('');
-                            setStatementCurrency('GBP');
-                            setStatementFxRate(1.0);
-                          }
-                        }}
-                        style={{ width: '100%', padding: '8px' }}
-                        required
-                      >
-                        <option value="">-- Select Bank Account --</option>
-                        {activeCompBanks.map(acc => (
-                          <option key={acc.id} value={acc.id}>
-                            {acc.bankName} - {acc.accountName} ({acc.currency})
-                          </option>
-                        ))}
-                      </select>
-                      {activeCompBanks.length === 0 && (
-                        <span style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '4px', display: 'block' }}>
-                          ⚠️ No bank accounts configured for this company. Please add one under the Companies tab first!
-                        </span>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-
-            {/* Statement Currency and Historical Conversion Rate Configuration */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginTop: '16px', padding: '14px', backgroundColor: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label" style={{ fontWeight: 600 }}>Statement Currency</label>
-                <select
-                  className="select-filter"
-                  value={statementCurrency}
-                  onChange={(e) => {
-                    const cur = e.target.value;
-                    setStatementCurrency(cur);
-                    setStatementFxRate(FX_RATES[cur] || (cur === 'AED' ? 0.21 : 1.0));
-                  }}
-                  style={{ width: '100%', padding: '8px', fontWeight: 600 }}
-                >
-                  <option value="GBP">GBP (£) - British Pound</option>
-                  <option value="AED">AED (AED) - UAE Dirham</option>
-                  <option value="USD">USD ($) - US Dollar</option>
-                  <option value="EUR">EUR (€) - Euro</option>
-                  <option value="INR">INR (₹) - Indian Rupee</option>
-                  <option value="ZAR">ZAR (R) - South African Rand</option>
-                </select>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                  Transactions will be categorized & stored natively in {statementCurrency}.
-                </span>
-              </div>
-
-              {statementCurrency !== 'GBP' && (
-                <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label" style={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Conversion Rate (FX to £ GBP)</span>
-                    <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 700 }}>
-                      1 {statementCurrency} = £{statementFxRate}
-                    </span>
-                  </label>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <input
-                      type="number"
-                      step="0.0001"
-                      className="form-input"
-                      value={statementFxRate}
-                      onChange={(e) => setStatementFxRate(parseFloat(e.target.value) || 0)}
-                      style={{ flex: 1, padding: '8px', fontWeight: 600 }}
-                      placeholder="e.g. 0.2120"
-                    />
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      style={{ padding: '8px 12px', fontSize: '11px', whiteSpace: 'nowrap' }}
-                      title="Reset to current market live rate"
-                      onClick={() => setStatementFxRate(FX_RATES[statementCurrency] || (statementCurrency === 'AED' ? 0.21 : 1.0))}
-                    >
-                      ↺ Default
-                    </button>
-                  </div>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                    Adjust this rate if your bank or accounting period applied a specific historical exchange rate.
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
           <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
             <button type="button" className="btn-primary" onClick={handleApplyBankMappings}>
               Validate & Parse Rows
@@ -905,11 +918,49 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
               color: 'var(--text-secondary)'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', width: '100%' }}>
               <span>🏦 <strong>Target Account:</strong> {companies.find(c => c.id === (statementCompanyId || (companies[0] ? companies[0].id : '')))?.name || 'Company'} — <em>{statementAccountRef}</em></span>
-              <span style={{ padding: '2px 8px', borderRadius: '4px', backgroundColor: 'rgba(99, 102, 241, 0.12)', color: 'var(--primary)', fontWeight: 600 }}>
-                Statement Currency: {statementCurrency} {statementCurrency !== 'GBP' && `• FX: 1 ${statementCurrency} = £${statementFxRate}`}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: 'var(--bg-card)', padding: '4px 10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)' }}>💱 Currency:</span>
+                <select
+                  value={statementCurrency}
+                  onChange={(e) => {
+                    const cur = e.target.value;
+                    setStatementCurrency(cur);
+                    setStatementFxRate(FX_RATES[cur] || (cur === 'AED' ? 0.21 : 1.0));
+                  }}
+                  style={{ padding: '3px 8px', fontSize: '11.5px', fontWeight: 700, borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                >
+                  <option value="GBP">GBP (£)</option>
+                  <option value="AED">AED (AED)</option>
+                  <option value="USD">USD ($)</option>
+                  <option value="EUR">EUR (€)</option>
+                  <option value="INR">INR (₹)</option>
+                  <option value="ZAR">ZAR (R)</option>
+                </select>
+
+                {statementCurrency !== 'GBP' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>FX:</span>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={statementFxRate}
+                      onChange={(e) => setStatementFxRate(parseFloat(e.target.value) || 0)}
+                      style={{ width: '75px', padding: '3px 6px', fontSize: '11.5px', fontWeight: 700, borderRadius: '4px', border: '1px solid var(--border-color)', textAlign: 'right' }}
+                      title={`Exchange Rate: 1 ${statementCurrency} = £${statementFxRate}`}
+                    />
+                    <button
+                      type="button"
+                      style={{ border: 'none', background: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '11px', fontWeight: 600, padding: 0 }}
+                      title="Reset to default rate"
+                      onClick={() => setStatementFxRate(FX_RATES[statementCurrency] || (statementCurrency === 'AED' ? 0.21 : 1.0))}
+                    >
+                      ↺
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

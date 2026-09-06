@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { UploadCloud, Grid, Trash2, CheckCircle2, Clock, Check } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { UploadCloud, Grid, Trash2, CheckCircle2, Clock, Check, ArrowLeft, Search, RefreshCw, AlertCircle, FileText, Building2, Calendar, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useBoundStore } from '../../store/useBoundStore';
 import { parseAndStandardizeDate, symbolMap } from './shared';
@@ -33,6 +33,64 @@ interface CategorizedRow {
   amountGBP?: number;
 }
 
+interface HeldBankStatement {
+  id: string;
+  bankAccountId: string;
+  companyId: string;
+  currency: string;
+  fileName: string;
+  uploadedAt: string;
+  headers: string[];
+  rawRows: string[][];
+  columnMappings: Record<string, string>;
+  dateFormat: 'UK' | 'US';
+  latestStatementDate?: string;
+  earliestStatementDate?: string;
+  categorizedRows?: CategorizedRow[];
+}
+
+function formatDisplayDate(dStr?: string | null): string {
+  if (!dStr) return '—';
+  try {
+    const parts = dStr.split('-');
+    if (parts.length === 3) {
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      }
+    }
+    return dStr;
+  } catch {
+    return dStr || '—';
+  }
+}
+
+function isRowCapturedInLedger(
+  rowDate: string,
+  rowAmount: number,
+  rowPayee: string,
+  rowRef: string,
+  bankAccountId: string,
+  ledgerExpenses: any[]
+): boolean {
+  if (!ledgerExpenses || ledgerExpenses.length === 0) return false;
+  const absRowAmt = Math.abs(rowAmount);
+  const cleanPayee = (rowPayee || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const cleanRef = (rowRef || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  return ledgerExpenses.some((exp: any) => {
+    if (exp.bankAccountId && exp.bankAccountId !== bankAccountId) return false;
+    if (exp.date !== rowDate) return false;
+    const expAmt = Math.abs(exp.amount);
+    if (Math.abs(expAmt - absRowAmt) > 0.05) return false;
+    const expPayee = (exp.payee || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const expRef = (exp.reference || exp.description || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (cleanPayee && (expPayee.includes(cleanPayee) || cleanPayee.includes(expPayee))) return true;
+    if (cleanRef && (expRef.includes(cleanRef) || cleanRef.includes(expRef))) return true;
+    return true;
+  });
+}
+
 const EMPTY_ARRAY: any[] = [];
 
 export default function BankStatementImport({ onShowToast }: BankStatementImportProps) {
@@ -43,6 +101,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
   const nominalCodes = useBoundStore(state => state.nominalCodes) || EMPTY_ARRAY;
   const contracts = useBoundStore(state => state.contracts) || EMPTY_ARRAY;
   const assetAssignments = useBoundStore(state => state.assetAssignments) || EMPTY_ARRAY;
+  const expenses = useBoundStore(state => state.expenses) || EMPTY_ARRAY;
 
   const updateExpense = useBoundStore(state => state.updateExpense);
   const saveExpense = updateExpense;
@@ -52,6 +111,29 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
   const updatePlacement = useBoundStore(state => state.updatePlacement);
 
   const [importStep, setImportStep] = useState(1); // 1: upload, 2: mapping, 3: categorization desk
+  const [activeViewMode, setActiveViewMode] = useState<'hub' | 'mapping' | 'desk'>('hub');
+  const [hubCompanyFilter, setHubCompanyFilter] = useState('ALL');
+  const [hubSearch, setHubSearch] = useState('');
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const [heldStatements, setHeldStatements] = useState<Record<string, HeldBankStatement>>(() => {
+    try {
+      const saved = localStorage.getItem('bm-held-bank-statements');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const updateHeldStatements = (newMap: Record<string, HeldBankStatement>) => {
+    setHeldStatements(newMap);
+    try {
+      localStorage.setItem('bm-held-bank-statements', JSON.stringify(newMap));
+    } catch (err) {
+      console.error('Failed to persist held bank statements:', err);
+    }
+  };
+
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [dateFormat, setDateFormat] = useState<'UK' | 'US'>('UK');
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
@@ -144,9 +226,214 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     return depts.sort();
   }, [companies, staff]);
 
+  // Comprehensive Bank Statements Queue & Books Reconciliation Status List
+  const allEnrichedBankAccounts = useMemo(() => {
+    const list: any[] = [];
+
+    companies.forEach((c: any) => {
+      const banks = c.bankAccounts || [];
+      banks.forEach((b: any) => {
+        const held = heldStatements[b.id];
+        
+        // Ledger expenses for this bank account
+        const ledgerExpenses = expenses.filter((e: any) => 
+          e.bankAccountId === b.id || (e.bankCompanyId === c.id && e.currency === b.currency)
+        );
+
+        const ledgerDates = ledgerExpenses.map((e: any) => e.date).filter(Boolean).sort();
+        const latestLedgerDate = ledgerDates.length > 0 ? ledgerDates[ledgerDates.length - 1] : null;
+
+        let latestStatementDate: string | null = null;
+        let earliestStatementDate: string | null = null;
+        let totalTransactions = 0;
+        let capturedTransactions = 0;
+
+        if (held) {
+          totalTransactions = held.categorizedRows?.length || held.rawRows?.length || 0;
+          latestStatementDate = held.latestStatementDate || null;
+          earliestStatementDate = held.earliestStatementDate || null;
+
+          // If date bounds weren't pre-computed, compute them from rawRows
+          if (!latestStatementDate && held.rawRows && held.headers) {
+            const dateCol = held.columnMappings?.date || held.headers.find((h: string) => h.toLowerCase().includes('date'));
+            if (dateCol) {
+              const colIdx = held.headers.indexOf(dateCol);
+              if (colIdx > -1) {
+                const dates = held.rawRows.map((r: any[]) => parseAndStandardizeDate(r[colIdx], held.dateFormat || 'UK')).filter(Boolean).sort();
+                if (dates.length > 0) {
+                  earliestStatementDate = dates[0];
+                  latestStatementDate = dates[dates.length - 1];
+                }
+              }
+            }
+          }
+
+          // Check captured count
+          if (held.categorizedRows && held.categorizedRows.length > 0) {
+            capturedTransactions = held.categorizedRows.filter((r: any) => 
+              r.committed || isRowCapturedInLedger(r.date, r.amount, r.payee, r.reference, b.id, ledgerExpenses)
+            ).length;
+          } else if (held.rawRows && held.headers) {
+            const dateCol = held.columnMappings?.date || held.headers.find((h: string) => h.toLowerCase().includes('date'));
+            const amtCol = held.columnMappings?.amount || held.headers.find((h: string) => h.toLowerCase().includes('amount') || h.toLowerCase().includes('value'));
+            const payeeCol = held.columnMappings?.payee || held.headers.find((h: string) => h.toLowerCase().includes('desc') || h.toLowerCase().includes('payee'));
+            const refCol = held.columnMappings?.reference || held.headers.find((h: string) => h.toLowerCase().includes('ref'));
+
+            const dIdx = dateCol ? held.headers.indexOf(dateCol) : -1;
+            const aIdx = amtCol ? held.headers.indexOf(amtCol) : -1;
+            const pIdx = payeeCol ? held.headers.indexOf(payeeCol) : -1;
+            const rIdx = refCol ? held.headers.indexOf(refCol) : -1;
+
+            if (dIdx > -1 && aIdx > -1) {
+              capturedTransactions = held.rawRows.filter((r: any[]) => {
+                const stdDate = parseAndStandardizeDate(r[dIdx], held.dateFormat || 'UK');
+                const amt = Number(String(r[aIdx]).replace(/[^0-9.-]/g, '')) || 0;
+                const payee = pIdx > -1 ? r[pIdx] : '';
+                const ref = rIdx > -1 ? r[rIdx] : '';
+                return isRowCapturedInLedger(stdDate, amt, payee, ref, b.id, ledgerExpenses);
+              }).length;
+            }
+          }
+        }
+
+        const pendingTransactions = Math.max(0, totalTransactions - capturedTransactions);
+        const capturePct = totalTransactions > 0 ? Math.round((capturedTransactions / totalTransactions) * 100) : 0;
+
+        let status: 'fully_captured' | 'partially_captured' | 'unprocessed' | 'no_statement' = 'no_statement';
+        if (held) {
+          if (totalTransactions > 0 && capturedTransactions >= totalTransactions) {
+            status = 'fully_captured';
+          } else if (capturedTransactions > 0) {
+            status = 'partially_captured';
+          } else {
+            status = 'unprocessed';
+          }
+        }
+
+        list.push({
+          bankId: b.id,
+          companyId: c.id,
+          companyName: c.name,
+          bankName: b.bankName,
+          accountName: b.accountName,
+          accountNumber: b.accountNumber,
+          sortCode: b.sortCode,
+          currency: b.currency || 'GBP',
+          heldStatement: held,
+          latestLedgerDate,
+          latestStatementDate,
+          earliestStatementDate,
+          totalTransactions,
+          capturedTransactions,
+          pendingTransactions,
+          capturePct,
+          status
+        });
+      });
+    });
+
+    return list;
+  }, [companies, expenses, heldStatements]);
+
+  const handleTriggerUploadForBank = (bankId: string) => {
+    if (fileInputRefs.current[bankId]) {
+      fileInputRefs.current[bankId]?.click();
+    }
+  };
+
+  const handleBankFileChange = (e: React.ChangeEvent<HTMLInputElement>, bank: any) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      processBankStatementFile(file, bank.bankId, bank.companyId, bank.currency);
+      e.target.value = '';
+    }
+  };
+
+  const handleOpenDeskForBank = (bankItem: any) => {
+    const held = heldStatements[bankItem.bankId];
+    if (!held) {
+      onShowToast("No statement uploaded for this bank account yet. Please click 'Choose Statement' first.", "warning");
+      return;
+    }
+
+    setStatementCompanyId(bankItem.companyId);
+    setStatementBankAccountId(bankItem.bankId);
+    setStatementAccountRef(`${bankItem.bankName} - ${bankItem.accountName}`);
+    setStatementCurrency(bankItem.currency || 'GBP');
+    setStatementFxRate(FX_RATES[bankItem.currency] || (bankItem.currency === 'AED' ? 0.21 : 1.0));
+    setCsvHeaders(held.headers || []);
+    setCsvRows(held.rawRows || []);
+    setCsvFile({ name: held.fileName } as any);
+    setDateFormat(held.dateFormat || 'UK');
+    setColumnMappings(held.columnMappings || {});
+
+    if (held.categorizedRows && held.categorizedRows.length > 0) {
+      setCategorizedRows(held.categorizedRows);
+      setActiveViewMode('desk');
+      setImportStep(3);
+    } else {
+      setActiveViewMode('mapping');
+      setImportStep(2);
+    }
+  };
+
+  const handleClearStatementForBank = (bankId: string) => {
+    const target = allEnrichedBankAccounts.find(b => b.bankId === bankId);
+    const bankLabel = target ? `${target.bankName} - ${target.accountName}` : 'this bank account';
+    if (window.confirm(`Are you sure you want to remove the held statement for ${bankLabel} from the queue?`)) {
+      const updated = { ...heldStatements };
+      delete updated[bankId];
+      updateHeldStatements(updated);
+      onShowToast("Held statement removed from queue.", "info");
+    }
+  };
+
+  const handleBackToHub = () => {
+    // Save working state back to held statement if active
+    if (statementBankAccountId && heldStatements[statementBankAccountId]) {
+      const updatedHeld = {
+        ...heldStatements[statementBankAccountId],
+        categorizedRows,
+        columnMappings,
+        dateFormat
+      };
+      const updated = { ...heldStatements, [statementBankAccountId]: updatedHeld };
+      updateHeldStatements(updated);
+    }
+    setActiveViewMode('hub');
+    setImportStep(1);
+  };
+
+  const filteredBankAccounts = useMemo(() => {
+    return allEnrichedBankAccounts.filter((b: any) => {
+      if (hubCompanyFilter !== 'ALL' && b.companyId !== hubCompanyFilter) return false;
+      if (hubSearch.trim()) {
+        const q = hubSearch.toLowerCase().trim();
+        const str = `${b.companyName} ${b.bankName} ${b.accountName} ${b.currency} ${b.accountNumber || ''} ${b.heldStatement?.fileName || ''}`.toLowerCase();
+        if (!str.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [allEnrichedBankAccounts, hubCompanyFilter, hubSearch]);
+
+  const hubTotals = useMemo(() => {
+    const totalAccounts = allEnrichedBankAccounts.length;
+    const statementsHeld = allEnrichedBankAccounts.filter((b: any) => b.heldStatement).length;
+    const totalTransactions = allEnrichedBankAccounts.reduce((sum: number, b: any) => sum + b.totalTransactions, 0);
+    const capturedTransactions = allEnrichedBankAccounts.reduce((sum: number, b: any) => sum + b.capturedTransactions, 0);
+    const pendingTransactions = allEnrichedBankAccounts.reduce((sum: number, b: any) => sum + b.pendingTransactions, 0);
+    const overallPct = totalTransactions > 0 ? Math.round((capturedTransactions / totalTransactions) * 100) : 0;
+    return { totalAccounts, statementsHeld, totalTransactions, capturedTransactions, pendingTransactions, overallPct };
+  }, [allEnrichedBankAccounts]);
 
 
-  const processBankStatementFile = (file: File) => {
+
+  const processBankStatementFile = (
+    file: File, 
+    targetBankAccountId?: string, 
+    targetCompanyId?: string, 
+    targetCurrency?: string
+  ) => {
     const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
     const reader = new FileReader();
 
@@ -238,10 +525,6 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
           return;
         }
 
-        setCsvHeaders(headers);
-        setCsvRows(rows);
-        setCsvFile(file);
-
         // Auto-detect columns
         const initialMap: Record<string, string> = {};
         const mappingsList = [
@@ -257,8 +540,50 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
           if (idx > -1) initialMap[m.key] = headers[idx];
         });
 
-        setColumnMappings(initialMap);
-        setImportStep(2);
+        // Compute statement date range
+        let earliestDate = '';
+        let latestDate = '';
+        const dateCol = initialMap.date || headers.find(h => h.toLowerCase().includes('date'));
+        if (dateCol) {
+          const dIdx = headers.indexOf(dateCol);
+          if (dIdx > -1) {
+            const dates = rows.map(r => parseAndStandardizeDate(r[dIdx], dateFormat)).filter(Boolean).sort();
+            if (dates.length > 0) {
+              earliestDate = dates[0];
+              latestDate = dates[dates.length - 1];
+            }
+          }
+        }
+
+        if (targetBankAccountId) {
+          // Store directly into multi-bank held queue!
+          const newHeld: HeldBankStatement = {
+            id: `stmt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            bankAccountId: targetBankAccountId,
+            companyId: targetCompanyId || '',
+            currency: targetCurrency || 'GBP',
+            fileName: file.name,
+            uploadedAt: new Date().toISOString(),
+            headers,
+            rawRows: rows,
+            columnMappings: initialMap,
+            dateFormat,
+            latestStatementDate: latestDate,
+            earliestStatementDate: earliestDate,
+            categorizedRows: []
+          };
+          const updated = { ...heldStatements, [targetBankAccountId]: newHeld };
+          updateHeldStatements(updated);
+          onShowToast(`Uploaded & held statement "${file.name}" (${rows.length} rows, up to ${formatDisplayDate(latestDate)})! You can choose the next statement or open the desk.`, "success");
+        } else {
+          // General upload -> load into current import session
+          setCsvHeaders(headers);
+          setCsvRows(rows);
+          setCsvFile(file);
+          setColumnMappings(initialMap);
+          setActiveViewMode('mapping');
+          setImportStep(2);
+        }
       } catch (err: any) {
         console.error("Error processing statement file:", err);
         onShowToast(`Failed to parse file: ${err.message || 'Unknown error'}`, "danger");
@@ -537,16 +862,20 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       });
       setCategorizedRows(updatedRows);
 
+      // Save updated categorizedRows to heldStatements in localStorage
+      if (statementBankAccountId && heldStatements[statementBankAccountId]) {
+        const updatedHeld = {
+          ...heldStatements[statementBankAccountId],
+          categorizedRows: updatedRows,
+          columnMappings: columnMappings
+        };
+        const updated = { ...heldStatements, [statementBankAccountId]: updatedHeld };
+        updateHeldStatements(updated);
+      }
+
       const allDone = updatedRows.every(r => r.committed);
       if (allDone) {
-        setCsvFile(null);
-        setCsvHeaders([]);
-        setCsvRows([]);
-        setCategorizedRows([]);
-        setStatementCompanyId('');
-        setStatementBankAccountId('');
-        setStatementAccountRef('Main Current Account');
-        setImportStep(1);
+        onShowToast("All transactions for this statement are now committed to the ledger!", "success");
       } else {
         onShowToast(`${updatedRows.filter(r => r.committed).length} rows committed. Map the remaining rows to commit them too.`, "info");
       }
@@ -558,38 +887,354 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
-      {/* Importer Steps */}
-      <div>
-        <h2 style={{ fontSize: '18px', fontWeight: 600 }}>Bank Statement Import & Categorizer</h2>
-        <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Upload your corporate bank statements (CSV/Excel) and map transactions to Nominal codes and allocations row-by-row.</p>
-      </div>
+      {activeViewMode === 'hub' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', animation: 'fadeIn 0.2s' }}>
+          
+          {/* Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '24px' }}>🏦</span>
+                <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>Bank Statements Hub & Multi-Bank Reconciliation Queue</h2>
+              </div>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginTop: '4px', margin: 0 }}>
+                Upload statements for your corporate bank accounts. The system holds your files and monitors whether each transaction is captured in the ledger or awaiting processing.
+              </p>
+            </div>
+          </div>
 
-      {importStep === 1 && (
-        <div 
-          className="upload-zone"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={handleCSVDrop}
-          onClick={() => {
-            const picker = document.getElementById('statement-file-picker');
-            if (picker) picker.click();
-          }}
-          style={{ padding: '40px', borderStyle: 'dashed', borderRadius: '8px', cursor: 'pointer' }}
-        >
-          <input 
-            type="file" 
-            id="statement-file-picker" 
-            accept=".csv, .xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" 
-            style={{ display: 'none' }}
-            onChange={handleCSVSelect}
-          />
-          <UploadCloud size={48} className="upload-icon" style={{ marginBottom: '16px' }} />
-          <span className="upload-text" style={{ fontSize: '16px', fontWeight: 600 }}>Drag and drop statement (CSV or Excel .xlsx / .xls) here or Browse</span>
-          <span className="upload-subtext" style={{ marginTop: '8px' }}>Supported file formats: CSV, XLSX, XLS &bull; Headers: Date, Description/Payee, Amount (credits & debits)...</span>
+          {/* KPI Summary Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '14px' }}>
+            <div style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '14px 16px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Configured Bank Accounts
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', color: 'var(--text-primary)' }}>
+                {hubTotals.totalAccounts}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Across {companies.length} registered companies
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '14px 16px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Statements Held in Queue
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', color: 'var(--primary)' }}>
+                {hubTotals.statementsHeld} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'var(--text-muted)' }}>/ {hubTotals.totalAccounts} active</span>
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                {hubTotals.totalTransactions} total transactions staged
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '14px 16px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Captured in Books
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', color: 'var(--success)' }}>
+                {hubTotals.capturedTransactions} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'var(--text-muted)' }}>({hubTotals.overallPct}%)</span>
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Reconciled into expenses ledger
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '14px 16px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Pending Processing
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: 700, marginTop: '6px', color: hubTotals.pendingTransactions > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>
+                {hubTotals.pendingTransactions}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                {hubTotals.pendingTransactions > 0 ? 'Awaiting categorization & commit' : 'All held transactions captured!'}
+              </div>
+            </div>
+          </div>
+
+          {/* Filter Toolbar */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', padding: '12px', backgroundColor: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flex: 1 }}>
+              <select
+                className="select-filter"
+                value={hubCompanyFilter}
+                onChange={(e) => setHubCompanyFilter(e.target.value)}
+                style={{ padding: '6px 12px', fontSize: '12px', minWidth: '180px' }}
+              >
+                <option value="ALL">🏢 All Companies ({companies.length})</option>
+                {companies.map((c: any) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+
+              <div style={{ position: 'relative', minWidth: '220px', flex: 1, maxWidth: '360px' }}>
+                <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  placeholder="Filter by bank, account, or currency..."
+                  className="form-input"
+                  value={hubSearch}
+                  onChange={(e) => setHubSearch(e.target.value)}
+                  style={{ paddingLeft: '30px', paddingRight: '10px', paddingY: '6px', fontSize: '12px', width: '100%' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+              Showing {filteredBankAccounts.length} of {allEnrichedBankAccounts.length} bank accounts
+            </div>
+          </div>
+
+          {/* Primary Bank Accounts Table */}
+          <div className="table-container" style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+            <table className="entity-table" style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ backgroundColor: 'var(--bg-secondary)', textAlign: 'left' }}>
+                  <th style={{ padding: '12px 14px' }}>Bank Account & Entity</th>
+                  <th style={{ padding: '12px 14px' }}>Attached Statement File</th>
+                  <th style={{ padding: '12px 14px' }}>📅 Statement & Books Dates</th>
+                  <th style={{ padding: '12px 14px', width: '220px' }}>Capture Status & Progress</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredBankAccounts.map((b: any) => {
+                  const hasHeld = !!b.heldStatement;
+                  return (
+                    <tr key={b.bankId} style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: hasHeld ? 'rgba(99, 102, 241, 0.02)' : 'transparent' }}>
+                      
+                      {/* Bank Account & Entity */}
+                      <td style={{ padding: '12px 14px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>🏦</span> {b.bankName} - {b.accountName}
+                            <span style={{ padding: '1px 6px', borderRadius: '4px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', fontSize: '10px', fontWeight: 800, color: 'var(--primary)' }}>
+                              {b.currency}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>🏢 {b.companyName}</span>
+                            {b.accountNumber && (
+                              <span style={{ color: 'var(--text-muted)' }}>&bull; Acc: {b.accountNumber}</span>
+                            )}
+                            {b.sortCode && (
+                              <span style={{ color: 'var(--text-muted)' }}>&bull; Sort: {b.sortCode}</span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Attached Statement File */}
+                      <td style={{ padding: '12px 14px' }}>
+                        {hasHeld ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <div style={{ fontWeight: 600, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <FileText size={13} /> {b.heldStatement.fileName}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                              <strong>{b.totalTransactions}</strong> total transactions staged
+                            </div>
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                              Uploaded {new Date(b.heldStatement.uploadedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '11.5px', fontStyle: 'italic' }}>
+                            ⚪ No statement uploaded
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Dates & Books Coverage Tracker (User Priority!) */}
+                      <td style={{ padding: '12px 14px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div style={{ fontSize: '11.5px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>Latest Statement Txn:</span>
+                            <strong style={{ color: b.latestStatementDate ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                              {formatDisplayDate(b.latestStatementDate)}
+                            </strong>
+                          </div>
+                          <div style={{ fontSize: '11.5px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>Books Captured Up To:</span>
+                            <strong style={{ color: b.latestLedgerDate ? 'var(--success)' : 'var(--text-muted)' }}>
+                              {formatDisplayDate(b.latestLedgerDate)}
+                            </strong>
+                          </div>
+
+                          {/* Gap Guidance */}
+                          {hasHeld && (
+                            <div style={{ marginTop: '2px' }}>
+                              {b.status === 'fully_captured' ? (
+                                <span style={{ fontSize: '10.5px', color: 'var(--success)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  ✅ All transactions captured in ledger!
+                                </span>
+                              ) : b.pendingTransactions > 0 ? (
+                                <span style={{ fontSize: '10.5px', color: 'var(--warning)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  ⚠️ {b.pendingTransactions} pending to process
+                                </span>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Capture Status & Progress */}
+                      <td style={{ padding: '12px 14px' }}>
+                        {hasHeld ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+                              <span style={{ fontWeight: 600 }}>
+                                {b.capturedTransactions} / {b.totalTransactions} Captured
+                              </span>
+                              <span style={{ fontWeight: 700, color: b.status === 'fully_captured' ? 'var(--success)' : b.status === 'partially_captured' ? 'var(--warning)' : 'var(--text-muted)' }}>
+                                {b.capturePct}%
+                              </span>
+                            </div>
+                            <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--border-color)', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div 
+                                style={{ 
+                                  width: `${b.capturePct}%`, 
+                                  height: '100%', 
+                                  backgroundColor: b.status === 'fully_captured' ? 'var(--success)' : b.status === 'partially_captured' ? 'var(--warning)' : 'var(--text-muted)',
+                                  transition: 'width 0.3s ease'
+                                }} 
+                              />
+                            </div>
+                            <div>
+                              {b.status === 'fully_captured' && (
+                                <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', backgroundColor: 'rgba(34, 197, 94, 0.12)', color: 'var(--success)', fontWeight: 700 }}>
+                                  🟢 Reconciled & Captured
+                                </span>
+                              )}
+                              {b.status === 'partially_captured' && (
+                                <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', backgroundColor: 'rgba(234, 179, 8, 0.12)', color: 'var(--warning)', fontWeight: 700 }}>
+                                  🟡 In Progress ({b.pendingTransactions} pending)
+                                </span>
+                              )}
+                              {b.status === 'unprocessed' && (
+                                <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', backgroundColor: 'rgba(249, 115, 22, 0.12)', color: 'var(--warning)', fontWeight: 700 }}>
+                                  🟠 Unprocessed ({b.totalTransactions} waiting)
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '2px 8px', borderRadius: '4px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                            ⚪ Awaiting Statement
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                          <input
+                            type="file"
+                            ref={(el) => (fileInputRefs.current[b.bankId] = el)}
+                            style={{ display: 'none' }}
+                            accept=".csv, .xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+                            onChange={(e) => handleBankFileChange(e, b)}
+                          />
+
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ fontSize: '11.5px', padding: '6px 12px', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            onClick={() => handleTriggerUploadForBank(b.bankId)}
+                            title={hasHeld ? 'Upload a new statement file to replace the current one' : 'Choose and upload statement for this bank account'}
+                          >
+                            <UploadCloud size={13} /> {hasHeld ? 'Replace File' : 'Choose Statement'}
+                          </button>
+
+                          {hasHeld && (
+                            <>
+                              <button
+                                type="button"
+                                className="btn-primary"
+                                style={{ fontSize: '11.5px', padding: '6px 12px', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                onClick={() => handleOpenDeskForBank(b)}
+                                title="Open the categorization desk for this bank statement"
+                              >
+                                ⚡ Open Desk
+                              </button>
+
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                style={{ fontSize: '11px', padding: '6px 8px', color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                                onClick={() => handleClearStatementForBank(b.bankId)}
+                                title="Remove this held statement from queue"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {filteredBankAccounts.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                      No bank accounts found matching your filter. Please configure bank accounts in Company Settings!
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* General Standalone Dropzone */}
+          <div style={{ marginTop: '10px' }}>
+            <div 
+              className="upload-zone"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleCSVDrop}
+              onClick={() => {
+                const picker = document.getElementById('general-statement-file-picker');
+                if (picker) picker.click();
+              }}
+              style={{ padding: '24px', borderStyle: 'dashed', borderRadius: '8px', cursor: 'pointer', textAlign: 'center' }}
+            >
+              <input 
+                type="file" 
+                id="general-statement-file-picker" 
+                accept=".csv, .xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" 
+                style={{ display: 'none' }}
+                onChange={handleCSVSelect}
+              />
+              <UploadCloud size={24} style={{ color: 'var(--primary)', marginBottom: '6px' }} />
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                Drag & Drop or Browse Standalone Statement (CSV or Excel)
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                You can also drop any statement here to manually map and assign it to any company bank account.
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
-      {importStep === 2 && (
+      {(activeViewMode === 'mapping' || (importStep === 2 && activeViewMode !== 'hub')) && (
         <div className="detail-section" style={{ animation: 'fadeIn 0.2s' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <button 
+              type="button" 
+              className="btn-secondary" 
+              onClick={handleBackToHub} 
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 14px' }}
+            >
+              <ArrowLeft size={14} /> Back to Bank Statements Hub
+            </button>
+            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+              Bank: <strong>{statementAccountRef}</strong> ({statementCurrency})
+            </span>
+          </div>
+
           <div className="section-title">
             <Grid size={16} /> Target Bank Account, Currency & Header Mapping
           </div>
@@ -965,16 +1610,35 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
             >
               {isResolvingFx ? '⏳ Calculating Date Rates...' : 'Validate & Parse Rows'}
             </button>
-            <button type="button" className="btn-secondary" onClick={() => setImportStep(1)}>
-              Back
+            <button type="button" className="btn-secondary" onClick={handleBackToHub}>
+              ← Back to Hub
             </button>
           </div>
         </div>
       )}
 
-      {importStep === 3 && (
+      {(activeViewMode === 'desk' || (importStep === 3 && activeViewMode !== 'hub')) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', animation: 'fadeIn 0.2s' }}>
           
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-secondary)', padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            <button 
+              type="button" 
+              className="btn-secondary" 
+              onClick={handleBackToHub} 
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 14px' }}
+            >
+              <ArrowLeft size={14} /> Back to Bank Statements Hub
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                Target Account: <strong style={{ color: 'var(--text-primary)' }}>{statementAccountRef}</strong>
+              </span>
+              <span style={{ padding: '2px 8px', borderRadius: '4px', backgroundColor: 'rgba(99, 102, 241, 0.12)', color: 'var(--primary)', fontWeight: 700, fontSize: '11.5px' }}>
+                {statementCurrency}
+              </span>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ fontSize: '14px', fontWeight: 600 }}>Row-by-Row Categorization Desk</h3>
             <button className="btn-primary" onClick={handleCommitBankImports}>

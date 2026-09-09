@@ -1378,6 +1378,22 @@ export default function KpisDashboard({
       if (kpisCoverToday || callsCoverToday || qandleCoversToday) {
         console.log(`[Polling] Automatically refreshing active dashboard views for date: ${todayStr}...`);
         setPollTrigger(prev => prev + 1);
+
+        // Auto-refresh Qandle from API if viewing Qandle tab and > 5 mins since last refresh
+        if (activeKpiSubTab === 'qandle') {
+          const lastQandleAutoSync = Number(sessionStorage.getItem('last_qandle_auto_sync') || 0);
+          if (Date.now() - lastQandleAutoSync > 5 * 60 * 1000) {
+            sessionStorage.setItem('last_qandle_auto_sync', String(Date.now()));
+            fetch('/api/qandle/sync?secret=qandle-talent-kpi-hub-key-2026')
+              .then(res => res.json())
+              .then(data => {
+                if (data && data.recordsWritten > 0) {
+                  setPollTrigger(p => p + 1);
+                }
+              })
+              .catch(() => {});
+          }
+        }
       }
     }, 120000); // 2 minutes (120,000 ms)
 
@@ -4404,7 +4420,7 @@ export default function KpisDashboard({
                 {isSyncingQandle ? 'Syncing...' : 'Sync Qandle'}
               </button>
               <span style={{ fontSize: '10px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
-                🟢 SYNCED DATABASE RECORDS
+                ⚡ AUTO-SYNC 5m (7 AM–7 PM) &bull; 🔒 11 PM CLOSE
               </span>
             </div>
           </div>
@@ -4575,6 +4591,11 @@ export default function KpisDashboard({
                           🚪 Log Out / Left{renderQandleSortIndicator('leftTime')}
                         </th>
                         <th 
+                          style={{ padding: '10px 10px', userSelect: 'none', textAlign: 'center' }}
+                        >
+                          Status
+                        </th>
+                        <th 
                           onClick={() => handleQandleSort('productiveTimeSeconds')}
                           style={{ padding: '10px 10px', cursor: 'pointer', userSelect: 'none', transition: 'color 0.2s', textAlign: 'center' }}
                           onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
@@ -4651,6 +4672,21 @@ export default function KpisDashboard({
                             </td>
                             <td style={{ padding: '10px', textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>
                               {row.leftTime || '-'}
+                            </td>
+                            <td style={{ padding: '10px', textAlign: 'center' }}>
+                              {row.isClosed || (row.leftTime && row.leftTime !== '-') ? (
+                                <span style={{ padding: '2px 7px', borderRadius: '4px', backgroundColor: 'rgba(100, 116, 139, 0.12)', color: 'var(--text-secondary)', fontSize: '10.5px', fontWeight: 700 }}>
+                                  🔒 Closed
+                                </span>
+                              ) : row.arrivalTime && row.arrivalTime !== '-' ? (
+                                <span style={{ padding: '2px 7px', borderRadius: '4px', backgroundColor: 'rgba(34, 197, 94, 0.12)', color: 'var(--success)', fontSize: '10.5px', fontWeight: 700 }}>
+                                  🟢 Active
+                                </span>
+                              ) : (
+                                <span style={{ padding: '2px 7px', borderRadius: '4px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-muted)', fontSize: '10.5px' }}>
+                                  ⚪ Absent
+                                </span>
+                              )}
                             </td>
                             <td style={{ padding: '10px', textAlign: 'center', fontWeight: 600, fontSize: '12px', color: 'var(--primary)' }}>
                               {formatDuration(row.productiveTimeSeconds)}

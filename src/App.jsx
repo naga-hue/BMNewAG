@@ -1766,9 +1766,9 @@ export default function App() {
               fontSize: '24px',
               fontWeight: 700,
               marginBottom: '16px'
-            }}>H</div>
-            <h2 style={{ fontSize: '20px', fontWeight: 700, margin: '0 0 6px 0', color: 'var(--text-primary)' }}>Humres Group</h2>
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0 }}>Business Management Suite</p>
+            }}>P</div>
+            <h2 style={{ fontSize: '20px', fontWeight: 700, margin: '0 0 6px 0', color: 'var(--text-primary)', letterSpacing: '1px' }}>PULSE</h2>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0 }}>Humres Group Suite</p>
           </div>
 
           <form onSubmit={async (e) => {
@@ -1854,11 +1854,11 @@ export default function App() {
         <div>
           <div className="logo-container" style={{ display: 'flex', alignItems: 'center', justifyContent: isSidebarMinimized ? 'center' : 'space-between', width: '100%' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div className="logo-icon">H</div>
+              <div className="logo-icon">P</div>
               {!isSidebarMinimized && (
                 <div className="logo-text-block" style={{ animation: 'fadeIn var(--transition-fast)' }}>
-                  <div className="logo-text">Humres Group</div>
-                  <div className="logo-subtitle">Management Suite</div>
+                  <div className="logo-text" style={{ letterSpacing: '1px' }}>PULSE</div>
+                  <div className="logo-subtitle">Humres Group Suite</div>
                 </div>
               )}
             </div>

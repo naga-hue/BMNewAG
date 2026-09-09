@@ -373,43 +373,34 @@ export default async function handler(req, res) {
 
     console.log(`[Qandle Sync] Loaded ${staffList.length} active staff profiles.`);
 
-    // Time timezone and work hours shift filter
-    if (!bypassTimecheck) {
-      let anyStaffWorking = false;
-      const now = new Date();
-      for (const s of staffList) {
-        const timezone = s.timezone || (String(s.employeeCode || s.employee_code || '').startsWith('THIND') || String(s.employeeCode || s.employee_code || '').startsWith('HRIND') ? 'Asia/Kolkata' : 'Europe/London');
-        const workHoursStart = s.workHoursStart || '08:00';
-        const workHoursEnd = s.workHoursEnd || '18:00';
+    // Determine UK local time (Humres HQ is in London)
+    const now = new Date();
+    const ukFormatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/London',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false
+    });
+    const ukParts = ukFormatter.formatToParts(now);
+    const ukHour = parseInt(ukParts.find(p => p.type === 'hour').value, 10);
+    const ukMinute = parseInt(ukParts.find(p => p.type === 'minute').value, 10);
+    const ukMinutesOfDay = (ukHour * 60) + ukMinute;
 
-        try {
-          const formatter = new Intl.DateTimeFormat('en-US', {
-            timeZone: timezone,
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          });
-          const localTimeStr = formatter.format(now);
-          
-          let isWorking = false;
-          if (workHoursStart < workHoursEnd) {
-            isWorking = localTimeStr >= workHoursStart && localTimeStr <= workHoursEnd;
-          } else {
-            isWorking = localTimeStr >= workHoursStart || localTimeStr <= workHoursEnd;
-          }
-          if (isWorking) {
-            anyStaffWorking = true;
-            break;
-          }
-        } catch (tzErr) {
-          console.error(`[Qandle Sync] Invalid timezone "${timezone}" for ${s.fullName}:`, tzErr);
-        }
-      }
+    // Window 1: Daytime sync every 5 minutes from 7:00 AM (420 min) to 7:00 PM (1140 min) UK time
+    const isWithinDayWindow = ukMinutesOfDay >= 420 && ukMinutesOfDay <= 1140;
 
-      if (!anyStaffWorking) {
-        console.log('[Qandle Sync] No active staff members are currently within their shift hours. Skipping sync.');
-        return res.status(200).json({ success: true, message: 'Skipped: Outside shift hours for all staff' });
-      }
+    // Window 2: End-of-day close run at 11:00 PM (23:00) UK time (or explicit close trigger)
+    const isCloseRun = req.query.mode === 'close' || req.query.closeDay === 'true' || ukHour === 23;
+
+    const shouldRunSync = bypassTimecheck || isWithinDayWindow || isCloseRun;
+
+    if (!shouldRunSync) {
+      console.log(`[Qandle Sync] Outside active schedule window (Current UK time: ${ukHour}:${ukMinute < 10 ? '0' : ''}${ukMinute}). Allowed: 07:00-19:00, and 23:00 close-out. Skipping.`);
+      return res.status(200).json({
+        success: true,
+        skipped: true,
+        message: `Skipped: Current UK time (${ukHour}:${ukMinute < 10 ? '0' : ''}${ukMinute}) is outside active sync windows (7 AM - 7 PM, and 11 PM close-out).`
+      });
     }
 
     // 2-minute Rate-Limiting Cooldown Check
@@ -468,10 +459,12 @@ export default async function handler(req, res) {
     const batch = firestore.batch();
     const today = new Date();
     const timestamp = getISTMidnightTimestamp(today);
+    const todayDateStr = formatDateIST(today);
+    const parsedToday = parseQandleDate(todayDateStr);
 
     const matchedStaffList = [];
 
-    // Fast Path Sync
+    // 1. Match staff profiles to Qandle employees
     for (const s of staffList) {
       const matchedEmp = qandleEmployees.find(qEmp => {
         const sQandle = (s.qandleEmail || '').trim().toLowerCase();
@@ -485,84 +478,83 @@ export default async function handler(req, res) {
         return matchName(s.fullName, qEmp.full_name);
       });
 
-      if (!matchedEmp) continue;
+      if (matchedEmp) {
+        matchedCount++;
+        matchedStaffList.push({ staff: s, matchedEmp });
+      }
+    }
 
-      // Timezone and work hours shift filter
-      if (!bypassTimecheck) {
-        const timezone = s.timezone || (String(s.employeeCode || s.employee_code || '').startsWith('THIND') || String(s.employeeCode || s.employee_code || '').startsWith('HRIND') ? 'Asia/Kolkata' : 'Europe/London');
-        const workHoursStart = s.workHoursStart || '08:00';
-        const workHoursEnd = s.workHoursEnd || '18:00';
+    console.log(`[Qandle Sync] Matched ${matchedStaffList.length} staff to Qandle. Fetching live productivity graphs (concurrency=5, closeRun=${isCloseRun})...`);
 
-        let isWorkingNow = true;
+    // 2. Fetch productivity graphs with a concurrency pool of 5 workers
+    const CONCURRENCY = 5;
+    for (let i = 0; i < matchedStaffList.length; i += CONCURRENCY) {
+      const chunk = matchedStaffList.slice(i, i + CONCURRENCY);
+      await Promise.all(chunk.map(async ({ staff: s, matchedEmp }) => {
         try {
-          const formatter = new Intl.DateTimeFormat('en-US', {
-            timeZone: timezone,
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
+          const graphRes = await fetch(BASE_URL + `/client-api/productivity-graph/${matchedEmp._id}/${timestamp}`, {
+            method: "GET",
+            headers: { "Authorization": "Bearer " + token }
           });
-          const localTimeStr = formatter.format(new Date()); // Format: "HH:MM"
-          
-          if (workHoursStart < workHoursEnd) {
-            isWorkingNow = localTimeStr >= workHoursStart && localTimeStr <= workHoursEnd;
-          } else {
-            isWorkingNow = localTimeStr >= workHoursStart || localTimeStr <= workHoursEnd;
+          const graphData = await graphRes.json();
+
+          if (graphData.status === "success" && graphData.data) {
+            const dailyRows = expandWeekData(graphData.data, today);
+            const lastTwoDays = dailyRows.slice(-2);
+
+            for (const row of lastTwoDays) {
+              const parsedDate = parseQandleDate(row.date);
+              if (!parsedDate) continue;
+
+              const docId = `${s.id}_${parsedDate}`;
+              const docRef = firestore.collection('qandle_activities').doc(docId);
+
+              // Close of day determination:
+              // - Past dates are always closed
+              // - Today is closed if employee has logged a departure (left_time !== '-'), OR if this is the 11 PM close-out run
+              const isToday = parsedDate === parsedToday;
+              const hasLeftTime = row.left_time && row.left_time !== '-';
+              const isClosed = !isToday || Boolean(hasLeftTime) || Boolean(isCloseRun);
+
+              const activityData = {
+                staffId: s.id,
+                staffName: s.fullName,
+                employeeCode: matchedEmp.employee_code || '',
+                date: parsedDate,
+                arrivalTime: row.arrival_time || '-',
+                leftTime: row.left_time || '-',
+                productiveTimeSeconds: timeStringToSeconds(row.productive_time),
+                timeAtWorkSeconds: timeStringToSeconds(row.time_at_work),
+                deskTimeSeconds: timeStringToSeconds(row.desktime),
+                effectiveness: parsePercentage(row.effectiveness),
+                productivity: parsePercentage(row.productivity),
+                isClosed: isClosed,
+                dayStatus: isClosed ? 'closed' : 'in_progress',
+                updatedAt: new Date().toISOString()
+              };
+
+              if (isClosed) {
+                activityData.closedAt = new Date().toISOString();
+                if (isCloseRun && !hasLeftTime) {
+                  activityData.closeReason = 'end_of_day_close';
+                } else if (hasLeftTime) {
+                  activityData.closeReason = 'employee_punch_out';
+                }
+              }
+
+              batch.set(docRef, activityData, { merge: true });
+              fastPathWritten++;
+            }
           }
-        } catch (tzErr) {
-          console.error(`Invalid timezone "${timezone}" for ${s.fullName || s.full_name}:`, tzErr);
+        } catch (err) {
+          console.error(`[Qandle Sync] Error fetching graph for ${s.fullName}:`, err);
         }
-
-        if (!isWorkingNow) {
-          console.log(`[Qandle Sync] Skipping ${s.fullName || s.full_name} (Local time outside shift: ${workHoursStart}-${workHoursEnd} in ${timezone})`);
-          continue;
-        }
-      }
-
-      matchedCount++;
-      matchedStaffList.push({ staff: s, matchedEmp });
-
-      const graphRes = await fetch(BASE_URL + `/client-api/productivity-graph/${matchedEmp._id}/${timestamp}`, {
-        method: "GET",
-        headers: { "Authorization": "Bearer " + token }
-      });
-      const graphData = await graphRes.json();
-
-      if (graphData.status === "success" && graphData.data) {
-        const dailyRows = expandWeekData(graphData.data, today);
-        const lastTwoDays = dailyRows.slice(-2);
-        
-        for (const row of lastTwoDays) {
-          const parsedDate = parseQandleDate(row.date);
-          if (!parsedDate) continue;
-
-          const docId = `${s.id}_${parsedDate}`;
-          const docRef = firestore.collection('qandle_activities').doc(docId);
-
-          const activityData = {
-            staffId: s.id,
-            staffName: s.fullName,
-            employeeCode: matchedEmp.employee_code || '',
-            date: parsedDate,
-            arrivalTime: row.arrival_time || '-',
-            leftTime: row.left_time || '-',
-            productiveTimeSeconds: timeStringToSeconds(row.productive_time),
-            timeAtWorkSeconds: timeStringToSeconds(row.time_at_work),
-            deskTimeSeconds: timeStringToSeconds(row.desktime),
-            effectiveness: parsePercentage(row.effectiveness),
-            productivity: parsePercentage(row.productivity),
-            updatedAt: new Date().toISOString()
-          };
-
-          batch.set(docRef, activityData, { merge: true });
-          fastPathWritten++;
-        }
-      }
-      await new Promise(resolve => setTimeout(resolve, 100));
+      }));
     }
 
     if (fastPathWritten > 0) {
       await batch.commit();
-      console.log(`[Qandle Sync] Fast path complete. Wrote ${fastPathWritten} rows.`);
+      console.log(`[Qandle Sync] Live sync complete. Wrote ${fastPathWritten} rows (isClosed=${isCloseRun}).`);
     }
 
     // Trailing background backfill
@@ -649,7 +641,11 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: `Sync completed. Wrote ${fastPathWritten} recent and ${historyWrittenCount} history records.`
+      mode: isCloseRun ? 'close_of_day' : 'live_refresh',
+      schedule: isWithinDayWindow ? 'day_window_7am_7pm' : (isCloseRun ? 'end_of_day_11pm' : 'manual_bypass'),
+      isClosed: isCloseRun,
+      recordsWritten: fastPathWritten + historyWrittenCount,
+      message: `Sync completed. Wrote ${fastPathWritten} recent and ${historyWrittenCount} history records (${isCloseRun ? 'All day records finalized & closed' : 'Live refresh'}).`
     });
 
   } catch (error) {

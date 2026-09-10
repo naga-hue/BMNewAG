@@ -15,10 +15,13 @@ import {
   Target,
   TrendingUp,
   Zap,
-  Sliders
+  Sliders,
+  Bell,
+  LayoutDashboard
 } from 'lucide-react';
 
 import { toGBP } from '../utils/currency';
+import WhatsImportantDashboard from './WhatsImportantDashboard';
 
 const symbolMap = { GBP: '£', USD: '$', AED: 'AED ', INR: '₹', ZAR: 'R' };
 
@@ -31,8 +34,15 @@ export default function Dashboard({
   contracts = [],
   vendors = [],
   placements = [],
-  expenses = []
+  expenses = [],
+  scopingViewMode = 'team',
+  currentUser = null,
+  currentStaffMember = null,
+  setActiveTab,
+  setSelectedCompany,
+  setSelectedStaff
 }) {
+  const [activeSubTab, setActiveSubTab] = useState('whats_important');
   // Current date anchor: June 29, 2026
   const CURRENT_DATE = new Date(); CURRENT_DATE.setHours(0, 0, 0, 0);
   const [calDate, setCalDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
@@ -935,15 +945,133 @@ export default function Dashboard({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       
-      {/* Behavioral UX: Goal Gradient & Contrast Effect Banner */}
-      <div 
-        style={{ 
-          backgroundColor: 'var(--bg-card)', 
-          border: '1px solid var(--border-color)', 
-          borderRadius: '12px', 
-          padding: '16px 20px',
+      {/* Unified Dashboard Sub-Navigation Tabs */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '12px',
+        backgroundColor: 'var(--bg-card)',
+        border: '1px solid var(--border-color)',
+        borderRadius: '12px',
+        padding: '8px 12px'
+      }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('whats_important')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 16px',
+              fontSize: '12px',
+              fontWeight: 700,
+              borderRadius: '8px',
+              border: activeSubTab === 'whats_important' ? '1px solid var(--primary)' : '1px solid transparent',
+              backgroundColor: activeSubTab === 'whats_important' ? 'var(--primary)' : 'transparent',
+              color: activeSubTab === 'whats_important' ? '#ffffff' : 'var(--text-secondary)',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Bell size={14} />
+            <span>⚡ What's Important & Action Horizon</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('financials')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 16px',
+              fontSize: '12px',
+              fontWeight: 700,
+              borderRadius: '8px',
+              border: activeSubTab === 'financials' ? '1px solid var(--primary)' : '1px solid transparent',
+              backgroundColor: activeSubTab === 'financials' ? 'var(--primary)' : 'transparent',
+              color: activeSubTab === 'financials' ? '#ffffff' : 'var(--text-secondary)',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <TrendingUp size={14} />
+            <span>📊 Financials & Executive KPIs</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('calendar')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 16px',
+              fontSize: '12px',
+              fontWeight: 700,
+              borderRadius: '8px',
+              border: activeSubTab === 'calendar' ? '1px solid var(--primary)' : '1px solid transparent',
+              backgroundColor: activeSubTab === 'calendar' ? 'var(--primary)' : 'transparent',
+              color: activeSubTab === 'calendar' ? '#ffffff' : 'var(--text-secondary)',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <CalendarDays size={14} />
+            <span>👥 Headcount & Team Calendar</span>
+          </button>
+        </div>
+
+        {/* Dynamic Mode Status Pill */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{
+            fontSize: '11px',
+            fontWeight: 700,
+            padding: '4px 10px',
+            borderRadius: '16px',
+            backgroundColor: scopingViewMode === 'self' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(99, 102, 241, 0.12)',
+            color: scopingViewMode === 'self' ? 'var(--success)' : 'var(--primary)',
+            border: scopingViewMode === 'self' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(99, 102, 241, 0.25)'
+          }}>
+            {scopingViewMode === 'self' ? '👤 My Profile Mode' : '👥 Team View Mode'}
+          </span>
+        </div>
+      </div>
+
+      {/* 1. What's Important Sub-Tab */}
+      {activeSubTab === 'whats_important' && (
+        <WhatsImportantDashboard 
+          companies={companies}
+          staff={staff}
+          leaveRequests={leaveRequests}
+          holidays={holidays}
+          contracts={contracts}
+          vendors={vendors}
+          placements={placements}
+          expenses={expenses}
+          scopingViewMode={scopingViewMode}
+          currentUser={currentUser}
+          setActiveTab={setActiveTab}
+          setSelectedCompany={setSelectedCompany}
+          setSelectedStaff={setSelectedStaff}
+        />
+      )}
+
+      {/* 2. Financials & Executive KPIs Sub-Tab */}
+      {activeSubTab === 'financials' && (
+        <>
+          {/* Behavioral UX: Goal Gradient & Contrast Effect Banner */}
+          <div 
+            style={{ 
+              backgroundColor: 'var(--bg-card)', 
+              border: '1px solid var(--border-color)', 
+              borderRadius: '12px', 
+              padding: '16px 20px',
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
           gap: '16px',
@@ -951,32 +1079,39 @@ export default function Dashboard({
         }}
       >
         {/* Goal Gradient Effect: Progress toward Placement Revenue Target */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Target size={14} style={{ color: 'var(--primary)' }} /> Annual Revenue Goal Progress
-            </span>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--primary)' }}>
-              £{monthlyRevenue.reduce((a, b) => a + b, 0).toLocaleString()} / £1,200,000 ({Math.min(100, Math.round((monthlyRevenue.reduce((a, b) => a + b, 0) / 1200000) * 100))}%)
-            </span>
-          </div>
+        {(() => {
+          const targetRevenue = scopingViewMode === 'self' ? 250000 : 1200000;
+          const currentRev = monthlyRevenue.reduce((a, b) => a + b, 0);
+          const progressPct = Math.min(100, Math.round((currentRev / targetRevenue) * 100));
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Target size={14} style={{ color: 'var(--primary)' }} /> {scopingViewMode === 'self' ? 'Personal Revenue Goal Progress' : 'Annual Revenue Goal Progress'}
+                </span>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--primary)' }}>
+                  £{currentRev.toLocaleString()} / £{targetRevenue.toLocaleString()} ({progressPct}%)
+                </span>
+              </div>
 
-          {/* Goal Gradient Progress Bar */}
-          <div style={{ width: '100%', height: '8px', backgroundColor: 'var(--bg-secondary)', borderRadius: '4px', overflow: 'hidden' }}>
-            <div 
-              style={{ 
-                width: `${Math.min(100, (monthlyRevenue.reduce((a, b) => a + b, 0) / 1200000) * 100)}%`, 
-                height: '100%', 
-                background: 'linear-gradient(90deg, var(--primary) 0%, var(--success) 100%)',
-                borderRadius: '4px',
-                transition: 'width 0.5s ease-out'
-              }} 
-            />
-          </div>
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-            🎯 Annual Target: You are {Math.min(100, Math.round((monthlyRevenue.reduce((a, b) => a + b, 0) / 1200000) * 100))}% toward achieving your annual target!
-          </span>
-        </div>
+              {/* Goal Gradient Progress Bar */}
+              <div style={{ width: '100%', height: '8px', backgroundColor: 'var(--bg-secondary)', borderRadius: '4px', overflow: 'hidden' }}>
+                <div 
+                  style={{ 
+                    width: `${progressPct}%`, 
+                    height: '100%', 
+                    background: 'linear-gradient(90deg, var(--primary) 0%, var(--success) 100%)',
+                    borderRadius: '4px',
+                    transition: 'width 0.5s ease-out'
+                  }} 
+                />
+              </div>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                🎯 {scopingViewMode === 'self' ? 'Personal Target' : 'Annual Target'}: You are {progressPct}% toward achieving your {scopingViewMode === 'self' ? 'personal' : 'annual'} target!
+              </span>
+            </div>
+          );
+        })()}
 
         {/* Contrast Effect & Reciprocity: Current vs Optimized framing */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(99, 102, 241, 0.04)', border: '1px solid rgba(99, 102, 241, 0.15)', padding: '10px 14px', borderRadius: '8px' }}>
@@ -1418,9 +1553,14 @@ export default function Dashboard({
           )}
         </div>
       </div>
+        </>
+      )}
 
-      {/* Analytics Cockpit Layout */}
-      <div className="analytics-section" style={{ gridTemplateColumns: '1.2fr 1.2fr 1fr' }}>
+      {/* 3. Headcount & Team Calendar Sub-Tab */}
+      {activeSubTab === 'calendar' && (
+        <>
+          {/* Analytics Cockpit Layout */}
+          <div className="analytics-section" style={{ gridTemplateColumns: '1.2fr 1.2fr 1fr' }}>
         
         {/* Compliance & Document Alerts Panel */}
         <div className="chart-card">
@@ -1900,6 +2040,8 @@ export default function Dashboard({
 
         </div>
       </div>
+        </>
+      )}
 
     </div>
   );

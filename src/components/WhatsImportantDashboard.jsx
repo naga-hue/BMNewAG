@@ -25,6 +25,8 @@ export default function WhatsImportantDashboard({
   vendors = [],
   placements = [],
   expenses = [],
+  scopingViewMode = 'team',
+  currentUser = null,
   setActiveTab,
   setSelectedCompany,
   setSelectedStaff
@@ -813,17 +815,19 @@ export default function WhatsImportantDashboard({
   });
 
   // Combine everything
+  const isPersonal = scopingViewMode === 'self';
+
   const rawAllAlerts = [
     ...horizonLeaves,
     ...horizonHolidays,
-    ...horizonFilingTasks,
+    ...(isPersonal ? [] : horizonFilingTasks),
     ...missingContractAlerts,
-    ...insuranceExpiryAlerts,
+    ...(isPersonal ? [] : insuranceExpiryAlerts),
     ...horizonCelebrations,
     ...horizonPlacementStarts,
-    ...horizonContractExpiries,
+    ...(isPersonal ? [] : horizonContractExpiries),
     ...horizonARInvoices,
-    ...horizonAPBills,
+    ...(isPersonal ? [] : horizonAPBills),
     ...horizonInvoicesToRaise,
     ...debtorOver60Alerts,
     ...upcomingEvents,
@@ -949,13 +953,23 @@ export default function WhatsImportantDashboard({
       }}>
         <div>
           <h2 style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 4px 0', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            Welcome back, Naga
-            <span style={{ fontSize: '11px', fontWeight: 700, backgroundColor: 'rgba(99, 102, 241, 0.12)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '12px' }}>
-              Super Admin Overview
+            Welcome back, {currentUser?.fullName?.split(' ')[0] || 'Naga'}
+            <span style={{ 
+              fontSize: '11px', 
+              fontWeight: 700, 
+              backgroundColor: scopingViewMode === 'self' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(99, 102, 241, 0.12)', 
+              color: scopingViewMode === 'self' ? 'var(--success)' : 'var(--primary)', 
+              padding: '2px 8px', 
+              borderRadius: '12px' 
+            }}>
+              {scopingViewMode === 'self' ? '👤 My Profile (Personal View)' : '👥 Team View (Full Overview)'}
             </span>
           </h2>
           <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
-            Centralized operational dashboard overview for <strong>{getDaysCountLabel()}</strong>.
+            {scopingViewMode === 'self'
+              ? `Personal operational alerts and activities scoped to your profile for `
+              : `Centralized operational dashboard overview for `}
+            <strong>{getDaysCountLabel()}</strong>.
           </p>
         </div>
 

@@ -84,7 +84,6 @@ const ExpensesDashboard = lazy(() => import('./components/expenses'));
 const LogsDashboard = lazy(() => import('./components/LogsDashboard'));
 const ReportsDashboard = lazy(() => import('./components/ReportsDashboard'));
 const RBACDashboard = lazy(() => import('./components/RBACDashboard'));
-const WhatsImportantDashboard = lazy(() => import('./components/WhatsImportantDashboard'));
 const CrmDashboard = lazy(() => import('./components/crm/CrmDashboard'));
 const KpisDashboard = lazy(() => import('./components/KpisDashboard'));
 
@@ -174,7 +173,7 @@ export default function App() {
   const payrollRecords = useBoundStore(state => state.payrollRecords);
   const payrollPolicies = useBoundStore(state => state.payrollPolicies);
 
-  const [activeTab, setActiveTab] = useState('whats_important');
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [creditControlSubTab, setCreditControlSubTab] = useState('direct');
   const [activeKpiSubTab, setActiveKpiSubTab] = useState('overview');
 
@@ -390,16 +389,16 @@ export default function App() {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '2px 8px',
+        padding: '2px 6px',
         backgroundColor: 'var(--bg-secondary)',
         border: '1px solid var(--border-color)',
         borderRadius: '6px',
-        minWidth: '85px',
+        minWidth: '78px',
         height: '38px',
         lineHeight: 1.1,
         flexShrink: 0
       }}>
-        <span style={{ fontSize: '8px', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        <span style={{ fontSize: '7.5px', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           {label}
         </span>
         <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace', margin: '1px 0' }}>
@@ -690,7 +689,8 @@ export default function App() {
         scopedStaff: [],
         scopedLeaves: [],
         scopedPlacements: [],
-        scopedExpenses: []
+        scopedExpenses: [],
+        currentStaffMember: null
       };
     }
 
@@ -698,6 +698,17 @@ export default function App() {
     const scope = scopingViewMode === 'self' ? 'self' : (currentUser.permissions?.dataScope || (currentUser.id === 'super-admin' ? 'all' : 'self'));
     const dept = currentUser.department;
     const userId = currentUser.id;
+
+    // Resolve matching staff record for currentUser (matches by id, businessEmail, or fullName)
+    const currentStaffMember = staff.find(s => 
+      s.id === currentUser.id ||
+      (currentUser.businessEmail && (
+        s.businessEmail?.toLowerCase() === currentUser.businessEmail.toLowerCase() ||
+        (s.additionalEmails && s.additionalEmails.toLowerCase().includes(currentUser.businessEmail.toLowerCase()))
+      )) ||
+      (currentUser.fullName && s.fullName?.toLowerCase() === currentUser.fullName.toLowerCase())
+    );
+    const effectiveStaffId = currentStaffMember?.id || currentUser.id;
 
     // Recursive reporting tree crawler
     const getReportingTreeStaffIds = (managerId, allStaff) => {
@@ -718,13 +729,37 @@ export default function App() {
       return Array.from(ids);
     };
 
+    // 1. Explicit "My Profile" selection: isolates the user's personal workload regardless of admin role
+    if (scopingViewMode === 'self' || scope === 'self') {
+      const userCompany = currentStaffMember?.companyId 
+        ? companies.filter(c => c.id === currentStaffMember.companyId)
+        : (currentUser.companyId ? companies.filter(c => c.id === currentUser.companyId) : companies);
+
+      return {
+        scopedCompanies: userCompany.length > 0 ? userCompany : companies,
+        scopedStaff: currentStaffMember ? [currentStaffMember] : staff.filter(s => s.id === effectiveStaffId),
+        scopedLeaves: leaveRequests.filter(r => r.staffId === effectiveStaffId),
+        scopedPlacements: placements.filter(p => 
+          (p.recruiterId === effectiveStaffId) ||
+          (p.splits && p.splits.some(sp => sp.staffId === effectiveStaffId))
+        ),
+        scopedExpenses: expenses.filter(e => 
+          (e.staffId === effectiveStaffId) ||
+          (e.allocationType === 'staff' && Array.isArray(e.allocationTarget) && e.allocationTarget.includes(effectiveStaffId))
+        ),
+        currentStaffMember: currentStaffMember || null
+      };
+    }
+
+    // 2. Otherwise for admins / directors with 'all' scope in Team View
     if (role === 'admin' || scope === 'all') {
       return {
         scopedCompanies: companies,
         scopedStaff: staff,
         scopedLeaves: leaveRequests,
         scopedPlacements: placements,
-        scopedExpenses: expenses
+        scopedExpenses: expenses,
+        currentStaffMember: currentStaffMember || null
       };
     }
 
@@ -736,45 +771,51 @@ export default function App() {
       
       return {
         scopedCompanies: filteredCompanies,
-        scopedStaff: staff.filter(s => s.department === dept || s.id === userId),
+        scopedStaff: staff.filter(s => s.department === dept || s.id === effectiveStaffId),
         scopedLeaves: leaveRequests.filter(r => deptStaffIds.includes(r.staffId)),
-        scopedPlacements: placements.filter(p => p.splits && p.splits.some(sp => deptStaffIds.includes(sp.staffId))),
+        scopedPlacements: placements.filter(p => (p.recruiterId && deptStaffIds.includes(p.recruiterId)) || (p.splits && p.splits.some(sp => deptStaffIds.includes(sp.staffId)))),
         scopedExpenses: expenses.filter(e => 
           e.allocationTarget === dept || 
           (Array.isArray(e.allocationTarget) && e.allocationTarget.some(t => deptStaffIds.includes(t)))
-        )
+        ),
+        currentStaffMember: currentStaffMember || null
       };
     }
 
     if (scope === 'team') {
-      const teamStaffIds = getReportingTreeStaffIds(userId, staff);
+      const teamStaffIds = getReportingTreeStaffIds(effectiveStaffId, staff);
       
       return {
         scopedCompanies: filteredCompanies,
         scopedStaff: staff.filter(s => teamStaffIds.includes(s.id)),
         scopedLeaves: leaveRequests.filter(r => teamStaffIds.includes(r.staffId)),
-        scopedPlacements: placements.filter(p => p.splits && p.splits.some(sp => teamStaffIds.includes(sp.staffId))),
+        scopedPlacements: placements.filter(p => (p.recruiterId && teamStaffIds.includes(p.recruiterId)) || (p.splits && p.splits.some(sp => teamStaffIds.includes(sp.staffId)))),
         scopedExpenses: expenses.filter(e => 
           teamStaffIds.includes(e.staffId) ||
           (e.allocationType === 'staff' && Array.isArray(e.allocationTarget) && e.allocationTarget.some(t => teamStaffIds.includes(t)))
-        )
+        ),
+        currentStaffMember: currentStaffMember || null
       };
     }
 
-    // Consultant / Recruiter (scope: 'self')
+    // Fallback: self
     return {
       scopedCompanies: filteredCompanies,
-      scopedStaff: staff.filter(s => s.id === userId),
-      scopedLeaves: leaveRequests.filter(r => r.staffId === userId),
-      scopedPlacements: placements.filter(p => p.splits && p.splits.some(sp => sp.staffId === userId)),
+      scopedStaff: currentStaffMember ? [currentStaffMember] : staff.filter(s => s.id === effectiveStaffId),
+      scopedLeaves: leaveRequests.filter(r => r.staffId === effectiveStaffId),
+      scopedPlacements: placements.filter(p => 
+        (p.recruiterId === effectiveStaffId) ||
+        (p.splits && p.splits.some(sp => sp.staffId === effectiveStaffId))
+      ),
       scopedExpenses: expenses.filter(e => 
-        (e.staffId === userId) ||
-        (e.allocationType === 'staff' && Array.isArray(e.allocationTarget) && e.allocationTarget.includes(userId))
-      )
+        (e.staffId === effectiveStaffId) ||
+        (e.allocationType === 'staff' && Array.isArray(e.allocationTarget) && e.allocationTarget.includes(effectiveStaffId))
+      ),
+      currentStaffMember: currentStaffMember || null
     };
   };
 
-  const { scopedCompanies, scopedStaff, scopedLeaves, scopedPlacements, scopedExpenses } = useMemo(() => {
+  const { scopedCompanies, scopedStaff, scopedLeaves, scopedPlacements, scopedExpenses, currentStaffMember } = useMemo(() => {
     return getScopedData();
   }, [currentUser, scopingViewMode, companies, staff, leaveRequests, placements, expenses]);
 
@@ -1876,16 +1917,9 @@ export default function App() {
             <ul className="nav-links">
               {isSidebarMinimized ? (
                 <>
-                  {hasViewPermission(currentUser, 'whats_important') && (
+                  {(hasViewPermission(currentUser, 'dashboard') || hasViewPermission(currentUser, 'whats_important')) && (
                     <li>
-                      <div className={`nav-item ${activeTab === 'whats_important' ? 'active' : ''}`} onClick={() => setActiveTab('whats_important')} title="What's Important">
-                        <Bell size={18} />
-                      </div>
-                    </li>
-                  )}
-                  {hasViewPermission(currentUser, 'dashboard') && (
-                    <li>
-                      <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')} title="Group Dashboard">
+                      <div className={`nav-item ${activeTab === 'dashboard' || activeTab === 'whats_important' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')} title="Dashboard">
                         <LayoutDashboard size={18} />
                       </div>
                     </li>
@@ -2020,19 +2054,11 @@ export default function App() {
                   
                   {expandedSections.general && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
-                      {hasViewPermission(currentUser, 'whats_important') && (
+                      {(hasViewPermission(currentUser, 'dashboard') || hasViewPermission(currentUser, 'whats_important')) && (
                         <li>
-                          <div className={`nav-item ${activeTab === 'whats_important' ? 'active' : ''}`} onClick={() => setActiveTab('whats_important')}>
-                            <Bell size={18} />
-                            <span>What's Important</span>
-                          </div>
-                        </li>
-                      )}
-                      {hasViewPermission(currentUser, 'dashboard') && (
-                        <li>
-                          <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
+                          <div className={`nav-item ${activeTab === 'dashboard' || activeTab === 'whats_important' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
                             <LayoutDashboard size={18} />
-                            <span>Group Dashboard</span>
+                            <span>Dashboard</span>
                           </div>
                         </li>
                       )}
@@ -2597,11 +2623,13 @@ export default function App() {
               );
             })()}
 
-            {/* Live GMT/SAST/IST Office Clocks Widget */}
+            {/* Live GMT/SAST/IST/EST/PST Office Clocks Widget */}
             <div style={{ display: 'flex', gap: '8px', marginRight: '16px', alignItems: 'center' }}>
               {formatTimeForZone(currentTime, 'Europe/London', 'UK (London)')}
               {formatTimeForZone(currentTime, 'Africa/Johannesburg', 'S. Africa')}
               {formatTimeForZone(currentTime, 'Asia/Kolkata', 'India (IST)')}
+              {formatTimeForZone(currentTime, 'America/New_York', 'US (EST)')}
+              {formatTimeForZone(currentTime, 'America/Los_Angeles', 'US (PST)')}
             </div>
             {/* Active User Switcher Dropdown (Admin Impersonation Feature) */}
             {currentUser.permissions?.role === 'admin' && (
@@ -2791,25 +2819,8 @@ export default function App() {
             </div>
           }>
           
-          {/* TAB 0: What's Important */}
-          {activeTab === 'whats_important' && (
-            <WhatsImportantDashboard 
-              companies={scopedCompanies} 
-              staff={scopedStaff}
-              leaveRequests={scopedLeaves}
-              holidays={holidays}
-              contracts={contracts}
-              vendors={vendors}
-              placements={placements}
-              expenses={scopedExpenses}
-              setActiveTab={setActiveTab}
-              setSelectedCompany={setSelectedCompany}
-              setSelectedStaff={setSelectedStaff}
-            />
-          )}
-
-          {/* TAB 1: Dashboard */}
-          {activeTab === 'dashboard' && (
+          {/* TAB 1: Unified Dashboard (What's Important, Financials, Headcount & Calendar) */}
+          {(activeTab === 'dashboard' || activeTab === 'whats_important') && (
             <Dashboard 
               companies={scopedCompanies} 
               onSelectCompany={handleSelectCompany} 
@@ -2820,6 +2831,12 @@ export default function App() {
               vendors={vendors}
               placements={scopedPlacements}
               expenses={scopedExpenses}
+              scopingViewMode={scopingViewMode}
+              currentUser={currentUser}
+              currentStaffMember={currentStaffMember}
+              setActiveTab={setActiveTab}
+              setSelectedCompany={setSelectedCompany}
+              setSelectedStaff={setSelectedStaff}
             />
           )}
 

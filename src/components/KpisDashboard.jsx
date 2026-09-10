@@ -23,7 +23,8 @@ import {
   Sliders,
   ChevronRight,
   Filter,
-  RefreshCw
+  RefreshCw,
+  Sparkles
 } from 'lucide-react';
 
 const CA_FORMATTER = new Intl.DateTimeFormat('en-CA', {
@@ -468,6 +469,171 @@ export default function KpisDashboard({
   const [bulkTimezone, setBulkTimezone] = useState('Europe/London');
   const [bulkWorkHoursStart, setBulkWorkHoursStart] = useState('08:00');
   const [bulkWorkHoursEnd, setBulkWorkHoursEnd] = useState('18:00');
+
+  // Provider users for dropdown mappings (Qandle, Dialpad, Recruitly)
+  const [providerUsers, setProviderUsers] = useState({ qandle: [], dialpad: [], recruitly: [] });
+  const [loadingProviders, setLoadingProviders] = useState(false);
+  const [providersLastRefreshed, setProvidersLastRefreshed] = useState(null);
+  const [customInputToggles, setCustomInputToggles] = useState({});
+
+  // Helper to find a suggested provider user for a staff member
+  const findSuggestedProviderUser = (staffMember, userList) => {
+    if (!staffMember || !userList || userList.length === 0) return null;
+    const staffName = (staffMember.fullName || '').toLowerCase().trim();
+    const staffParts = staffName.split(/\s+/).filter(Boolean);
+    const staffFirst = staffParts[0] || '';
+    const staffLast = staffParts[staffParts.length - 1] || '';
+    const staffEmail = (staffMember.businessEmail || staffMember.personalEmail || '').toLowerCase().trim();
+
+    // 1. Direct email match
+    let match = userList.find(u => u.email && (
+      u.email === staffEmail ||
+      u.email === (staffMember.dialpadEmail || '').toLowerCase() ||
+      u.email === (staffMember.qandleEmail || '').toLowerCase() ||
+      u.email === (staffMember.recruitlyEmail || '').toLowerCase()
+    ));
+    if (match) return match;
+
+    // 2. Exact full name match
+    match = userList.find(u => u.name && u.name.toLowerCase().replace(/\s+/g, ' ').trim() === staffName);
+    if (match) return match;
+
+    // 3. First + last name tokens match
+    if (staffFirst && staffLast && staffFirst !== staffLast) {
+      match = userList.find(u => {
+        const uName = (u.name || '').toLowerCase();
+        return uName.includes(staffFirst) && uName.includes(staffLast);
+      });
+      if (match) return match;
+    }
+
+    // 4. Dot or initial format email match (e.g. a.herzenberg or alex.herzenberg)
+    if (staffLast) {
+      match = userList.find(u => {
+        const uEmail = (u.email || '').toLowerCase();
+        return uEmail.includes(staffLast) && (staffFirst ? (uEmail.startsWith(staffFirst.charAt(0)) || uEmail.includes(staffFirst)) : true);
+      });
+      if (match) return match;
+    }
+
+    return null;
+  };
+
+  const fetchProviderUsers = async (forceRefresh = false) => {
+    setLoadingProviders(true);
+    try {
+      let recruitlyApiKey = '';
+      let dialpadApiKey = '';
+      if (companies && Array.isArray(companies)) {
+        companies.forEach(c => {
+          if (c.recruitlyApiKey && (!recruitlyApiKey || c.name?.toLowerCase().includes('humres'))) {
+            recruitlyApiKey = c.recruitlyApiKey;
+          }
+          if (c.dialpadApiKey && !dialpadApiKey) {
+            dialpadApiKey = c.dialpadApiKey;
+          }
+        });
+      }
+
+      const knownDialpadUsers = (staff || [])
+        .filter(s => s.status !== 'exited')
+        .map(s => {
+          const email = s.dialpadEmail || s.businessEmail || '';
+          return email ? { name: s.fullName, email: email.toLowerCase() } : null;
+        })
+        .filter(Boolean);
+
+      const url = `/api/provider-users${forceRefresh ? '?refresh=true' : ''}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recruitlyApiKey,
+          dialpadApiKey,
+          knownDialpadUsers
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setProviderUsers({
+          qandle: Array.isArray(data.qandle) ? data.qandle : [],
+          dialpad: Array.isArray(data.dialpad) ? data.dialpad : [],
+          recruitly: Array.isArray(data.recruitly) ? data.recruitly : []
+        });
+        setProvidersLastRefreshed(data.cachedAt ? new Date(data.cachedAt) : new Date());
+        if (forceRefresh) {
+          onShowToast?.(`Refreshed provider users: ${data.qandle?.length || 0} Qandle, ${data.dialpad?.length || 0} Dialpad, ${data.recruitly?.length || 0} Recruitly`, 'success');
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching provider users:', err);
+      if (forceRefresh) {
+        onShowToast?.('Failed to sync latest provider users', 'error');
+      }
+    } finally {
+      setLoadingProviders(false);
+    }
+  };
+
+  // Auto-fetch provider users when switching to mapping tab
+  useEffect(() => {
+    if (activeSubTab === 'mapping' && providerUsers.qandle.length === 0 && !loadingProviders) {
+      fetchProviderUsers(false);
+    }
+  }, [activeSubTab]);
+
+  // Bulk Auto-Suggest & Map
+  const handleAutoMapAllUnmapped = async () => {
+    const unmappedStaff = (staff || []).filter(s => s.status !== 'exited' && (!s.qandleEmail || !s.dialpadEmail || !s.recruitlyEmail));
+    if (unmappedStaff.length === 0) {
+      onShowToast?.('All active recruiters are already mapped!', 'info');
+      return;
+    }
+
+    let updatedCount = 0;
+    try {
+      for (const s of unmappedStaff) {
+        let changed = false;
+        let qEmail = s.qandleEmail || '';
+        let dEmail = s.dialpadEmail || '';
+        let rEmail = s.recruitlyEmail || '';
+
+        if (!qEmail) {
+          const match = findSuggestedProviderUser(s, providerUsers.qandle);
+          if (match) { qEmail = match.email; changed = true; }
+        }
+        if (!dEmail) {
+          const match = findSuggestedProviderUser(s, providerUsers.dialpad);
+          if (match) { dEmail = match.email; changed = true; }
+        }
+        if (!rEmail) {
+          const match = findSuggestedProviderUser(s, providerUsers.recruitly);
+          if (match) { rEmail = match.email; changed = true; }
+        }
+
+        if (changed) {
+          const updated = {
+            ...s,
+            qandleEmail: qEmail,
+            dialpadEmail: dEmail,
+            recruitlyEmail: rEmail
+          };
+          await useBoundStore.getState().updateStaff(updated);
+          updatedCount++;
+        }
+      }
+
+      if (updatedCount > 0) {
+        onShowToast?.(`Auto-mapped ${updatedCount} recruiters based on provider rosters!`, 'success');
+      } else {
+        onShowToast?.('No confident matches found for remaining unmapped recruiters.', 'info');
+      }
+    } catch (err) {
+      console.error('Error auto-mapping recruiters:', err);
+      onShowToast?.('Failed to auto-map recruiters', 'error');
+    }
+  };
 
   // KPI Targets edit states
   const [editingTargetsStaffId, setEditingTargetsStaffId] = useState(null);
@@ -5140,31 +5306,94 @@ export default function KpisDashboard({
               </p>
             </div>
 
-            {/* Bulk set shifts button */}
-            {selectedMappingStaffIds.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              {/* Provider Counts Badge */}
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                border: '1px solid rgba(59, 130, 246, 0.2)',
+                fontSize: '11px',
+                fontWeight: 600,
+                color: 'var(--text-secondary)'
+              }}>
+                <span>⏰ Qandle: <strong style={{ color: 'var(--primary)' }}>{providerUsers.qandle.length}</strong></span>
+                <span style={{ color: 'var(--border-color)' }}>|</span>
+                <span>📞 Dialpad: <strong style={{ color: 'var(--primary)' }}>{providerUsers.dialpad.length}</strong></span>
+                <span style={{ color: 'var(--border-color)' }}>|</span>
+                <span>💼 Recruitly: <strong style={{ color: 'var(--primary)' }}>{providerUsers.recruitly.length}</strong></span>
+              </div>
+
+              {/* Sync Provider Users Button */}
               <button
-                onClick={() => {
-                  setIsBulkEditingMapping(true);
-                  setBulkTimezone('Europe/London');
-                  setBulkWorkHoursStart('08:00');
-                  setBulkWorkHoursEnd('18:00');
-                }}
+                onClick={() => fetchProviderUsers(true)}
+                disabled={loadingProviders}
                 className="btn-secondary"
                 style={{
-                  padding: '8px 16px',
-                  backgroundColor: 'var(--primary)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: loadingProviders ? 'not-allowed' : 'pointer'
                 }}
+                title="Force refresh user lists directly from Qandle, Dialpad, and Recruitly"
               >
-                🕒 Bulk Set Shift & Timezone ({selectedMappingStaffIds.length})
+                <RefreshCw size={12} className={loadingProviders ? 'animate-spin' : ''} />
+                <span>{loadingProviders ? 'Syncing...' : 'Sync Providers'}</span>
               </button>
-            )}
+
+              {/* Auto-Suggest & Map Button */}
+              <button
+                onClick={handleAutoMapAllUnmapped}
+                className="btn-secondary"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                  color: 'var(--success)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  cursor: 'pointer'
+                }}
+                title="Auto-match unmapped recruiters by full name against Qandle, Dialpad, and Recruitly rosters"
+              >
+                <Sparkles size={12} />
+                <span>Auto-Suggest Unmapped</span>
+              </button>
+
+              {/* Bulk set shifts button */}
+              {selectedMappingStaffIds.length > 0 && (
+                <button
+                  onClick={() => {
+                    setIsBulkEditingMapping(true);
+                    setBulkTimezone('Europe/London');
+                    setBulkWorkHoursStart('08:00');
+                    setBulkWorkHoursEnd('18:00');
+                  }}
+                  className="btn-secondary"
+                  style={{
+                    padding: '6px 14px',
+                    backgroundColor: 'var(--primary)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  🕒 Bulk Set Shift ({selectedMappingStaffIds.length})
+                </button>
+              )}
+            </div>
           </div>
 
           <div style={{ position: 'relative', marginBottom: '16px', maxWidth: '380px' }}>
@@ -5237,6 +5466,9 @@ export default function KpisDashboard({
                   .map(s => {
                     const aliases = (s.additionalEmails || '').split(',').map(e => e.trim()).filter(Boolean);
                     const isEditing = editingStaffId === s.id;
+                    const suggestedQandle = findSuggestedProviderUser(s, providerUsers.qandle);
+                    const suggestedDialpad = findSuggestedProviderUser(s, providerUsers.dialpad);
+                    const suggestedRecruitly = findSuggestedProviderUser(s, providerUsers.recruitly);
 
                     return (
                       <tr key={s.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
@@ -5260,17 +5492,61 @@ export default function KpisDashboard({
                         </td>
                         <td>
                           {isEditing ? (
-                            <input
-                              type="text"
-                              className="form-input"
-                              value={editingQandleEmail}
-                              onChange={(e) => setEditingQandleEmail(e.target.value)}
-                              placeholder="qandle.email@humres.co.uk"
-                              style={{ width: '100%', fontSize: '12px', height: '32px' }}
-                            />
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <select
+                                className="form-input"
+                                value={
+                                  providerUsers.qandle.some(u => u.email === (editingQandleEmail || '').toLowerCase())
+                                    ? (editingQandleEmail || '').toLowerCase()
+                                    : (editingQandleEmail ? '__custom__' : '')
+                                }
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '__custom__') {
+                                    setCustomInputToggles(prev => ({ ...prev, [s.id]: { ...(prev[s.id] || {}), qandle: true } }));
+                                  } else {
+                                    setEditingQandleEmail(val);
+                                  }
+                                }}
+                                style={{ width: '100%', fontSize: '11px', height: '30px', padding: '2px 6px' }}
+                              >
+                                <option value="">-- Select Qandle Account --</option>
+                                {suggestedQandle && (
+                                  <optgroup label="✨ Suggested Match">
+                                    <option value={suggestedQandle.email}>
+                                      ⭐ {suggestedQandle.name} {suggestedQandle.code ? `[${suggestedQandle.code}]` : ''} - {suggestedQandle.email}
+                                    </option>
+                                  </optgroup>
+                                )}
+                                {providerUsers.qandle.length > 0 && (
+                                  <optgroup label={`All Qandle Employees (${providerUsers.qandle.length})`}>
+                                    {providerUsers.qandle.map(u => (
+                                      <option key={u.id || u.email} value={u.email}>
+                                        {u.name} {u.code ? `[${u.code}]` : ''} - {u.email}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                                <option value="__custom__">✏️ Custom / Manual Entry...</option>
+                              </select>
+                              {(customInputToggles[s.id]?.qandle || (editingQandleEmail && !providerUsers.qandle.some(u => u.email === (editingQandleEmail || '').toLowerCase())) || providerUsers.qandle.length === 0) && (
+                                <input
+                                  type="text"
+                                  className="form-input"
+                                  value={editingQandleEmail}
+                                  onChange={(e) => setEditingQandleEmail(e.target.value)}
+                                  placeholder="qandle.email@humres.co.uk"
+                                  style={{ width: '100%', fontSize: '11px', height: '26px' }}
+                                />
+                              )}
+                            </div>
                           ) : (
                             <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                              {s.qandleEmail || s.businessEmail || s.personalEmail || (
+                              {s.qandleEmail ? (
+                                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{s.qandleEmail}</span>
+                              ) : (s.businessEmail || s.personalEmail) ? (
+                                <span>{s.businessEmail || s.personalEmail}</span>
+                              ) : (
                                 <span style={{ color: 'var(--warning)', fontStyle: 'italic' }}>Not Mapped</span>
                               )}
                             </span>
@@ -5279,27 +5555,69 @@ export default function KpisDashboard({
                         <td>
                           {isEditing ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <input
-                                type="text"
+                              <select
                                 className="form-input"
-                                value={editingDialpadEmail}
-                                onChange={(e) => setEditingDialpadEmail(e.target.value)}
-                                placeholder="dialpad.email@humres.co.uk"
-                                style={{ width: '100%', fontSize: '12px', height: '32px' }}
-                              />
+                                value={
+                                  providerUsers.dialpad.some(u => u.email === (editingDialpadEmail || '').toLowerCase())
+                                    ? (editingDialpadEmail || '').toLowerCase()
+                                    : (editingDialpadEmail ? '__custom__' : '')
+                                }
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '__custom__') {
+                                    setCustomInputToggles(prev => ({ ...prev, [s.id]: { ...(prev[s.id] || {}), dialpad: true } }));
+                                  } else {
+                                    setEditingDialpadEmail(val);
+                                  }
+                                }}
+                                style={{ width: '100%', fontSize: '11px', height: '30px', padding: '2px 6px' }}
+                              >
+                                <option value="">-- Select Dialpad Account --</option>
+                                {suggestedDialpad && (
+                                  <optgroup label="✨ Suggested Match">
+                                    <option value={suggestedDialpad.email}>
+                                      ⭐ {suggestedDialpad.name} - {suggestedDialpad.email}
+                                    </option>
+                                  </optgroup>
+                                )}
+                                {providerUsers.dialpad.length > 0 && (
+                                  <optgroup label={`All Dialpad Accounts (${providerUsers.dialpad.length})`}>
+                                    {providerUsers.dialpad.map(u => (
+                                      <option key={u.id || u.email} value={u.email}>
+                                        {u.name} - {u.email}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                                <option value="__custom__">✏️ Custom / Manual Entry...</option>
+                              </select>
+                              {(customInputToggles[s.id]?.dialpad || (editingDialpadEmail && !providerUsers.dialpad.some(u => u.email === (editingDialpadEmail || '').toLowerCase())) || providerUsers.dialpad.length === 0) && (
+                                <input
+                                  type="text"
+                                  className="form-input"
+                                  value={editingDialpadEmail}
+                                  onChange={(e) => setEditingDialpadEmail(e.target.value)}
+                                  placeholder="dialpad.email@humres.co.uk"
+                                  style={{ width: '100%', fontSize: '11px', height: '26px' }}
+                                />
+                              )}
                               <input
                                 type="text"
                                 className="form-input"
                                 value={editingAliases}
                                 onChange={(e) => setEditingAliases(e.target.value)}
                                 placeholder="Aliases (comma-separated)"
-                                style={{ width: '100%', fontSize: '11px', height: '28px' }}
+                                style={{ width: '100%', fontSize: '11px', height: '26px' }}
                               />
                             </div>
                           ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                               <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                                {s.dialpadEmail || s.businessEmail || s.personalEmail || (
+                                {s.dialpadEmail ? (
+                                  <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{s.dialpadEmail}</span>
+                                ) : (s.businessEmail || s.personalEmail) ? (
+                                  <span>{s.businessEmail || s.personalEmail}</span>
+                                ) : (
                                   <span style={{ color: 'var(--warning)', fontStyle: 'italic' }}>Not Mapped</span>
                                 )}
                               </span>
@@ -5324,17 +5642,61 @@ export default function KpisDashboard({
                         </td>
                         <td>
                           {isEditing ? (
-                            <input
-                              type="text"
-                              className="form-input"
-                              value={editingRecruitlyEmail}
-                              onChange={(e) => setEditingRecruitlyEmail(e.target.value)}
-                              placeholder="recruitly.email@humres.co.uk"
-                              style={{ width: '100%', fontSize: '12px', height: '32px' }}
-                            />
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <select
+                                className="form-input"
+                                value={
+                                  providerUsers.recruitly.some(u => u.email === (editingRecruitlyEmail || '').toLowerCase())
+                                    ? (editingRecruitlyEmail || '').toLowerCase()
+                                    : (editingRecruitlyEmail ? '__custom__' : '')
+                                }
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '__custom__') {
+                                    setCustomInputToggles(prev => ({ ...prev, [s.id]: { ...(prev[s.id] || {}), recruitly: true } }));
+                                  } else {
+                                    setEditingRecruitlyEmail(val);
+                                  }
+                                }}
+                                style={{ width: '100%', fontSize: '11px', height: '30px', padding: '2px 6px' }}
+                              >
+                                <option value="">-- Select Recruitly Account --</option>
+                                {suggestedRecruitly && (
+                                  <optgroup label="✨ Suggested Match">
+                                    <option value={suggestedRecruitly.email}>
+                                      ⭐ {suggestedRecruitly.name} - {suggestedRecruitly.email} {suggestedRecruitly.role ? `[${suggestedRecruitly.role}]` : ''}
+                                    </option>
+                                  </optgroup>
+                                )}
+                                {providerUsers.recruitly.length > 0 && (
+                                  <optgroup label={`All Recruitly Users (${providerUsers.recruitly.length})`}>
+                                    {providerUsers.recruitly.map(u => (
+                                      <option key={u.id || u.email} value={u.email}>
+                                        {u.name} - {u.email} {u.role ? `[${u.role}]` : ''}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                                <option value="__custom__">✏️ Custom / Manual Entry...</option>
+                              </select>
+                              {(customInputToggles[s.id]?.recruitly || (editingRecruitlyEmail && !providerUsers.recruitly.some(u => u.email === (editingRecruitlyEmail || '').toLowerCase())) || providerUsers.recruitly.length === 0) && (
+                                <input
+                                  type="text"
+                                  className="form-input"
+                                  value={editingRecruitlyEmail}
+                                  onChange={(e) => setEditingRecruitlyEmail(e.target.value)}
+                                  placeholder="recruitly.email@humres.co.uk"
+                                  style={{ width: '100%', fontSize: '11px', height: '26px' }}
+                                />
+                              )}
+                            </div>
                           ) : (
                             <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                              {s.recruitlyEmail || s.businessEmail || s.personalEmail || (
+                              {s.recruitlyEmail ? (
+                                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{s.recruitlyEmail}</span>
+                              ) : (s.businessEmail || s.personalEmail) ? (
+                                <span>{s.businessEmail || s.personalEmail}</span>
+                              ) : (
                                 <span style={{ color: 'var(--warning)', fontStyle: 'italic' }}>Not Mapped</span>
                               )}
                             </span>
@@ -5432,9 +5794,9 @@ export default function KpisDashboard({
                               onClick={() => {
                                 setEditingStaffId(s.id);
                                 setEditingAliases(s.additionalEmails || '');
-                                setEditingQandleEmail(s.qandleEmail || '');
-                                setEditingDialpadEmail(s.dialpadEmail || '');
-                                setEditingRecruitlyEmail(s.recruitlyEmail || '');
+                                setEditingQandleEmail(s.qandleEmail || suggestedQandle?.email || '');
+                                setEditingDialpadEmail(s.dialpadEmail || suggestedDialpad?.email || '');
+                                setEditingRecruitlyEmail(s.recruitlyEmail || suggestedRecruitly?.email || '');
                                 setEditingTimezone(s.timezone || (String(s.employeeCode || s.employee_code || '').startsWith('THIND') || String(s.employeeCode || s.employee_code || '').startsWith('HRIND') ? 'Asia/Kolkata' : 'Europe/London'));
                                 setEditingWorkHoursStart(s.workHoursStart || '08:00');
                                 setEditingWorkHoursEnd(s.workHoursEnd || '18:00');

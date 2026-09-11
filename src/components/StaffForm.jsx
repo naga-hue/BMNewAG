@@ -33,6 +33,7 @@ const MODULES_LIST = [
   { key: 'expenses', label: 'Expense Ledger' },
   { key: 'vendors', label: 'Vendors & Assets' },
   { key: 'crm', label: 'CRM Recruiting Desk' },
+  { key: 'kpis', label: 'KPI Performance' },
   { key: 'credit_control', label: 'Credit Control Invoices' },
   { key: 'cashflow', label: 'Cashflow Projections' },
   { key: 'logs', label: 'Audit Trail Logs' },
@@ -1041,31 +1042,31 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                           setDataScope('all');
                           setAllowedModules([
                             'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'payroll:view', 'placements:view',
-                            'expenses:view', 'vendors:write', 'crm:write', 'reports:view', 'rbac:view'
+                            'expenses:view', 'vendors:write', 'crm:write', 'kpis:view', 'reports:view', 'rbac:view'
                           ]);
                         } else if (val === 'finance_admin') {
                           setDataScope('all');
                           setAllowedModules([
                             'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'payroll:write', 'placements:write', 
-                            'expenses:write', 'vendors:write', 'credit_control:write', 'cashflow:write', 'reports:write'
+                            'expenses:write', 'vendors:write', 'crm:view', 'kpis:view', 'credit_control:write', 'cashflow:write', 'reports:write'
                           ]);
                         } else if (val === 'director') {
                           setDataScope('all');
                           setAllowedModules([
                             'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'payroll:view', 'placements:view', 
-                            'expenses:view', 'vendors:view', 'crm:view', 'credit_control:view', 'cashflow:view', 'reports:view'
+                            'expenses:view', 'vendors:view', 'crm:view', 'kpis:write', 'credit_control:view', 'cashflow:view', 'reports:view'
                           ]);
                         } else if (val === 'manager') {
                           setDataScope('department');
                           setAllowedModules([
                             'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'payroll:view', 'placements:view', 
-                            'expenses:view', 'vendors:view', 'crm:view'
+                            'expenses:view', 'vendors:view', 'crm:view', 'kpis:write'
                           ]);
                         } else {
                           setDataScope('self');
                           setAllowedModules([
                             'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'placements:view', 
-                            'expenses:view', 'crm:view'
+                            'expenses:view', 'crm:view', 'kpis:view'
                           ]);
                         }
                       }}
@@ -1118,7 +1119,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                         setDataScope('self');
                         setAllowedModules([
                           'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
-                          'expenses:write', 'vendors:write', 'crm:write'
+                          'expenses:write', 'vendors:write', 'crm:write', 'kpis:write'
                         ]);
                       }}
                       style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
@@ -1132,7 +1133,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                         setDataScope('all');
                         setAllowedModules([
                           'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
-                          'expenses:write', 'vendors:write', 'crm:write', 'credit_control:write', 'cashflow:write', 'reports:view'
+                          'expenses:write', 'vendors:write', 'crm:write', 'kpis:write', 'credit_control:write', 'cashflow:write', 'reports:view'
                         ]);
                       }}
                       style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--warning)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}

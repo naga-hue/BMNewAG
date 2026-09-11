@@ -113,6 +113,90 @@ export default function ReportsDashboard({
     "HR": 100,
     "Admin": 100
   });
+
+  // Excluded nominal codes in Apportioned Overheads & SaaS
+  const [excludedNominalCodes, setExcludedNominalCodes] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bm-reports-excluded-nominals');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return (nominalCodes || [])
+      .filter(c => c && c.includeInOverheads === false)
+      .map(c => c.code || c.id);
+  });
+
+  const matchesNominal = (a, b) => {
+    if (!a || !b) return false;
+    const sA = String(a).trim().toLowerCase();
+    const sB = String(b).trim().toLowerCase();
+    if (sA === sB) return true;
+    if (sA.startsWith(sB + ' ') || sA.startsWith(sB + ' -') || sB.startsWith(sA + ' ') || sB.startsWith(sA + ' -')) return true;
+    const idA = sA.split(' - ')[0]?.trim();
+    const idB = sB.split(' - ')[0]?.trim();
+    if (idA && idB && idA === idB) return true;
+    return false;
+  };
+
+  const isNominalExcluded = (code) => {
+    if (!code) return false;
+    return excludedNominalCodes.some(ex => matchesNominal(ex, code));
+  };
+
+  const handleToggleNominalInclusion = (code) => {
+    setExcludedNominalCodes(prev => {
+      const isEx = isNominalExcluded(code);
+      let updated;
+      if (isEx) {
+        updated = prev.filter(c => !matchesNominal(c, code));
+      } else {
+        updated = [...prev, code];
+      }
+      try {
+        localStorage.setItem('bm-reports-excluded-nominals', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+  };
+
+  const handleIncludeAllNominals = () => {
+    setExcludedNominalCodes([]);
+    try {
+      localStorage.setItem('bm-reports-excluded-nominals', JSON.stringify([]));
+    } catch (e) {}
+  };
+
+  const allAvailableNominals = useMemo(() => {
+    const list = new Set();
+    (nominalCodes || []).forEach(c => {
+      if (c && c.code) list.add(c.code);
+    });
+    (expenses || []).forEach(e => {
+      if (e.nominalCode && !e.nominalCode.trim().startsWith('9')) list.add(e.nominalCode);
+    });
+    (contracts || []).forEach(c => {
+      if (c.nominalCode) list.add(c.nominalCode);
+    });
+    return Array.from(list).sort();
+  }, [nominalCodes, expenses, contracts]);
+
+  const selectedNominalValues = useMemo(() => {
+    if (excludedNominalCodes.length === 0) return ['all'];
+    const included = allAvailableNominals.filter(c => !isNominalExcluded(c));
+    return included.length === 0 ? [] : included;
+  }, [excludedNominalCodes, allAvailableNominals]);
+
+  const handleNominalFilterChange = (selected) => {
+    if (selected.includes('all')) {
+      handleIncludeAllNominals();
+      return;
+    }
+    const newlyExcluded = allAvailableNominals.filter(c => !selected.includes(c));
+    setExcludedNominalCodes(newlyExcluded);
+    try {
+      localStorage.setItem('bm-reports-excluded-nominals', JSON.stringify(newlyExcluded));
+    } catch (e) {}
+  };
+
   // Companies included based on consolidation preference
   const activeCompaniesForPL = companies.filter(c => {
     if (currentUser?.permissions?.role !== 'admin' && c.id !== currentUser?.companyId) {
@@ -1664,7 +1748,9 @@ export default function ReportsDashboard({
 
     // 5. Operating expenses + shared overhead apportionments
     const nominalBreakdown = getNominalBreakdownForMonth(monthKey);
-    const overheadsExpenses = Object.values(nominalBreakdown).reduce((sum, v) => sum + v, 0);
+    const overheadsExpenses = Object.entries(nominalBreakdown)
+      .filter(([code]) => !isNominalExcluded(code))
+      .reduce((sum, [, v]) => sum + v, 0);
 
     const balanceSheetBreakdown = getBalanceSheetBreakdownForMonth(monthKey);
     const balanceSheetTotal = Object.values(balanceSheetBreakdown).reduce((sum, v) => sum + v, 0);
@@ -1762,6 +1848,39 @@ export default function ReportsDashboard({
               value={endMonth}
               onChange={(e) => setEndMonth(e.target.value)}
               style={{ padding: '5px' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Overhead Nominals:</span>
+              {excludedNominalCodes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleIncludeAllNominals}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--primary)',
+                    fontSize: '10px',
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    padding: 0
+                  }}
+                >
+                  Reset All
+                </button>
+              )}
+            </div>
+            <MultiSelectFilter
+              options={[
+                { value: 'all', label: 'All Nominals Included' },
+                ...allAvailableNominals.map(n => ({ value: n, label: n }))
+              ]}
+              selectedValues={selectedNominalValues}
+              onChange={handleNominalFilterChange}
+              placeholder="All Nominals Included"
+              style={{ minWidth: '190px' }}
             />
           </div>
 
@@ -2832,9 +2951,45 @@ export default function ReportsDashboard({
 
                   {/* Apportioned Overheads & SaaS (Expandable) */}
                   <tr style={{ fontWeight: 400 }}>
-                    <td style={{ paddingLeft: '24px', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setExpandedExpenses(!expandedExpenses)}>
+                    <td style={{ paddingLeft: '24px', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }} onClick={() => setExpandedExpenses(!expandedExpenses)}>
                       <span style={{ fontSize: '10px', color: 'var(--accent)' }}>{expandedExpenses ? '▼' : '▶'}</span>
                       <span style={{ fontWeight: 600 }}>Apportioned Overheads & SaaS</span>
+                      {excludedNominalCodes.length > 0 ? (
+                        <span style={{ 
+                          fontSize: '10px', 
+                          padding: '2px 8px', 
+                          borderRadius: '12px', 
+                          backgroundColor: 'rgba(239, 68, 68, 0.15)', 
+                          color: '#ef4444', 
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}>
+                          ⚠️ {excludedNominalCodes.length} Excluded
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleIncludeAllNominals(); }}
+                            style={{ 
+                              background: 'rgba(255,255,255,0.15)', 
+                              border: 'none', 
+                              borderRadius: '4px', 
+                              color: '#fff', 
+                              cursor: 'pointer', 
+                              fontSize: '9px', 
+                              padding: '1px 5px',
+                              fontWeight: 700
+                            }}
+                            title="Restore and include all nominal codes"
+                          >
+                            Reset All
+                          </button>
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 500 }}>
+                          (All Nominals Included)
+                        </span>
+                      )}
                     </td>
                     {rowData.map((row, idx) => {
                       const monthKey = monthsList[idx];
@@ -2865,15 +3020,72 @@ export default function ReportsDashboard({
                     )).sort();
 
                     return codeKeys.map(code => {
+                      const isExcluded = isNominalExcluded(code);
                       const ytdSum = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
                       return (
-                        <tr key={code} style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                        <tr 
+                          key={code} 
+                          style={{ 
+                            fontSize: '11px', 
+                            color: isExcluded ? 'var(--text-muted)' : 'var(--text-secondary)',
+                            backgroundColor: isExcluded ? 'rgba(239, 68, 68, 0.03)' : 'transparent',
+                            opacity: isExcluded ? 0.6 : 1
+                          }}
+                        >
                           <td 
-                            style={{ paddingLeft: '48px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
-                            onClick={() => handleCellClick(`Nominal Cost: ${code}`, 'nominal', null, ytdSum, code)}
-                            title={`Click to view all itemized ${code} transactions for full period`}
+                            style={{ paddingLeft: '48px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '8px' }}
                           >
-                            <span style={{ color: 'var(--text-muted)' }}>↳</span> {code} 🔍
+                            <span style={{ color: 'var(--text-muted)' }}>↳</span>
+                            <span 
+                              style={{ 
+                                cursor: 'pointer', 
+                                textDecoration: isExcluded ? 'line-through' : 'none',
+                                fontWeight: isExcluded ? 400 : 500
+                              }}
+                              onClick={() => handleCellClick(`Nominal Cost: ${code}`, 'nominal', null, ytdSum, code)}
+                              title={`Click to view all itemized ${code} transactions for full period`}
+                            >
+                              {code} 🔍
+                            </span>
+                            {isExcluded ? (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleToggleNominalInclusion(code); }}
+                                style={{
+                                  fontSize: '9px',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  background: 'rgba(34, 197, 94, 0.15)',
+                                  color: '#22c55e',
+                                  border: '1px solid rgba(34, 197, 94, 0.3)',
+                                  cursor: 'pointer',
+                                  fontWeight: 600,
+                                  fontStyle: 'normal'
+                                }}
+                                title="Include this nominal code in overheads calculation"
+                              >
+                                + Include
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleToggleNominalInclusion(code); }}
+                                style={{
+                                  fontSize: '9px',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  background: 'rgba(239, 68, 68, 0.08)',
+                                  color: '#ef4444',
+                                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                                  cursor: 'pointer',
+                                  fontWeight: 600,
+                                  fontStyle: 'normal'
+                                }}
+                                title="Exclude this nominal code from Apportioned Overheads"
+                              >
+                                ✕ Exclude
+                              </button>
+                            )}
                           </td>
                           {rowData.map((row, idx) => {
                             const monthKey = monthsList[idx];
@@ -2883,9 +3095,10 @@ export default function ReportsDashboard({
                                 key={idx} 
                                 style={{ 
                                   textAlign: 'right', 
-                                  opacity: val > 0 ? 0.9 : 0.4, 
+                                  opacity: isExcluded ? 0.35 : (val > 0 ? 0.9 : 0.4), 
                                   cursor: val > 0 ? 'pointer' : 'default',
-                                  fontWeight: val > 0 ? 600 : 400
+                                  fontWeight: val > 0 ? 600 : 400,
+                                  textDecoration: isExcluded ? 'line-through' : 'none'
                                 }}
                                 onClick={() => val > 0 && handleCellClick(`Nominal Cost: ${code}`, 'nominal', monthKey, val, code)}
                                 title={val > 0 ? `Click to view itemized ${code} expenses for ${monthKey}` : undefined}
@@ -2895,7 +3108,14 @@ export default function ReportsDashboard({
                             );
                           })}
                           <td 
-                            style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer' }}
+                            style={{ 
+                              textAlign: 'right', 
+                              fontWeight: 700, 
+                              backgroundColor: 'rgba(255,255,255,0.02)', 
+                              cursor: 'pointer',
+                              textDecoration: isExcluded ? 'line-through' : 'none',
+                              opacity: isExcluded ? 0.4 : 1
+                            }}
                             onClick={() => handleCellClick(`Nominal Cost: ${code}`, 'nominal', null, ytdSum, code)}
                           >
                             {formatGBP(ytdSum)}
@@ -3156,7 +3376,7 @@ export default function ReportsDashboard({
                     return daysWorked >= 10;
                   });
                   const activeStaffInMonthIds = activeStaffInMonth.map(st => st.id);
-                  const monthExpenses = expenses.filter(e => e.plMonth === mKey);
+                  const monthExpenses = expenses.filter(e => e.plMonth === mKey && !isNominalExcluded(e.nominalCode));
 
                   monthExpenses.forEach(exp => {
                     const gbpAmt = toGBP(exp.amount, exp.currency);
@@ -3474,7 +3694,7 @@ export default function ReportsDashboard({
                     return daysWorked >= 10;
                   });
                   const activeStaffInMonthIds = activeStaffInMonth.map(st => st.id);
-                  const monthExpenses = expenses.filter(e => e.plMonth === mKey);
+                  const monthExpenses = expenses.filter(e => e.plMonth === mKey && !isNominalExcluded(e.nominalCode));
 
                   monthExpenses.forEach(exp => {
                     const gbpAmt = toGBP(exp.amount, exp.currency);
@@ -4176,7 +4396,9 @@ export default function ReportsDashboard({
               });
 
               const nominalBreakdown = getNominalBreakdownForMonth(m, indiaCompanyId);
-              const overheadsExpenses = Object.values(nominalBreakdown).reduce((sum, v) => sum + v, 0);
+              const overheadsExpenses = Object.entries(nominalBreakdown)
+                .filter(([code]) => !isNominalExcluded(code))
+                .reduce((sum, [, v]) => sum + v, 0);
 
               const grossProfit = revenue - commissions;
               const totalOverheads = overheadsExpenses;
@@ -4304,7 +4526,7 @@ export default function ReportsDashboard({
           {(() => {
             const targetMonth = startMonth;
 
-            const monthExpenses = expenses.filter(e => e.plMonth === targetMonth);
+            const monthExpenses = expenses.filter(e => e.plMonth === targetMonth && !isNominalExcluded(e.nominalCode));
             const totalSharedPool = monthExpenses.reduce((sum, exp) => {
               if (exp.allocationType === 'company' || exp.allocationType === 'department' || exp.allocationType === 'staff') {
                 return sum;
@@ -5079,6 +5301,7 @@ export default function ReportsDashboard({
               if (e.status === 'dns' || e.status === 'cancelled') return false;
               if (e.amortize === true) return false;
               if (e.nominalCode?.trim().startsWith('9')) return false;
+              if ((categoryKey === 'overheadsExpenses' || categoryKey === 'totalOverheads') && isNominalExcluded(e.nominalCode)) return false;
               const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
               if (monthKey && eMonth !== monthKey) return false;
               if (nominalCode) {
@@ -5132,6 +5355,7 @@ export default function ReportsDashboard({
                 
                 if (diff >= 0 && diff < N) {
                   const targetCode = e.amortizeNominalCode || e.nominalCode;
+                  if ((categoryKey === 'overheadsExpenses' || categoryKey === 'totalOverheads') && isNominalExcluded(targetCode)) return;
                   if (nominalCode) {
                     const cleanN1 = nominalCode.split(' - ')[0]?.trim() || nominalCode;
                     const cleanN2 = targetCode?.split(' - ')[0]?.trim() || targetCode || '';
@@ -5337,6 +5561,10 @@ export default function ReportsDashboard({
                       }
                     }
 
+                    if ((categoryKey === 'overheadsExpenses' || categoryKey === 'totalOverheads') && isNominalExcluded(assignedNominal)) {
+                      return;
+                    }
+
                     if (nominalCode && !assignedNominal.startsWith(nominalCode) && assignedNominal !== nominalCode) {
                       return;
                     }
@@ -5379,6 +5607,7 @@ export default function ReportsDashboard({
                   const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code || '1002 - Salary';
                   const taxNominal = nominalCodes.find(nc => nc.id === '501' || nc.code?.includes('501') || nc.code?.toLowerCase().includes('paye') || nc.code?.toLowerCase().includes('tax') || /\bni\b/i.test(nc.code) || nc.code?.toLowerCase().includes('pension'))?.code || salaryNominal;
 
+                  if ((categoryKey === 'overheadsExpenses' || categoryKey === 'totalOverheads') && isNominalExcluded(taxNominal)) return;
                   if (!nominalCode || taxNominal === nominalCode || taxNominal.startsWith(nominalCode)) {
                     // Check if this staff member already has actual payments under salary (1002), freelance (1001), or tax (501)
                     const cleanTaxCode = taxNominal?.split(' - ')[0]?.trim() || '';

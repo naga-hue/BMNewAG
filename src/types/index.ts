@@ -75,6 +75,7 @@ export interface NominalCode {
   id: string;
   code: string;
   type?: string;
+  includeInOverheads?: boolean;
 }
 
 export interface PayrollRecord {

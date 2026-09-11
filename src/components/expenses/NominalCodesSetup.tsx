@@ -28,17 +28,18 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
     return (nominalCodes || []).map((c: any) => {
       if (typeof c === 'string') {
         const parts = c.split(' - ');
-        return { id: parts[0] || c, code: c, type: 'indirect' };
+        return { id: parts[0] || c, code: c, type: 'indirect', includeInOverheads: true };
       }
       if (c && typeof c === 'object') {
         return {
           id: c.id || '',
           code: c.code || '',
-          type: c.type || 'indirect'
+          type: c.type || 'indirect',
+          includeInOverheads: c.includeInOverheads !== false
         };
       }
       return null;
-    }).filter((c): c is { id: string; code: string; type: string } => c !== null && !!c.code);
+    }).filter((c): c is { id: string; code: string; type: string; includeInOverheads: boolean } => c !== null && !!c.code);
   }, [nominalCodes]);
 
   // Inline edit state for renumbering / updating nominal codes
@@ -46,14 +47,16 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
   const [editIdInput, setEditIdInput] = useState('');
   const [editNameInput, setEditNameInput] = useState('');
   const [editTypeInput, setEditTypeInput] = useState('indirect');
+  const [editIncludeInOverheads, setEditIncludeInOverheads] = useState(true);
 
-  const startEdit = (c: { id: string; code: string; type: string }) => {
+  const startEdit = (c: { id: string; code: string; type: string; includeInOverheads?: boolean }) => {
     setEditingId(c.id);
     setEditIdInput(c.id);
     const parts = c.code.split(' - ');
     const label = parts.length > 1 ? parts.slice(1).join(' - ') : c.code;
     setEditNameInput(label);
     setEditTypeInput(c.type || 'indirect');
+    setEditIncludeInOverheads(c.includeInOverheads !== false);
   };
 
   const cascadeSyncExistingRecords = async (oldId?: string, oldCode?: string, newCodeStr?: string) => {
@@ -239,7 +242,8 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
       await saveNominalCode({
         id: newId,
         code: newCodeStr,
-        type: editTypeInput
+        type: editTypeInput,
+        includeInOverheads: editIncludeInOverheads
       });
 
       // Cascade update to all existing expenses, vendors, and contracts in Firebase
@@ -249,6 +253,21 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
       setEditingId(null);
     } catch (err: any) {
       onShowToast(`Error saving Nominal Code: ${err.message}`, "warning");
+    }
+  };
+
+  const handleToggleOverheadInclusion = async (c: { id: string; code: string; type: string; includeInOverheads?: boolean }) => {
+    const nextVal = c.includeInOverheads === false ? true : false;
+    try {
+      await saveNominalCode({
+        id: c.id,
+        code: c.code,
+        type: c.type,
+        includeInOverheads: nextVal
+      });
+      onShowToast(`Nominal ${c.code} is now ${nextVal ? 'Included in' : 'Excluded from'} Apportioned Overheads.`, 'success');
+    } catch (err: any) {
+      onShowToast(`Error updating overhead setting: ${err.message}`, 'warning');
     }
   };
 
@@ -527,6 +546,7 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
                 <th style={{ width: '130px' }}>Nominal Code ID</th>
                 <th>Nominal Code Label</th>
                 <th style={{ width: '130px' }}>Classification</th>
+                <th style={{ width: '150px' }}>Overhead Allocation</th>
                 <th style={{ textAlign: 'right', width: '80px' }}>Actions</th>
               </tr>
             </thead>
@@ -582,6 +602,17 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
                           </select>
                         </td>
                         <td>
+                          <select
+                            className="select-filter"
+                            value={editIncludeInOverheads ? 'included' : 'excluded'}
+                            onChange={(e) => setEditIncludeInOverheads(e.target.value === 'included')}
+                            style={{ padding: '4px 8px', fontSize: '11px', width: '100%' }}
+                          >
+                            <option value="included">INCLUDED IN OVERHEADS</option>
+                            <option value="excluded">EXCLUDED FROM OVERHEADS</option>
+                          </select>
+                        </td>
+                        <td>
                           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
                             <button 
                               type="button"
@@ -620,6 +651,28 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
                           }}>
                             {c.type === 'direct' ? 'DIRECT COST' : 'INDIRECT COST'}
                           </span>
+                        </td>
+                        <td>
+                          <button 
+                            type="button"
+                            onClick={() => handleToggleOverheadInclusion(c)}
+                            style={{ 
+                              fontSize: '10px', 
+                              fontWeight: 700, 
+                              padding: '3px 8px', 
+                              borderRadius: '12px', 
+                              border: 'none', 
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              backgroundColor: c.includeInOverheads !== false ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                              color: c.includeInOverheads !== false ? '#22c55e' : '#ef4444'
+                            }}
+                            title="Click to toggle whether this nominal code is included in Apportioned Overheads"
+                          >
+                            {c.includeInOverheads !== false ? '✓ Included' : '✕ Excluded'}
+                          </button>
                         </td>
                         <td>
                           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>

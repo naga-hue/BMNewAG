@@ -1421,15 +1421,20 @@ export default function ReportsDashboard({
             if (assignedSeats.length > 0) {
               const costPerSeat = unitMonthlyCost;
               let companyAssignedCount = 0;
+              let activeAssignedTotalCount = 0;
               assignedSeats.forEach(a => {
                 const member = staff.find(s => s.id === a.staffId);
                 if (member) {
-                  const staffComp = companies.find(co => co.id === member.companyId);
-                  const effectiveCompanyId = staffComp?.country === 'India' ? contract.companyId : member.companyId;
-                  if (effectiveCompanyId === compId) {
-                    const isDept = deptFilter.includes('all') || deptFilter.includes(member.department);
-                    if (isDept) {
-                      companyAssignedCount++;
+                  const isActiveInMonth = groupActiveStaffIds.includes(member.id);
+                  if (isActiveInMonth) {
+                    activeAssignedTotalCount++;
+                    const staffComp = companies.find(co => co.id === member.companyId);
+                    const effectiveCompanyId = staffComp?.country === 'India' ? contract.companyId : member.companyId;
+                    if (effectiveCompanyId === compId) {
+                      const isDept = deptFilter.includes('all') || deptFilter.includes(member.department);
+                      if (isDept) {
+                        companyAssignedCount++;
+                      }
                     }
                   }
                 }
@@ -1437,12 +1442,21 @@ export default function ReportsDashboard({
 
               const assignedCost = companyAssignedCount * costPerSeat;
 
-              const unusedCount = Math.max(0, totalSeats - assignedSeats.length);
+              const unusedCount = Math.max(0, totalSeats - activeAssignedTotalCount);
               let unusedCost = 0;
               if (unusedCount > 0) {
-                const baseShare = getContractCompanyShare(contract, monthKey, compId);
-                if (baseShare > 0) {
-                  unusedCost = unusedCount * costPerSeat * baseShare * deptProration;
+                if (contract.unusedCostTag?.companyId) {
+                  if (contract.unusedCostTag.companyId === compId) {
+                    const isDept = deptFilter.includes('all') || deptFilter.includes(contract.unusedCostTag.department);
+                    if (isDept) {
+                      unusedCost = unusedCount * costPerSeat;
+                    }
+                  }
+                } else {
+                  const baseShare = getContractCompanyShare(contract, monthKey, compId);
+                  if (baseShare > 0) {
+                    unusedCost = unusedCount * costPerSeat * baseShare * deptProration;
+                  }
                 }
               }
 
@@ -5256,17 +5270,22 @@ export default function ReportsDashboard({
                     if (assignedSeats.length > 0) {
                       const costPerSeat = unitMonthlyCost;
                       let companyAssignedCount = 0;
+                      let activeAssignedTotalCount = 0;
                       assignedSeats.forEach(a => {
                         const member = staff.find(s => s.id === a.staffId);
                         if (member) {
-                          const staffComp = companies.find(co => co.id === member.companyId);
-                          const effectiveCompanyId = staffComp?.country === 'India' ? contract.companyId : member.companyId;
-                          if (effectiveCompanyId === compId) {
-                            const isDept = deptFilter.includes('all') || deptFilter.includes(member.department);
-                            if (isDept) {
-                              companyAssignedCount++;
-                              compRecipientStaffNames.push(member.fullName);
-                              compAssignedSeats.push(a);
+                          const isActiveInMonth = groupActiveStaff.some(st => st.id === member.id);
+                          if (isActiveInMonth) {
+                            activeAssignedTotalCount++;
+                            const staffComp = companies.find(co => co.id === member.companyId);
+                            const effectiveCompanyId = staffComp?.country === 'India' ? contract.companyId : member.companyId;
+                            if (effectiveCompanyId === compId) {
+                              const isDept = deptFilter.includes('all') || deptFilter.includes(member.department);
+                              if (isDept) {
+                                companyAssignedCount++;
+                                compRecipientStaffNames.push(member.fullName);
+                                compAssignedSeats.push(a);
+                              }
                             }
                           }
                         }
@@ -5274,12 +5293,21 @@ export default function ReportsDashboard({
 
                       const assignedCost = companyAssignedCount * costPerSeat;
 
-                      const unusedCount = Math.max(0, totalSeats - assignedSeats.length);
+                      const unusedCount = Math.max(0, totalSeats - activeAssignedTotalCount);
                       let unusedCost = 0;
                       if (unusedCount > 0) {
-                        const baseShare = getContractCompanyShare(contract, mKey, compId);
-                        if (baseShare > 0) {
-                          unusedCost = unusedCount * costPerSeat * baseShare * deptProration;
+                        if (contract.unusedCostTag?.companyId) {
+                          if (contract.unusedCostTag.companyId === compId) {
+                            const isDept = deptFilter.includes('all') || deptFilter.includes(contract.unusedCostTag.department);
+                            if (isDept) {
+                              unusedCost = unusedCount * costPerSeat;
+                            }
+                          }
+                        } else {
+                          const baseShare = getContractCompanyShare(contract, mKey, compId);
+                          if (baseShare > 0) {
+                            unusedCost = unusedCount * costPerSeat * baseShare * deptProration;
+                          }
                         }
                       }
 

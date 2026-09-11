@@ -4,6 +4,7 @@ import {
   symbolMap, 
   getContractCompanyShare 
 } from './shared';
+import { getDaysWorkedInMonth } from '../expenses/shared';
 import { toGBP, FX_RATES } from '../../utils/currency';
 
 interface ForecastMatrixProps {
@@ -230,22 +231,30 @@ export default function ForecastMatrix({
         const costPerSeat = fullCost / totalSeats;
 
         let matchingAssignedCount = 0;
+        let activeAssignedTotalCount = 0;
         assignedSeats.forEach(a => {
           const member = staff.find(s => s.id === a.staffId);
           if (member) {
-            const staffComp = companies.find(co => co.id === member.companyId);
-            const effectiveCompanyId = staffComp?.country === 'India' ? c.companyId : member.companyId;
-            if (activeCompanyIds.includes(effectiveCompanyId)) {
-              matchingAssignedCount++;
+            const daysWorked = getDaysWorkedInMonth(member.startDate, member.exitDate, monthKey);
+            if (daysWorked >= 10) {
+              activeAssignedTotalCount++;
+              const staffComp = companies.find(co => co.id === member.companyId);
+              const effectiveCompanyId = staffComp?.country === 'India' ? c.companyId : member.companyId;
+              if (activeCompanyIds.includes(effectiveCompanyId)) {
+                matchingAssignedCount++;
+              }
             }
           }
         });
         const assignedCost = matchingAssignedCount * costPerSeat;
 
-        const unusedCount = Math.max(0, totalSeats - assignedSeats.length);
+        const unusedCount = Math.max(0, totalSeats - activeAssignedTotalCount);
         let unusedCost = 0;
-        if (unusedCount > 0 && activeCompanyIds.includes(c.companyId)) {
-          unusedCost = unusedCount * costPerSeat;
+        if (unusedCount > 0) {
+          const unusedTargetCompId = c.unusedCostTag?.companyId || c.companyId;
+          if (activeCompanyIds.includes(unusedTargetCompId)) {
+            unusedCost = unusedCount * costPerSeat;
+          }
         }
 
         return assignedCost + unusedCost;
@@ -309,10 +318,15 @@ export default function ForecastMatrix({
             
             const allAssigned = assetAssignments.filter(a => a.contractId === c.id);
             const totalSeats = c.quantityPurchased || 1;
+            const mKey = `${m.year}-${String(m.monthIndex + 1).padStart(2, '0')}`;
+            const activeAssigned = allAssigned.filter(a => {
+              const member = staff.find(s => s.id === a.staffId);
+              return member && getDaysWorkedInMonth(member.startDate, member.exitDate, mKey) >= 10;
+            });
 
             if (c.splitPackageCost) {
               const totalContractCost = monthlyTotalTarget * totalSeats * taxFactor;
-              if (allAssigned.length === 0) {
+              if (activeAssigned.length === 0) {
                 let filteredUnusedCost = totalContractCost;
                 if (forecastCompanyFilter !== 'all') {
                   const share = getContractCompanyShare(c, staff, companies, forecastCompanyFilter, m.year, m.monthIndex);
@@ -322,21 +336,21 @@ export default function ForecastMatrix({
               } else {
                 let filteredAssignedCost = totalContractCost;
                 if (forecastCompanyFilter !== 'all') {
-                  const assignedInFilter = allAssigned.filter(a => {
+                  const assignedInFilter = activeAssigned.filter(a => {
                     const member = staff.find(s => s.id === a.staffId);
                     return member && member.companyId === forecastCompanyFilter;
                   }).length;
-                  filteredAssignedCost = totalContractCost * (assignedInFilter / allAssigned.length);
+                  filteredAssignedCost = totalContractCost * (assignedInFilter / activeAssigned.length);
                 }
                 assigned[idx] += filteredAssignedCost;
               }
             } else {
               const costPerSeat = monthlyTotalTarget * taxFactor;
-              const unusedCountRaw = Math.max(0, totalSeats - allAssigned.length);
+              const unusedCountRaw = Math.max(0, totalSeats - activeAssigned.length);
 
-              let filteredAssignedCount = allAssigned.length;
+              let filteredAssignedCount = activeAssigned.length;
               if (forecastCompanyFilter !== 'all') {
-                filteredAssignedCount = allAssigned.filter(a => {
+                filteredAssignedCount = activeAssigned.filter(a => {
                   const member = staff.find(s => s.id === a.staffId);
                   return member && member.companyId === forecastCompanyFilter;
                 }).length;
@@ -345,8 +359,13 @@ export default function ForecastMatrix({
 
               let filteredUnusedCost = unusedCountRaw * costPerSeat;
               if (forecastCompanyFilter !== 'all') {
-                const share = getContractCompanyShare(c, staff, companies, forecastCompanyFilter, m.year, m.monthIndex);
-                filteredUnusedCost = (unusedCountRaw * costPerSeat) * share;
+                const unusedTargetCompId = c.unusedCostTag?.companyId;
+                if (unusedTargetCompId) {
+                  filteredUnusedCost = unusedTargetCompId === forecastCompanyFilter ? (unusedCountRaw * costPerSeat) : 0;
+                } else {
+                  const share = getContractCompanyShare(c, staff, companies, forecastCompanyFilter, m.year, m.monthIndex);
+                  filteredUnusedCost = (unusedCountRaw * costPerSeat) * share;
+                }
               }
               unused[idx] += filteredUnusedCost;
             }

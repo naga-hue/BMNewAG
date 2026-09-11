@@ -270,7 +270,22 @@ export default function LicenseAllocations({
                           if (!member) return null;
                           return (
                             <div key={a.id} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1.5fr 60px', gap: '8px', padding: '8px 12px', borderBottom: '1px solid var(--border-color)', alignItems: 'center', fontSize: '12px' }}>
-                              <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{member.fullName}</div>
+                              <div style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <span>{member.fullName}</span>
+                                {member.status === 'exited' && (
+                                  <span style={{ 
+                                    fontSize: '9px', 
+                                    padding: '1px 5px', 
+                                    borderRadius: '4px', 
+                                    backgroundColor: 'rgba(239, 68, 68, 0.15)', 
+                                    color: '#ef4444', 
+                                    fontWeight: 600,
+                                    textTransform: 'uppercase'
+                                  }}>
+                                    Exited ({member.exitDate || 'Inactive'})
+                                  </span>
+                                )}
+                              </div>
                               <div>
                                 <input 
                                   type="text" 

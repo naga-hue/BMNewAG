@@ -25,6 +25,8 @@ export interface Staff {
   status?: string;
   role?: string;
   payrollPolicyId?: string;
+  allocatedCompanyIds?: string[];
+  allocationMode?: string;
   qandleEmail?: string;
   dialpadEmail?: string;
   recruitlyEmail?: string;

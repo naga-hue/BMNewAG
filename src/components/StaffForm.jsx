@@ -84,6 +84,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
   const [noticePayoutOption, setNoticePayoutOption] = useState('regular-payroll');
   const [noticePayoutCustomDate, setNoticePayoutCustomDate] = useState('');
   const [payrollPolicyId, setPayrollPolicyId] = useState('');
+  const [allocatedCompanyIds, setAllocatedCompanyIds] = useState([]);
 
   // Step 3: Compensation details state
   const [salary, setSalary] = useState('');
@@ -170,6 +171,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setNoticePayoutOption(staffMember.noticePayoutOption || 'regular-payroll');
       setNoticePayoutCustomDate(normalizeDateForInput(staffMember.noticePayoutCustomDate || ''));
       setPayrollPolicyId(staffMember.payrollPolicyId || '');
+      setAllocatedCompanyIds(staffMember.allocatedCompanyIds || []);
       setVisaExpiryDate(normalizeDateForInput(staffMember.visaExpiryDate || ''));
       setContractRenewalDate(normalizeDateForInput(staffMember.contractRenewalDate || ''));
       
@@ -218,6 +220,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setNoticePayoutOption('regular-payroll');
       setNoticePayoutCustomDate('');
       setPayrollPolicyId('');
+      setAllocatedCompanyIds([]);
       setVisaExpiryDate('');
       setContractRenewalDate('');
       
@@ -429,6 +432,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       leavePolicyId,
       commissionPolicyId,
       payrollPolicyId,
+      allocatedCompanyIds,
       status,
       visaExpiryDate,
       contractRenewalDate,
@@ -943,6 +947,52 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="form-group" style={{ marginTop: '14px', padding: '14px', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontWeight: 600 }}>Shared Cost Company Allocation</span>
+                    <span style={{ fontSize: '11px', color: allocatedCompanyIds.length > 0 ? 'var(--primary)' : 'var(--text-muted)', fontWeight: 600 }}>
+                      {allocatedCompanyIds.length === 0 ? 'All Group Trading Entities (Default)' : `${allocatedCompanyIds.length} Target Entities Selected`}
+                    </span>
+                  </label>
+                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                    Select specific operating entities to bear this staff member's salary cost (headcount-proportional split). If left unselected, costs are shared across all trading companies.
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '8px' }}>
+                    {companies
+                      .filter(c => c.includeInConsolidation !== false && c.id !== companyId)
+                      .map(c => {
+                        const isChecked = allocatedCompanyIds.includes(c.id);
+                        return (
+                          <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', padding: '6px 10px', background: isChecked ? 'rgba(59, 130, 246, 0.08)' : 'transparent', border: `1px solid ${isChecked ? 'var(--primary)' : 'var(--border-color)'}`, borderRadius: '6px', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setAllocatedCompanyIds(prev => [...prev, c.id]);
+                                } else {
+                                  setAllocatedCompanyIds(prev => prev.filter(id => id !== c.id));
+                                }
+                              }}
+                            />
+                            <span>{c.name}</span>
+                          </label>
+                        );
+                      })}
+                  </div>
+                  {allocatedCompanyIds.length > 0 && (
+                    <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        type="button"
+                        onClick={() => setAllocatedCompanyIds([])}
+                        style={{ fontSize: '11px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', textDecoration: 'underline' }}
+                      >
+                        Reset to All Companies
+                      </button>
+                    </div>
+                  )}
                 </div>
 
 

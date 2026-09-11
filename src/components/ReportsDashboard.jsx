@@ -1282,9 +1282,11 @@ export default function ReportsDashboard({
                 breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCost;
               }
             } else {
+              const targetCompanyIds = (s.allocatedCompanyIds && s.allocatedCompanyIds.length > 0) ? s.allocatedCompanyIds : null;
               const otherStaff = groupActiveStaff.filter(os => {
                 const comp = companies.find(c => c.id === os.companyId);
-                return comp && comp.includeInConsolidation !== false && os.companyId !== s.companyId;
+                const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== s.companyId;
+                return comp && comp.includeInConsolidation !== false && compMatch;
               });
               if (otherStaff.length > 0) {
                 const perStaffShare = staffCost / otherStaff.length;
@@ -2241,9 +2243,11 @@ export default function ReportsDashboard({
                 const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
                 return daysWorked >= 10;
               });
+              const targetCompanyIds = (rec.allocatedCompanyIds && rec.allocatedCompanyIds.length > 0) ? rec.allocatedCompanyIds : null;
               const otherStaff = groupActiveStaff.filter(os => {
                 const comp = companies.find(c => c.id === os.companyId);
-                return comp && comp.includeInConsolidation !== false && os.companyId !== rec.companyId;
+                const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== rec.companyId;
+                return comp && comp.includeInConsolidation !== false && compMatch;
               });
 
               if (otherStaff.length > 0) {
@@ -3340,9 +3344,11 @@ export default function ReportsDashboard({
                             const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
                             return daysWorked >= 10;
                           });
+                          const targetCompanyIds = (s.allocatedCompanyIds && s.allocatedCompanyIds.length > 0) ? s.allocatedCompanyIds : null;
                           const otherStaff = activeStaffInMonth.filter(os => {
                             const comp = companies.find(c => c.id === os.companyId);
-                            return comp && comp.includeInConsolidation !== false && os.companyId !== s.companyId;
+                            const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== s.companyId;
+                            return comp && comp.includeInConsolidation !== false && compMatch;
                           });
 
                           if (otherStaff.length > 0) {
@@ -3658,9 +3664,11 @@ export default function ReportsDashboard({
                             const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
                             return daysWorked >= 10;
                           });
+                          const targetCompanyIds = (s.allocatedCompanyIds && s.allocatedCompanyIds.length > 0) ? s.allocatedCompanyIds : null;
                           const otherStaff = activeStaffInMonth.filter(os => {
                             const comp = companies.find(c => c.id === os.companyId);
-                            return comp && comp.includeInConsolidation !== false && os.companyId !== s.companyId;
+                            const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== s.companyId;
+                            return comp && comp.includeInConsolidation !== false && compMatch;
                           });
 
                           if (otherStaff.length > 0) {
@@ -4884,9 +4892,11 @@ export default function ReportsDashboard({
                   const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
                   return daysWorked >= 10;
                 });
+                const targetCompanyIds = (sObj.allocatedCompanyIds && sObj.allocatedCompanyIds.length > 0) ? sObj.allocatedCompanyIds : null;
                 const otherStaff = groupActiveStaff.filter(os => {
                   const comp = companies.find(c => c.id === os.companyId);
-                  return comp && comp.includeInConsolidation !== false && os.companyId !== sObj.companyId;
+                  const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== sObj.companyId;
+                  return comp && comp.includeInConsolidation !== false && compMatch;
                 });
 
                 if (otherStaff.length > 0) {
@@ -4951,9 +4961,11 @@ export default function ReportsDashboard({
                   const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
                   return daysWorked >= 10;
                 });
+                const targetCompanyIds = (sObj.allocatedCompanyIds && sObj.allocatedCompanyIds.length > 0) ? sObj.allocatedCompanyIds : null;
                 const otherStaff = groupActiveStaff.filter(os => {
                   const comp = companies.find(c => c.id === os.companyId);
-                  return comp && comp.includeInConsolidation !== false && os.companyId !== sObj.companyId;
+                  const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== sObj.companyId;
+                  return comp && comp.includeInConsolidation !== false && compMatch;
                 });
 
                 if (otherStaff.length > 0) {
@@ -5899,9 +5911,11 @@ export default function ReportsDashboard({
                       }
                     }
                   } else {
+                    const targetCompanyIds = (s.allocatedCompanyIds && s.allocatedCompanyIds.length > 0) ? s.allocatedCompanyIds : null;
                     const otherStaff = groupActiveStaff.filter(os => {
                       const comp = companies.find(c => c.id === os.companyId);
-                      return comp && comp.includeInConsolidation !== false && os.companyId !== s.companyId;
+                      const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== s.companyId;
+                      return comp && comp.includeInConsolidation !== false && compMatch;
                     });
 
                     if (otherStaff.length > 0) {

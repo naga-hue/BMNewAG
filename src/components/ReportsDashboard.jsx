@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import MultiSelectFilter from './MultiSelectFilter';
 import CompanyDeptTreeFilter from './CompanyDeptTreeFilter';
 import { toGBP, FX_RATES } from '../utils/currency';

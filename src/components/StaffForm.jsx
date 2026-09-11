@@ -29,6 +29,7 @@ const MODULES_LIST = [
   { key: 'staff', label: 'Staff & Consultants' },
   { key: 'leaves', label: 'Leaves & Holidays' },
   { key: 'commissions', label: 'Commission Plans' },
+  { key: 'payroll', label: 'Group Payroll' },
   { key: 'placements', label: 'Sales & Placements' },
   { key: 'expenses', label: 'Expense Ledger' },
   { key: 'vendors', label: 'Vendors & Assets' },
@@ -1065,7 +1066,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                         } else {
                           setDataScope('self');
                           setAllowedModules([
-                            'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'placements:view', 
+                            'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'payroll:view', 'placements:view', 
                             'expenses:view', 'crm:view', 'kpis:view'
                           ]);
                         }
@@ -1118,7 +1119,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                         setRole('recruiter');
                         setDataScope('self');
                         setAllowedModules([
-                          'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
+                          'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'payroll:view', 'placements:write', 
                           'expenses:write', 'vendors:write', 'crm:write', 'kpis:write'
                         ]);
                       }}
@@ -1132,7 +1133,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                         setRole('manager');
                         setDataScope('all');
                         setAllowedModules([
-                          'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'placements:write', 
+                          'directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'payroll:write', 'placements:write', 
                           'expenses:write', 'vendors:write', 'crm:write', 'kpis:write', 'credit_control:write', 'cashflow:write', 'reports:view'
                         ]);
                       }}

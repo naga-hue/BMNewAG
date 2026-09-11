@@ -3640,29 +3640,36 @@ export default function App() {
 
           {/* TAB 5.5: Payroll Dashboard */}
           {activeTab === 'payroll' && (
-            <PayrollDashboard 
-              companies={companies}
-              staff={scopedStaff}
-              commissionPolicies={commissionPolicies}
-              placements={scopedPlacements}
-              payrollRecords={payrollRecords}
-              payrollPolicies={payrollPolicies}
-              leaveRequests={scopedLeaves}
-              leavePolicies={leavePolicies}
-              holidays={holidays}
-              expenses={expenses}
-              nominalCodes={nominalCodes}
-              onSavePayrollRecord={handleSavePayrollRecord}
-              onSavePayrollPolicy={firebaseService.savePayrollPolicy}
-              onDeletePayrollPolicy={firebaseService.deletePayrollPolicy}
-              onUpdateStaff={handleSaveStaff}
-              onSaveExpense={handleSaveExpense}
-              onDeleteExpense={handleDeleteExpense}
-              onShowToast={handleShowToast}
-              currentUser={currentUser}
-              scopingViewMode={scopingViewMode}
-              reminderSettings={reminderSettings}
-            />
+            hasViewPermission(currentUser, 'payroll') ? (
+              <PayrollDashboard 
+                companies={companies}
+                staff={scopedStaff}
+                commissionPolicies={commissionPolicies}
+                placements={scopedPlacements}
+                payrollRecords={payrollRecords}
+                payrollPolicies={payrollPolicies}
+                leaveRequests={scopedLeaves}
+                leavePolicies={leavePolicies}
+                holidays={holidays}
+                expenses={expenses}
+                nominalCodes={nominalCodes}
+                onSavePayrollRecord={handleSavePayrollRecord}
+                onSavePayrollPolicy={firebaseService.savePayrollPolicy}
+                onDeletePayrollPolicy={firebaseService.deletePayrollPolicy}
+                onUpdateStaff={handleSaveStaff}
+                onSaveExpense={handleSaveExpense}
+                onDeleteExpense={handleDeleteExpense}
+                onShowToast={handleShowToast}
+                currentUser={currentUser}
+                scopingViewMode={scopingViewMode}
+                reminderSettings={reminderSettings}
+              />
+            ) : (
+              <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>Access Restricted</h3>
+                <p style={{ fontSize: '13px' }}>You do not have permission to access Group Payroll. Please contact your system administrator.</p>
+              </div>
+            )
           )}
 
           {/* TAB 6: Vendors & Assets Dashboard */}

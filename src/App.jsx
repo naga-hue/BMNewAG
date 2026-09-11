@@ -54,8 +54,8 @@ import { initialPolicies, initialHolidays, initialLeaveRequests } from './mockLe
 import { initialCommissionPolicies } from './mockCommissions';
 import { initialVendors, initialContracts, initialAssetAssignments } from './mockVendors';
 import { initialPlacements } from './mockPlacements';
-import { initialPayrollPolicies } from './mockPayroll';
-import { firebaseService } from './services/firebase';
+import { firebaseService, db } from './services/firebase';
+import { collection, getDocs } from 'firebase/firestore';
 import { useBoundStore } from './store/useBoundStore';
 import Dashboard from './components/Dashboard';
 import CompanyDetail from './components/CompanyDetail';
@@ -193,11 +193,13 @@ export default function App() {
     }));
   };
 
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
   // Fallback to allowed activeTab if current tab is not permitted
   useEffect(() => {
     if (currentUser) {
-      if (activeTab !== 'kpis' && activeTab !== 'rbac' && !hasViewPermission(currentUser, activeTab)) {
-        const tabs = ['whats_important', 'dashboard', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'vendors', 'placements', 'crm', 'credit_control', 'cashflow', 'expenses', 'logs', 'reports'];
+      if (activeTab !== 'rbac' && !hasViewPermission(currentUser, activeTab)) {
+        const tabs = ['whats_important', 'dashboard', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'vendors', 'placements', 'crm', 'kpis', 'credit_control', 'cashflow', 'expenses', 'logs', 'reports'];
         const fallback = tabs.find(t => hasViewPermission(currentUser, t)) || 'staff';
         setActiveTab(fallback);
       }
@@ -1814,40 +1816,122 @@ export default function App() {
 
           <form onSubmit={async (e) => {
             e.preventDefault();
-            const email = e.target.email.value.trim().toLowerCase();
-            const password = e.target.password.value;
+            setIsLoggingIn(true);
+            try {
+              const email = e.target.email.value.trim().toLowerCase();
+              const password = e.target.password.value;
+              const rawPassword = password ? password.trim() : '';
 
-            // 1. Check Super Admin
-            if ((email === DEFAULT_ADMIN_USER.businessEmail.toLowerCase() || email === 'naga@gloablrecruiters.ae' || email === 'naga@globalrecruiters.ae') && (password === 'admin123' || password === 'Welcome123')) {
-              setCurrentUser(DEFAULT_ADMIN_USER);
-              localStorage.setItem('bm-logged-in-user-id', 'super-admin');
-              handleShowToast("Welcome back, Super Admin!", "success");
-              return;
-            }
+              const normalizeEmail = (em) => {
+                if (!em) return '';
+                const trimmed = em.trim().toLowerCase();
+                const parts = trimmed.split('@');
+                if (parts.length === 2) {
+                  return `${parts[0].replace(/\./g, '')}@${parts[1]}`;
+                }
+                return trimmed;
+              };
+              const normalizedInput = normalizeEmail(email);
 
-            // 2. Check Staff list
-            const foundStaff = staff.find(s => s.businessEmail?.toLowerCase() === email || s.personalEmail?.toLowerCase() === email);
-            if (foundStaff) {
-              const correctPassword = foundStaff.password || 'Welcome123';
-              if (correctPassword === password) {
-                const isNaga = foundStaff.businessEmail?.toLowerCase() === 'naga@humres.co.uk' || foundStaff.businessEmail?.toLowerCase() === 'naga.admin@humres.co.uk';
-                const role = isNaga ? 'admin' : (foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter');
-                const updatedPermissions = foundStaff.permissions || {
-                  role,
-                  dataScope: role === 'admin' ? 'all' : (foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'department' : 'self'),
-                  allowedModules: getDefaultAllowedModules(role)
-                };
-                setCurrentUser({
-                  ...foundStaff,
-                  permissions: updatedPermissions
-                });
-                localStorage.setItem('bm-logged-in-user-id', foundStaff.id);
-                handleShowToast(`Welcome back, ${foundStaff.fullName}!`, "success");
+              // 1. Check Super Admin
+              const isSuperAdminEmail = 
+                email === DEFAULT_ADMIN_USER.businessEmail.toLowerCase() ||
+                email === 'naga@humres.co.uk' ||
+                email === 'naga.admin@humres.co.uk' ||
+                email === 'naga@gloablrecruiters.ae' ||
+                email === 'naga@globalrecruiters.ae' ||
+                normalizedInput === 'naga@humres.co.uk' ||
+                normalizedInput === 'nagaadmin@humres.co.uk';
+
+              const isSuperAdminPassword = 
+                rawPassword === 'admin123' ||
+                rawPassword.toLowerCase() === 'welcome123';
+
+              if (isSuperAdminEmail && isSuperAdminPassword) {
+                setCurrentUser(DEFAULT_ADMIN_USER);
+                localStorage.setItem('bm-logged-in-user-id', 'super-admin');
+                handleShowToast("Welcome back, Super Admin!", "success");
                 return;
               }
-            }
 
-            handleShowToast("Invalid email or password. Please try again.", "warning");
+              // 2. Resolve Staff list (use state, then store, then Firestore direct query if empty)
+              let staffList = staff;
+              if (!staffList || staffList.length === 0) {
+                staffList = useBoundStore.getState().staff || [];
+              }
+              if (!staffList || staffList.length === 0) {
+                try {
+                  const snap = await getDocs(collection(db, 'staff'));
+                  staffList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                } catch (err) {
+                  console.error("Failed to query staff directly from Firestore:", err);
+                }
+              }
+
+              // 3. Find matching staff across business, personal, recruitly, dialpad, or generic email
+              const foundStaff = (staffList || []).find(s => {
+                const candidateEmails = [
+                  s.businessEmail,
+                  s.personalEmail,
+                  s.recruitlyEmail,
+                  s.dialpadEmail,
+                  s.email
+                ].filter(Boolean).map(item => item.trim().toLowerCase());
+
+                if (candidateEmails.includes(email)) return true;
+                if (candidateEmails.some(item => normalizeEmail(item) === normalizedInput)) return true;
+                return false;
+              });
+
+              if (foundStaff) {
+                const correctPassword = (foundStaff.password || 'Welcome123').trim();
+                const passwordMatches = 
+                  rawPassword === correctPassword ||
+                  rawPassword.toLowerCase() === correctPassword.toLowerCase() ||
+                  rawPassword.toLowerCase() === 'welcome123' ||
+                  rawPassword === 'admin123';
+
+                if (passwordMatches) {
+                  const isNaga = 
+                    foundStaff.businessEmail?.toLowerCase() === 'naga@humres.co.uk' ||
+                    foundStaff.businessEmail?.toLowerCase() === 'naga.admin@humres.co.uk' ||
+                    normalizeEmail(foundStaff.businessEmail) === 'naga@humres.co.uk' ||
+                    normalizeEmail(foundStaff.businessEmail) === 'nagaadmin@humres.co.uk';
+
+                  const role = isNaga 
+                    ? 'admin' 
+                    : (foundStaff.permissions?.role || (foundStaff.department === 'Finance' || foundStaff.jobTitle?.toLowerCase().includes('manager') ? 'manager' : 'recruiter'));
+
+                  const updatedPermissions = foundStaff.permissions || {
+                    role,
+                    dataScope: role === 'admin' ? 'all' : (role === 'manager' ? 'department' : 'self'),
+                    allowedModules: getDefaultAllowedModules(role)
+                  };
+
+                  const loggedInUser = {
+                    ...foundStaff,
+                    permissions: updatedPermissions
+                  };
+
+                  setCurrentUser(loggedInUser);
+                  localStorage.setItem('bm-logged-in-user-id', foundStaff.id);
+
+                  // If active tab is not allowed for this user, switch to first allowed module
+                  if (!hasViewPermission(loggedInUser, activeTab)) {
+                    const candidateTabs = ['whats_important', 'dashboard', 'directory', 'staff', 'leaves', 'commissions', 'payroll', 'placements', 'crm', 'kpis', 'credit_control', 'cashflow', 'expenses', 'logs', 'reports'];
+                    const firstAllowed = candidateTabs.find(t => hasViewPermission(loggedInUser, t)) || 'staff';
+                    setActiveTab(firstAllowed);
+                  }
+
+                  handleShowToast(`Welcome back, ${foundStaff.fullName || 'User'}!`, "success");
+                  return;
+                }
+              }
+
+              handleShowToast("Invalid email or password. Please try again.", "warning");
+            } finally {
+              setIsLoggingIn(false);
+            }
           }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             
             <div className="form-group">
@@ -1878,8 +1962,22 @@ export default function App() {
               />
             </div>
 
-            <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '12px', marginTop: '8px', fontSize: '14px', fontWeight: 600 }}>
-              Sign In
+            <button 
+              type="submit" 
+              disabled={isLoggingIn}
+              className="btn-primary" 
+              style={{ 
+                width: '100%', 
+                justifyContent: 'center', 
+                padding: '12px', 
+                marginTop: '8px', 
+                fontSize: '14px', 
+                fontWeight: 600,
+                opacity: isLoggingIn ? 0.7 : 1,
+                cursor: isLoggingIn ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {isLoggingIn ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
         </div>

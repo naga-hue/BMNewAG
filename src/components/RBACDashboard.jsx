@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shield, CheckSquare, Square, Save, Users, Key, FileText, Settings, Edit3, Trash2, Plus, AlertTriangle, Upload } from 'lucide-react';
+import { Shield, CheckSquare, Square, Save, Users, Key, FileText, Settings, Edit3, Trash2, Plus, AlertTriangle, Upload, Mail } from 'lucide-react';
 import { firebaseService } from '../services/firebase';
 
 const MODULES_LIST = [
@@ -431,8 +431,15 @@ Yours sincerely,
               return (
                 <tr key={s.id} style={{ cursor: 'default' }}>
                   <td>
-                    <div style={{ fontWeight: 600 }}>{s.fullName}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{s.jobTitle}</div>
+                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.fullName}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{s.jobTitle || 'No job title'}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                      <Mail size={11} />
+                      <span style={{ wordBreak: 'break-all' }}>{s.businessEmail || s.personalEmail || s.email || 'No email registered'}</span>
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontFamily: 'monospace', marginTop: '1px' }}>
+                      ID: {s.employeeId ? `${s.employeeId} (${s.id})` : s.id}
+                    </div>
                   </td>
                   <td>{s.department || '—'} &bull; {employer ? employer.name : 'Group'}</td>
                   
@@ -520,14 +527,19 @@ Yours sincerely,
                   {/* Password column */}
                   <td>
                     {isEditing ? (
-                      <input 
-                        type="text" 
-                        className="form-input" 
-                        value={editPassword}
-                        onChange={(e) => setEditPassword(e.target.value)}
-                        placeholder="Welcome123"
-                        style={{ padding: '4px 8px', fontSize: '12px', width: '130px' }}
-                      />
+                      <div>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          value={editPassword}
+                          onChange={(e) => setEditPassword(e.target.value)}
+                          placeholder="Welcome123"
+                          style={{ padding: '4px 8px', fontSize: '12px', width: '130px' }}
+                        />
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                          Login: <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{s.businessEmail || s.personalEmail || s.email || 'No email'}</span>
+                        </div>
+                      </div>
                     ) : (
                       <span style={{ fontSize: '12px', color: s.password ? 'var(--text-secondary)' : 'var(--danger)', fontFamily: s.password ? 'monospace' : 'inherit' }}>
                         {s.password ? '••••••••' : '⚠️ No password set'}
@@ -562,6 +574,31 @@ Yours sincerely,
                   <td style={{ maxWidth: '400px' }}>
                     {isEditing ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {/* User ID & Email Banner */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: '6px',
+                          backgroundColor: 'var(--bg-secondary)',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)',
+                          fontSize: '11px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>User ID:</span>
+                            <code style={{ fontSize: '10px', backgroundColor: 'var(--bg-card)', padding: '2px 6px', borderRadius: '3px', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}>
+                              {s.employeeId ? `${s.employeeId} (${s.id})` : s.id}
+                            </code>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--primary)', fontWeight: 600 }}>
+                            <Mail size={12} />
+                            <span>{s.businessEmail || s.personalEmail || s.email || 'No email registered'}</span>
+                          </div>
+                        </div>
+
                         <div style={{ display: 'flex', gap: '6px', marginBottom: '6px', flexWrap: 'wrap' }}>
                           <button
                             type="button"

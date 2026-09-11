@@ -5488,7 +5488,13 @@ export default function KpisDashboard({
                         </td>
                         <td style={{ padding: '12px 10px' }}>
                           <span style={{ fontWeight: 600, display: 'block' }}>👤 {s.fullName}</span>
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{s.department || 'No department'}</span>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block' }}>{s.department || 'No department'}</span>
+                          <span style={{ fontSize: '11px', color: 'var(--primary)', display: 'block', marginTop: '2px' }}>
+                            ✉️ {s.businessEmail || s.personalEmail || s.email || 'No email registered'}
+                          </span>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace', display: 'block' }}>
+                            ID: {s.employeeId ? `${s.employeeId} (${s.id})` : s.id}
+                          </span>
                         </td>
                         <td>
                           {isEditing ? (

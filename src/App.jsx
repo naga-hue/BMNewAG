@@ -54,6 +54,7 @@ import { initialPolicies, initialHolidays, initialLeaveRequests } from './mockLe
 import { initialCommissionPolicies } from './mockCommissions';
 import { initialVendors, initialContracts, initialAssetAssignments } from './mockVendors';
 import { initialPlacements } from './mockPlacements';
+import { initialPayrollPolicies } from './mockPayroll';
 import { firebaseService, db } from './services/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import { useBoundStore } from './store/useBoundStore';

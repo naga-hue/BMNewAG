@@ -1191,24 +1191,32 @@ export default function ReportsDashboard({
 
           // Apportionment check for 1004 - SA-Shared costs
           if (targetNominal.includes('1004')) {
-            const otherStaff = groupActiveStaff.filter(os => {
-              const comp = companies.find(c => c.id === os.companyId);
-              return comp && comp.includeInConsolidation !== false && os.companyId !== s.companyId;
-            });
-            if (otherStaff.length > 0) {
-              const perStaffShare = staffCost / otherStaff.length;
-              otherStaff.forEach(os => {
-                const isComp = activeCompanyIds.includes(os.companyId);
-                const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
-                if (isComp && isDept) {
-                  breakdown[matchedKey] = (breakdown[matchedKey] || 0) + perStaffShare;
-                }
-              });
-            } else {
+            if (s.companyId && s.companyId !== 'comp-1782789370085') {
               const isComp = activeCompanyIds.includes(s.companyId);
               const isDept = deptFilter.includes('all') || deptFilter.includes(s.department);
               if (isComp && isDept) {
                 breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCost;
+              }
+            } else {
+              const otherStaff = groupActiveStaff.filter(os => {
+                const comp = companies.find(c => c.id === os.companyId);
+                return comp && comp.includeInConsolidation !== false && os.companyId !== s.companyId;
+              });
+              if (otherStaff.length > 0) {
+                const perStaffShare = staffCost / otherStaff.length;
+                otherStaff.forEach(os => {
+                  const isComp = activeCompanyIds.includes(os.companyId);
+                  const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
+                  if (isComp && isDept) {
+                    breakdown[matchedKey] = (breakdown[matchedKey] || 0) + perStaffShare;
+                  }
+                });
+              } else {
+                const isComp = activeCompanyIds.includes(s.companyId);
+                const isDept = deptFilter.includes('all') || deptFilter.includes(s.department);
+                if (isComp && isDept) {
+                  breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCost;
+                }
               }
             }
           } else {
@@ -3088,28 +3096,35 @@ export default function ReportsDashboard({
                       }
 
                       if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
-                        const activeStaffInMonth = staff.filter(st => {
-                          const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
-                          return daysWorked >= 10;
-                        });
-                        const otherStaff = activeStaffInMonth.filter(os => {
-                          const comp = companies.find(c => c.id === os.companyId);
-                          return comp && comp.includeInConsolidation !== false && os.companyId !== s.companyId;
-                        });
-
-                        if (otherStaff.length > 0) {
-                          const perStaffShareSal = pay.salaries / otherStaff.length;
-                          const perStaffShareComm = pay.commissions / otherStaff.length;
-                          otherStaff.forEach(os => {
-                            if (companyDataMap[os.companyId] && (deptFilter.includes('all') || deptFilter.includes(os.department))) {
-                              companyDataMap[os.companyId].salaries += perStaffShareSal;
-                              companyDataMap[os.companyId].commissions += perStaffShareComm;
-                            }
-                          });
-                        } else {
+                        if (s.companyId && s.companyId !== 'comp-1782789370085') {
                           if (companyDataMap[s.companyId] && (deptFilter.includes('all') || deptFilter.includes(s.department))) {
                             companyDataMap[s.companyId].salaries += pay.salaries;
                             companyDataMap[s.companyId].commissions += pay.commissions;
+                          }
+                        } else {
+                          const activeStaffInMonth = staff.filter(st => {
+                            const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
+                            return daysWorked >= 10;
+                          });
+                          const otherStaff = activeStaffInMonth.filter(os => {
+                            const comp = companies.find(c => c.id === os.companyId);
+                            return comp && comp.includeInConsolidation !== false && os.companyId !== s.companyId;
+                          });
+
+                          if (otherStaff.length > 0) {
+                            const perStaffShareSal = pay.salaries / otherStaff.length;
+                            const perStaffShareComm = pay.commissions / otherStaff.length;
+                            otherStaff.forEach(os => {
+                              if (companyDataMap[os.companyId] && (deptFilter.includes('all') || deptFilter.includes(os.department))) {
+                                companyDataMap[os.companyId].salaries += perStaffShareSal;
+                                companyDataMap[os.companyId].commissions += perStaffShareComm;
+                              }
+                            });
+                          } else {
+                            if (companyDataMap[s.companyId] && (deptFilter.includes('all') || deptFilter.includes(s.department))) {
+                              companyDataMap[s.companyId].salaries += pay.salaries;
+                              companyDataMap[s.companyId].commissions += pay.commissions;
+                            }
                           }
                         }
                       } else {
@@ -3399,28 +3414,35 @@ export default function ReportsDashboard({
                       }
 
                       if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
-                        const activeStaffInMonth = staff.filter(st => {
-                          const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
-                          return daysWorked >= 10;
-                        });
-                        const otherStaff = activeStaffInMonth.filter(os => {
-                          const comp = companies.find(c => c.id === os.companyId);
-                          return comp && comp.includeInConsolidation !== false && os.companyId !== s.companyId;
-                        });
-
-                        if (otherStaff.length > 0) {
-                          const perStaffShareSal = pay.salaries / otherStaff.length;
-                          const perStaffShareComm = pay.commissions / otherStaff.length;
-                          otherStaff.forEach(os => {
-                            if (deptDataMap[os.department] && activeCompanyIds.includes(os.companyId)) {
-                              deptDataMap[os.department].salaries += perStaffShareSal;
-                              deptDataMap[os.department].commissions += perStaffShareComm;
-                            }
-                          });
-                        } else {
+                        if (s.companyId && s.companyId !== 'comp-1782789370085') {
                           if (deptDataMap[s.department] && activeCompanyIds.includes(s.companyId)) {
                             deptDataMap[s.department].salaries += pay.salaries;
                             deptDataMap[s.department].commissions += pay.commissions;
+                          }
+                        } else {
+                          const activeStaffInMonth = staff.filter(st => {
+                            const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
+                            return daysWorked >= 10;
+                          });
+                          const otherStaff = activeStaffInMonth.filter(os => {
+                            const comp = companies.find(c => c.id === os.companyId);
+                            return comp && comp.includeInConsolidation !== false && os.companyId !== s.companyId;
+                          });
+
+                          if (otherStaff.length > 0) {
+                            const perStaffShareSal = pay.salaries / otherStaff.length;
+                            const perStaffShareComm = pay.commissions / otherStaff.length;
+                            otherStaff.forEach(os => {
+                              if (deptDataMap[os.department] && activeCompanyIds.includes(os.companyId)) {
+                                deptDataMap[os.department].salaries += perStaffShareSal;
+                                deptDataMap[os.department].commissions += perStaffShareComm;
+                              }
+                            });
+                          } else {
+                            if (deptDataMap[s.department] && activeCompanyIds.includes(s.companyId)) {
+                              deptDataMap[s.department].salaries += pay.salaries;
+                              deptDataMap[s.department].commissions += pay.commissions;
+                            }
                           }
                         }
                       } else {
@@ -5602,32 +5624,7 @@ export default function ReportsDashboard({
 
                 // Apply company & department matches
                 if (routedNominal.startsWith('1004') || routedNominal.toLowerCase().includes('shared')) {
-                  const otherStaff = groupActiveStaff.filter(os => {
-                    const comp = companies.find(c => c.id === os.companyId);
-                    return comp && comp.includeInConsolidation !== false && os.companyId !== s.companyId;
-                  });
-
-                  if (otherStaff.length > 0) {
-                    const perStaffShare = staffCost / otherStaff.length;
-                    otherStaff.forEach(os => {
-                      if (isCompanyMatch(os.companyId) && isDeptMatch(os.department)) {
-                        if (!nominalCode || routedNominal === nominalCode || routedNominal.startsWith(nominalCode)) {
-                          projectedItems.push({
-                            id: `proj-staff-${s.id}-${mKey}-${os.companyId}`,
-                            date: `${mKey}-01`,
-                            plMonth: mKey,
-                            payee: `${s.fullName} (Shared Cost Share via ${os.fullName})`,
-                            nominalCode: routedNominal,
-                            recipientType: 'staff',
-                            recipientId: s.id,
-                            amount: perStaffShare,
-                            currency: 'GBP',
-                            isProjection: true
-                          });
-                        }
-                      }
-                    });
-                  } else {
+                  if (s.companyId && s.companyId !== 'comp-1782789370085') {
                     if (isCompanyMatch(s.companyId) && isDeptMatch(s.department)) {
                       if (!nominalCode || routedNominal === nominalCode || routedNominal.startsWith(nominalCode)) {
                         projectedItems.push({
@@ -5642,6 +5639,50 @@ export default function ReportsDashboard({
                           currency: 'GBP',
                           isProjection: true
                         });
+                      }
+                    }
+                  } else {
+                    const otherStaff = groupActiveStaff.filter(os => {
+                      const comp = companies.find(c => c.id === os.companyId);
+                      return comp && comp.includeInConsolidation !== false && os.companyId !== s.companyId;
+                    });
+
+                    if (otherStaff.length > 0) {
+                      const perStaffShare = staffCost / otherStaff.length;
+                      otherStaff.forEach(os => {
+                        if (isCompanyMatch(os.companyId) && isDeptMatch(os.department)) {
+                          if (!nominalCode || routedNominal === nominalCode || routedNominal.startsWith(nominalCode)) {
+                            projectedItems.push({
+                              id: `proj-staff-${s.id}-${mKey}-${os.companyId}`,
+                              date: `${mKey}-01`,
+                              plMonth: mKey,
+                              payee: `${s.fullName} (Shared Cost Share via ${os.fullName})`,
+                              nominalCode: routedNominal,
+                              recipientType: 'staff',
+                              recipientId: s.id,
+                              amount: perStaffShare,
+                              currency: 'GBP',
+                              isProjection: true
+                            });
+                          }
+                        }
+                      });
+                    } else {
+                      if (isCompanyMatch(s.companyId) && isDeptMatch(s.department)) {
+                        if (!nominalCode || routedNominal === nominalCode || routedNominal.startsWith(nominalCode)) {
+                          projectedItems.push({
+                            id: `proj-staff-${s.id}-${mKey}`,
+                            date: `${mKey}-01`,
+                            plMonth: mKey,
+                            payee: `${s.fullName} (Shared Cost - Direct)`,
+                            nominalCode: routedNominal,
+                            recipientType: 'staff',
+                            recipientId: s.id,
+                            amount: staffCost,
+                            currency: 'GBP',
+                            isProjection: true
+                          });
+                        }
                       }
                     }
                   }

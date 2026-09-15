@@ -186,71 +186,104 @@ function consolidateCalls(calls) {
   });
 }
 
-async function updateRecruiterKpis(firestore, handlerId, dateKey) {
-  if (!handlerId || !dateKey) return;
-  const docId = `${handlerId}_${dateKey}`;
-  console.log(`[KPI Rebuild] Recalculating totals for recruiter ${handlerId} on ${dateKey}...`);
+async function batchUpdateRecruiterKpis(firestore, affectedRecruiters, staffList = []) {
+  if (!affectedRecruiters || affectedRecruiters.size === 0) return;
 
-  try {
-    const staffDoc = await firestore.collection('staff').doc(handlerId).get();
-    if (!staffDoc.exists) return;
-    const staff = staffDoc.data();
+  // Group recruiters by date
+  const dateMap = new Map(); // dateStr -> Set of recruiterIds
+  for (const pair of affectedRecruiters) {
+    const [rId, dateStr] = pair.split('_');
+    if (!rId || !dateStr) continue;
+    if (!dateMap.has(dateStr)) dateMap.set(dateStr, new Set());
+    dateMap.get(dateStr).add(rId);
+  }
 
-    const dayCallsSnap = await firestore.collection('dialpad_calls')
-      .where('dateStarted', '>=', `${dateKey}T00:00:00`)
-      .where('dateStarted', '<=', `${dateKey}T23:59:59.999Z`)
-      .get();
+  // Create staff lookup map
+  const staffMap = new Map();
+  if (Array.isArray(staffList)) {
+    staffList.forEach(s => staffMap.set(s.id, s));
+  }
 
-    let callsInbound = 0;
-    let callsOutbound = 0;
-    let callsTotal = 0;
-    let totalTalkTimeSeconds = 0;
-    let callsOver5Min = 0;
-    let callsOver10Min = 0;
+  for (const [dateStr, rIds] of dateMap.entries()) {
+    try {
+      console.log(`[KPI Batch] Single query for ${dateStr} across ${rIds.size} recruiters (saving thousands of reads)...`);
+      const dayCallsSnap = await firestore.collection('dialpad_calls')
+        .where('dateStarted', '>=', `${dateStr}T00:00:00`)
+        .where('dateStarted', '<=', `${dateStr}T23:59:59.999Z`)
+        .get();
 
-    const rawCalls = [];
-    dayCallsSnap.forEach(docSnap => {
-      const call = docSnap.data();
-      if (call.handlerId === handlerId) {
-        rawCalls.push(call);
+      const callsByHandler = new Map();
+      dayCallsSnap.forEach(docSnap => {
+        const call = docSnap.data();
+        if (call.handlerId) {
+          if (!callsByHandler.has(call.handlerId)) callsByHandler.set(call.handlerId, []);
+          callsByHandler.get(call.handlerId).push(call);
+        }
+      });
+
+      for (const handlerId of rIds) {
+        let staff = staffMap.get(handlerId);
+        if (!staff) {
+          try {
+            const sDoc = await firestore.collection('staff').doc(handlerId).get();
+            if (sDoc.exists) {
+              staff = sDoc.data();
+              staffMap.set(handlerId, staff);
+            }
+          } catch (e) {}
+        }
+        if (!staff) continue;
+
+        const rawCalls = callsByHandler.get(handlerId) || [];
+        const consolidated = consolidateCalls(rawCalls);
+
+        let callsInbound = 0;
+        let callsOutbound = 0;
+        let callsTotal = 0;
+        let totalTalkTimeSeconds = 0;
+        let callsOver5Min = 0;
+        let callsOver10Min = 0;
+
+        consolidated.forEach(call => {
+          callsTotal++;
+          if ((call.direction || '').toLowerCase() === 'inbound') {
+            callsInbound++;
+          } else {
+            callsOutbound++;
+          }
+          
+          const duration = Number(call.durationSeconds || 0);
+          totalTalkTimeSeconds += duration;
+          if (duration >= 300) callsOver5Min++;
+          if (duration >= 600) callsOver10Min++;
+        });
+
+        const docId = `${handlerId}_${dateStr}`;
+        const kpiData = {
+          staffId: handlerId,
+          staffName: staff.fullName || '',
+          department: staff.department || '',
+          email: staff.businessEmail || staff.personalEmail || '',
+          date: dateStr,
+          callsInbound,
+          callsOutbound,
+          callsTotal,
+          totalTalkTimeSeconds,
+          callsOver5Min,
+          callsOver10Min,
+          lastUpdated: new Date().toISOString()
+        };
+
+        await firestore.collection('kpiDaily').doc(docId).set(kpiData, { merge: true });
+        console.log(`[KPI Batch] Saved doc ${docId}: talkTime=${totalTalkTimeSeconds}s, calls=${callsTotal}`);
       }
-    });
-
-    const consolidated = consolidateCalls(rawCalls);
-
-    consolidated.forEach(call => {
-      callsTotal++;
-      if ((call.direction || '').toLowerCase() === 'inbound') {
-        callsInbound++;
+    } catch (err) {
+      if (err?.code === 8 || String(err?.message || '').includes('RESOURCE_EXHAUSTED')) {
+        console.warn(`[KPI Batch] Quota limit reached while batch updating KPIs for date ${dateStr}. Skipping.`);
       } else {
-        callsOutbound++;
+        console.error(`[KPI Batch] Error batch updating KPIs for date ${dateStr}:`, err);
       }
-      
-      const duration = Number(call.durationSeconds || 0);
-      totalTalkTimeSeconds += duration;
-      if (duration >= 300) callsOver5Min++;
-      if (duration >= 600) callsOver10Min++;
-    });
-
-    const kpiData = {
-      staffId: handlerId,
-      staffName: staff.fullName || '',
-      department: staff.department || '',
-      email: staff.businessEmail || staff.personalEmail || '',
-      date: dateKey,
-      callsInbound,
-      callsOutbound,
-      callsTotal,
-      totalTalkTimeSeconds,
-      callsOver5Min,
-      callsOver10Min,
-      lastUpdated: new Date().toISOString()
-    };
-
-    await firestore.collection('kpiDaily').doc(docId).set(kpiData, { merge: true });
-    console.log(`[KPI Rebuild] Saved doc ${docId}: talkTime=${totalTalkTimeSeconds}s`);
-  } catch (err) {
-    console.error(`[KPI Rebuild] Error updating ${handlerId} on ${dateKey}:`, err);
+    }
   }
 }
 
@@ -493,12 +526,9 @@ export default async function handler(req, res) {
 
     console.log(`[Sync Calls] Completed sweep. Saved/healed ${healedCount} calls.`);
 
-    // 3. Recalculate daily kpis for affected recruiters & dates
+    // 3. Recalculate daily kpis for affected recruiters & dates efficiently (single query per date)
     if (affectedRecruiters.size > 0) {
-      for (const pair of affectedRecruiters) {
-        const [rId, dateStr] = pair.split('_');
-        await updateRecruiterKpis(firestore, rId, dateStr);
-      }
+      await batchUpdateRecruiterKpis(firestore, affectedRecruiters, staffList);
     }
 
     return res.status(200).json({

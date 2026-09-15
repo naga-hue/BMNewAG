@@ -24,7 +24,9 @@ import {
   ChevronRight,
   Filter,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  AlertCircle,
+  Info
 } from 'lucide-react';
 
 const CA_FORMATTER = new Intl.DateTimeFormat('en-CA', {
@@ -796,6 +798,41 @@ export default function KpisDashboard({
   const [overviewTimeRange, setOverviewTimeRange] = useState('today');
   const [overviewCustomStartDate, setOverviewCustomStartDate] = useState('');
   const [overviewCustomEndDate, setOverviewCustomEndDate] = useState('');
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+
+  const handleManualSync = async () => {
+    setIsSyncingAll(true);
+    try {
+      const secret = 'qandle-talent-kpi-hub-key-2026';
+      const [dialpadRes, qandleRes] = await Promise.allSettled([
+        fetch(`/api/dialpad/sync-recent-calls?secret=${secret}`).then(r => r.json()),
+        fetch(`/api/qandle/sync?secret=${secret}`).then(r => r.json())
+      ]);
+      
+      let msg = '';
+      if (dialpadRes.status === 'fulfilled' && dialpadRes.value) {
+        if (dialpadRes.value.quotaExceeded || (dialpadRes.value.error && String(dialpadRes.value.error).includes('RESOURCE_EXHAUSTED'))) {
+          setIsQuotaExceeded(true);
+          msg = 'Firestore quota exceeded';
+        } else {
+          msg = dialpadRes.value.message || 'Dialpad synchronized';
+        }
+      }
+      
+      setPollTrigger(p => p + 1);
+      if (msg) {
+        onShowToast?.(msg, msg.includes('quota') ? 'error' : 'success');
+      } else {
+        onShowToast?.('Sync requested', 'info');
+      }
+    } catch (err) {
+      console.error('Manual sync failed:', err);
+      onShowToast?.('Sync failed: ' + (err.message || 'Unknown error'), 'error');
+    } finally {
+      setIsSyncingAll(false);
+    }
+  };
 
   const handleDrillDown = (staffId, category, isPerformance = false) => {
     // 1. Copy active date filter to call logs date filter
@@ -1627,8 +1664,14 @@ export default function KpisDashboard({
         setKpiLastRefreshed(new Date().toLocaleTimeString());
       } catch (e) {
         console.error('Error loading KPI data:', e);
+        const isQuota = e?.code === 'resource-exhausted' || 
+          String(e?.message || '').toLowerCase().includes('quota') || 
+          String(e?.message || '').toLowerCase().includes('resource_exhausted');
+        if (isQuota) {
+          setIsQuotaExceeded(true);
+        }
         if (isMounted) {
-          onShowToast?.('Failed to load call performance data from database', 'error');
+          onShowToast?.(isQuota ? 'Database daily quota limit reached. Showing offline cached data.' : 'Failed to load call performance data from database', 'error');
         }
       } finally {
         clearTimeout(safetyTimeout);
@@ -1748,8 +1791,14 @@ export default function KpisDashboard({
           setIsLoadingCalls(false);
         } catch (fallbackError) {
           console.error('Fallback calls fetch failed:', fallbackError);
+          const isQuota = fallbackError?.code === 'resource-exhausted' || 
+            String(fallbackError?.message || '').toLowerCase().includes('quota') || 
+            String(fallbackError?.message || '').toLowerCase().includes('resource_exhausted');
+          if (isQuota) {
+            setIsQuotaExceeded(true);
+          }
           if (isMounted) {
-            onShowToast?.('Failed to load call logs', 'error');
+            onShowToast?.(isQuota ? 'Database daily quota reached while loading calls' : 'Failed to load call logs', 'error');
             setIsLoadingCalls(false);
           }
         }
@@ -3097,6 +3146,28 @@ export default function KpisDashboard({
 
             {/* Global Date Filter Controls */}
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+              {/* Sync Now Button */}
+              <button
+                onClick={handleManualSync}
+                disabled={isSyncingAll}
+                className="btn-secondary"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '4px 8px',
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  borderRadius: '4px',
+                  cursor: isSyncingAll ? 'not-allowed' : 'pointer',
+                  opacity: isSyncingAll ? 0.7 : 1
+                }}
+                title="Trigger immediate sync from Dialpad and Qandle APIs"
+              >
+                <RefreshCw size={11} style={{ animation: isSyncingAll ? 'spin 1s linear infinite' : 'none' }} />
+                <span>{isSyncingAll ? 'Syncing...' : 'Sync Now'}</span>
+              </button>
+
               <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-secondary)', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
                 {[
                   { id: 'today', label: 'Today' },
@@ -3146,6 +3217,81 @@ export default function KpisDashboard({
               )}
             </div>
           </div>
+
+          {/* Quota Exceeded Alert Banner */}
+          {isQuotaExceeded && (
+            <div style={{
+              backgroundColor: '#fef2f2',
+              border: '1px solid #fca5a5',
+              borderRadius: '6px',
+              padding: '10px 14px',
+              marginBottom: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              color: '#991b1b',
+              fontSize: '12px',
+              lineHeight: '1.4'
+            }}>
+              <AlertCircle size={18} style={{ color: '#dc2626', flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <strong>Firestore Daily Quota Limit Reached (RESOURCE_EXHAUSTED)</strong>: The database daily read quota was exceeded during morning call ingestion. The dashboard is currently displaying offline/cached data. Live operations will automatically resume when Google Cloud resets the daily quota (or upon upgrading to the Firebase Blaze plan in Firebase Console).
+              </div>
+              <button
+                onClick={() => setIsQuotaExceeded(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#991b1b',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  padding: '0 4px'
+                }}
+                title="Dismiss"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          {/* Empty Today Fallback Banner */}
+          {overviewTimeRange === 'today' && !isLoading && overviewStats.totalCalls === 0 && (
+            <div style={{
+              backgroundColor: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              borderRadius: '6px',
+              padding: '8px 14px',
+              marginBottom: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              color: '#1e40af',
+              fontSize: '12px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Info size={16} style={{ color: '#2563eb', flexShrink: 0 }} />
+                <span>No call or KPI records yet for <strong>Today</strong>. Click <strong>View Yesterday</strong> to inspect the latest completed day's activity (1,700+ calls recorded).</span>
+              </div>
+              <button
+                onClick={() => setOverviewTimeRange('yesterday')}
+                style={{
+                  padding: '4px 10px',
+                  backgroundColor: '#2563eb',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                View Yesterday
+              </button>
+            </div>
+          )}
 
           {/* 2. SUMMARY CARDS GRID (CONSOLIDATED & COMPACT) */}
           <div style={{

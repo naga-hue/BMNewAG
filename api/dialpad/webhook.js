@@ -225,6 +225,32 @@ async function writeWebhookLog(firestore, callId, state, payload, httpStatus, pr
   } catch (err) {
     console.error('[Webhook Audit Log] Failed to write log:', err);
   }
+// In-memory staff cache with 15-minute TTL to avoid reading the staff collection on every single webhook event
+let cachedStaffList = null;
+let staffCacheExpiry = 0;
+const STAFF_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+
+async function getCachedStaff(firestore) {
+  const now = Date.now();
+  if (cachedStaffList && now < staffCacheExpiry) {
+    return cachedStaffList;
+  }
+  try {
+    const staffSnap = await firestore.collection('staff').get();
+    const list = [];
+    staffSnap.forEach(sDoc => {
+      list.push({ id: sDoc.id, ...sDoc.data() });
+    });
+    cachedStaffList = list;
+    staffCacheExpiry = now + STAFF_CACHE_TTL;
+    return list;
+  } catch (err) {
+    if (cachedStaffList) {
+      console.warn('[Webhook] Failed to refresh staff list, using stale cache:', err.message);
+      return cachedStaffList;
+    }
+    throw err;
+  }
 }
 
 export default async function handler(req, res) {
@@ -251,11 +277,12 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  let payload = null;
+
   try {
     // 2. Read raw request payload
     const rawBody = await getRawBody(req);
     const bodyStr = rawBody.trim();
-    let payload = null;
 
     const secret = process.env.DIALPAD_WEBHOOK_SECRET;
 
@@ -363,12 +390,8 @@ export default async function handler(req, res) {
 
     let finalConversationId = conversationId;
 
-    // Resolve staff database first (outside the transaction)
-    const staffSnap = await firestore.collection('staff').get();
-    const staffList = [];
-    staffSnap.forEach(sDoc => {
-      staffList.push({ id: sDoc.id, ...sDoc.data() });
-    });
+    // Resolve staff database from cache (outside the transaction)
+    const staffList = await getCachedStaff(firestore);
 
     // 5. Merge Call Leg & Consolidate Logical Call inside transaction (Strongly Consistent!)
     const legRef = firestore.collection('dialpad_call_legs').doc(callId);
@@ -668,23 +691,37 @@ export default async function handler(req, res) {
     console.log(`[Webhook] Call saved successfully under transaction: ${callId}`);
     await writeWebhookLog(firestore, callId, state, payload, 200, `Call saved successfully. Database ID: ${callId}`);
 
-    // Update daily recruiter KPIs in real time
-    if (resolvedKPI && resolvedKPI.handlerId) {
+    // Update daily recruiter KPIs in real time ONLY on terminal/completed states
+    // Do NOT re-aggregate on intermediate events (calling, ringing, connected, call_moments)
+    const terminalStates = ['hangup', 'disconnected', 'ended', 'closed', 'missed', 'rejected', 'abandoned', 'transcription'];
+    if (resolvedKPI && resolvedKPI.handlerId && terminalStates.includes(state)) {
       await updateKpiDaily(firestore, resolvedKPI.handlerId, resolvedKPI.dateStarted);
     }
 
     return res.status(200).json({ success: true, conversationId: finalConversationId, callId: callId });
   } catch (error) {
     console.error('[Webhook] Failed to process Dialpad webhook event:', error);
-    try {
-      const firestore = initFirestore();
-      const fallbackCallId = payload?.call_id ? String(payload.call_id) : 'unknown';
-      const fallbackState = payload?.state ? String(payload.state) : 'unknown';
-      await writeWebhookLog(firestore, fallbackCallId, fallbackState, payload || {}, 500, 'Failed to process event', error.message || String(error));
-    } catch (logErr) {
-      console.error('[Webhook Audit Log] Failed to write error log:', logErr);
+    const isQuotaExceeded = error?.code === 8 || 
+      String(error?.details || '').toLowerCase().includes('quota') ||
+      String(error?.message || '').toLowerCase().includes('quota') ||
+      String(error?.message || '').toLowerCase().includes('resource_exhausted');
+
+    if (!isQuotaExceeded) {
+      try {
+        const firestore = initFirestore();
+        const fallbackCallId = payload?.call_id ? String(payload.call_id) : 'unknown';
+        const fallbackState = payload?.state ? String(payload.state) : 'unknown';
+        await writeWebhookLog(firestore, fallbackCallId, fallbackState, payload || {}, 500, 'Failed to process event', error.message || String(error));
+      } catch (logErr) {
+        console.error('[Webhook Audit Log] Failed to write error log:', logErr);
+      }
+    } else {
+      console.warn('[Webhook] Firestore Quota Exceeded (RESOURCE_EXHAUSTED). Skipping audit log write to prevent cascading failures.');
     }
-    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    return res.status(isQuotaExceeded ? 429 : 500).json({ 
+      error: error.message || 'Internal Server Error',
+      quotaExceeded: isQuotaExceeded
+    });
   }
 }
 
@@ -758,9 +795,9 @@ async function updateKpiDaily(firestore, handlerId, dateStarted) {
 
   console.log(`[KPI] Recalculating daily aggregate for recruiter ${handlerId} on ${dateKey}...`);
   try {
-    const staffDoc = await firestore.collection('staff').doc(handlerId).get();
-    if (!staffDoc.exists) return;
-    const staff = staffDoc.data();
+    const staffList = await getCachedStaff(firestore);
+    const staff = staffList.find(s => s.id === handlerId);
+    if (!staff) return;
 
     // Query all calls on this day from dialpad_calls and filter by handlerId in-memory to bypass composite index constraints
     const dayCallsSnap = await firestore.collection('dialpad_calls')
@@ -821,6 +858,10 @@ async function updateKpiDaily(firestore, handlerId, dateStarted) {
     await firestore.collection('kpiDaily').doc(docId).set(kpiData, { merge: true });
     console.log(`[KPI] Updated kpiDaily document ${docId}`);
   } catch (err) {
-    console.error(`[KPI] Error updating daily aggregates for ${handlerId} on ${dateKey}:`, err);
+    if (err?.code === 8 || String(err?.message || '').includes('RESOURCE_EXHAUSTED')) {
+      console.warn(`[KPI] Quota limit reached while updating daily aggregate for ${handlerId} on ${dateKey}. Skipping.`);
+    } else {
+      console.error(`[KPI] Error updating daily aggregates for ${handlerId} on ${dateKey}:`, err);
+    }
   }
 }

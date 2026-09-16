@@ -225,6 +225,8 @@ async function writeWebhookLog(firestore, callId, state, payload, httpStatus, pr
   } catch (err) {
     console.error('[Webhook Audit Log] Failed to write log:', err);
   }
+}
+
 // In-memory staff cache with 15-minute TTL to avoid reading the staff collection on every single webhook event
 let cachedStaffList = null;
 let staffCacheExpiry = 0;

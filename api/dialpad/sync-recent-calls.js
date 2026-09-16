@@ -418,8 +418,10 @@ export default async function handler(req, res) {
     const affectedRecruiters = new Set();
 
     for (const dCall of allDialpadCalls) {
-      const callId = String(dCall.id);
-      const conversationId = String(dCall.master_call_id || dCall.entry_point_call_id || dCall.id);
+      const rawId = dCall.id || dCall.call_id;
+      if (!rawId) continue;
+      const callId = String(rawId);
+      const conversationId = String(dCall.master_call_id || dCall.entry_point_call_id || rawId);
       
       const dateStartedStr = formatDialpadDate(dCall.date_started);
         

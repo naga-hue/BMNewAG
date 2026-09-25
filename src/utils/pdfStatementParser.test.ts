@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { isInternalContraTransfer, isIntercompanyTransfer, parseTransactionLines } from './pdfStatementParser';
+import { parseBankAmount } from '../components/expenses/BankStatementImport';
 
 describe('pdfStatementParser helpers', () => {
   describe('isInternalContraTransfer', () => {
@@ -101,5 +102,35 @@ describe('pdfStatementParser helpers', () => {
       expect(res.rows[0][1]).toContain('RECRUITMENT SOFTWARE CO');
       expect(res.rows[0][1]).toContain('INV-8891');
     });
+  });
+});
+
+describe('parseBankAmount (Credit vs Debit amount parser)', () => {
+  it('parses standard positive amounts as credit/positive', () => {
+    expect(parseBankAmount('1500.50')).toEqual({ num: 1500.5, isNegative: false });
+    expect(parseBankAmount(2500)).toEqual({ num: 2500, isNegative: false });
+    expect(parseBankAmount('£1,250.00')).toEqual({ num: 1250, isNegative: false });
+  });
+
+  it('parses minus and en-dash signed amounts as negative (debit)', () => {
+    expect(parseBankAmount('-450.00')).toEqual({ num: 450, isNegative: true });
+    expect(parseBankAmount('–1,200.50')).toEqual({ num: 1200.5, isNegative: true });
+    expect(parseBankAmount(-75)).toEqual({ num: 75, isNegative: true });
+  });
+
+  it('parses accounting parentheses as negative (debit)', () => {
+    expect(parseBankAmount('(350.00)')).toEqual({ num: 350, isNegative: true });
+    expect(parseBankAmount('(£1,500.00)')).toEqual({ num: 1500, isNegative: true });
+  });
+
+  it('parses CR as credit (positive) and DR as debit (negative)', () => {
+    expect(parseBankAmount('10,000.00 CR')).toEqual({ num: 10000, isNegative: false });
+    expect(parseBankAmount('500.00 DR')).toEqual({ num: 500, isNegative: true });
+  });
+
+  it('handles empty or null values gracefully', () => {
+    expect(parseBankAmount('')).toEqual({ num: 0, isNegative: false });
+    expect(parseBankAmount(null)).toEqual({ num: 0, isNegative: false });
+    expect(parseBankAmount(undefined)).toEqual({ num: 0, isNegative: false });
   });
 });

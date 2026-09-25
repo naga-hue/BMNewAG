@@ -47,9 +47,35 @@ interface HeldBankStatement {
   rawRows: string[][];
   columnMappings: Record<string, string>;
   dateFormat: 'UK' | 'US';
+  amountMode?: 'single' | 'split';
   latestStatementDate?: string;
   earliestStatementDate?: string;
   categorizedRows?: CategorizedRow[];
+}
+
+export function parseBankAmount(val: any): { num: number; isNegative: boolean } {
+  if (val === null || val === undefined) return { num: 0, isNegative: false };
+  if (typeof val === 'number') {
+    if (isNaN(val)) return { num: 0, isNegative: false };
+    return { num: Math.abs(val), isNegative: val < 0 };
+  }
+  const str = String(val).trim();
+  if (!str) return { num: 0, isNegative: false };
+
+  // Detect negative indicators: leading/trailing minus, en-dash, parentheses (123.45), DR suffix/prefix
+  const hasMinus = str.includes('-') || str.includes('–');
+  const hasParens = (str.startsWith('(') && str.endsWith(')')) || (str.includes('(') && str.includes(')'));
+  const hasDR = /\bdr\b/i.test(str);
+  const hasCR = /\bcr\b/i.test(str);
+
+  const cleanNumStr = str.replace(/[^0-9.]/g, '');
+  const parsedVal = parseFloat(cleanNumStr) || 0;
+
+  if (hasCR) {
+    return { num: parsedVal, isNegative: false };
+  }
+  const isNegative = hasMinus || hasParens || hasDR;
+  return { num: parsedVal, isNegative };
 }
 
 function formatDisplayDate(dStr?: string | null): string {
@@ -142,6 +168,13 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<string[][]>([]);
   const [columnMappings, setColumnMappings] = useState<Record<string, string>>({});
+  const [amountMode, setAmountMode] = useState<'single' | 'split'>('single');
+
+  // Categorization Desk Sorting & Filtering States
+  const [deskSortField, setDeskSortField] = useState<string>('date');
+  const [deskSortDirection, setDeskSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [deskTypeFilter, setDeskTypeFilter] = useState<'all' | 'debit' | 'credit'>('all');
+  const [deskSearch, setDeskSearch] = useState('');
 
   const [savedProfiles, setSavedProfiles] = useState<Record<string, Record<string, string>>>(() => {
     try {
@@ -228,6 +261,221 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     });
     return depts.sort();
   }, [companies, staff]);
+
+  // Recipient label resolver for sorting & filtering
+  const getRowRecipientLabel = (row: CategorizedRow): string => {
+    if (row.recipientType === 'vendor' && row.recipientId) {
+      const v = vendors.find(item => item.id === row.recipientId);
+      if (v) return v.name;
+    }
+    if (row.recipientType === 'staff' && row.recipientId) {
+      const s = staff.find(item => item.id === row.recipientId);
+      if (s) return s.fullName;
+    }
+    if (row.recipientType === 'company' && row.recipientId) {
+      const c = companies.find(item => item.id === row.recipientId);
+      if (c) return c.name;
+    }
+    return row.payee || 'General Recipient';
+  };
+
+  // Target allocation label resolver for sorting & filtering
+  const getRowTargetLabel = (row: CategorizedRow): string => {
+    if (row.allocationType === 'company') {
+      const targets = Array.isArray(row.allocationTarget) ? row.allocationTarget : [row.allocationTarget].filter(Boolean);
+      if (targets.length === 0) return 'Choose Company';
+      const names = targets.map(tid => companies.find(c => c.id === tid)?.name).filter(Boolean);
+      return names.join(', ') || 'Company';
+    }
+    if (row.allocationType === 'department') {
+      const targets = Array.isArray(row.allocationTarget) ? row.allocationTarget : [row.allocationTarget].filter(Boolean);
+      if (targets.length === 0) return 'Choose Dept';
+      return targets.join(', ');
+    }
+    if (row.allocationType === 'staff') {
+      const count = row.selectedStaffIds?.length || 0;
+      if (count === 1) {
+        const s = staff.find(st => st.id === row.selectedStaffIds[0]);
+        if (s) return s.fullName;
+      }
+      return `${count} staff split${count !== 1 ? 's' : ''}`;
+    }
+    return 'Unallocated';
+  };
+
+  const deskCounts = useMemo(() => {
+    const total = categorizedRows.length;
+    const debits = categorizedRows.filter(r => !r.isCredit).length;
+    const credits = categorizedRows.filter(r => r.isCredit).length;
+    const mapped = categorizedRows.filter(r => r.nominalCode).length;
+    const committed = categorizedRows.filter(r => r.committed).length;
+    return { total, debits, credits, mapped, committed };
+  }, [categorizedRows]);
+
+  const sortedAndFilteredCategorizedRows = useMemo(() => {
+    let list = [...categorizedRows];
+
+    // Filter by direction: all | debit | credit
+    if (deskTypeFilter === 'debit') {
+      list = list.filter(r => !r.isCredit);
+    } else if (deskTypeFilter === 'credit') {
+      list = list.filter(r => r.isCredit);
+    }
+
+    // Filter by text search query
+    if (deskSearch.trim()) {
+      const q = deskSearch.toLowerCase().trim();
+      list = list.filter(r => {
+        const recLabel = getRowRecipientLabel(r).toLowerCase();
+        const tgtLabel = getRowTargetLabel(r).toLowerCase();
+        const payee = (r.payee || '').toLowerCase();
+        const ref = (r.reference || '').toLowerCase();
+        const nominal = (r.nominalCode || '').toLowerCase();
+        const date = (r.date || '').toLowerCase();
+        const amountStr = String(Math.abs(r.amount));
+        return (
+          payee.includes(q) ||
+          ref.includes(q) ||
+          nominal.includes(q) ||
+          recLabel.includes(q) ||
+          tgtLabel.includes(q) ||
+          date.includes(q) ||
+          amountStr.includes(q)
+        );
+      });
+    }
+
+    // Sort rows dynamically
+    list.sort((a, b) => {
+      let valA: any = '';
+      let valB: any = '';
+
+      switch (deskSortField) {
+        case 'status': {
+          valA = a.committed ? 2 : a.nominalCode ? 1 : 0;
+          valB = b.committed ? 2 : b.nominalCode ? 1 : 0;
+          break;
+        }
+        case 'date': {
+          valA = a.date || '';
+          valB = b.date || '';
+          break;
+        }
+        case 'payee':
+        case 'description': {
+          valA = (a.payee || '').toLowerCase();
+          valB = (b.payee || '').toLowerCase();
+          break;
+        }
+        case 'reference': {
+          valA = (a.reference || '').toLowerCase();
+          valB = (b.reference || '').toLowerCase();
+          break;
+        }
+        case 'amount': {
+          valA = Math.abs(a.amount);
+          valB = Math.abs(b.amount);
+          break;
+        }
+        case 'type': {
+          valA = a.isCredit ? 1 : 0;
+          valB = b.isCredit ? 1 : 0;
+          break;
+        }
+        case 'plMonth': {
+          valA = a.plMonth || '';
+          valB = b.plMonth || '';
+          break;
+        }
+        case 'nominal': {
+          valA = (a.nominalCode || '').toLowerCase();
+          valB = (b.nominalCode || '').toLowerCase();
+          break;
+        }
+        case 'recipient': {
+          valA = getRowRecipientLabel(a).toLowerCase();
+          valB = getRowRecipientLabel(b).toLowerCase();
+          break;
+        }
+        case 'target': {
+          valA = getRowTargetLabel(a).toLowerCase();
+          valB = getRowTargetLabel(b).toLowerCase();
+          break;
+        }
+        case 'taxRate': {
+          valA = a.taxRate ?? 0;
+          valB = b.taxRate ?? 0;
+          break;
+        }
+        default: {
+          valA = a.date || '';
+          valB = b.date || '';
+          break;
+        }
+      }
+
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return deskSortDirection === 'asc' ? valA - valB : valB - valA;
+      }
+      return deskSortDirection === 'asc'
+        ? String(valA).localeCompare(String(valB))
+        : String(valB).localeCompare(String(valA));
+    });
+
+    return list;
+  }, [categorizedRows, deskTypeFilter, deskSearch, deskSortField, deskSortDirection, vendors, staff, companies]);
+
+  const handleToggleRowDirection = (rowId: string) => {
+    setCategorizedRows(prev => prev.map(r => {
+      if (r.id === rowId) {
+        const nextCredit = !r.isCredit;
+        const nextAmt = nextCredit ? Math.abs(r.amount) : -Math.abs(r.amount);
+        return {
+          ...r,
+          isCredit: nextCredit,
+          amount: nextAmt,
+          linkedPlacementId: nextCredit ? r.linkedPlacementId : ''
+        };
+      }
+      return r;
+    }));
+  };
+
+  const handleSort = (field: string) => {
+    if (deskSortField === field) {
+      setDeskSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setDeskSortField(field);
+      setDeskSortDirection('asc');
+    }
+  };
+
+  const renderSortHeader = (field: string, title: string, align: 'left' | 'right' | 'center' = 'left') => {
+    const isActive = deskSortField === field;
+    return (
+      <th
+        onClick={() => handleSort(field)}
+        style={{
+          cursor: 'pointer',
+          userSelect: 'none',
+          textAlign: align,
+          color: isActive ? 'var(--primary)' : 'inherit',
+          backgroundColor: isActive ? 'rgba(99, 102, 241, 0.08)' : undefined,
+          whiteSpace: 'nowrap',
+          padding: '8px 10px',
+          transition: 'all 0.15s ease'
+        }}
+        title={`Click to sort by ${title}`}
+      >
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', justifyContent: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start' }}>
+          <span>{title}</span>
+          <span style={{ fontSize: '11px', opacity: isActive ? 1 : 0.35, color: isActive ? 'var(--primary)' : 'inherit' }}>
+            {isActive ? (deskSortDirection === 'asc' ? '▲' : '▼') : '↕'}
+          </span>
+        </div>
+      </th>
+    );
+  };
 
   // Comprehensive Bank Statements Queue & Books Reconciliation Status List
   const allEnrichedBankAccounts = useMemo(() => {
@@ -369,6 +617,8 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     setCsvFile({ name: held.fileName } as any);
     setDateFormat(held.dateFormat || 'UK');
     setColumnMappings(held.columnMappings || {});
+    const detectedMode = held.amountMode || (held.columnMappings?.debit && held.columnMappings?.credit ? 'split' : 'single');
+    setAmountMode(detectedMode);
 
     if (held.categorizedRows && held.categorizedRows.length > 0) {
       setCategorizedRows(held.categorizedRows);
@@ -398,7 +648,8 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
         ...heldStatements[statementBankAccountId],
         categorizedRows,
         columnMappings,
-        dateFormat
+        dateFormat,
+        amountMode
       };
       const updated = { ...heldStatements, [statementBankAccountId]: updatedHeld };
       updateHeldStatements(updated);
@@ -449,7 +700,9 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     const mappingsList = [
       { key: 'date', labels: ['date', 'transaction date', 'booking date', 'val date', 'posted date', 'trans date'] },
       { key: 'payee', labels: ['description', 'payee', 'beneficiary', 'details', 'name', 'narrative', 'party', 'counterparty'] },
-      { key: 'amount', labels: ['amount', 'value', 'transaction amount', 'net amount', 'price', 'paid out', 'debit', 'debit amount'] },
+      { key: 'amount', labels: ['amount', 'value', 'transaction amount', 'net amount', 'price'] },
+      { key: 'debit', labels: ['paid out', 'debit', 'withdrawals', 'payments', 'debits', 'money out', 'out'] },
+      { key: 'credit', labels: ['paid in', 'credit', 'deposits', 'receipts', 'credits', 'money in', 'in'] },
       { key: 'reference', labels: ['reference', 'memo', 'ref', 'narrative', 'payment reference', 'type', 'id'] },
       { key: 'nominal', labels: ['nominal', 'category', 'nominal code', 'account code', 'code'] }
     ];
@@ -458,6 +711,10 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       const idx = headers.findIndex(h => h && m.labels.some(lbl => h.toLowerCase() === lbl.toLowerCase() || h.toLowerCase().includes(lbl.toLowerCase())));
       if (idx > -1) initialMap[m.key] = headers[idx];
     });
+
+    const hasSplitColumns = Boolean(initialMap.debit && initialMap.credit);
+    const detectedMode: 'single' | 'split' = hasSplitColumns ? 'split' : 'single';
+    setAmountMode(detectedMode);
 
     // Compute statement date range
     let earliestDate = '';
@@ -487,6 +744,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
         rawRows: rows,
         columnMappings: initialMap,
         dateFormat,
+        amountMode: detectedMode,
         latestStatementDate: latestDate,
         earliestStatementDate: earliestDate,
         categorizedRows: []
@@ -650,14 +908,26 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       return;
     }
 
-    if (!columnMappings.date || !columnMappings.payee || !columnMappings.amount) {
-      onShowToast("Please map the required Date, Payee, and Amount fields.", "warning");
+    if (!columnMappings.date || !columnMappings.payee) {
+      onShowToast("Please map the required Date and Payee fields.", "warning");
+      return;
+    }
+
+    if (amountMode === 'single' && !columnMappings.amount) {
+      onShowToast("Please map the Value Amount column.", "warning");
+      return;
+    }
+
+    if (amountMode === 'split' && !columnMappings.debit && !columnMappings.credit) {
+      onShowToast("Please map at least one of Paid Out (Debit) or Paid In (Credit) columns.", "warning");
       return;
     }
 
     const dateColIdx = csvHeaders.indexOf(columnMappings.date);
     const payeeColIdx = csvHeaders.indexOf(columnMappings.payee);
-    const amountColIdx = csvHeaders.indexOf(columnMappings.amount);
+    const amountColIdx = amountMode === 'single' && columnMappings.amount ? csvHeaders.indexOf(columnMappings.amount) : -1;
+    const debitColIdx = amountMode === 'split' && columnMappings.debit ? csvHeaders.indexOf(columnMappings.debit) : -1;
+    const creditColIdx = amountMode === 'split' && columnMappings.credit ? csvHeaders.indexOf(columnMappings.credit) : -1;
     const refColIdx = columnMappings.reference ? csvHeaders.indexOf(columnMappings.reference) : -1;
     const nominalColIdx = columnMappings.nominal ? csvHeaders.indexOf(columnMappings.nominal) : -1;
 
@@ -689,9 +959,36 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     const parsedRows = csvRows.map((row, idx) => {
       const dateVal = row[dateColIdx] || '';
       const payeeVal = row[payeeColIdx] || '';
-      const amtVal = Number(String(row[amountColIdx]).replace(/[^0-9.-]/g, '')) || 0;
       const refVal = refColIdx > -1 ? row[refColIdx] || '' : '';
       const nominalVal = nominalColIdx > -1 ? row[nominalColIdx] || '' : '';
+
+      let amtVal = 0;
+      let isCredit = false;
+
+      if (amountMode === 'split') {
+        const creditParsed = creditColIdx > -1 ? parseBankAmount(row[creditColIdx]) : { num: 0, isNegative: false };
+        const debitParsed = debitColIdx > -1 ? parseBankAmount(row[debitColIdx]) : { num: 0, isNegative: false };
+
+        if (creditParsed.num > 0) {
+          amtVal = creditParsed.num;
+          isCredit = true;
+        } else if (debitParsed.num > 0) {
+          amtVal = -debitParsed.num;
+          isCredit = false;
+        } else {
+          amtVal = 0;
+          isCredit = false;
+        }
+      } else {
+        const parsed = amountColIdx > -1 ? parseBankAmount(row[amountColIdx]) : { num: 0, isNegative: false };
+        if (parsed.isNegative) {
+          amtVal = -parsed.num;
+          isCredit = false;
+        } else {
+          amtVal = parsed.num;
+          isCredit = true;
+        }
+      }
       
       const standardizedDate = parseAndStandardizeDate(dateVal, dateFormat);
       const yyyymm = standardizedDate ? standardizedDate.substring(0, 7) : new Date().toISOString().substring(0, 7);
@@ -809,7 +1106,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
         allocationTarget: autoAllocTarget,
         selectedStaffIds: autoStaffIds,
         linkedPlacementId: '',
-        isCredit: amtVal > 0,
+        isCredit: isCredit,
         committed: false,
         fxRate: rowFxRate,
         amountGBP: rowAmountGBP,
@@ -819,6 +1116,15 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     });
 
     setCategorizedRows(parsedRows);
+    if (statementBankAccountId && heldStatements[statementBankAccountId]) {
+      const updatedHeld = {
+        ...heldStatements[statementBankAccountId],
+        categorizedRows: parsedRows,
+        columnMappings,
+        amountMode
+      };
+      updateHeldStatements({ ...heldStatements, [statementBankAccountId]: updatedHeld });
+    }
     setImportStep(3);
   };
 
@@ -1506,24 +1812,79 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
             </div>
           </div>
 
-          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>📊</span> 2. Map Statement Column Headers
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>📊</span> 2. Map Statement Column Headers
+            </div>
+
+            {/* Amount Layout Mode Switcher */}
+            <div style={{ display: 'inline-flex', padding: '3px', backgroundColor: 'var(--bg-card)', borderRadius: '6px', border: '1px solid var(--border-color)', gap: '4px' }}>
+              <button
+                type="button"
+                onClick={() => setAmountMode('single')}
+                style={{
+                  border: 'none',
+                  borderRadius: '4px',
+                  padding: '5px 12px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  backgroundColor: amountMode === 'single' ? 'var(--primary)' : 'transparent',
+                  color: amountMode === 'single' ? '#ffffff' : 'var(--text-secondary)',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                Single Amount Column (Combined +/- or CR/DR)
+              </button>
+              <button
+                type="button"
+                onClick={() => setAmountMode('split')}
+                style={{
+                  border: 'none',
+                  borderRadius: '4px',
+                  padding: '5px 12px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  backgroundColor: amountMode === 'split' ? 'var(--primary)' : 'transparent',
+                  color: amountMode === 'split' ? '#ffffff' : 'var(--text-secondary)',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                Two Columns (Paid Out & Paid In)
+              </button>
+            </div>
+          </div>
+
+          <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginBottom: '14px' }}>
+            {amountMode === 'single' ? (
+              <span>ℹ️ <strong>Single Amount Column:</strong> Suitable for statements with a single transaction amount column (supporting negative signs, parentheses <code>(100.00)</code>, or <code>CR/DR</code> notation).</span>
+            ) : (
+              <span>ℹ️ <strong>Two Columns Mode:</strong> Suitable for bank statements with distinct <strong>Paid Out (Money Out/Debits)</strong> and <strong>Paid In (Money In/Credits)</strong> columns (e.g. HSBC, Barclays, Lloyds).</span>
+            )}
           </div>
 
           <div className="form-group-row">
-            {[
-              { key: 'date', label: 'Transaction Date *' },
-              { key: 'payee', label: 'Payee / Description *' },
-              { key: 'amount', label: 'Value Amount *' },
-              { key: 'reference', label: 'Reference / Memo (Optional)' },
-              { key: 'nominal', label: 'Nominal Code (Optional)' }
-            ].map(item => {
+            {(amountMode === 'single' ? [
+              { key: 'date', label: 'Transaction Date *', required: true },
+              { key: 'payee', label: 'Payee / Description *', required: true },
+              { key: 'amount', label: 'Value Amount (Combined +/-) *', required: true },
+              { key: 'reference', label: 'Reference / Memo (Optional)', required: false },
+              { key: 'nominal', label: 'Nominal Code (Optional)', required: false }
+            ] : [
+              { key: 'date', label: 'Transaction Date *', required: true },
+              { key: 'payee', label: 'Payee / Description *', required: true },
+              { key: 'debit', label: 'Paid Out / Debit Column *', required: true },
+              { key: 'credit', label: 'Paid In / Credit Column *', required: true },
+              { key: 'reference', label: 'Reference / Memo (Optional)', required: false },
+              { key: 'nominal', label: 'Nominal Code (Optional)', required: false }
+            ]).map(item => {
               const isUnmapped = !columnMappings[item.key];
-              const isRequired = ['date', 'payee', 'amount'].includes(item.key);
+              const isRequired = item.required;
               return (
                 <div key={item.key} className="form-group" style={{ position: 'relative' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <label className="form-label" style={{ margin: 0 }}>{item.label}</label>
+                    <label className="form-label" style={{ margin: 0, fontWeight: 600 }}>{item.label}</label>
                     <span style={{ 
                       fontSize: '10px', 
                       fontWeight: 700, 
@@ -1546,7 +1907,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                     onChange={(e) => setColumnMappings(prev => ({ ...prev, [item.key]: e.target.value }))}
                     style={{ 
                       width: '100%', 
-                      padding: '8px',
+                      padding: '8px', 
                       border: isUnmapped 
                         ? (isRequired 
                             ? '2px solid rgba(239, 68, 68, 0.65)' 
@@ -1701,11 +2062,68 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 600 }}>Row-by-Row Categorization Desk</h3>
-            <button className="btn-primary" onClick={handleCommitBankImports}>
-              Commit Mapped Rows ({categorizedRows.filter(r => r.nominalCode && !r.committed).length} rows)
-            </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>Row-by-Row Categorization Desk</h3>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                Review, sort, and categorize your transactions before committing them to the ledger.
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button 
+                type="button" 
+                className="btn-secondary"
+                onClick={() => {
+                  const allKnownBanks = companies.flatMap((c: any) => c.bankAccounts || []);
+                  let mappedCount = 0;
+                  setCategorizedRows(prev => prev.map(r => {
+                    if (r.committed || r.nominalCode) return r;
+                    const isContra = isInternalContraTransfer(r.payee, r.reference, allKnownBanks);
+                    if (isContra) {
+                      mappedCount++;
+                      return {
+                        ...r,
+                        isContra: true,
+                        nominalCode: activeNominalCodes.find(c => c.id === '1100' || c.code.toLowerCase().includes('contra'))?.code || '1100 - Bank Transfer / Contra Account',
+                        recipientType: 'other',
+                        recipientId: ''
+                      };
+                    }
+                    const interco = isIntercompanyTransfer(r.payee, r.reference, statementCompanyId || companies[0]?.id || '', companies);
+                    if (interco.isIntercompany) {
+                      mappedCount++;
+                      return {
+                        ...r,
+                        isIntercompany: true,
+                        nominalCode: activeNominalCodes.find(c => c.id === '1200' || c.code.toLowerCase().includes('intercompany'))?.code || '1200 - Intercompany Transfer / Recharge',
+                        recipientType: 'company',
+                        recipientId: interco.targetCompanyId || '',
+                        allocationType: 'company',
+                        allocationTarget: interco.targetCompanyId || ''
+                      };
+                    }
+                    return r;
+                  }));
+                  if (mappedCount > 0) {
+                    onShowToast(`⚡ Auto-mapped ${mappedCount} internal transfers!`, "success");
+                  } else {
+                    onShowToast("No unmapped contra or intercompany transactions detected.", "info");
+                  }
+                }}
+                style={{ fontSize: '11px', padding: '6px 12px' }}
+                title="Automatically detect internal account contra transfers and intercompany recharges"
+              >
+                ⚡ Auto-Map All
+              </button>
+              <button 
+                type="button"
+                className="btn-primary" 
+                onClick={handleCommitBankImports}
+                style={{ padding: '6px 14px', fontSize: '12px' }}
+              >
+                Commit Mapped Rows ({categorizedRows.filter(r => r.nominalCode && !r.committed).length} rows)
+              </button>
+            </div>
           </div>
 
           <div 
@@ -1775,348 +2193,511 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
             </div>
           </div>
 
-          <div className="table-container" style={{ maxHeight: '450px', overflowY: 'auto' }}>
+          {/* Interactive Filter Toolbar */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between', 
+            flexWrap: 'wrap', 
+            gap: '12px',
+            backgroundColor: 'var(--bg-card)', 
+            padding: '10px 14px', 
+            borderRadius: '8px', 
+            border: '1px solid var(--border-color)' 
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-secondary)' }}>Show:</span>
+              <button
+                type="button"
+                onClick={() => setDeskTypeFilter('all')}
+                style={{
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '4px 10px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  backgroundColor: deskTypeFilter === 'all' ? 'var(--primary)' : 'var(--bg-secondary)',
+                  color: deskTypeFilter === 'all' ? '#ffffff' : 'var(--text-primary)',
+                  boxShadow: deskTypeFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                }}
+              >
+                All Transactions ({deskCounts.total})
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeskTypeFilter('debit')}
+                style={{
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '4px 10px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  backgroundColor: deskTypeFilter === 'debit' ? 'rgba(239, 68, 68, 0.9)' : 'var(--bg-secondary)',
+                  color: deskTypeFilter === 'debit' ? '#ffffff' : 'var(--danger)',
+                  boxShadow: deskTypeFilter === 'debit' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                }}
+              >
+                🔻 Paid Out / Debits ({deskCounts.debits})
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeskTypeFilter('credit')}
+                style={{
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '4px 10px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  backgroundColor: deskTypeFilter === 'credit' ? 'rgba(34, 197, 94, 0.9)' : 'var(--bg-secondary)',
+                  color: deskTypeFilter === 'credit' ? '#ffffff' : 'var(--success)',
+                  boxShadow: deskTypeFilter === 'credit' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                }}
+              >
+                🟢 Paid In / Credits ({deskCounts.credits})
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Search size={14} style={{ position: 'absolute', left: '10px', color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  placeholder="Filter payee, ref, nominal, recipient, target..."
+                  value={deskSearch}
+                  onChange={(e) => setDeskSearch(e.target.value)}
+                  style={{
+                    padding: '6px 12px 6px 30px',
+                    fontSize: '11.5px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
+                    width: '260px'
+                  }}
+                />
+                {deskSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setDeskSearch('')}
+                    style={{ position: 'absolute', right: '8px', border: 'none', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '11px' }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                Showing <strong>{sortedAndFilteredCategorizedRows.length}</strong> of {categorizedRows.length} rows
+              </span>
+            </div>
+          </div>
+
+          <div className="table-container" style={{ maxHeight: '480px', overflowY: 'auto' }}>
             <table className="entity-table dense" style={{ fontSize: '11px' }}>
               <thead>
                 <tr>
-                  <th>Status</th>
-                  <th>Date</th>
-                  <th>Description & Ref</th>
-                  <th style={{ textAlign: 'right' }}>Amount ({statementCurrency})</th>
-                  <th>P&L Month</th>
-                  <th>Nominal Category</th>
-                  <th>Recipient Linkage</th>
-                  <th>Target Allocation</th>
-                  <th>VAT Rate</th>
-                  <th>Link credit sales</th>
-                  <th>Action</th>
+                  {renderSortHeader('status', 'Status', 'center')}
+                  {renderSortHeader('date', 'Date')}
+                  {renderSortHeader('payee', 'Description')}
+                  {renderSortHeader('reference', 'Reference')}
+                  {renderSortHeader('amount', `Amount (${statementCurrency})`, 'right')}
+                  {renderSortHeader('type', 'Direction', 'center')}
+                  {renderSortHeader('plMonth', 'P&L Month')}
+                  {renderSortHeader('nominal', 'Nominal Category')}
+                  {renderSortHeader('recipient', 'Recipient')}
+                  {renderSortHeader('target', 'Target Location')}
+                  {renderSortHeader('taxRate', 'VAT')}
+                  <th style={{ whiteSpace: 'nowrap', padding: '8px 10px' }}>Link Credit Sales</th>
+                  <th style={{ whiteSpace: 'nowrap', padding: '8px 10px', textAlign: 'center' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {categorizedRows.map((row) => (
-                  <tr key={row.id} style={{ opacity: row.committed ? 0.6 : 1, backgroundColor: row.committed ? 'var(--bg-secondary)' : 'none' }}>
-                    <td>
-                      {row.committed ? (
-                        <CheckCircle2 size={14} style={{ color: 'var(--success)' }} />
-                      ) : row.nominalCode ? (
-                        <Check size={14} style={{ color: 'var(--warning)' }} />
-                      ) : (
-                        <Clock size={14} style={{ color: 'var(--text-muted)' }} />
-                      )}
+                {sortedAndFilteredCategorizedRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={13} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                      No statement rows match your current filter or search criteria.
                     </td>
-                    <td>{row.date}</td>
-                    <td style={{ fontWeight: 600 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                        <span>{row.payee}</span>
-                        {(row.isContra || row.nominalCode?.includes('1100') || row.nominalCode?.toLowerCase().includes('contra')) && (
-                          <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--accent)', backgroundColor: 'rgba(99, 102, 241, 0.12)', padding: '1px 6px', borderRadius: '4px' }}>
-                            🔄 Internal Contra (Overheads Excluded)
-                          </span>
+                  </tr>
+                ) : (
+                  sortedAndFilteredCategorizedRows.map((row) => (
+                    <tr key={row.id} style={{ opacity: row.committed ? 0.6 : 1, backgroundColor: row.committed ? 'var(--bg-secondary)' : 'none' }}>
+                      <td style={{ textAlign: 'center' }}>
+                        {row.committed ? (
+                          <CheckCircle2 size={14} style={{ color: 'var(--success)' }} title="Committed to ledger" />
+                        ) : row.nominalCode ? (
+                          <Check size={14} style={{ color: 'var(--warning)' }} title="Mapped (ready to commit)" />
+                        ) : (
+                          <Clock size={14} style={{ color: 'var(--text-muted)' }} title="Pending nominal mapping" />
                         )}
-                        {(row.isIntercompany || row.nominalCode?.includes('1200') || row.nominalCode?.toLowerCase().includes('intercompany')) && (
-                          <span style={{ fontSize: '9px', fontWeight: 700, color: '#0284c7', backgroundColor: 'rgba(14, 165, 233, 0.12)', padding: '1px 6px', borderRadius: '4px' }}>
-                            🏢 Intercompany (Overheads Excluded)
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{row.date}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <span>{row.payee}</span>
+                          {(row.isContra || row.nominalCode?.includes('1100') || row.nominalCode?.toLowerCase().includes('contra')) && (
+                            <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--accent)', backgroundColor: 'rgba(99, 102, 241, 0.12)', padding: '1px 6px', borderRadius: '4px' }}>
+                              🔄 Internal Contra (Overheads Excluded)
+                            </span>
+                          )}
+                          {(row.isIntercompany || row.nominalCode?.includes('1200') || row.nominalCode?.toLowerCase().includes('intercompany')) && (
+                            <span style={{ fontSize: '9px', fontWeight: 700, color: '#0284c7', backgroundColor: 'rgba(14, 165, 233, 0.12)', padding: '1px 6px', borderRadius: '4px' }}>
+                              🏢 Intercompany (Overheads Excluded)
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        {row.reference ? (
+                          <span style={{ fontSize: '10.5px', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                            {row.reference}
                           </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>—</span>
                         )}
-                      </div>
-                      {row.reference && (
-                        <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 'normal', marginTop: '2px' }}>
-                          Ref: {row.reference}
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: row.amount < 0 ? 'var(--danger)' : 'var(--success)' }}>
-                      {(symbolMap[statementCurrency] || `${statementCurrency} `)}{Math.abs(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      {statementCurrency !== 'GBP' && (
-                        <div 
-                          style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'normal', marginTop: '2px' }} 
-                          title={`Historical FX Rate on ${row.date || 'transaction date'}: 1 ${statementCurrency} = £${(row.fxRate || statementFxRate)?.toFixed(6)}`}
-                        >
-                          ≈ £{(row.amountGBP || (Math.abs(row.amount) * (row.fxRate || statementFxRate || 1.0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          <span style={{ fontSize: '9px', opacity: 0.85, marginLeft: '4px', backgroundColor: 'var(--bg-card)', padding: '1px 4px', borderRadius: '3px', border: '1px solid var(--border-color)' }}>
-                            @{(row.fxRate || statementFxRate || 1.0).toFixed(4)}
-                          </span>
-                        </div>
-                      )}
-                    </td>
+                      </td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, color: row.amount < 0 ? 'var(--danger)' : 'var(--success)', whiteSpace: 'nowrap' }}>
+                        {(symbolMap[statementCurrency] || `${statementCurrency} `)}{Math.abs(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        {statementCurrency !== 'GBP' && (
+                          <div 
+                            style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'normal', marginTop: '2px' }} 
+                            title={`Historical FX Rate on ${row.date || 'transaction date'}: 1 ${statementCurrency} = £${(row.fxRate || statementFxRate)?.toFixed(6)}`}
+                          >
+                            ≈ £{(row.amountGBP || (Math.abs(row.amount) * (row.fxRate || statementFxRate || 1.0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <span style={{ fontSize: '9px', opacity: 0.85, marginLeft: '4px', backgroundColor: 'var(--bg-card)', padding: '1px 4px', borderRadius: '3px', border: '1px solid var(--border-color)' }}>
+                              @{(row.fxRate || statementFxRate || 1.0).toFixed(4)}
+                            </span>
+                          </div>
+                        )}
+                      </td>
 
-                    {/* P&L Month Selector */}
-                    <td>
-                      <input 
-                        type="month"
-                        value={row.plMonth}
-                        onChange={(e) => handleUpdateCategorizedRow(row.id, 'plMonth', e.target.value)}
-                        disabled={row.committed}
-                        style={{ padding: '4px', fontSize: '11px', width: '110px' }}
-                      />
-                    </td>
-
-                    {/* Nominal Category Selector */}
-                    <td>
-                      <select
-                        value={row.nominalCode}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === 'quick_add_nominal') {
-                            setQuickAddRowId(row.id);
-                            setNewNominalCodeId('');
-                            setNewNominalCodeName('');
-                            setNewNominalType('indirect');
-                            setQuickAddNominalOpen(true);
-                          } else {
-                            handleUpdateCategorizedRow(row.id, 'nominalCode', val);
-                          }
-                        }}
-                        disabled={row.committed}
-                        style={{ padding: '4px', fontSize: '11px', width: '160px' }}
-                      >
-                        <option value="">-- Unmapped --</option>
-                        <option value="quick_add_nominal" style={{ color: 'var(--primary)', fontWeight: 'bold' }}>
-                          ➕ Add New Nominal Code...
-                        </option>
-                         {activeNominalCodes.map(c => (
-                          <option key={c.id} value={c.code}>{c.code}</option>
-                        ))}
-                      </select>
-                    </td>
-
-                    {/* Recipient Linkage (Vendor/Staff) */}
-                    <td>
-                      <select
-                        value={row.recipientType !== 'other' ? `${row.recipientType}:${row.recipientId}` : 'other'}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === 'other') {
-                            handleUpdateCategorizedRow(row.id, 'recipientType', 'other');
-                            handleUpdateCategorizedRow(row.id, 'recipientId', '');
-                          } else if (val === 'register_vendor') {
-                            setQuickVendorRowId(row.id);
-                            setQuickVendorName(row.payee);
-                            setQuickVendorCategory('Software License');
-                          } else {
-                            const [type, id] = val.split(':');
-                            handleUpdateCategorizedRow(row.id, 'recipientType', type);
-                            handleUpdateCategorizedRow(row.id, 'recipientId', id);
-
-                            if (type === 'vendor') {
-                              const vendorObj = vendors.find(v => v.id === id);
-                              const vContracts = contracts.filter(c => c.vendorId === id || (c.vendorName && vendorObj && c.vendorName.toLowerCase().includes(vendorObj.name.toLowerCase())));
-                              const vContractIds = vContracts.map(c => c.id);
-
-                              // Auto-populate seat assigned staff users
-                              const assignedStaffIds = assetAssignments
-                                .filter(a => vContractIds.includes(a.contractId))
-                                .map(a => a.staffId)
-                                .filter(Boolean);
-
-                              if (assignedStaffIds.length > 0) {
-                                handleUpdateCategorizedRow(row.id, 'allocationType', 'staff');
-                                handleUpdateCategorizedRow(row.id, 'selectedStaffIds', assignedStaffIds);
-                                handleUpdateCategorizedRow(row.id, 'allocationTarget', '');
-                                onShowToast(`🔌 Auto-populated ${assignedStaffIds.length} seat users from Vendor Asset (${vendorObj?.name})!`, "success");
-                              } else if (vContracts.length > 0 && Array.isArray(vContracts[0].splits)) {
-                                const compTargets = vContracts[0].splits.filter((sp: any) => sp.type === 'company').map((sp: any) => sp.targetId);
-                                if (compTargets.length > 0) {
-                                  handleUpdateCategorizedRow(row.id, 'allocationType', 'company');
-                                  handleUpdateCategorizedRow(row.id, 'allocationTarget', compTargets);
-                                  handleUpdateCategorizedRow(row.id, 'selectedStaffIds', []);
-                                  onShowToast(`🔌 Auto-populated company cost splits from Vendor Asset (${vendorObj?.name})!`, "success");
-                                }
-                              }
-                            } else if (type === 'staff') {
-                              const staffMember = staff.find(s => s.id === id);
-                              handleUpdateCategorizedRow(row.id, 'allocationType', 'staff');
-                              handleUpdateCategorizedRow(row.id, 'selectedStaffIds', [id]);
-                              handleUpdateCategorizedRow(row.id, 'allocationTarget', '');
-                              onShowToast(`👤 Auto-allocated salary/payroll cost to ${staffMember?.fullName}`, "success");
-                            }
-                          }
-                        }}
-                        disabled={row.committed}
-                        style={{ padding: '4px', fontSize: '11px', width: '150px' }}
-                      >
-                        <option value="other">-- General Recipient --</option>
-                        <option value="register_vendor" style={{ color: 'var(--primary)', fontWeight: 'bold' }}>
-                          ➕ Register "{row.payee}"...
-                        </option>
-                        <optgroup label="Registered Vendors">
-                          {vendors.map(v => (
-                            <option key={v.id} value={`vendor:${v.id}`}>{v.name}</option>
-                          ))}
-                        </optgroup>
-                        <optgroup label="Staff / Consultants">
-                          {staff.filter(s => s.status !== 'exited').map(s => (
-                            <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
-                          ))}
-                        </optgroup>
-                      </select>
-                      
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                        {row.linkedPayrollCellId ? (() => {
-                          const [sid, m] = row.linkedPayrollCellId.split('_');
-                          const staffMember = staff.find(s => s.id === sid);
-                          return (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
-                              <span>✓ Paid: {staffMember?.fullName || 'Staff'} ({m})</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  handleUpdateCategorizedRow(row.id, 'linkedPayrollCellId', null);
-                                }}
-                                style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0, fontSize: '9px' }}
-                                title="Remove payroll linkage"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          );
-                        })() : (
+                      {/* Direction Pill (Clickable toggle between Credit & Debit) */}
+                      <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        {row.isCredit ? (
                           <button
                             type="button"
-                            onClick={() => {
-                              setLinkingPayrollExpId(row.id);
-                              setLinkingStaffId(row.recipientType === 'staff' ? row.recipientId : '');
-                              setLinkingMonth(row.plMonth || '2026-07');
-                            }}
+                            onClick={() => !row.committed && handleToggleRowDirection(row.id)}
                             disabled={row.committed}
+                            title="Click to switch direction to Paid Out (Debit)"
                             style={{
-                              background: 'rgba(99, 102, 241, 0.08)',
-                              border: '1px dashed rgba(99, 102, 241, 0.3)',
-                              borderRadius: '4px',
-                              color: 'var(--primary)',
-                              fontSize: '10px',
-                              fontWeight: 600,
-                              padding: '2px 4px',
-                              cursor: 'pointer',
-                              textAlign: 'center',
-                              opacity: row.committed ? 0.5 : 1
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              fontSize: '10.5px',
+                              fontWeight: 700,
+                              backgroundColor: 'rgba(34, 197, 94, 0.12)',
+                              color: 'var(--success)',
+                              border: '1px solid rgba(34, 197, 94, 0.25)',
+                              cursor: row.committed ? 'default' : 'pointer'
                             }}
                           >
-                            🔗 Link to Payroll
+                            🟢 Paid In
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => !row.committed && handleToggleRowDirection(row.id)}
+                            disabled={row.committed}
+                            title="Click to switch direction to Paid In (Credit)"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              fontSize: '10.5px',
+                              fontWeight: 700,
+                              backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                              color: 'var(--danger)',
+                              border: '1px solid rgba(239, 68, 68, 0.25)',
+                              cursor: row.committed ? 'default' : 'pointer'
+                            }}
+                          >
+                            🔻 Paid Out
                           </button>
                         )}
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* Target Selector Button */}
-                    <td>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => {
-                          setAllocatingRowId(row.id);
-                          const rawTarget = row.allocationTarget || [];
-                          const targetArray = Array.isArray(rawTarget) ? (rawTarget as string[]) : [rawTarget].filter(Boolean) as string[];
-                          const type = row.allocationType || 'company';
-                          const validTarget = type === 'company'
-                            ? targetArray.filter(tid => companies.some(c => c.id === tid))
-                            : type === 'department'
-                              ? targetArray.filter(d => allAvailableDepts.includes(d))
-                              : targetArray;
-                          setAllocatingType(type);
-                          setAllocatingTarget(validTarget);
-                          setAllocatingStaffIds(row.selectedStaffIds || []);
-                          setAllocatingMode(row.allocationMode || 'auto');
-                          setAllocatingManualShares(row.manualAllocationShares || {});
-                          setAllocationSearch('');
-                          setExpandedSections({
-                            company: type === 'company' || !type,
-                            department: type === 'department',
-                            staff: type === 'staff'
-                          });
-                        }}
-                        disabled={row.committed}
-                        style={{ 
-                          padding: '4px 8px', 
-                          fontSize: '11px', 
-                          width: '130px', 
-                          whiteSpace: 'nowrap', 
-                          overflow: 'hidden', 
-                          textOverflow: 'ellipsis',
-                          textAlign: 'left'
-                        }}
-                      >
-                        {(() => {
-                          if (row.allocationType === 'company') {
-                            const targets = Array.isArray(row.allocationTarget) ? row.allocationTarget : [row.allocationTarget].filter(Boolean);
-                            if (targets.length === 0) return '🏢 Choose Company';
-                            const names = targets.map(tid => companies.find(c => c.id === tid)?.name).filter(Boolean);
-                            return `🏢 ${names.join(', ')}`;
-                          }
-                          if (row.allocationType === 'department') {
-                            const targets = Array.isArray(row.allocationTarget) ? row.allocationTarget : [row.allocationTarget].filter(Boolean);
-                            if (targets.length === 0) return '📂 Choose Dept';
-                            return `📂 Dept: ${targets.join(', ')}`;
-                          }
-                          if (row.allocationType === 'staff') {
-                            const count = row.selectedStaffIds?.length || 0;
-                            return `👥 ${count} staff split${count !== 1 ? 's' : ''}`;
-                          }
-                          return '🎯 Click to Allocate';
-                        })()}
-                      </button>
-                    </td>
+                      {/* P&L Month Selector */}
+                      <td>
+                        <input 
+                          type="month"
+                          value={row.plMonth}
+                          onChange={(e) => handleUpdateCategorizedRow(row.id, 'plMonth', e.target.value)}
+                          disabled={row.committed}
+                          style={{ padding: '4px', fontSize: '11px', width: '110px' }}
+                        />
+                      </td>
 
-                    {/* VAT Rate Selector */}
-                    <td>
-                      <select
-                        value={row.taxRate !== undefined ? row.taxRate : 0}
-                        onChange={(e) => handleUpdateCategorizedRow(row.id, 'taxRate', Number(e.target.value))}
-                        disabled={row.committed}
-                        style={{ padding: '4px', fontSize: '11px', width: '85px' }}
-                      >
-                        <option value="0">0% (Exempt)</option>
-                        <option value="20">20% (Std)</option>
-                        <option value="5">5% (Red)</option>
-                      </select>
-                    </td>
+                      {/* Nominal Category Selector */}
+                      <td>
+                        <select
+                          value={row.nominalCode}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === 'quick_add_nominal') {
+                              setQuickAddRowId(row.id);
+                              setNewNominalCodeId('');
+                              setNewNominalCodeName('');
+                              setNewNominalType('indirect');
+                              setQuickAddNominalOpen(true);
+                            } else {
+                              handleUpdateCategorizedRow(row.id, 'nominalCode', val);
+                            }
+                          }}
+                          disabled={row.committed}
+                          style={{ padding: '4px', fontSize: '11px', width: '160px' }}
+                        >
+                          <option value="">-- Unmapped --</option>
+                          <option value="quick_add_nominal" style={{ color: 'var(--primary)', fontWeight: 'bold' }}>
+                            ➕ Add New Nominal Code...
+                          </option>
+                          {activeNominalCodes.map(c => (
+                            <option key={c.id} value={c.code}>{c.code}</option>
+                          ))}
+                        </select>
+                      </td>
 
-                    {/* Link Credit to placement sales invoice */}
-                    <td>
-                      {row.isCredit ? (
+                      {/* Recipient Linkage (Vendor/Staff) */}
+                      <td>
+                        <select
+                          value={row.recipientType !== 'other' ? `${row.recipientType}:${row.recipientId}` : 'other'}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === 'other') {
+                              handleUpdateCategorizedRow(row.id, 'recipientType', 'other');
+                              handleUpdateCategorizedRow(row.id, 'recipientId', '');
+                            } else if (val === 'register_vendor') {
+                              setQuickVendorRowId(row.id);
+                              setQuickVendorName(row.payee);
+                              setQuickVendorCategory('Software License');
+                            } else {
+                              const [type, id] = val.split(':');
+                              handleUpdateCategorizedRow(row.id, 'recipientType', type);
+                              handleUpdateCategorizedRow(row.id, 'recipientId', id);
+
+                              if (type === 'vendor') {
+                                const vendorObj = vendors.find(v => v.id === id);
+                                const vContracts = contracts.filter(c => c.vendorId === id || (c.vendorName && vendorObj && c.vendorName.toLowerCase().includes(vendorObj.name.toLowerCase())));
+                                const vContractIds = vContracts.map(c => c.id);
+
+                                // Auto-populate seat assigned staff users
+                                const assignedStaffIds = assetAssignments
+                                  .filter(a => vContractIds.includes(a.contractId))
+                                  .map(a => a.staffId)
+                                  .filter(Boolean);
+
+                                if (assignedStaffIds.length > 0) {
+                                  handleUpdateCategorizedRow(row.id, 'allocationType', 'staff');
+                                  handleUpdateCategorizedRow(row.id, 'selectedStaffIds', assignedStaffIds);
+                                  handleUpdateCategorizedRow(row.id, 'allocationTarget', '');
+                                  onShowToast(`🔌 Auto-populated ${assignedStaffIds.length} seat users from Vendor Asset (${vendorObj?.name})!`, "success");
+                                } else if (vContracts.length > 0 && Array.isArray(vContracts[0].splits)) {
+                                  const compTargets = vContracts[0].splits.filter((sp: any) => sp.type === 'company').map((sp: any) => sp.targetId);
+                                  if (compTargets.length > 0) {
+                                    handleUpdateCategorizedRow(row.id, 'allocationType', 'company');
+                                    handleUpdateCategorizedRow(row.id, 'allocationTarget', compTargets);
+                                    handleUpdateCategorizedRow(row.id, 'selectedStaffIds', []);
+                                    onShowToast(`🔌 Auto-populated company cost splits from Vendor Asset (${vendorObj?.name})!`, "success");
+                                  }
+                                }
+                              } else if (type === 'staff') {
+                                const staffMember = staff.find(s => s.id === id);
+                                handleUpdateCategorizedRow(row.id, 'allocationType', 'staff');
+                                handleUpdateCategorizedRow(row.id, 'selectedStaffIds', [id]);
+                                handleUpdateCategorizedRow(row.id, 'allocationTarget', '');
+                                onShowToast(`👤 Auto-allocated salary/payroll cost to ${staffMember?.fullName}`, "success");
+                              }
+                            }
+                          }}
+                          disabled={row.committed}
+                          style={{ padding: '4px', fontSize: '11px', width: '150px' }}
+                        >
+                          <option value="other">-- General Recipient --</option>
+                          <option value="register_vendor" style={{ color: 'var(--primary)', fontWeight: 'bold' }}>
+                            ➕ Register "{row.payee}"...
+                          </option>
+                          <optgroup label="Registered Vendors">
+                            {vendors.map(v => (
+                              <option key={v.id} value={`vendor:${v.id}`}>{v.name}</option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="Staff / Consultants">
+                            {staff.filter(s => s.status !== 'exited').map(s => (
+                              <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
+                            ))}
+                          </optgroup>
+                        </select>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                          {row.linkedPayrollCellId ? (() => {
+                            const [sid, m] = row.linkedPayrollCellId.split('_');
+                            const staffMember = staff.find(s => s.id === sid);
+                            return (
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                <span>✓ Paid: {staffMember?.fullName || 'Staff'} ({m})</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleUpdateCategorizedRow(row.id, 'linkedPayrollCellId', null);
+                                  }}
+                                  style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0, fontSize: '9px' }}
+                                  title="Remove payroll linkage"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            );
+                          })() : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLinkingPayrollExpId(row.id);
+                                setLinkingStaffId(row.recipientType === 'staff' ? row.recipientId : '');
+                                setLinkingMonth(row.plMonth || '2026-07');
+                              }}
+                              disabled={row.committed}
+                              style={{
+                                background: 'rgba(99, 102, 241, 0.08)',
+                                border: '1px dashed rgba(99, 102, 241, 0.3)',
+                                borderRadius: '4px',
+                                color: 'var(--primary)',
+                                fontSize: '10px',
+                                fontWeight: 600,
+                                padding: '2px 4px',
+                                cursor: 'pointer',
+                                textAlign: 'center',
+                                opacity: row.committed ? 0.5 : 1
+                              }}
+                            >
+                              🔗 Link to Payroll
+                            </button>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Target Selector Button */}
+                      <td>
                         <button
                           type="button"
                           className="btn-secondary"
                           onClick={() => {
-                            setLinkingRowId(row.id);
-                            setLinkingPlacementId(row.linkedPlacementId || '');
-                            setPlacementSearch('');
+                            setAllocatingRowId(row.id);
+                            const rawTarget = row.allocationTarget || [];
+                            const targetArray = Array.isArray(rawTarget) ? (rawTarget as string[]) : [rawTarget].filter(Boolean) as string[];
+                            const type = row.allocationType || 'company';
+                            const validTarget = type === 'company'
+                              ? targetArray.filter(tid => companies.some(c => c.id === tid))
+                              : type === 'department'
+                                ? targetArray.filter(d => allAvailableDepts.includes(d))
+                                : targetArray;
+                            setAllocatingType(type);
+                            setAllocatingTarget(validTarget);
+                            setAllocatingStaffIds(row.selectedStaffIds || []);
+                            setAllocatingMode(row.allocationMode || 'auto');
+                            setAllocatingManualShares(row.manualAllocationShares || {});
+                            setAllocationSearch('');
+                            setExpandedSections({
+                              company: type === 'company' || !type,
+                              department: type === 'department',
+                              staff: type === 'staff'
+                            });
                           }}
                           disabled={row.committed}
                           style={{ 
                             padding: '4px 8px', 
                             fontSize: '11px', 
-                            width: '150px', 
+                            width: '130px', 
                             whiteSpace: 'nowrap', 
                             overflow: 'hidden', 
                             textOverflow: 'ellipsis',
-                            textAlign: 'left',
-                            border: row.linkedPlacementId ? '1px solid var(--success)' : '1px solid var(--border-color)',
-                            color: row.linkedPlacementId ? 'var(--success)' : 'var(--text-primary)'
+                            textAlign: 'left'
                           }}
                         >
                           {(() => {
-                            if (row.linkedPlacementId) {
-                              const p = placements.find(x => x.id === row.linkedPlacementId);
-                              return p ? `🔗 ${p.placementId} (${p.clientCompany})` : '🔗 Link Placement';
+                            if (row.allocationType === 'company') {
+                              const targets = Array.isArray(row.allocationTarget) ? row.allocationTarget : [row.allocationTarget].filter(Boolean);
+                              if (targets.length === 0) return '🏢 Choose Company';
+                              const names = targets.map(tid => companies.find(c => c.id === tid)?.name).filter(Boolean);
+                              return `🏢 ${names.join(', ')}`;
                             }
-                            return '🔗 Link Placement';
+                            if (row.allocationType === 'department') {
+                              const targets = Array.isArray(row.allocationTarget) ? row.allocationTarget : [row.allocationTarget].filter(Boolean);
+                              if (targets.length === 0) return '📂 Choose Dept';
+                              return `📂 Dept: ${targets.join(', ')}`;
+                            }
+                            if (row.allocationType === 'staff') {
+                              const count = row.selectedStaffIds?.length || 0;
+                              return `👥 ${count} staff split${count !== 1 ? 's' : ''}`;
+                            }
+                            return '🎯 Click to Allocate';
                           })()}
                         </button>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)' }}>Debit</span>
-                      )}
-                    </td>
+                      </td>
 
-                    {/* Delete Row Action */}
-                    <td>
-                      <button
-                        type="button"
-                        className="btn-danger"
-                        onClick={() => {
-                          setCategorizedRows(prev => prev.filter(r => r.id !== row.id));
-                        }}
-                        disabled={row.committed}
+                      {/* VAT Rate Selector */}
+                      <td>
+                        <select
+                          value={row.taxRate !== undefined ? row.taxRate : 0}
+                          onChange={(e) => handleUpdateCategorizedRow(row.id, 'taxRate', Number(e.target.value))}
+                          disabled={row.committed}
+                          style={{ padding: '4px', fontSize: '11px', width: '85px' }}
+                        >
+                          <option value="0">0% (Exempt)</option>
+                          <option value="20">20% (Std)</option>
+                          <option value="5">5% (Red)</option>
+                        </select>
+                      </td>
+
+                      {/* Link Credit to placement sales invoice */}
+                      <td>
+                        {row.isCredit ? (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => {
+                              setLinkingRowId(row.id);
+                              setLinkingPlacementId(row.linkedPlacementId || '');
+                              setPlacementSearch('');
+                            }}
+                            disabled={row.committed}
+                            style={{ 
+                              padding: '4px 8px', 
+                              fontSize: '11px', 
+                              width: '150px', 
+                              whiteSpace: 'nowrap', 
+                              overflow: 'hidden', 
+                              textOverflow: 'ellipsis',
+                              textAlign: 'left',
+                              border: row.linkedPlacementId ? '1px solid var(--success)' : '1px solid var(--border-color)',
+                              color: row.linkedPlacementId ? 'var(--success)' : 'var(--text-primary)'
+                            }}
+                          >
+                            {(() => {
+                              if (row.linkedPlacementId) {
+                                const p = placements.find(x => x.id === row.linkedPlacementId);
+                                return p ? `🔗 ${p.placementId} (${p.clientCompany})` : '🔗 Link Placement';
+                              }
+                              return '🔗 Link Placement';
+                            })()}
+                          </button>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>Debit</span>
+                        )}
+                      </td>
+
+                      {/* Delete Row Action */}
+                      <td>
+                        <button
+                          type="button"
+                          className="btn-danger"
+                          onClick={() => {
+                            setCategorizedRows(prev => prev.filter(r => r.id !== row.id));
+                          }}
+                          disabled={row.committed}
                         style={{ padding: '4px 8px', fontSize: '10px' }}
                         title="Remove this row"
                       >
@@ -2124,7 +2705,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                       </button>
                     </td>
                   </tr>
-                ))}
+                )))}
               </tbody>
             </table>
           </div>

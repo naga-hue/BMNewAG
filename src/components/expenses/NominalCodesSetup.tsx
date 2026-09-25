@@ -393,6 +393,28 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
     }
   };
 
+  const handleProvisionTreasuryCodes = async () => {
+    let created = 0;
+    const presets = [
+      { id: '1100', code: '1100 - Bank Transfer / Contra Account', type: 'direct', includeInOverheads: false },
+      { id: '1200', code: '1200 - Intercompany Transfer / Recharge', type: 'direct', includeInOverheads: false }
+    ];
+
+    for (const preset of presets) {
+      const exists = activeNominalCodes.some(c => c.id === preset.id || c.code.toLowerCase().includes(preset.id));
+      if (!exists) {
+        await saveNominalCode(preset);
+        created++;
+      }
+    }
+
+    if (created > 0) {
+      onShowToast(`Provisioned ${created} Treasury / Contra & Intercompany nominal codes (overheads excluded).`, 'success');
+    } else {
+      onShowToast('Treasury Contra (1100) and Intercompany (1200) codes are already active.', 'info');
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
@@ -403,6 +425,15 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
         </div>
         
         <div style={{ display: 'flex', gap: '8px' }}>
+          <button 
+            type="button" 
+            className="btn-secondary"
+            onClick={handleProvisionTreasuryCodes}
+            style={{ fontSize: '12px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+            title="Ensure 1100 Bank Transfer / Contra and 1200 Intercompany Transfer codes are provisioned with overheads excluded"
+          >
+            🔄 Provision Treasury & Intercompany Codes
+          </button>
           <button 
             type="button" 
             className="btn-secondary"

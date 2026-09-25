@@ -3,6 +3,7 @@ import { useBoundStore } from '../../store/useBoundStore';
 import { toGBP } from '../../utils/currency';
 import { Check, Sparkles, Filter, AlertTriangle, ArrowRight, ShieldAlert, Plus, Layers, UserCheck } from 'lucide-react';
 import { firebaseService } from '../../services/firebase';
+import { isInternalContraTransfer, isIntercompanyTransfer } from '../../utils/pdfStatementParser';
 
 interface CategorizationDeskProps {
   onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
@@ -70,12 +71,49 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
   const handleAutoMapAll = async () => {
     setIsProcessing(true);
     let mapped = 0;
+    const allKnownBanks = companies.flatMap((c: any) => c.bankAccounts || []);
+    const contraNominal = activeNominalCodes.find(c => c.id === '1100' || c.code.toLowerCase().includes('contra') || c.code.toLowerCase().includes('bank transfer'))?.code || '1100 - Bank Transfer / Contra Account';
+    const intercoNominal = activeNominalCodes.find(c => c.id === '1200' || c.code.toLowerCase().includes('intercompany'))?.code || '1200 - Intercompany Transfer / Recharge';
+    const salaryNominal = activeNominalCodes.find(c => c.id === '7001' || c.code.toLowerCase().includes('salary') || c.code.toLowerCase().includes('wages') || c.code.toLowerCase().includes('payroll'))?.code || '7001 - Staff Payroll & Wages';
 
     for (const exp of unmappedExpenses) {
       const payeeStr = (exp.payee || '').toLowerCase();
+      const refStr = (exp.reference || exp.notes || '').toLowerCase();
+
+      // 1. Check for Internal Contra Transfer (Wise / internal bank accounts)
+      if (isInternalContraTransfer(exp.payee, exp.reference || exp.notes, allKnownBanks)) {
+        await saveExpense({
+          ...exp,
+          recipientType: 'other',
+          nominalCode: exp.nominalCode || contraNominal,
+          isContra: true,
+          notes: exp.notes ? `${exp.notes} (Internal Contra)` : 'Internal Contra Transfer (Overheads Excluded)',
+          allocationType: 'company',
+          allocationTarget: exp.bankCompanyId || companies[0]?.id || ''
+        });
+        mapped++;
+        continue;
+      }
+
+      // 2. Check for Intercompany Transfer to another group entity
+      const interco = isIntercompanyTransfer(exp.payee, exp.reference || exp.notes, exp.bankCompanyId || '', companies);
+      if (interco.isIntercompany) {
+        await saveExpense({
+          ...exp,
+          recipientType: 'company',
+          recipientId: interco.targetCompanyId || '',
+          nominalCode: exp.nominalCode || intercoNominal,
+          isIntercompany: true,
+          notes: exp.notes ? `${exp.notes} (Intercompany)` : `Intercompany Transfer (Overheads Excluded)`,
+          allocationType: 'company',
+          allocationTarget: interco.targetCompanyId || ''
+        });
+        mapped++;
+        continue;
+      }
       
-      const matchedStaff = staff.find(s => s.fullName && payeeStr.includes(s.fullName.toLowerCase()));
-      const matchedVendor = vendors.find(v => v.name && payeeStr.includes(v.name.toLowerCase()));
+      const matchedStaff = staff.find(s => s.fullName && (payeeStr.includes(s.fullName.toLowerCase()) || refStr.includes(s.fullName.toLowerCase())));
+      const matchedVendor = vendors.find(v => v.name && (payeeStr.includes(v.name.toLowerCase()) || refStr.includes(v.name.toLowerCase())));
 
       if (matchedStaff) {
         await saveExpense({
@@ -83,6 +121,7 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
           recipientType: 'staff',
           recipientId: matchedStaff.id,
           payee: matchedStaff.fullName,
+          nominalCode: exp.nominalCode || salaryNominal,
           compensationCategory: 'salary',
           allocationType: 'staff',
           allocationTarget: [matchedStaff.id]
@@ -108,10 +147,13 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
           }
         }
 
+        const vendorNominal = exp.nominalCode || matchedVendor.nominalCode || activeNominalCodes.find(c => c.id === '7002' || c.code.toLowerCase().includes('software'))?.code || '7002 - Software Licenses & SaaS';
+
         await saveExpense({
           ...exp,
           recipientType: 'vendor',
           recipientId: matchedVendor.id,
+          nominalCode: vendorNominal,
           linkedContractId: matchedContract?.id || '',
           payee: matchedVendor.name,
           allocationType: allocType,
@@ -457,15 +499,27 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
 
                     {/* Payee */}
                     <td style={{ padding: '8px 10px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
                           {exp.payee}
                         </span>
-                        {isRecipientUnmapped && (
-                          <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--warning)', backgroundColor: 'rgba(245, 158, 11, 0.15)', padding: '1px 6px', borderRadius: '4px', width: 'fit-content' }}>
-                            ⚠️ Unmapped Payee
-                          </span>
-                        )}
+                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                          {(exp.isContra || exp.nominalCode?.includes('1100') || exp.nominalCode?.toLowerCase().includes('contra')) && (
+                            <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--accent)', backgroundColor: 'rgba(99, 102, 241, 0.15)', padding: '1px 6px', borderRadius: '4px', width: 'fit-content' }}>
+                              🔄 Internal Contra (Overheads Excluded)
+                            </span>
+                          )}
+                          {(exp.isIntercompany || exp.nominalCode?.includes('1200') || exp.nominalCode?.toLowerCase().includes('intercompany')) && (
+                            <span style={{ fontSize: '9px', fontWeight: 700, color: '#0284c7', backgroundColor: 'rgba(14, 165, 233, 0.15)', padding: '1px 6px', borderRadius: '4px', width: 'fit-content' }}>
+                              🏢 Intercompany (Overheads Excluded)
+                            </span>
+                          )}
+                          {isRecipientUnmapped && !exp.isContra && !exp.isIntercompany && !exp.nominalCode?.includes('1100') && !exp.nominalCode?.includes('1200') && (
+                            <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--warning)', backgroundColor: 'rgba(245, 158, 11, 0.15)', padding: '1px 6px', borderRadius: '4px', width: 'fit-content' }}>
+                              ⚠️ Unmapped Payee
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
 

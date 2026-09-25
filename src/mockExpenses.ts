@@ -1,6 +1,8 @@
 import { NominalCode, Expense } from './types';
 
 export const initialNominalCodes: NominalCode[] = [
+  { id: "1100", code: "1100 - Bank Transfer / Contra Account", type: "direct", includeInOverheads: false },
+  { id: "1200", code: "1200 - Intercompany Transfer / Recharge", type: "direct", includeInOverheads: false },
   { id: "7001", code: "7001 - Office Rentals & Leasing" },
   { id: "7002", code: "7002 - Software Licenses & SaaS" },
   { id: "7003", code: "7003 - Staff Payroll & Wages" },

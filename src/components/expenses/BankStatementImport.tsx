@@ -3,7 +3,8 @@ import { UploadCloud, Grid, Trash2, CheckCircle2, Clock, Check, ArrowLeft, Searc
 import * as XLSX from 'xlsx';
 import { useBoundStore } from '../../store/useBoundStore';
 import { parseAndStandardizeDate, symbolMap } from './shared';
-import { FX_RATES, toGBP, getHistoricalFxRate } from '../../utils/currency';
+import { FX_RATES, getHistoricalFxRate } from '../../utils/currency';
+import { extractBankStatementFromPdf, isInternalContraTransfer, isIntercompanyTransfer } from '../../utils/pdfStatementParser';
 
 interface BankStatementImportProps {
   onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
@@ -31,6 +32,8 @@ interface CategorizedRow {
   manualAllocationShares?: Record<string, number>;
   fxRate?: number;
   amountGBP?: number;
+  isContra?: boolean;
+  isIntercompany?: boolean;
 }
 
 interface HeldBankStatement {
@@ -428,13 +431,103 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
 
 
 
-  const processBankStatementFile = (
+  const handleParsedStatementData = (
+    file: File,
+    headers: string[],
+    rows: string[][],
+    targetBankAccountId?: string,
+    targetCompanyId?: string,
+    targetCurrency?: string
+  ) => {
+    if (rows.length === 0 || headers.length === 0) {
+      onShowToast("No valid transaction rows found in file.", "warning");
+      return;
+    }
+
+    // Auto-detect columns
+    const initialMap: Record<string, string> = {};
+    const mappingsList = [
+      { key: 'date', labels: ['date', 'transaction date', 'booking date', 'val date', 'posted date', 'trans date'] },
+      { key: 'payee', labels: ['description', 'payee', 'beneficiary', 'details', 'name', 'narrative', 'party', 'counterparty'] },
+      { key: 'amount', labels: ['amount', 'value', 'transaction amount', 'net amount', 'price', 'paid out', 'debit', 'debit amount'] },
+      { key: 'reference', labels: ['reference', 'memo', 'ref', 'narrative', 'payment reference', 'type', 'id'] },
+      { key: 'nominal', labels: ['nominal', 'category', 'nominal code', 'account code', 'code'] }
+    ];
+
+    mappingsList.forEach(m => {
+      const idx = headers.findIndex(h => h && m.labels.some(lbl => h.toLowerCase() === lbl.toLowerCase() || h.toLowerCase().includes(lbl.toLowerCase())));
+      if (idx > -1) initialMap[m.key] = headers[idx];
+    });
+
+    // Compute statement date range
+    let earliestDate = '';
+    let latestDate = '';
+    const dateCol = initialMap.date || headers.find(h => h.toLowerCase().includes('date'));
+    if (dateCol) {
+      const dIdx = headers.indexOf(dateCol);
+      if (dIdx > -1) {
+        const dates = rows.map(r => parseAndStandardizeDate(r[dIdx], dateFormat)).filter(Boolean).sort();
+        if (dates.length > 0) {
+          earliestDate = dates[0];
+          latestDate = dates[dates.length - 1];
+        }
+      }
+    }
+
+    if (targetBankAccountId) {
+      // Store directly into multi-bank held queue!
+      const newHeld: HeldBankStatement = {
+        id: `stmt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        bankAccountId: targetBankAccountId,
+        companyId: targetCompanyId || '',
+        currency: targetCurrency || 'GBP',
+        fileName: file.name,
+        uploadedAt: new Date().toISOString(),
+        headers,
+        rawRows: rows,
+        columnMappings: initialMap,
+        dateFormat,
+        latestStatementDate: latestDate,
+        earliestStatementDate: earliestDate,
+        categorizedRows: []
+      };
+      const updated = { ...heldStatements, [targetBankAccountId]: newHeld };
+      updateHeldStatements(updated);
+      onShowToast(`Uploaded & held statement "${file.name}" (${rows.length} rows, up to ${formatDisplayDate(latestDate)})! You can choose the next statement or open the desk.`, "success");
+    } else {
+      // General upload -> load into current import session
+      setCsvHeaders(headers);
+      setCsvRows(rows);
+      setCsvFile(file);
+      setColumnMappings(initialMap);
+      setActiveViewMode('mapping');
+      setImportStep(2);
+    }
+  };
+
+  const processBankStatementFile = async (
     file: File, 
     targetBankAccountId?: string, 
     targetCompanyId?: string, 
     targetCurrency?: string
   ) => {
+    const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
     const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+
+    if (isPdf) {
+      try {
+        const extracted = await extractBankStatementFromPdf(file);
+        if (extracted.rows.length === 0) {
+          onShowToast("No transaction rows could be extracted from this PDF statement.", "warning");
+          return;
+        }
+        handleParsedStatementData(file, extracted.headers, extracted.rows, targetBankAccountId, targetCompanyId, targetCurrency || extracted.detectedCurrency);
+      } catch (err: any) {
+        onShowToast(`Failed to parse PDF statement: ${err.message}`, "error");
+      }
+      return;
+    }
+
     const reader = new FileReader();
 
     reader.onload = (event) => {
@@ -520,73 +613,10 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
           }
         }
 
-        if (rows.length === 0 || headers.length === 0) {
-          onShowToast("No valid transaction rows found in file.", "warning");
-          return;
-        }
-
-        // Auto-detect columns
-        const initialMap: Record<string, string> = {};
-        const mappingsList = [
-          { key: 'date', labels: ['date', 'transaction date', 'booking date', 'val date', 'posted date', 'trans date'] },
-          { key: 'payee', labels: ['description', 'payee', 'beneficiary', 'details', 'name', 'narrative', 'party', 'counterparty'] },
-          { key: 'amount', labels: ['amount', 'value', 'transaction amount', 'net amount', 'price', 'paid out', 'debit', 'debit amount'] },
-          { key: 'reference', labels: ['reference', 'memo', 'ref', 'narrative', 'payment reference', 'type', 'id'] },
-          { key: 'nominal', labels: ['nominal', 'category', 'nominal code', 'account code', 'code'] }
-        ];
-
-        mappingsList.forEach(m => {
-          const idx = headers.findIndex(h => h && m.labels.some(lbl => h.toLowerCase() === lbl.toLowerCase() || h.toLowerCase().includes(lbl.toLowerCase())));
-          if (idx > -1) initialMap[m.key] = headers[idx];
-        });
-
-        // Compute statement date range
-        let earliestDate = '';
-        let latestDate = '';
-        const dateCol = initialMap.date || headers.find(h => h.toLowerCase().includes('date'));
-        if (dateCol) {
-          const dIdx = headers.indexOf(dateCol);
-          if (dIdx > -1) {
-            const dates = rows.map(r => parseAndStandardizeDate(r[dIdx], dateFormat)).filter(Boolean).sort();
-            if (dates.length > 0) {
-              earliestDate = dates[0];
-              latestDate = dates[dates.length - 1];
-            }
-          }
-        }
-
-        if (targetBankAccountId) {
-          // Store directly into multi-bank held queue!
-          const newHeld: HeldBankStatement = {
-            id: `stmt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            bankAccountId: targetBankAccountId,
-            companyId: targetCompanyId || '',
-            currency: targetCurrency || 'GBP',
-            fileName: file.name,
-            uploadedAt: new Date().toISOString(),
-            headers,
-            rawRows: rows,
-            columnMappings: initialMap,
-            dateFormat,
-            latestStatementDate: latestDate,
-            earliestStatementDate: earliestDate,
-            categorizedRows: []
-          };
-          const updated = { ...heldStatements, [targetBankAccountId]: newHeld };
-          updateHeldStatements(updated);
-          onShowToast(`Uploaded & held statement "${file.name}" (${rows.length} rows, up to ${formatDisplayDate(latestDate)})! You can choose the next statement or open the desk.`, "success");
-        } else {
-          // General upload -> load into current import session
-          setCsvHeaders(headers);
-          setCsvRows(rows);
-          setCsvFile(file);
-          setColumnMappings(initialMap);
-          setActiveViewMode('mapping');
-          setImportStep(2);
-        }
+        handleParsedStatementData(file, headers, rows, targetBankAccountId, targetCompanyId, targetCurrency);
       } catch (err: any) {
         console.error("Error processing statement file:", err);
-        onShowToast(`Failed to parse file: ${err.message || 'Unknown error'}`, "danger");
+        onShowToast(`Failed to parse file: ${err.message || 'Unknown error'}`, "error");
       }
     };
 
@@ -670,68 +700,96 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       const rowFxRate = statementCurrency === 'GBP' ? 1.0 : (dateRateCache[standardizedDate] || statementFxRate || FX_RATES[statementCurrency] || 1.0);
       const rowAmountGBP = Math.abs(amtVal) * rowFxRate;
 
+      // Auto-detect Internal Contra Transfer (e.g. HSBC -> Wise, internal accounts)
+      const allKnownBanks = companies.flatMap((c: any) => c.bankAccounts || []);
+      const isContra = isInternalContraTransfer(payeeVal, refVal, allKnownBanks);
+
+      // Auto-detect Intercompany Transfer (to another group company)
+      const interco = !isContra
+        ? isIntercompanyTransfer(payeeVal, refVal, statementCompanyId || companies[0]?.id || '', companies)
+        : { isIntercompany: false, targetCompanyId: undefined, targetCompanyName: undefined };
+
       // Auto-detect recipient matching vendor name or staff member name
       let autoRecType = 'other';
       let autoRecId = '';
       let matchedStaffMember = null;
-      const cleanPayee = payeeVal.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (cleanPayee) {
-        const matchedVendor = vendors.find(v => v.name.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanPayee) || cleanPayee.includes(v.name.toLowerCase().replace(/[^a-z0-9]/g, '')));
-        if (matchedVendor) {
-          autoRecType = 'vendor';
-          autoRecId = matchedVendor.id;
-        } else {
-          const matchedStaff = staff.find(s => s.fullName.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanPayee) || cleanPayee.includes(s.fullName.toLowerCase().replace(/[^a-z0-9]/g, '')));
-          if (matchedStaff) {
-            autoRecType = 'staff';
-            autoRecId = matchedStaff.id;
-            matchedStaffMember = matchedStaff;
-          }
-        }
-      }
-
-      // Auto-detect matching nominal category
       let autoNominalCode = '';
-      if (nominalVal) {
-        const cleanNomVal = String(nominalVal).trim().toLowerCase();
-        const matched = activeNominalCodes.find(c => {
-          const codeStr = String(c.code || '').toLowerCase();
-          const cId = String(c.id).toLowerCase();
-          return cId === cleanNomVal || codeStr === cleanNomVal || codeStr.includes(cleanNomVal) || cleanNomVal.includes(codeStr);
-        });
-        if (matched) {
-          autoNominalCode = matched.code;
-        }
-      }
-
-      // Auto-detect target cost center allocation
       let autoAllocType = 'company';
-      let autoAllocTarget: string | string[] = companies[0]?.id || '';
+      let autoAllocTarget: string | string[] = statementCompanyId || companies[0]?.id || '';
       let autoStaffIds: string[] = [];
 
-      if (matchedStaffMember) {
-        autoAllocType = 'staff';
-        autoAllocTarget = [matchedStaffMember.id];
-        autoStaffIds = [matchedStaffMember.id];
+      if (isContra) {
+        // Internal Bank / Treasury Transfer (Contra) - Balance Sheet, Overheads Excluded
+        autoRecType = 'other';
+        autoRecId = '';
+        autoNominalCode = activeNominalCodes.find(c => c.id === '1100' || c.code.toLowerCase().includes('contra') || c.code.toLowerCase().includes('bank transfer'))?.code || '1100 - Bank Transfer / Contra Account';
+        autoAllocType = 'company';
+        autoAllocTarget = statementCompanyId || companies[0]?.id || '';
+      } else if (interco.isIntercompany) {
+        // Intercompany transfer to another group entity
+        autoRecType = 'company';
+        autoRecId = interco.targetCompanyId || '';
+        autoNominalCode = activeNominalCodes.find(c => c.id === '1200' || c.code.toLowerCase().includes('intercompany'))?.code || '1200 - Intercompany Transfer / Recharge';
+        autoAllocType = 'company';
+        autoAllocTarget = interco.targetCompanyId || '';
       } else {
-        // Match payee to registered Company Name
-        const matchedComp = companies.find(c => {
-          const cName = c.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-          return cleanPayee.includes(cName) || cName.includes(cleanPayee);
-        });
-        if (matchedComp) {
-          autoAllocType = 'company';
-          autoAllocTarget = matchedComp.id;
-        } else {
-          // Match payee to active Department Name
-          const activeDepts = Array.from(new Set(staff.map(s => s.department).filter(Boolean)));
-          const matchedDept = activeDepts.find(d => {
-            const dName = d.toLowerCase().replace(/[^a-z0-9]/g, '');
-            return cleanPayee.includes(dName);
+        const cleanPayee = payeeVal.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanPayee) {
+          const matchedVendor = vendors.find(v => v.name.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanPayee) || cleanPayee.includes(v.name.toLowerCase().replace(/[^a-z0-9]/g, '')));
+          if (matchedVendor) {
+            autoRecType = 'vendor';
+            autoRecId = matchedVendor.id;
+            if (matchedVendor.nominalCode) {
+              autoNominalCode = matchedVendor.nominalCode;
+            }
+          } else {
+            const matchedStaff = staff.find(s => s.fullName.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanPayee) || cleanPayee.includes(s.fullName.toLowerCase().replace(/[^a-z0-9]/g, '')));
+            if (matchedStaff) {
+              autoRecType = 'staff';
+              autoRecId = matchedStaff.id;
+              matchedStaffMember = matchedStaff;
+              autoAllocType = 'staff';
+              autoAllocTarget = [matchedStaff.id];
+              autoStaffIds = [matchedStaff.id];
+              autoNominalCode = activeNominalCodes.find(c => c.id === '7001' || c.code.toLowerCase().includes('salary') || c.code.toLowerCase().includes('wages'))?.code || '7001 - Staff Payroll & Wages';
+            }
+          }
+        }
+
+        // Auto-detect matching nominal category if column had nominal
+        if (!autoNominalCode && nominalVal) {
+          const cleanNomVal = String(nominalVal).trim().toLowerCase();
+          const matched = activeNominalCodes.find(c => {
+            const codeStr = String(c.code || '').toLowerCase();
+            const cId = String(c.id).toLowerCase();
+            return cId === cleanNomVal || codeStr === cleanNomVal || codeStr.includes(cleanNomVal) || cleanNomVal.includes(codeStr);
           });
-          if (matchedDept) {
-            autoAllocType = 'department';
-            autoAllocTarget = [matchedDept];
+          if (matched) {
+            autoNominalCode = matched.code;
+          }
+        }
+
+        if (!matchedStaffMember) {
+          const cleanPayee = payeeVal.toLowerCase().replace(/[^a-z0-9]/g, '');
+          // Match payee to registered Company Name
+          const matchedComp = companies.find(c => {
+            const cName = c.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return cleanPayee.includes(cName) || cName.includes(cleanPayee);
+          });
+          if (matchedComp) {
+            autoAllocType = 'company';
+            autoAllocTarget = matchedComp.id;
+          } else {
+            // Match payee to active Department Name
+            const activeDepts = Array.from(new Set(staff.map(s => s.department).filter(Boolean)));
+            const matchedDept = activeDepts.find(d => {
+              const dName = d.toLowerCase().replace(/[^a-z0-9]/g, '');
+              return cleanPayee.includes(dName);
+            });
+            if (matchedDept) {
+              autoAllocType = 'department';
+              autoAllocTarget = [matchedDept];
+            }
           }
         }
       }
@@ -754,7 +812,9 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
         isCredit: amtVal > 0,
         committed: false,
         fxRate: rowFxRate,
-        amountGBP: rowAmountGBP
+        amountGBP: rowAmountGBP,
+        isContra,
+        isIntercompany: !!interco.isIntercompany
       };
     });
 
@@ -814,7 +874,9 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
           bankAccountRef: statementAccountRef || 'Main Current Account',
           linkedPayrollCellId: row.linkedPayrollCellId || null,
           reference: row.reference || '',
-          description: row.reference || ''
+          description: row.reference || '',
+          isContra: !!row.isContra,
+          isIntercompany: !!row.isIntercompany
         };
 
         await saveExpense(expenseData);
@@ -1134,7 +1196,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                             type="file"
                             ref={(el) => (fileInputRefs.current[b.bankId] = el)}
                             style={{ display: 'none' }}
-                            accept=".csv, .xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+                            accept=".pdf, .csv, .xlsx, .xls, application/pdf, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
                             onChange={(e) => handleBankFileChange(e, b)}
                           />
 
@@ -1203,16 +1265,16 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
               <input 
                 type="file" 
                 id="general-statement-file-picker" 
-                accept=".csv, .xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" 
+                accept=".pdf, .csv, .xlsx, .xls, application/pdf, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" 
                 style={{ display: 'none' }}
                 onChange={handleCSVSelect}
               />
               <UploadCloud size={24} style={{ color: 'var(--primary)', marginBottom: '6px' }} />
               <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                Drag & Drop or Browse Standalone Statement (CSV or Excel)
+                Drag & Drop or Browse Standalone Statement (PDF, CSV or Excel)
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
-                You can also drop any statement here to manually map and assign it to any company bank account.
+                You can also drop any PDF, Excel, or CSV statement here to manually map and assign it to any company bank account.
               </div>
             </div>
           </div>
@@ -1744,7 +1806,19 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                     </td>
                     <td>{row.date}</td>
                     <td style={{ fontWeight: 600 }}>
-                      {row.payee}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span>{row.payee}</span>
+                        {(row.isContra || row.nominalCode?.includes('1100') || row.nominalCode?.toLowerCase().includes('contra')) && (
+                          <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--accent)', backgroundColor: 'rgba(99, 102, 241, 0.12)', padding: '1px 6px', borderRadius: '4px' }}>
+                            🔄 Internal Contra (Overheads Excluded)
+                          </span>
+                        )}
+                        {(row.isIntercompany || row.nominalCode?.includes('1200') || row.nominalCode?.toLowerCase().includes('intercompany')) && (
+                          <span style={{ fontSize: '9px', fontWeight: 700, color: '#0284c7', backgroundColor: 'rgba(14, 165, 233, 0.12)', padding: '1px 6px', borderRadius: '4px' }}>
+                            🏢 Intercompany (Overheads Excluded)
+                          </span>
+                        )}
+                      </div>
                       {row.reference && (
                         <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 'normal', marginTop: '2px' }}>
                           Ref: {row.reference}

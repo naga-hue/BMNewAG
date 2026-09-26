@@ -34,6 +34,10 @@ interface CategorizedRow {
   amountGBP?: number;
   isContra?: boolean;
   isIntercompany?: boolean;
+  bankAccountId?: string;
+  bankCompanyId?: string;
+  bankAccountRef?: string;
+  currency?: string;
 }
 
 interface HeldBankStatement {
@@ -48,9 +52,72 @@ interface HeldBankStatement {
   columnMappings: Record<string, string>;
   dateFormat: 'UK' | 'US';
   amountMode?: 'single' | 'split';
+  importScopeMode?: 'single' | 'multi_bank';
   latestStatementDate?: string;
   earliestStatementDate?: string;
   categorizedRows?: CategorizedRow[];
+}
+
+export function parseCurrencyToken(str: string): string {
+  if (!str) return '';
+  const clean = String(str).trim().toUpperCase();
+  if (clean === 'EUR' || clean === '€' || clean.includes('EURO')) return 'EUR';
+  if (clean === 'USD' || clean === '$' || clean.includes('DOLLAR')) return 'USD';
+  if (clean === 'ZAR' || clean === 'R' || clean.includes('RAND')) return 'ZAR';
+  if (clean === 'AED' || clean.includes('DIRHAM') || clean.includes('DHS')) return 'AED';
+  if (clean === 'INR' || clean === '₹' || clean.includes('RUPEE')) return 'INR';
+  if (clean === 'GBP' || clean === '£' || clean.includes('POUND') || clean.includes('STERLING')) return 'GBP';
+  const match = clean.match(/\b(GBP|EUR|USD|ZAR|AED|INR)\b/);
+  return match ? match[1] : '';
+}
+
+export function matchRowToBankAccount(
+  bankText: string,
+  currencyText: string,
+  allBanks: any[],
+  defaultBank: any
+): any {
+  if (!allBanks || allBanks.length === 0) return defaultBank;
+  const cleanBank = (bankText || '').trim().toLowerCase();
+  const parsedCur = parseCurrencyToken(currencyText) || parseCurrencyToken(bankText);
+
+  // 1. Match by account number if present in bankText
+  if (cleanBank) {
+    const accNumMatch = allBanks.find(b => b.accountNumber && cleanBank.includes(String(b.accountNumber).toLowerCase().trim()));
+    if (accNumMatch) return accNumMatch;
+  }
+
+  // 2. Match by exact or substring accountName or bankName
+  if (cleanBank) {
+    const nameMatches = allBanks.filter(b => {
+      const bName = (b.bankName || '').toLowerCase().trim();
+      const aName = (b.accountName || '').toLowerCase().trim();
+      return (bName && cleanBank.includes(bName)) || (aName && cleanBank.includes(aName)) || (bName && aName && cleanBank.includes(`${bName} ${aName}`));
+    });
+
+    if (nameMatches.length === 1) {
+      return nameMatches[0];
+    }
+
+    if (nameMatches.length > 1) {
+      // If multiple match (e.g. multiple Wise accounts), disambiguate by currency
+      if (parsedCur) {
+        const curMatch = nameMatches.find(b => (b.currency || 'GBP').toUpperCase() === parsedCur);
+        if (curMatch) return curMatch;
+      }
+      return nameMatches[0];
+    }
+  }
+
+  // 3. Match by currency alone if parsedCur is provided and matches uniquely
+  if (parsedCur) {
+    const curMatches = allBanks.filter(b => (b.currency || 'GBP').toUpperCase() === parsedCur);
+    if (curMatches.length === 1) {
+      return curMatches[0];
+    }
+  }
+
+  return defaultBank || allBanks[0];
 }
 
 export function parseBankAmount(val: any): { num: number; isNegative: boolean } {
@@ -169,11 +236,13 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
   const [csvRows, setCsvRows] = useState<string[][]>([]);
   const [columnMappings, setColumnMappings] = useState<Record<string, string>>({});
   const [amountMode, setAmountMode] = useState<'single' | 'split'>('single');
+  const [importScopeMode, setImportScopeMode] = useState<'single' | 'multi_bank'>('single');
 
   // Categorization Desk Sorting & Filtering States
   const [deskSortField, setDeskSortField] = useState<string>('date');
   const [deskSortDirection, setDeskSortDirection] = useState<'asc' | 'desc'>('asc');
   const [deskTypeFilter, setDeskTypeFilter] = useState<'all' | 'debit' | 'credit'>('all');
+  const [deskBankFilter, setDeskBankFilter] = useState<string>('ALL');
   const [deskSearch, setDeskSearch] = useState('');
 
   const [savedProfiles, setSavedProfiles] = useState<Record<string, Record<string, string>>>(() => {
@@ -312,6 +381,26 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     return { total, debits, credits, mapped, committed };
   }, [categorizedRows]);
 
+  const allRegisteredBankAccounts = useMemo(() => {
+    return companies.flatMap(c => 
+      (c.bankAccounts || []).map(b => ({
+        ...b,
+        companyId: c.id,
+        companyName: c.name,
+        fullRef: `${b.bankName} - ${b.accountName}`
+      }))
+    );
+  }, [companies]);
+
+  const bankAccountCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    categorizedRows.forEach(r => {
+      const bId = r.bankAccountId || 'unassigned';
+      counts[bId] = (counts[bId] || 0) + 1;
+    });
+    return counts;
+  }, [categorizedRows]);
+
   const sortedAndFilteredCategorizedRows = useMemo(() => {
     let list = [...categorizedRows];
 
@@ -320,6 +409,11 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       list = list.filter(r => !r.isCredit);
     } else if (deskTypeFilter === 'credit') {
       list = list.filter(r => r.isCredit);
+    }
+
+    // Filter by bank account
+    if (deskBankFilter !== 'ALL') {
+      list = list.filter(r => r.bankAccountId === deskBankFilter);
     }
 
     // Filter by text search query
@@ -332,6 +426,8 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
         const ref = (r.reference || '').toLowerCase();
         const nominal = (r.nominalCode || '').toLowerCase();
         const date = (r.date || '').toLowerCase();
+        const bankRef = (r.bankAccountRef || '').toLowerCase();
+        const cur = (r.currency || '').toLowerCase();
         const amountStr = String(Math.abs(r.amount));
         return (
           payee.includes(q) ||
@@ -340,6 +436,8 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
           recLabel.includes(q) ||
           tgtLabel.includes(q) ||
           date.includes(q) ||
+          bankRef.includes(q) ||
+          cur.includes(q) ||
           amountStr.includes(q)
         );
       });
@@ -359,6 +457,11 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
         case 'date': {
           valA = a.date || '';
           valB = b.date || '';
+          break;
+        }
+        case 'bankAccount': {
+          valA = (a.bankAccountRef || '').toLowerCase();
+          valB = (b.bankAccountRef || '').toLowerCase();
           break;
         }
         case 'payee':
@@ -704,13 +807,20 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       { key: 'debit', labels: ['paid out', 'debit', 'withdrawals', 'payments', 'debits', 'money out', 'out'] },
       { key: 'credit', labels: ['paid in', 'credit', 'deposits', 'receipts', 'credits', 'money in', 'in'] },
       { key: 'reference', labels: ['reference', 'memo', 'ref', 'narrative', 'payment reference', 'type', 'id'] },
-      { key: 'nominal', labels: ['nominal', 'category', 'nominal code', 'account code', 'code'] }
+      { key: 'nominal', labels: ['nominal', 'category', 'nominal code', 'account code', 'code'] },
+      { key: 'bankAccount', labels: ['bank', 'bank account', 'account name', 'account number', 'bank name', 'account no', 'account', 'source'] },
+      { key: 'currency', labels: ['currency', 'curr', 'ccy', 'iso', 'cur', 'valuta'] }
     ];
 
     mappingsList.forEach(m => {
       const idx = headers.findIndex(h => h && m.labels.some(lbl => h.toLowerCase() === lbl.toLowerCase() || h.toLowerCase().includes(lbl.toLowerCase())));
       if (idx > -1) initialMap[m.key] = headers[idx];
     });
+
+    // If bankAccount or currency column is found, automatically suggest multi_bank scope
+    if (initialMap.bankAccount || initialMap.currency) {
+      setImportScopeMode('multi_bank');
+    }
 
     const hasSplitColumns = Boolean(initialMap.debit && initialMap.credit);
     const detectedMode: 'single' | 'split' = hasSplitColumns ? 'split' : 'single';
@@ -930,28 +1040,47 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     const creditColIdx = amountMode === 'split' && columnMappings.credit ? csvHeaders.indexOf(columnMappings.credit) : -1;
     const refColIdx = columnMappings.reference ? csvHeaders.indexOf(columnMappings.reference) : -1;
     const nominalColIdx = columnMappings.nominal ? csvHeaders.indexOf(columnMappings.nominal) : -1;
+    const bankAccountColIdx = columnMappings.bankAccount ? csvHeaders.indexOf(columnMappings.bankAccount) : -1;
+    const currencyColIdx = columnMappings.currency ? csvHeaders.indexOf(columnMappings.currency) : -1;
+
+    const defaultBank = allRegisteredBankAccounts.find(b => b.id === statementBankAccountId) || allRegisteredBankAccounts[0];
 
     setIsResolvingFx(true);
 
-    // Resolve date-specific conversion rates for foreign currency
+    // Multi-bank & Multi-currency resolution:
+    // Determine unique non-GBP currency + date pairs across all rows
     const dateRateCache: Record<string, number> = {};
-    if (statementCurrency !== 'GBP') {
-      if (fxCalculationMode === 'date') {
-        const uniqueDates = Array.from(new Set(csvRows.map(r => parseAndStandardizeDate(r[dateColIdx], dateFormat)).filter(Boolean)));
-        await Promise.all(uniqueDates.map(async (dStr) => {
-          try {
-            const rate = await getHistoricalFxRate(statementCurrency, dStr);
-            dateRateCache[dStr] = rate;
-          } catch {
-            dateRateCache[dStr] = statementFxRate || (statementCurrency === 'AED' ? 0.21 : 1.0);
-          }
-        }));
-      } else {
-        csvRows.forEach(r => {
-          const dStr = parseAndStandardizeDate(r[dateColIdx], dateFormat);
-          if (dStr) dateRateCache[dStr] = statementFxRate;
-        });
+    const fxLookupPairs = new Set<string>();
+
+    csvRows.forEach(row => {
+      const dStr = parseAndStandardizeDate(row[dateColIdx], dateFormat);
+      const rowBankText = bankAccountColIdx > -1 ? row[bankAccountColIdx] || '' : '';
+      const rawCurText = currencyColIdx > -1 ? row[currencyColIdx] || '' : '';
+      const parsedCur = rawCurText ? parseCurrencyToken(rawCurText) : '';
+      const matchedB = (importScopeMode === 'multi_bank' || bankAccountColIdx > -1 || currencyColIdx > -1)
+        ? matchRowToBankAccount(rowBankText, parsedCur, allRegisteredBankAccounts, defaultBank)
+        : defaultBank;
+      const effectiveCur = parsedCur || matchedB?.currency || statementCurrency || 'GBP';
+      if (effectiveCur !== 'GBP' && dStr) {
+        fxLookupPairs.add(`${effectiveCur}_${dStr}`);
       }
+    });
+
+    if (fxLookupPairs.size > 0 && fxCalculationMode === 'date') {
+      await Promise.all(Array.from(fxLookupPairs).map(async (key) => {
+        const [cur, dStr] = key.split('_');
+        try {
+          const rate = await getHistoricalFxRate(cur, dStr);
+          dateRateCache[key] = rate;
+        } catch {
+          dateRateCache[key] = (cur === statementCurrency ? statementFxRate : 0) || FX_RATES[cur] || 1.0;
+        }
+      }));
+    } else if (fxCalculationMode === 'fixed' && statementCurrency !== 'GBP') {
+      csvRows.forEach(r => {
+        const dStr = parseAndStandardizeDate(r[dateColIdx], dateFormat);
+        if (dStr) dateRateCache[`${statementCurrency}_${dStr}`] = statementFxRate;
+      });
     }
 
     setIsResolvingFx(false);
@@ -993,8 +1122,29 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       const standardizedDate = parseAndStandardizeDate(dateVal, dateFormat);
       const yyyymm = standardizedDate ? standardizedDate.substring(0, 7) : new Date().toISOString().substring(0, 7);
 
-      // Resolve effective FX rate and GBP equivalent for this specific date
-      const rowFxRate = statementCurrency === 'GBP' ? 1.0 : (dateRateCache[standardizedDate] || statementFxRate || FX_RATES[statementCurrency] || 1.0);
+      // Determine Bank Account and Currency for this specific row
+      const rowBankText = bankAccountColIdx > -1 ? row[bankAccountColIdx] || '' : '';
+      const rawCurText = currencyColIdx > -1 ? row[currencyColIdx] || '' : '';
+      const parsedCur = rawCurText ? parseCurrencyToken(rawCurText) : '';
+      const matchedB = (importScopeMode === 'multi_bank' || bankAccountColIdx > -1 || currencyColIdx > -1)
+        ? matchRowToBankAccount(rowBankText, parsedCur, allRegisteredBankAccounts, defaultBank)
+        : defaultBank;
+
+      const rowCurrency = parsedCur || matchedB?.currency || statementCurrency || 'GBP';
+      const rowBankAccountId = matchedB?.id || statementBankAccountId || '';
+      const rowBankCompanyId = matchedB?.companyId || statementCompanyId || '';
+      const rowBankAccountRef = matchedB ? `${matchedB.bankName} - ${matchedB.accountName}` : statementAccountRef;
+
+      // Resolve effective FX rate and GBP equivalent for this specific date and currency
+      const cacheKey = `${rowCurrency}_${standardizedDate}`;
+      let rowFxRate = 1.0;
+      if (rowCurrency === 'GBP') {
+        rowFxRate = 1.0;
+      } else if (fxCalculationMode === 'fixed' && rowCurrency === statementCurrency) {
+        rowFxRate = statementFxRate || FX_RATES[rowCurrency] || 1.0;
+      } else {
+        rowFxRate = dateRateCache[cacheKey] || (rowCurrency === statementCurrency ? statementFxRate : 0) || FX_RATES[rowCurrency] || 1.0;
+      }
       const rowAmountGBP = Math.abs(amtVal) * rowFxRate;
 
       // Auto-detect Internal Contra Transfer (e.g. HSBC -> Wise, internal accounts)
@@ -1111,12 +1261,50 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
         fxRate: rowFxRate,
         amountGBP: rowAmountGBP,
         isContra,
-        isIntercompany: !!interco.isIntercompany
+        isIntercompany: !!interco.isIntercompany,
+        bankAccountId: rowBankAccountId,
+        bankCompanyId: rowBankCompanyId,
+        bankAccountRef: rowBankAccountRef,
+        currency: rowCurrency
       };
     });
 
     setCategorizedRows(parsedRows);
-    if (statementBankAccountId && heldStatements[statementBankAccountId]) {
+    if (importScopeMode === 'multi_bank') {
+      const updatedHeld = { ...heldStatements };
+      const rowsByBank: Record<string, typeof parsedRows> = {};
+      parsedRows.forEach(r => {
+        const bId = r.bankAccountId || statementBankAccountId;
+        if (bId) {
+          if (!rowsByBank[bId]) rowsByBank[bId] = [];
+          rowsByBank[bId].push(r);
+        }
+      });
+      Object.entries(rowsByBank).forEach(([bId, bRows]) => {
+        const bankObj = allRegisteredBankAccounts.find(b => b.id === bId);
+        const dates = bRows.map(r => r.date).filter(Boolean).sort();
+        const earliest = dates[0] || '';
+        const latest = dates[dates.length - 1] || '';
+        updatedHeld[bId] = {
+          id: heldStatements[bId]?.id || `stmt-${bId}-${Date.now()}`,
+          bankAccountId: bId,
+          companyId: bankObj?.companyId || statementCompanyId || '',
+          currency: bankObj?.currency || 'GBP',
+          fileName: csvFile?.name || 'Consolidated Master Bank Statement',
+          uploadedAt: new Date().toISOString(),
+          headers: csvHeaders,
+          rawRows: csvRows,
+          columnMappings,
+          dateFormat,
+          amountMode,
+          latestStatementDate: latest,
+          earliestStatementDate: earliest,
+          categorizedRows: bRows,
+          importScopeMode: 'multi_bank'
+        };
+      });
+      updateHeldStatements(updatedHeld);
+    } else if (statementBankAccountId && heldStatements[statementBankAccountId]) {
       const updatedHeld = {
         ...heldStatements[statementBankAccountId],
         categorizedRows: parsedRows,
@@ -1152,9 +1340,12 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
 
         const expenseId = `exp-stmt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
         const amt = Math.abs(row.amount);
-        const cur = statementCurrency || 'GBP';
+        const cur = row.currency || statementCurrency || 'GBP';
         const rate = cur === 'GBP' ? 1.0 : (row.fxRate || statementFxRate || FX_RATES[cur] || 1.0);
         const gbpAmt = cur === 'GBP' ? amt : (row.amountGBP || (amt * rate));
+        const bankAccId = row.bankAccountId || statementBankAccountId;
+        const bankCompId = row.bankCompanyId || statementCompanyId || (companies[0] ? companies[0].id : '');
+        const bankRef = row.bankAccountRef || statementAccountRef || 'Main Current Account';
 
         const expenseData = {
           id: expenseId,
@@ -1175,9 +1366,9 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
           allocationMode: row.allocationMode || 'auto',
           manualAllocationShares: row.manualAllocationShares || {},
           linkedPlacementId: row.linkedPlacementId || null,
-          bankCompanyId: statementCompanyId || (companies[0] ? companies[0].id : ''),
-          bankAccountId: statementBankAccountId,
-          bankAccountRef: statementAccountRef || 'Main Current Account',
+          bankCompanyId: bankCompId,
+          bankAccountId: bankAccId,
+          bankAccountRef: bankRef,
           linkedPayrollCellId: row.linkedPayrollCellId || null,
           reference: row.reference || '',
           description: row.reference || '',
@@ -1230,16 +1421,49 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       });
       setCategorizedRows(updatedRows);
 
-      // Save updated categorizedRows to heldStatements in localStorage
-      if (statementBankAccountId && heldStatements[statementBankAccountId]) {
-        const updatedHeld = {
-          ...heldStatements[statementBankAccountId],
+      // Save updated categorizedRows to heldStatements in localStorage across all touched bank accounts
+      const updatedHeld = { ...heldStatements };
+      if (importScopeMode === 'multi_bank') {
+        const rowsByBank: Record<string, typeof updatedRows> = {};
+        updatedRows.forEach(r => {
+          const bId = r.bankAccountId || statementBankAccountId;
+          if (bId) {
+            if (!rowsByBank[bId]) rowsByBank[bId] = [];
+            rowsByBank[bId].push(r);
+          }
+        });
+        Object.entries(rowsByBank).forEach(([bId, bRows]) => {
+          const bankObj = allRegisteredBankAccounts.find(b => b.id === bId);
+          const dates = bRows.map(r => r.date).filter(Boolean).sort();
+          const earliest = dates[0] || '';
+          const latest = dates[dates.length - 1] || '';
+          updatedHeld[bId] = {
+            ...(updatedHeld[bId] || {}),
+            id: updatedHeld[bId]?.id || `stmt-${bId}-${Date.now()}`,
+            bankAccountId: bId,
+            companyId: bankObj?.companyId || statementCompanyId || '',
+            currency: bankObj?.currency || 'GBP',
+            fileName: csvFile?.name || 'Consolidated Master Bank Statement',
+            uploadedAt: updatedHeld[bId]?.uploadedAt || new Date().toISOString(),
+            headers: csvHeaders,
+            rawRows: csvRows,
+            columnMappings,
+            dateFormat,
+            amountMode,
+            latestStatementDate: latest || updatedHeld[bId]?.latestStatementDate,
+            earliestStatementDate: earliest || updatedHeld[bId]?.earliestStatementDate,
+            categorizedRows: bRows,
+            importScopeMode: 'multi_bank'
+          };
+        });
+      } else if (statementBankAccountId && updatedHeld[statementBankAccountId]) {
+        updatedHeld[statementBankAccountId] = {
+          ...updatedHeld[statementBankAccountId],
           categorizedRows: updatedRows,
           columnMappings: columnMappings
         };
-        const updated = { ...heldStatements, [statementBankAccountId]: updatedHeld };
-        updateHeldStatements(updated);
       }
+      updateHeldStatements(updatedHeld);
 
       const allDone = updatedRows.every(r => r.committed);
       if (allDone) {
@@ -1610,6 +1834,71 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
             File: <strong>{csvFile?.name}</strong>. Configure your target account, currency, and map the statement columns below:
           </p>
 
+          {/* Import Scope Mode Selector: Single Bank Statement vs Multi-Bank Master File */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 16px',
+            backgroundColor: importScopeMode === 'multi_bank' ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-secondary)',
+            border: `1.5px solid ${importScopeMode === 'multi_bank' ? 'var(--primary)' : 'var(--border-color)'}`,
+            borderRadius: 'var(--radius-md)',
+            marginBottom: '18px',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>📁 File Import Scope:</span>
+                <span style={{ color: importScopeMode === 'multi_bank' ? 'var(--primary)' : 'var(--text-secondary)' }}>
+                  {importScopeMode === 'multi_bank' ? '🌐 Multi-Bank Master File (Consolidated)' : '🏦 Single Bank Statement'}
+                </span>
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                {importScopeMode === 'multi_bank'
+                  ? 'Your file contains transactions from multiple bank accounts/currencies (e.g. HSBC, Wise EUR, Wise ZAR). Rows will route to their specific bank account and native currency.'
+                  : 'Your file belongs to one dedicated bank account and single currency.'}
+              </div>
+            </div>
+
+            <div style={{ display: 'inline-flex', padding: '3px', backgroundColor: 'var(--bg-card)', borderRadius: '6px', border: '1px solid var(--border-color)', gap: '4px' }}>
+              <button
+                type="button"
+                onClick={() => setImportScopeMode('single')}
+                style={{
+                  border: 'none',
+                  borderRadius: '4px',
+                  padding: '5px 12px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  backgroundColor: importScopeMode === 'single' ? 'var(--primary)' : 'transparent',
+                  color: importScopeMode === 'single' ? '#ffffff' : 'var(--text-secondary)',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                Single Bank Account
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportScopeMode('multi_bank')}
+                style={{
+                  border: 'none',
+                  borderRadius: '4px',
+                  padding: '5px 12px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  backgroundColor: importScopeMode === 'multi_bank' ? 'var(--primary)' : 'transparent',
+                  color: importScopeMode === 'multi_bank' ? '#ffffff' : 'var(--text-secondary)',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                🌐 Multi-Bank Master File
+              </button>
+            </div>
+          </div>
+
           {/* 1. Target Bank Account & Statement Currency Setup Card */}
           <div 
             style={{ 
@@ -1626,12 +1915,18 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
               <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>🏦</span> 1. Target Bank Account & Statement Currency
+                <span>🏦</span> {importScopeMode === 'multi_bank' ? '1. Default / Fallback Bank Account & Baseline Currency' : '1. Target Bank Account & Statement Currency'}
               </div>
               <span style={{ fontSize: '11px', color: 'var(--text-secondary)', padding: '3px 8px', borderRadius: '4px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
                 File: <strong>{csvFile?.name}</strong>
               </span>
             </div>
+
+            {importScopeMode === 'multi_bank' && (
+              <div style={{ padding: '8px 12px', backgroundColor: 'rgba(99, 102, 241, 0.08)', borderRadius: '6px', fontSize: '11.5px', color: 'var(--primary)' }}>
+                🌐 <strong>Consolidated Master File Active:</strong> Each transaction row will automatically route to its respective bank account and native currency (via the Bank Account/Currency columns mapped in Section 2). Any rows without an explicit bank match will fallback to the account selected here.
+              </div>
+            )}
 
             <div className="form-group-row">
               <div className="form-group">
@@ -1870,14 +2165,22 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
               { key: 'payee', label: 'Payee / Description *', required: true },
               { key: 'amount', label: 'Value Amount (Combined +/-) *', required: true },
               { key: 'reference', label: 'Reference / Memo (Optional)', required: false },
-              { key: 'nominal', label: 'Nominal Code (Optional)', required: false }
+              { key: 'nominal', label: 'Nominal Code (Optional)', required: false },
+              ...(importScopeMode === 'multi_bank' ? [
+                { key: 'bankAccount', label: 'Bank Account Column (Optional)', required: false },
+                { key: 'currency', label: 'Currency Column (Optional)', required: false }
+              ] : [])
             ] : [
               { key: 'date', label: 'Transaction Date *', required: true },
               { key: 'payee', label: 'Payee / Description *', required: true },
               { key: 'debit', label: 'Paid Out / Debit Column *', required: true },
               { key: 'credit', label: 'Paid In / Credit Column *', required: true },
               { key: 'reference', label: 'Reference / Memo (Optional)', required: false },
-              { key: 'nominal', label: 'Nominal Code (Optional)', required: false }
+              { key: 'nominal', label: 'Nominal Code (Optional)', required: false },
+              ...(importScopeMode === 'multi_bank' ? [
+                { key: 'bankAccount', label: 'Bank Account Column (Optional)', required: false },
+                { key: 'currency', label: 'Currency Column (Optional)', required: false }
+              ] : [])
             ]).map(item => {
               const isUnmapped = !columnMappings[item.key];
               const isRequired = item.required;
@@ -2258,6 +2561,27 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
               >
                 🟢 Paid In / Credits ({deskCounts.credits})
               </button>
+
+              {/* Bank Account Filter */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '6px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Bank:</span>
+                <select
+                  className="select-filter"
+                  value={deskBankFilter}
+                  onChange={(e) => setDeskBankFilter(e.target.value)}
+                  style={{ fontSize: '11.5px', padding: '4px 8px', borderRadius: '6px' }}
+                >
+                  <option value="ALL">All Bank Accounts ({deskCounts.total})</option>
+                  {allRegisteredBankAccounts.map(b => {
+                    const count = bankAccountCounts[b.id] || 0;
+                    return (
+                      <option key={b.id} value={b.id}>
+                        {b.bankName} - {b.accountName} ({b.currency}) {count > 0 ? `(${count})` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2300,9 +2624,10 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                 <tr>
                   {renderSortHeader('status', 'Status', 'center')}
                   {renderSortHeader('date', 'Date')}
+                  {renderSortHeader('bankAccount', 'Bank Account')}
                   {renderSortHeader('payee', 'Description')}
                   {renderSortHeader('reference', 'Reference')}
-                  {renderSortHeader('amount', `Amount (${statementCurrency})`, 'right')}
+                  {renderSortHeader('amount', 'Amount', 'right')}
                   {renderSortHeader('type', 'Direction', 'center')}
                   {renderSortHeader('plMonth', 'P&L Month')}
                   {renderSortHeader('nominal', 'Nominal Category')}
@@ -2316,7 +2641,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
               <tbody>
                 {sortedAndFilteredCategorizedRows.length === 0 ? (
                   <tr>
-                    <td colSpan={13} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                    <td colSpan={14} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
                       No statement rows match your current filter or search criteria.
                     </td>
                   </tr>
@@ -2333,6 +2658,40 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                         )}
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>{row.date}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <select
+                          className="select-filter"
+                          value={row.bankAccountId || statementBankAccountId}
+                          disabled={row.committed}
+                          onChange={(e) => {
+                            const bId = e.target.value;
+                            const bObj = allRegisteredBankAccounts.find(b => b.id === bId);
+                            if (bObj) {
+                              handleUpdateCategorizedRow(row.id, 'bankAccountId', bObj.id);
+                              handleUpdateCategorizedRow(row.id, 'bankCompanyId', bObj.companyId);
+                              handleUpdateCategorizedRow(row.id, 'bankAccountRef', `${bObj.bankName} - ${bObj.accountName}`);
+                              if (!row.currency || row.currency === statementCurrency) {
+                                handleUpdateCategorizedRow(row.id, 'currency', bObj.currency || 'GBP');
+                              }
+                            }
+                          }}
+                          style={{
+                            fontSize: '11px',
+                            padding: '3px 6px',
+                            maxWidth: '135px',
+                            backgroundColor: 'var(--bg-secondary)',
+                            borderRadius: '4px',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--text-primary)'
+                          }}
+                        >
+                          {allRegisteredBankAccounts.map(b => (
+                            <option key={b.id} value={b.id}>
+                              {b.bankName} ({b.currency})
+                            </option>
+                          ))}
+                        </select>
+                      </td>
                       <td style={{ fontWeight: 600 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                           <span>{row.payee}</span>
@@ -2358,18 +2717,29 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                         )}
                       </td>
                       <td style={{ textAlign: 'right', fontWeight: 700, color: row.amount < 0 ? 'var(--danger)' : 'var(--success)', whiteSpace: 'nowrap' }}>
-                        {(symbolMap[statementCurrency] || `${statementCurrency} `)}{Math.abs(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        {statementCurrency !== 'GBP' && (
-                          <div 
-                            style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'normal', marginTop: '2px' }} 
-                            title={`Historical FX Rate on ${row.date || 'transaction date'}: 1 ${statementCurrency} = £${(row.fxRate || statementFxRate)?.toFixed(6)}`}
-                          >
-                            ≈ £{(row.amountGBP || (Math.abs(row.amount) * (row.fxRate || statementFxRate || 1.0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            <span style={{ fontSize: '9px', opacity: 0.85, marginLeft: '4px', backgroundColor: 'var(--bg-card)', padding: '1px 4px', borderRadius: '3px', border: '1px solid var(--border-color)' }}>
-                              @{(row.fxRate || statementFxRate || 1.0).toFixed(4)}
-                            </span>
-                          </div>
-                        )}
+                        {(() => {
+                          const rowCur = row.currency || statementCurrency || 'GBP';
+                          const curSymbol = symbolMap[rowCur] || `${rowCur} `;
+                          const effectiveRate = row.fxRate || (rowCur === statementCurrency ? statementFxRate : 0) || FX_RATES[rowCur] || 1.0;
+                          const effectiveGbp = row.amountGBP !== undefined ? row.amountGBP : (Math.abs(row.amount) * effectiveRate);
+
+                          return (
+                            <>
+                              {curSymbol}{Math.abs(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              {rowCur !== 'GBP' && (
+                                <div 
+                                  style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'normal', marginTop: '2px' }} 
+                                  title={`Historical FX Rate on ${row.date || 'transaction date'}: 1 ${rowCur} = £${effectiveRate.toFixed(6)}`}
+                                >
+                                  ≈ £{effectiveGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  <span style={{ fontSize: '9px', opacity: 0.85, marginLeft: '4px', backgroundColor: 'var(--bg-card)', padding: '1px 4px', borderRadius: '3px', border: '1px solid var(--border-color)' }}>
+                                    {rowCur} @{effectiveRate.toFixed(4)}
+                                  </span>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                       </td>
 
                       {/* Direction Pill (Clickable toggle between Credit & Debit) */}

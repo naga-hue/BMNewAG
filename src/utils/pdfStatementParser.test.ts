@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { isInternalContraTransfer, isIntercompanyTransfer, parseTransactionLines } from './pdfStatementParser';
-import { parseBankAmount } from '../components/expenses/BankStatementImport';
+import { parseBankAmount, parseCurrencyToken, matchRowToBankAccount } from '../components/expenses/BankStatementImport';
 
 describe('pdfStatementParser helpers', () => {
   describe('isInternalContraTransfer', () => {
@@ -132,5 +132,85 @@ describe('parseBankAmount (Credit vs Debit amount parser)', () => {
     expect(parseBankAmount('')).toEqual({ num: 0, isNegative: false });
     expect(parseBankAmount(null)).toEqual({ num: 0, isNegative: false });
     expect(parseBankAmount(undefined)).toEqual({ num: 0, isNegative: false });
+  });
+});
+
+describe('parseCurrencyToken', () => {
+  it('normalizes common currency codes and symbols', () => {
+    expect(parseCurrencyToken('GBP')).toBe('GBP');
+    expect(parseCurrencyToken('£')).toBe('GBP');
+    expect(parseCurrencyToken('Pounds Sterling')).toBe('GBP');
+    expect(parseCurrencyToken('EUR')).toBe('EUR');
+    expect(parseCurrencyToken('€')).toBe('EUR');
+    expect(parseCurrencyToken('Euro Account')).toBe('EUR');
+    expect(parseCurrencyToken('USD')).toBe('USD');
+    expect(parseCurrencyToken('$')).toBe('USD');
+    expect(parseCurrencyToken('ZAR')).toBe('ZAR');
+    expect(parseCurrencyToken('R')).toBe('ZAR');
+    expect(parseCurrencyToken('AED')).toBe('AED');
+    expect(parseCurrencyToken('INR')).toBe('INR');
+    expect(parseCurrencyToken('₹')).toBe('INR');
+  });
+
+  it('extracts currency code embedded in text', () => {
+    expect(parseCurrencyToken('Wise EUR Balance')).toBe('EUR');
+    expect(parseCurrencyToken('HSBC GBP Current')).toBe('GBP');
+    expect(parseCurrencyToken('Payroll ZAR Payout')).toBe('ZAR');
+  });
+
+  it('handles empty or unknown currencies gracefully', () => {
+    expect(parseCurrencyToken('')).toBe('');
+    expect(parseCurrencyToken('UNKNOWN_CODE')).toBe('');
+  });
+});
+
+describe('matchRowToBankAccount', () => {
+  const defaultHsbc = {
+    id: 'bank-hsbc',
+    bankName: 'HSBC UK',
+    accountName: 'Main Current Account',
+    accountNumber: '44556677',
+    currency: 'GBP'
+  };
+
+  const wiseEur = {
+    id: 'bank-wise-eur',
+    bankName: 'Wise Payments',
+    accountName: 'Wise Euro Account',
+    accountNumber: '99887766',
+    currency: 'EUR'
+  };
+
+  const wiseZar = {
+    id: 'bank-wise-zar',
+    bankName: 'Wise Payments',
+    accountName: 'Wise South Africa ZAR',
+    accountNumber: '33221100',
+    currency: 'ZAR'
+  };
+
+  const allBanks = [defaultHsbc, wiseEur, wiseZar];
+
+  it('matches by account number', () => {
+    const res = matchRowToBankAccount('Account 44556677', '', allBanks, defaultHsbc);
+    expect(res.id).toBe('bank-hsbc');
+  });
+
+  it('matches by bank name and disambiguates multi-currency accounts using currency', () => {
+    const resEur = matchRowToBankAccount('Wise Payments', 'EUR', allBanks, defaultHsbc);
+    expect(resEur.id).toBe('bank-wise-eur');
+
+    const resZar = matchRowToBankAccount('Wise Payments', 'ZAR', allBanks, defaultHsbc);
+    expect(resZar.id).toBe('bank-wise-zar');
+  });
+
+  it('matches by unique currency if bank name is omitted', () => {
+    const res = matchRowToBankAccount('', 'EUR', allBanks, defaultHsbc);
+    expect(res.id).toBe('bank-wise-eur');
+  });
+
+  it('falls back to defaultBank if no match is found', () => {
+    const res = matchRowToBankAccount('Unknown Bank', 'JPY', allBanks, defaultHsbc);
+    expect(res.id).toBe('bank-hsbc');
   });
 });

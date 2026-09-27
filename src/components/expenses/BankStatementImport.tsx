@@ -188,6 +188,73 @@ function isRowCapturedInLedger(
   });
 }
 
+export function resolveAllocationTarget(
+  targetText: string,
+  comps: any[],
+  depts: string[],
+  staffList: any[]
+): {
+  allocationType: 'company' | 'department' | 'staff';
+  allocationTarget: string | string[];
+  selectedStaffIds?: string[];
+} {
+  if (!targetText || !targetText.trim()) {
+    return { allocationType: 'company', allocationTarget: '' };
+  }
+  const clean = targetText.trim();
+  const lower = clean.toLowerCase();
+
+  // 1. Group / Corporate / All
+  if (lower === 'group' || lower === 'all' || lower === 'corporate' || lower === 'all companies') {
+    return { allocationType: 'company', allocationTarget: comps.map(c => c.id) };
+  }
+
+  // 2. Company matching (id, exact name, or partial)
+  const matchedComp = comps.find(c => 
+    c.id.toLowerCase() === lower || 
+    c.name.toLowerCase() === lower ||
+    c.name.toLowerCase().includes(lower) ||
+    lower.includes(c.name.toLowerCase())
+  );
+  if (matchedComp) {
+    return { allocationType: 'company', allocationTarget: [matchedComp.id] };
+  }
+
+  // Comma-separated companies
+  if (clean.includes(',')) {
+    const parts = clean.split(',').map(s => s.trim().toLowerCase());
+    const matchedCompIds = comps
+      .filter(c => parts.some(p => c.id.toLowerCase() === p || c.name.toLowerCase().includes(p) || p.includes(c.name.toLowerCase())))
+      .map(c => c.id);
+    if (matchedCompIds.length > 0) {
+      return { allocationType: 'company', allocationTarget: matchedCompIds };
+    }
+  }
+
+  // 3. Department matching
+  const matchedDept = depts.find(d => 
+    d.toLowerCase() === lower || 
+    d.toLowerCase().includes(lower) || 
+    lower.includes(d.toLowerCase())
+  );
+  if (matchedDept) {
+    return { allocationType: 'department', allocationTarget: [matchedDept] };
+  }
+
+  // 4. Staff matching
+  const matchedStaffMember = staffList.find(s => 
+    s.id.toLowerCase() === lower || 
+    s.fullName.toLowerCase() === lower ||
+    s.fullName.toLowerCase().includes(lower)
+  );
+  if (matchedStaffMember) {
+    return { allocationType: 'staff', allocationTarget: '', selectedStaffIds: [matchedStaffMember.id] };
+  }
+
+  // Fallback: Default to company allocation
+  return { allocationType: 'company', allocationTarget: clean };
+}
+
 const EMPTY_ARRAY: any[] = [];
 
 export default function BankStatementImport({ onShowToast }: BankStatementImportProps) {
@@ -248,6 +315,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
   const [deskSearch, setDeskSearch] = useState('');
   const [selectedDeskRowIds, setSelectedDeskRowIds] = useState<string[]>([]);
   const [bulkNominalCode, setBulkNominalCode] = useState<string>('');
+  const [bulkAllocTarget, setBulkAllocTarget] = useState<string>('');
 
   const [savedProfiles, setSavedProfiles] = useState<Record<string, Record<string, string>>>(() => {
     try {
@@ -760,6 +828,22 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     }
   };
 
+  const handleClearAllStatementsAndDesk = () => {
+    if (window.confirm("⚠️ Are you sure you want to completely clear the Categorization Desk and all held statements?\n\nThis will remove all uploaded rows from memory and local storage so you can start a fresh upload.")) {
+      updateHeldStatements({});
+      setCategorizedRows([]);
+      setSelectedDeskRowIds([]);
+      setCsvFile(null);
+      setCsvRows([]);
+      setCsvHeaders([]);
+      setColumnMappings({});
+      localStorage.removeItem('bm-held-bank-statements');
+      setImportStep(1);
+      setActiveViewMode('hub');
+      onShowToast("Categorization desk and held statements have been cleared.", "info");
+    }
+  };
+
   const handleBackToHub = () => {
     // Save working state back to held statement if active
     if (statementBankAccountId && heldStatements[statementBankAccountId]) {
@@ -824,6 +908,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       { key: 'credit', labels: ['paid in', 'credit', 'deposits', 'receipts', 'credits', 'money in', 'in'] },
       { key: 'reference', labels: ['reference', 'memo', 'ref', 'narrative', 'payment reference', 'type', 'id'] },
       { key: 'nominal', labels: ['nominal', 'category', 'nominal code', 'account code', 'code'] },
+      { key: 'allocationTarget', labels: ['allocation target', 'allocation center', 'allocation centre', 'target location', 'allocation', 'target', 'cost centre', 'cost center', 'department', 'company target', 'entity', 'business unit'] },
       { key: 'bankAccount', labels: ['bank', 'bank account', 'account name', 'account number', 'bank name', 'account no', 'account', 'source'] },
       { key: 'currency', labels: ['currency', 'curr', 'ccy', 'iso', 'cur', 'valuta'] }
     ];
@@ -1056,6 +1141,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     const creditColIdx = amountMode === 'split' && columnMappings.credit ? csvHeaders.indexOf(columnMappings.credit) : -1;
     const refColIdx = columnMappings.reference ? csvHeaders.indexOf(columnMappings.reference) : -1;
     const nominalColIdx = columnMappings.nominal ? csvHeaders.indexOf(columnMappings.nominal) : -1;
+    const allocTargetColIdx = columnMappings.allocationTarget ? csvHeaders.indexOf(columnMappings.allocationTarget) : -1;
     const bankAccountColIdx = columnMappings.bankAccount ? csvHeaders.indexOf(columnMappings.bankAccount) : -1;
     const currencyColIdx = columnMappings.currency ? csvHeaders.indexOf(columnMappings.currency) : -1;
 
@@ -1254,6 +1340,17 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
               autoAllocTarget = [matchedDept];
             }
           }
+        }
+      }
+
+      // If an Allocation Center Target column was mapped from uploaded statement file, apply it!
+      const rawTargetText = allocTargetColIdx > -1 ? (row[allocTargetColIdx] || '').trim() : '';
+      if (rawTargetText) {
+        const resolved = resolveAllocationTarget(rawTargetText, companies, allAvailableDepts, staff);
+        autoAllocType = resolved.allocationType;
+        autoAllocTarget = resolved.allocationTarget;
+        if (resolved.selectedStaffIds && resolved.selectedStaffIds.length > 0) {
+          autoStaffIds = resolved.selectedStaffIds;
         }
       }
 
@@ -1554,6 +1651,18 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                 Upload statements for your corporate bank accounts. The system holds your files and monitors whether each transaction is captured in the ledger or awaiting processing.
               </p>
             </div>
+
+            {hubTotals.statementsHeld > 0 && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleClearAllStatementsAndDesk}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '12px', color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.4)', fontWeight: 600 }}
+                title="Clear all held statements and reset the queue"
+              >
+                <Trash2 size={13} /> Clear All Held Statements ({hubTotals.statementsHeld})
+              </button>
+            )}
           </div>
 
           {/* KPI Summary Cards */}
@@ -2238,6 +2347,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
               { key: 'credit', label: 'Paid In / Credit Column *', required: true },
               { key: 'reference', label: 'Reference / Memo (Optional)', required: false },
               { key: 'nominal', label: 'Nominal Code (Optional)', required: false },
+              { key: 'allocationTarget', label: 'Allocation Center Target (Optional)', required: false },
               ...(importScopeMode === 'multi_bank' ? [
                 { key: 'bankAccount', label: 'Bank Account Column (Optional)', required: false },
                 { key: 'currency', label: 'Currency Column (Optional)', required: false }
@@ -2536,6 +2646,16 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                   Commit Mapped Only ({deskCounts.uncommittedMapped})
                 </button>
               )}
+
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleClearAllStatementsAndDesk}
+                style={{ fontSize: '11px', padding: '6px 10px', color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.4)', display: 'flex', alignItems: 'center', gap: '4px' }}
+                title="Clear all uploaded statement rows from the desk and reset"
+              >
+                <Trash2 size={12} /> Clear Desk
+              </button>
             </div>
           </div>
 
@@ -2816,7 +2936,55 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                     }}
                     style={{ fontSize: '11px', padding: '4px 10px' }}
                   >
-                    Apply to Selected
+                    Apply Nominal
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <select
+                    value={bulkAllocTarget}
+                    onChange={(e) => setBulkAllocTarget(e.target.value)}
+                    style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)' }}
+                  >
+                    <option value="">-- Bulk Assign Allocation Target --</option>
+                    <option value="group">🌐 Group (All Companies)</option>
+                    <optgroup label="🏢 Companies">
+                      {companies.map(c => (
+                        <option key={c.id} value={`company:${c.id}`}>{c.name}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="📂 Departments">
+                      {allAvailableDepts.map(d => (
+                        <option key={d} value={`department:${d}`}>{d}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={!bulkAllocTarget}
+                    onClick={() => {
+                      if (!bulkAllocTarget) return;
+                      let type: 'company' | 'department' = 'company';
+                      let target: string | string[] = '';
+                      if (bulkAllocTarget === 'group') {
+                        type = 'company';
+                        target = companies.map(c => c.id);
+                      } else if (bulkAllocTarget.startsWith('company:')) {
+                        type = 'company';
+                        target = [bulkAllocTarget.replace('company:', '')];
+                      } else if (bulkAllocTarget.startsWith('department:')) {
+                        type = 'department';
+                        target = [bulkAllocTarget.replace('department:', '')];
+                      }
+                      setCategorizedRows(prev => prev.map(r => selectedDeskRowIds.includes(r.id) ? { ...r, allocationType: type, allocationTarget: target, selectedStaffIds: [] } : r));
+                      onShowToast(`Assigned allocation target to ${selectedDeskRowIds.length} rows.`, "success");
+                      setSelectedDeskRowIds([]);
+                      setBulkAllocTarget('');
+                    }}
+                    style={{ fontSize: '11px', padding: '4px 10px' }}
+                  >
+                    Apply Target
                   </button>
                 </div>
 

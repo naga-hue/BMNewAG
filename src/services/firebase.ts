@@ -7,7 +7,9 @@ import {
   doc, 
   setDoc, 
   deleteDoc, 
-  onSnapshot
+  onSnapshot,
+  getDocs,
+  writeBatch
 } from 'firebase/firestore';
 import { 
   getStorage, 
@@ -55,6 +57,7 @@ export interface FirebaseServiceInterface {
   subscribeExpenses(onUpdate: (expenses: Expense[]) => void, fallbackData?: Expense[]): () => void;
   saveExpense(expense: Expense): Promise<Expense>;
   deleteExpense(expenseId: string): Promise<boolean>;
+  clearAllExpenses(): Promise<boolean>;
   subscribeNominalCodes(onUpdate: (codes: NominalCode[]) => void, fallbackData?: NominalCode[]): () => void;
   saveNominalCode(code: NominalCode): Promise<NominalCode>;
   deleteNominalCode(codeId: string): Promise<boolean>;
@@ -1070,6 +1073,32 @@ export const firebaseService: FirebaseServiceInterface = {
       localStorage.setItem('bm-expenses', JSON.stringify(list));
       return true;
     }
+  },
+
+  async clearAllExpenses() {
+    if (isConfigured && db) {
+      try {
+        const snap = await getDocs(collection(db, 'expenses'));
+        let batch = writeBatch(db);
+        let count = 0;
+        for (const docSnap of snap.docs) {
+          batch.delete(docSnap.ref);
+          count++;
+          if (count >= 400) {
+            await batch.commit();
+            batch = writeBatch(db);
+            count = 0;
+          }
+        }
+        if (count > 0) {
+          await batch.commit();
+        }
+      } catch (err) {
+        console.error("Failed to clear expenses collection in Firestore:", err);
+      }
+    }
+    localStorage.removeItem('bm-expenses');
+    return true;
   },
 
   subscribeNominalCodes(onUpdate: (codes: any[]) => void, fallbackData: any[] = []) {

@@ -53,6 +53,21 @@ export default function ExpensesTable({
   const updateExpense = useBoundStore(state => state.updateExpense);
   const saveExpense = updateExpense;
   const deleteExpense = useBoundStore(state => state.deleteExpense);
+  const clearAllExpenses = useBoundStore(state => state.clearAllExpenses);
+
+  const handleClearAllExpenses = async () => {
+    const totalCount = expenses.length;
+    if (window.confirm(`⚠️ DANGER: Are you sure you want to permanently clear ALL ${totalCount} expenses from the ledger?\n\nThis will completely wipe the expenses log and reset the categorization desk so you can start fresh.`)) {
+      try {
+        await clearAllExpenses();
+        localStorage.removeItem('bm-held-bank-statements');
+        setSelectedExpenseIds([]);
+        onShowToast("All expenses have been permanently cleared from the ledger.", "success");
+      } catch (err: any) {
+        onShowToast("Failed to clear expenses: " + (err?.message || String(err)), "error");
+      }
+    }
+  };
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
@@ -1044,6 +1059,17 @@ export default function ExpensesTable({
                 title="Automatically scan transaction payees and map them to registered Vendors & Staff Salary profiles"
               >
                 ⚡ Smart Auto-Map Vendors & Staff
+              </button>
+
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                onClick={handleClearAllExpenses}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.4)', fontWeight: 600 }}
+                title="Permanently clear all expenses from ledger, logs, and categorization desk"
+              >
+                <Trash2 size={13} />
+                Clear All Expenses
               </button>
             </>
           )}

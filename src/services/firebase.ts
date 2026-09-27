@@ -56,6 +56,7 @@ export interface FirebaseServiceInterface {
   deletePlacement(placementId: string): Promise<boolean>;
   subscribeExpenses(onUpdate: (expenses: Expense[]) => void, fallbackData?: Expense[]): () => void;
   saveExpense(expense: Expense): Promise<Expense>;
+  saveExpensesBatch(expenses: Expense[]): Promise<boolean>;
   deleteExpense(expenseId: string): Promise<boolean>;
   clearAllExpenses(): Promise<boolean>;
   subscribeNominalCodes(onUpdate: (codes: NominalCode[]) => void, fallbackData?: NominalCode[]): () => void;
@@ -1058,6 +1059,36 @@ export const firebaseService: FirebaseServiceInterface = {
       }
       localStorage.setItem('bm-expenses', JSON.stringify(list));
       return expense;
+    }
+  },
+
+  async saveExpensesBatch(expenseList) {
+    if (!expenseList || expenseList.length === 0) return true;
+    if (isConfigured && db) {
+      try {
+        const batchSize = 400;
+        for (let i = 0; i < expenseList.length; i += batchSize) {
+          const chunk = expenseList.slice(i, i + batchSize);
+          const batch = writeBatch(db);
+          chunk.forEach((exp: any) => {
+            const docRef = doc(db, 'expenses', exp.id);
+            batch.set(docRef, exp);
+          });
+          await batch.commit();
+        }
+        return true;
+      } catch (err) {
+        console.error("Failed to batch save expenses to Firestore:", err);
+        throw err;
+      }
+    } else {
+      const local = localStorage.getItem('bm-expenses');
+      let list = local ? JSON.parse(local) : [];
+      const newMap = new Map(list.map((e: any) => [e.id, e]));
+      expenseList.forEach((exp: any) => newMap.set(exp.id, exp));
+      const combined = Array.from(newMap.values());
+      localStorage.setItem('bm-expenses', JSON.stringify(combined));
+      return true;
     }
   },
 

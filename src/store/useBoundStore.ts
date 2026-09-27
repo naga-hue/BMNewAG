@@ -24,6 +24,7 @@ interface StoreState {
   updateCompany: (updated: Company) => Promise<void>;
   updateStaff: (updated: Staff) => Promise<void>;
   updateExpense: (updated: Expense) => Promise<void>;
+  saveExpensesBatch: (expenses: Expense[]) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
   clearAllExpenses: () => Promise<void>;
   saveNominalCode: (code: any) => Promise<void>;
@@ -204,6 +205,9 @@ export const useBoundStore = create<StoreState>((set) => ({
   },
   updateExpense: async (updated) => {
     await firebaseService.saveExpense(updated);
+  },
+  saveExpensesBatch: async (expenses) => {
+    await firebaseService.saveExpensesBatch(expenses);
   },
   deleteExpense: async (id) => {
     await firebaseService.deleteExpense(id);

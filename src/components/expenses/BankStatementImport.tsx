@@ -269,6 +269,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
 
   const updateExpense = useBoundStore(state => state.updateExpense);
   const saveExpense = updateExpense;
+  const saveExpensesBatch = useBoundStore(state => state.saveExpensesBatch);
   const saveVendor = useBoundStore(state => state.saveVendor);
   const saveNominalCode = useBoundStore(state => state.saveNominalCode);
   const savePayrollRecord = useBoundStore(state => state.savePayrollRecord);
@@ -1482,6 +1483,10 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     }
 
     try {
+      const expensesToSave: any[] = [];
+      const payrollRecordsToSave: any[] = [];
+      const placementsToUpdate: any[] = [];
+
       for (const row of candidateRows) {
         const isStaff = row.allocationType === 'staff';
         const target = isStaff ? row.selectedStaffIds : row.allocationTarget;
@@ -1524,12 +1529,12 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
           isIntercompany: !!row.isIntercompany
         };
 
-        await saveExpense(expenseData);
+        expensesToSave.push(expenseData);
 
         if (row.linkedPayrollCellId) {
           const [sid, m] = row.linkedPayrollCellId.split('_');
           const baseVal = Math.abs(row.amount);
-          const record = {
+          payrollRecordsToSave.push({
             id: `${sid}_${m}`,
             staffId: sid,
             month: m,
@@ -1542,21 +1547,30 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
             employeePension: 0,
             notes: `Linked to statement payment: ${row.payee} on ${row.date}.`,
             linkedExpenseId: expenseId
-          };
-          await savePayrollRecord(record);
+          });
         }
 
-        // If a placement is linked, mark it as client paid!
         if (row.linkedPlacementId) {
           const matchedPlacement = placements.find(p => p.id === row.linkedPlacementId);
           if (matchedPlacement) {
-            await updatePlacement({
+            placementsToUpdate.push({
               ...matchedPlacement,
               clientPaymentStatus: 'paid',
               clientPaidDate: row.date
             });
           }
         }
+      }
+
+      // Fast atomic batch commit of all expenses!
+      await saveExpensesBatch(expensesToSave);
+
+      // Save any associated payroll or placement records
+      for (const record of payrollRecordsToSave) {
+        await savePayrollRecord(record);
+      }
+      for (const placement of placementsToUpdate) {
+        await updatePlacement(placement);
       }
 
       const committedIds = new Set(candidateRows.map(r => r.id));

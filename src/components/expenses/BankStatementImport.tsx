@@ -246,6 +246,8 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
   const [deskStatusFilter, setDeskStatusFilter] = useState<'active' | 'ignored' | 'all'>('active');
   const [deskBankFilter, setDeskBankFilter] = useState<string>('ALL');
   const [deskSearch, setDeskSearch] = useState('');
+  const [selectedDeskRowIds, setSelectedDeskRowIds] = useState<string[]>([]);
+  const [bulkNominalCode, setBulkNominalCode] = useState<string>('');
 
   const [savedProfiles, setSavedProfiles] = useState<Record<string, Record<string, string>>>(() => {
     try {
@@ -382,7 +384,10 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     const credits = categorizedRows.filter(r => r.isCredit && !r.ignored).length;
     const mapped = categorizedRows.filter(r => r.nominalCode && !r.ignored).length;
     const committed = categorizedRows.filter(r => r.committed).length;
-    return { total, active, ignored, debits, credits, mapped, committed };
+    const uncommittedActive = categorizedRows.filter(r => !r.committed && !r.ignored).length;
+    const uncommittedMapped = categorizedRows.filter(r => !r.committed && !r.ignored && !!r.nominalCode).length;
+    const uncommittedUnmapped = uncommittedActive - uncommittedMapped;
+    return { total, active, ignored, debits, credits, mapped, committed, uncommittedActive, uncommittedMapped, uncommittedUnmapped };
   }, [categorizedRows]);
 
   const allRegisteredBankAccounts = useMemo(() => {
@@ -1364,15 +1369,23 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     else if (type === 'restore_all') onShowToast(`Restored ${affected} rows back to active.`, "success");
   };
 
-  const handleCommitBankImports = async () => {
-    const mRows = categorizedRows.filter(r => r.nominalCode && !r.committed && !r.ignored);
-    if (mRows.length === 0) {
-      onShowToast("Please map at least one active row with a Nominal code before committing.", "warning");
+  const handleCommitBankImports = async (mode: 'all' | 'mapped_only' = 'all') => {
+    const uncommittedActive = categorizedRows.filter(r => !r.committed && !r.ignored);
+    const candidateRows = mode === 'all'
+      ? uncommittedActive
+      : uncommittedActive.filter(r => !!r.nominalCode);
+
+    if (candidateRows.length === 0) {
+      if (mode === 'all') {
+        onShowToast("No active uncommitted transactions to push into the Expenses Log.", "warning");
+      } else {
+        onShowToast("Please map at least one active row with a Nominal code before committing.", "warning");
+      }
       return;
     }
 
     try {
-      for (const row of mRows) {
+      for (const row of candidateRows) {
         const isStaff = row.allocationType === 'staff';
         const target = isStaff ? row.selectedStaffIds : row.allocationTarget;
 
@@ -1390,7 +1403,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
           date: row.date,
           plMonth: row.plMonth,
           payee: row.payee + (row.reference ? ` [Ref: ${row.reference}]` : ''),
-          nominalCode: row.nominalCode,
+          nominalCode: row.nominalCode || '',
           amount: amt,
           currency: cur,
           fxRate: rate,
@@ -1449,15 +1462,23 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
         }
       }
 
-      onShowToast(`Successfully imported and logged ${mRows.length} bank transactions.`, "success");
-      
+      const committedIds = new Set(candidateRows.map(r => r.id));
       const updatedRows = categorizedRows.map(r => {
-        if (r.nominalCode && !r.ignored) {
+        if (committedIds.has(r.id)) {
           return { ...r, committed: true };
         }
         return r;
       });
       setCategorizedRows(updatedRows);
+      setSelectedDeskRowIds([]);
+
+      const mappedCount = candidateRows.filter(r => !!r.nominalCode).length;
+      const unmappedCount = candidateRows.length - mappedCount;
+      if (unmappedCount > 0) {
+        onShowToast(`Successfully logged ${candidateRows.length} transactions (${mappedCount} categorized, ${unmappedCount} unmapped). Filter by "⚠️ Unmapped Expenses" in the Expenses tab to bulk-update!`, "success");
+      } else {
+        onShowToast(`Successfully imported and logged ${candidateRows.length} bank transactions.`, "success");
+      }
 
       // Save updated categorizedRows to heldStatements in localStorage across all touched bank accounts
       const updatedHeld = { ...heldStatements };
@@ -2495,11 +2516,26 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
               <button 
                 type="button"
                 className="btn-primary" 
-                onClick={handleCommitBankImports}
-                style={{ padding: '6px 14px', fontSize: '12px' }}
+                onClick={() => handleCommitBankImports('all')}
+                disabled={deskCounts.uncommittedActive === 0}
+                style={{ padding: '6px 14px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                title="Push all active statement transactions directly into the Expenses Log (both mapped and unmapped)"
               >
-                Commit Mapped Rows ({categorizedRows.filter(r => r.nominalCode && !r.committed && !r.ignored).length} rows)
+                <CheckCircle2 size={13} />
+                Push All to Expenses Log ({deskCounts.uncommittedActive} rows{deskCounts.uncommittedUnmapped > 0 ? ` • ${deskCounts.uncommittedUnmapped} unmapped` : ''})
               </button>
+
+              {deskCounts.uncommittedMapped > 0 && deskCounts.uncommittedUnmapped > 0 && (
+                <button 
+                  type="button"
+                  className="btn-secondary" 
+                  onClick={() => handleCommitBankImports('mapped_only')}
+                  style={{ padding: '6px 12px', fontSize: '11.5px', color: 'var(--text-secondary)' }}
+                  title="Commit only the rows that currently have nominal categories assigned"
+                >
+                  Commit Mapped Only ({deskCounts.uncommittedMapped})
+                </button>
+              )}
             </div>
           </div>
 
@@ -2727,10 +2763,115 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
             </div>
           </div>
 
+          {/* In-Desk Multi-Select Bulk Actions Bar */}
+          {selectedDeskRowIds.length > 0 && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '12px',
+              padding: '8px 14px',
+              backgroundColor: 'rgba(99, 102, 241, 0.08)',
+              border: '1px solid rgba(99, 102, 241, 0.25)',
+              borderRadius: '8px',
+              marginBottom: '10px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontWeight: 600, fontSize: '12px', color: 'var(--accent)' }}>
+                  ✓ {selectedDeskRowIds.length} rows selected
+                </span>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setSelectedDeskRowIds([])}
+                  style={{ fontSize: '11px', padding: '2px 8px' }}
+                >
+                  Clear Selection
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <select
+                    value={bulkNominalCode}
+                    onChange={(e) => setBulkNominalCode(e.target.value)}
+                    style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)' }}
+                  >
+                    <option value="">-- Bulk Assign Nominal Category --</option>
+                    {activeNominalCodes.map(c => (
+                      <option key={c.id} value={c.code}>{c.code}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={!bulkNominalCode}
+                    onClick={() => {
+                      if (!bulkNominalCode) return;
+                      setCategorizedRows(prev => prev.map(r => selectedDeskRowIds.includes(r.id) ? { ...r, nominalCode: bulkNominalCode } : r));
+                      onShowToast(`Assigned nominal category ${bulkNominalCode} to ${selectedDeskRowIds.length} rows.`, "success");
+                      setSelectedDeskRowIds([]);
+                      setBulkNominalCode('');
+                    }}
+                    style={{ fontSize: '11px', padding: '4px 10px' }}
+                  >
+                    Apply to Selected
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setCategorizedRows(prev => prev.map(r => selectedDeskRowIds.includes(r.id) ? { ...r, ignored: true } : r));
+                    onShowToast(`Put ${selectedDeskRowIds.length} rows on hold / ignored.`, "info");
+                    setSelectedDeskRowIds([]);
+                  }}
+                  style={{ fontSize: '11px', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  title="Put selected rows on hold so they are omitted from commit"
+                >
+                  <Ban size={11} /> Ignore Selected
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setCategorizedRows(prev => prev.map(r => selectedDeskRowIds.includes(r.id) ? { ...r, ignored: false } : r));
+                    onShowToast(`Restored ${selectedDeskRowIds.length} rows to active.`, "success");
+                    setSelectedDeskRowIds([]);
+                  }}
+                  style={{ fontSize: '11px', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  title="Restore selected rows back to active"
+                >
+                  <Eye size={11} /> Restore Selected
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="table-container" style={{ maxHeight: '480px', overflowY: 'auto' }}>
             <table className="entity-table dense" style={{ fontSize: '11px' }}>
               <thead>
                 <tr>
+                  <th style={{ width: '32px', textAlign: 'center', padding: '8px 4px' }}>
+                    <input
+                      type="checkbox"
+                      title="Select all visible rows"
+                      checked={sortedAndFilteredCategorizedRows.length > 0 && sortedAndFilteredCategorizedRows.every(r => selectedDeskRowIds.includes(r.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          const currentIds = new Set(selectedDeskRowIds);
+                          sortedAndFilteredCategorizedRows.forEach(r => currentIds.add(r.id));
+                          setSelectedDeskRowIds(Array.from(currentIds));
+                        } else {
+                          const visibleIds = new Set(sortedAndFilteredCategorizedRows.map(r => r.id));
+                          setSelectedDeskRowIds(prev => prev.filter(id => !visibleIds.has(id)));
+                        }
+                      }}
+                    />
+                  </th>
                   {renderSortHeader('status', 'Status', 'center')}
                   {renderSortHeader('date', 'Date')}
                   {renderSortHeader('bankAccount', 'Bank Account')}
@@ -2750,13 +2891,26 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
               <tbody>
                 {sortedAndFilteredCategorizedRows.length === 0 ? (
                   <tr>
-                    <td colSpan={14} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                    <td colSpan={15} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
                       No statement rows match your current filter or search criteria.
                     </td>
                   </tr>
                 ) : (
                   sortedAndFilteredCategorizedRows.map((row) => (
                     <tr key={row.id} style={{ opacity: row.committed ? 0.6 : row.ignored ? 0.45 : 1, backgroundColor: row.committed ? 'var(--bg-secondary)' : row.ignored ? 'rgba(100, 116, 139, 0.05)' : 'none' }}>
+                      <td style={{ textAlign: 'center', padding: '6px 4px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedDeskRowIds.includes(row.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedDeskRowIds(prev => [...prev, row.id]);
+                            } else {
+                              setSelectedDeskRowIds(prev => prev.filter(id => id !== row.id));
+                            }
+                          }}
+                        />
+                      </td>
                       <td style={{ textAlign: 'center' }}>
                         {row.committed ? (
                           <CheckCircle2 size={14} style={{ color: 'var(--success)' }} title="Committed to ledger" />

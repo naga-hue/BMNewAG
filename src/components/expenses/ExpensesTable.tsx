@@ -71,14 +71,14 @@ export default function ExpensesTable({
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
-  const [nominalFilter, setNominalFilter] = useState('all');
-  const [vendorFilter, setVendorFilter] = useState('all');
+  const [nominalFilter, setNominalFilter] = useState<string[]>(['all']);
+  const [vendorFilter, setVendorFilter] = useState<string[]>(['all']);
   const [plMonthFilter, setPlMonthFilter] = useState('all');
-  const [bankAccountFilter, setBankAccountFilter] = useState('all');
+  const [bankAccountFilter, setBankAccountFilter] = useState<string[]>(['all']);
   const [allocationCenterFilter, setAllocationCenterFilter] = useState('all');
   const [companyFilter, setCompanyFilter] = useState<string[]>(['all']);
   const [deptFilter, setDeptFilter] = useState<string[]>(['all']);
-  const [staffFilter, setStaffFilter] = useState('all');
+  const [staffFilter, setStaffFilter] = useState<string[]>(['all']);
   const [reconciliationFilter, setReconciliationFilter] = useState('all');
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
@@ -397,16 +397,19 @@ export default function ExpensesTable({
         if (!isUnmapped) return false;
       }
 
-      if (nominalFilter !== 'all') {
+      if (!nominalFilter.includes('all')) {
         if (!expNominal) return false;
-        const matchesExact = expNominal === nominalFilter;
-        const matchesPrefix = expNominal.startsWith(nominalFilter + ' - ') || expNominal.startsWith(nominalFilter + ' ');
-        const matchesReverse = nominalFilter.startsWith(expNominal + ' - ');
-        if (!matchesExact && !matchesPrefix && !matchesReverse) return false;
+        const matches = nominalFilter.some(sel => {
+          const matchesExact = expNominal === sel;
+          const matchesPrefix = expNominal.startsWith(sel + ' - ') || expNominal.startsWith(sel + ' ');
+          const matchesReverse = sel.startsWith(expNominal + ' - ');
+          return matchesExact || matchesPrefix || matchesReverse;
+        });
+        if (!matches) return false;
       }
 
       if (plMonthFilter !== 'all' && expPlMonth !== plMonthFilter) return false;
-      if (bankAccountFilter !== 'all' && exp.bankAccountId !== bankAccountFilter) return false;
+      if (!bankAccountFilter.includes('all') && (!exp.bankAccountId || !bankAccountFilter.includes(exp.bankAccountId))) return false;
 
       // Allocation Center Type filter
       if (allocationCenterFilter !== 'all') {
@@ -430,15 +433,15 @@ export default function ExpensesTable({
       }
 
       // Staff filter
-      if (staffFilter !== 'all') {
+      if (!staffFilter.includes('all')) {
         if (exp.allocationType !== 'staff') return false;
-        const ids = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
-        if (!ids.includes(staffFilter)) return false;
+        const ids = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+        if (!ids.some((id: string) => staffFilter.includes(id))) return false;
       }
 
       // Vendor / Recipient Filter
-      if (vendorFilter !== 'all') {
-        if (exp.recipientId !== vendorFilter) return false;
+      if (!vendorFilter.includes('all')) {
+        if (!exp.recipientId || !vendorFilter.includes(exp.recipientId)) return false;
       }
 
       // Reconciliation Status Filter
@@ -546,6 +549,39 @@ export default function ExpensesTable({
       ...allAvailableDepts.map(d => ({ value: d, label: d }))
     ];
   }, [allAvailableDepts]);
+
+  const nominalOptions = useMemo(() => {
+    return [
+      { value: 'all', label: 'All Nominal Codes' },
+      ...databaseNominalOptions.activeList.map(c => ({ value: c.value, label: c.label })),
+      ...databaseNominalOptions.historicalList.map(c => ({ value: c.value, label: c.label }))
+    ];
+  }, [databaseNominalOptions]);
+
+  const bankAccountOptions = useMemo(() => {
+    return [
+      { value: 'all', label: 'All Bank Accounts' },
+      ...allBankAccounts.map(b => ({ value: b.id, label: b.ref || `${b.bankName} - ${b.accountName}` }))
+    ];
+  }, [allBankAccounts]);
+
+  const staffOptions = useMemo(() => {
+    const visibleStaff = staff.filter(s => companyFilter.includes('all') || companyFilter.includes(s.companyId));
+    return [
+      { value: 'all', label: 'All Staff Allocated' },
+      ...visibleStaff.map(s => ({
+        value: s.id,
+        label: s.status === 'exited' ? `(Exited) ${s.fullName || s.name}` : (s.fullName || s.name)
+      }))
+    ];
+  }, [staff, companyFilter]);
+
+  const vendorOptions = useMemo(() => {
+    return [
+      { value: 'all', label: 'All Vendors' },
+      ...vendors.map(v => ({ value: v.id, label: v.name }))
+    ];
+  }, [vendors]);
 
   const handleHeaderClick = (columnKey: string) => {
     if (sortBy === columnKey) {
@@ -827,36 +863,19 @@ export default function ExpensesTable({
             />
           </div>
 
-          <select 
-            className="select-filter"
-            value={nominalFilter}
-            onChange={(e) => setNominalFilter(e.target.value)}
-          >
-            <option value="all">All Nominal Codes</option>
-            <optgroup label="Active Master Nominal Codes">
-              {databaseNominalOptions.activeList.map(c => (
-                <option key={c.value} value={c.value}>{c.label}</option>
-              ))}
-            </optgroup>
-            {databaseNominalOptions.historicalList.length > 0 && (
-              <optgroup label="⚠️ Historical / Database Nominal Codes">
-                {databaseNominalOptions.historicalList.map(c => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </optgroup>
-            )}
-          </select>
+          <MultiSelectFilter
+            options={nominalOptions}
+            selectedValues={nominalFilter}
+            onChange={(vals: string[]) => setNominalFilter(vals)}
+            placeholder="Select Nominal Codes"
+          />
 
-          <select 
-            className="select-filter"
-            value={vendorFilter}
-            onChange={(e) => setVendorFilter(e.target.value)}
-          >
-            <option value="all">All Vendors</option>
-            {vendors.map(v => (
-              <option key={v.id} value={v.id}>{v.name}</option>
-            ))}
-          </select>
+          <MultiSelectFilter
+            options={vendorOptions}
+            selectedValues={vendorFilter}
+            onChange={(vals: string[]) => setVendorFilter(vals)}
+            placeholder="Select Vendors"
+          />
 
           <select 
             className="select-filter"
@@ -869,17 +888,12 @@ export default function ExpensesTable({
             ))}
           </select>
 
-          <select 
-            className="select-filter"
-            value={bankAccountFilter}
-            onChange={(e) => setBankAccountFilter(e.target.value)}
-            style={{ minWidth: '160px' }}
-          >
-            <option value="all">All Bank Accounts</option>
-            {allBankAccounts.map(b => (
-              <option key={b.id} value={b.id}>{b.ref}</option>
-            ))}
-          </select>
+          <MultiSelectFilter
+            options={bankAccountOptions}
+            selectedValues={bankAccountFilter}
+            onChange={(vals: string[]) => setBankAccountFilter(vals)}
+            placeholder="Select Bank Accounts"
+          />
 
           <select 
             className="select-filter"
@@ -901,7 +915,7 @@ export default function ExpensesTable({
             onChange={(vals: string[]) => {
               setCompanyFilter(vals);
               setDeptFilter(['all']);
-              setStaffFilter('all');
+              setStaffFilter(['all']);
             }}
             placeholder="Select Companies"
           />
@@ -913,18 +927,12 @@ export default function ExpensesTable({
             placeholder="Select Departments"
           />
 
-          <select 
-            className="select-filter"
-            value={staffFilter}
-            onChange={(e) => setStaffFilter(e.target.value)}
-          >
-            <option value="all">All Staff Allocated</option>
-            {staff
-              .filter(s => companyFilter.includes('all') || companyFilter.includes(s.companyId))
-              .map(s => (
-                <option key={s.id} value={s.id}>{s.fullName || s.name}</option>
-              ))}
-          </select>
+          <MultiSelectFilter
+            options={staffOptions}
+            selectedValues={staffFilter}
+            onChange={(vals: string[]) => setStaffFilter(vals)}
+            placeholder="Select Staff"
+          />
 
           <select 
             className="select-filter"

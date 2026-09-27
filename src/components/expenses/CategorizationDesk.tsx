@@ -4,6 +4,7 @@ import { toGBP } from '../../utils/currency';
 import { Check, Sparkles, Filter, AlertTriangle, ArrowRight, ShieldAlert, Plus, Layers, UserCheck } from 'lucide-react';
 import { firebaseService } from '../../services/firebase';
 import { isInternalContraTransfer, isIntercompanyTransfer } from '../../utils/pdfStatementParser';
+import MultiSelectFilter from '../MultiSelectFilter';
 
 interface CategorizationDeskProps {
   onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
@@ -25,6 +26,7 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'unmapped_recipient' | 'unmapped_nominal'>('all');
+  const [bankFilter, setBankFilter] = useState<string[]>(['all']);
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Quick Contract Registration Modal state
@@ -45,15 +47,41 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
       const isUnmappedRecipient = !e.recipientType || e.recipientType === 'other';
       const isUnmappedNominal = !e.nominalCode;
       
-      if (filterType === 'unmapped_recipient') return isUnmappedRecipient;
-      if (filterType === 'unmapped_nominal') return isUnmappedNominal;
-      return isUnmappedRecipient || isUnmappedNominal;
+      if (filterType === 'unmapped_recipient') {
+        if (!isUnmappedRecipient) return false;
+      } else if (filterType === 'unmapped_nominal') {
+        if (!isUnmappedNominal) return false;
+      } else {
+        if (!isUnmappedRecipient && !isUnmappedNominal) return false;
+      }
+
+      if (!bankFilter.includes('all')) {
+        if (!e.bankAccountId || !bankFilter.includes(e.bankAccountId)) return false;
+      }
+
+      return true;
     }).filter(e => {
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
       return (e.payee || '').toLowerCase().includes(q) || (e.notes || '').toLowerCase().includes(q);
     });
-  }, [expenses, filterType, searchQuery]);
+  }, [expenses, filterType, bankFilter, searchQuery]);
+
+  const allBankAccounts = useMemo(() => {
+    return companies.flatMap(c => 
+      (c.bankAccounts || []).map((b: any) => ({
+        ...b,
+        ref: `${b.bankName} - ${b.accountName} (${b.currency})`
+      }))
+    );
+  }, [companies]);
+
+  const bankOptions = useMemo(() => {
+    return [
+      { value: 'all', label: 'All Bank Accounts' },
+      ...allBankAccounts.map((b: any) => ({ value: b.id, label: b.ref }))
+    ];
+  }, [allBankAccounts]);
 
   const totalExpensesCount = (expenses || []).length;
   const totalUnmappedCount = (expenses || []).filter(e => (!e.recipientType || e.recipientType === 'other' || !e.nominalCode) && e.status !== 'dns' && e.status !== 'cancelled').length;
@@ -436,6 +464,14 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
             <option value="unmapped_recipient">⚠️ Missing Recipient / Vendor</option>
             <option value="unmapped_nominal">⚠️ Missing Nominal Code</option>
           </select>
+
+          <MultiSelectFilter
+            options={bankOptions}
+            selectedValues={bankFilter}
+            onChange={(vals: string[]) => setBankFilter(vals)}
+            placeholder="Select Bank Accounts"
+            style={{ maxWidth: '240px' }}
+          />
         </div>
 
         <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>

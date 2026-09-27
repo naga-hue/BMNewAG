@@ -5,6 +5,7 @@ import { useBoundStore } from '../../store/useBoundStore';
 import { parseAndStandardizeDate, symbolMap } from './shared';
 import { FX_RATES, getHistoricalFxRate } from '../../utils/currency';
 import { extractBankStatementFromPdf, isInternalContraTransfer, isIntercompanyTransfer } from '../../utils/pdfStatementParser';
+import MultiSelectFilter from '../MultiSelectFilter';
 
 interface BankStatementImportProps {
   onShowToast: (message: string, type: 'success' | 'warning' | 'info' | 'error') => void;
@@ -312,7 +313,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
   const [deskSortDirection, setDeskSortDirection] = useState<'asc' | 'desc'>('asc');
   const [deskTypeFilter, setDeskTypeFilter] = useState<'all' | 'debit' | 'credit'>('all');
   const [deskStatusFilter, setDeskStatusFilter] = useState<'active' | 'ignored' | 'all'>('active');
-  const [deskBankFilter, setDeskBankFilter] = useState<string>('ALL');
+  const [deskBankFilter, setDeskBankFilter] = useState<string[]>(['all']);
   const [deskSearch, setDeskSearch] = useState('');
   const [selectedDeskRowIds, setSelectedDeskRowIds] = useState<string[]>([]);
   const [bulkNominalCode, setBulkNominalCode] = useState<string>('');
@@ -479,6 +480,19 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     return counts;
   }, [categorizedRows]);
 
+  const importDeskBankOptions = useMemo(() => {
+    return [
+      { value: 'all', label: `All Bank Accounts (${deskCounts.total})` },
+      ...allRegisteredBankAccounts.map(b => {
+        const count = bankAccountCounts[b.id] || 0;
+        return {
+          value: b.id,
+          label: `${b.bankName} - ${b.accountName} (${b.currency})${count > 0 ? ` (${count})` : ''}`
+        };
+      })
+    ];
+  }, [allRegisteredBankAccounts, bankAccountCounts, deskCounts.total]);
+
   const sortedAndFilteredCategorizedRows = useMemo(() => {
     let list = [...categorizedRows];
 
@@ -497,8 +511,8 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     }
 
     // Filter by bank account
-    if (deskBankFilter !== 'ALL') {
-      list = list.filter(r => r.bankAccountId === deskBankFilter);
+    if (!deskBankFilter.includes('all') && !deskBankFilter.includes('ALL')) {
+      list = list.filter(r => r.bankAccountId && deskBankFilter.includes(r.bankAccountId));
     }
 
     // Filter by text search query
@@ -2844,22 +2858,13 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
               {/* Bank Account Filter */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '6px' }}>
                 <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Bank:</span>
-                <select
-                  className="select-filter"
-                  value={deskBankFilter}
-                  onChange={(e) => setDeskBankFilter(e.target.value)}
-                  style={{ fontSize: '11.5px', padding: '4px 8px', borderRadius: '6px' }}
-                >
-                  <option value="ALL">All Bank Accounts ({deskCounts.total})</option>
-                  {allRegisteredBankAccounts.map(b => {
-                    const count = bankAccountCounts[b.id] || 0;
-                    return (
-                      <option key={b.id} value={b.id}>
-                        {b.bankName} - {b.accountName} ({b.currency}) {count > 0 ? `(${count})` : ''}
-                      </option>
-                    );
-                  })}
-                </select>
+                <MultiSelectFilter
+                  options={importDeskBankOptions}
+                  selectedValues={deskBankFilter}
+                  onChange={(vals: string[]) => setDeskBankFilter(vals)}
+                  placeholder="Select Bank Accounts"
+                  style={{ maxWidth: '240px' }}
+                />
               </div>
             </div>
 

@@ -1159,11 +1159,18 @@ export default function ExpensesTable({
                     <option key={v.id} value={`vendor:${v.id}`}>{v.name}</option>
                   ))}
                 </optgroup>
-                <optgroup label="Staff / Consultants">
+                <optgroup label="Active Staff / Consultants">
                   {staff.filter(s => s.status !== 'exited').map(s => (
                     <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
                   ))}
                 </optgroup>
+                {staff.some(s => s.status === 'exited') && (
+                  <optgroup label="Exited / Past Staff & Freelancers">
+                    {staff.filter(s => s.status === 'exited').map(s => (
+                      <option key={s.id} value={`staff:${s.id}`}>{s.fullName} (Exited)</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
 
@@ -1470,11 +1477,18 @@ export default function ExpensesTable({
                             <option key={v.id} value={`vendor:${v.id}`}>{v.name}</option>
                           ))}
                         </optgroup>
-                        <optgroup label="Staff / Consultants">
+                        <optgroup label="Active Staff / Consultants">
                           {staff.filter(s => s.status !== 'exited').map(s => (
                             <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
                           ))}
                         </optgroup>
+                        {staff.some(s => s.status === 'exited') && (
+                          <optgroup label="Exited / Past Staff & Freelancers">
+                            {staff.filter(s => s.status === 'exited').map(s => (
+                              <option key={s.id} value={`staff:${s.id}`}>{s.fullName} (Exited)</option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
 
                       {exp.recipientType === 'vendor' && exp.recipientId && (() => {
@@ -2421,10 +2435,18 @@ export default function ExpensesTable({
                       className="select-filter"
                       style={{ width: '100%', padding: '8px 10px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
                     >
-                      <option value="">-- Choose Staff Member --</option>
-                      {staff.filter(s => s.status !== 'exited').map(s => (
-                        <option key={s.id} value={s.id}>{s.fullName}</option>
-                      ))}
+                      <optgroup label="Active Staff">
+                        {staff.filter(s => s.status !== 'exited').map(s => (
+                          <option key={s.id} value={s.id}>{s.fullName}</option>
+                        ))}
+                      </optgroup>
+                      {staff.some(s => s.status === 'exited') && (
+                        <optgroup label="Exited / Past Staff">
+                          {staff.filter(s => s.status === 'exited').map(s => (
+                            <option key={s.id} value={s.id}>{s.fullName} (Exited)</option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
                   </div>
 

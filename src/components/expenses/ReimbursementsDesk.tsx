@@ -339,14 +339,28 @@ Sent automatically via Humres Group Business Management Suite.`;
               ) : (
                 <>
                   <option value="">-- Choose Employee --</option>
-                  {staff.filter(s => s.status !== 'exited').map(s => {
-                    const comp = companies.find(c => c.id === s.companyId);
-                    return (
-                      <option key={s.id} value={s.id}>
-                        {s.fullName} ({comp?.name || 'Group'})
-                      </option>
-                    );
-                  })}
+                  <optgroup label="Active Staff">
+                    {staff.filter(s => s.status !== 'exited').map(s => {
+                      const comp = companies.find(c => c.id === s.companyId);
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.fullName} ({comp?.name || 'Group'})
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                  {staff.some(s => s.status === 'exited') && (
+                    <optgroup label="Exited / Past Staff">
+                      {staff.filter(s => s.status === 'exited').map(s => {
+                        const comp = companies.find(c => c.id === s.companyId);
+                        return (
+                          <option key={s.id} value={s.id}>
+                            {s.fullName} (Exited) ({comp?.name || 'Group'})
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                  )}
                 </>
               )}
             </select>

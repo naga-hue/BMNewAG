@@ -664,11 +664,18 @@ export default function ExpensesDashboard({
                                 <option key={v.id} value={`vendor:${v.id}`}>{v.name}</option>
                               ))}
                             </optgroup>
-                            <optgroup label="Staff / Consultants">
+                            <optgroup label="Active Staff / Consultants">
                               {staff.filter(s => s.status !== 'exited').map(s => (
                                 <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
                               ))}
                             </optgroup>
+                            {staff.some(s => s.status === 'exited') && (
+                              <optgroup label="Exited / Past Staff & Freelancers">
+                                {staff.filter(s => s.status === 'exited').map(s => (
+                                  <option key={s.id} value={`staff:${s.id}`}>{s.fullName} (Exited)</option>
+                                ))}
+                              </optgroup>
+                            )}
                           </select>
                         </td>
                         <td>
@@ -829,10 +836,18 @@ export default function ExpensesDashboard({
                       onChange={(e) => setLinkingStaffId(e.target.value)}
                       style={{ width: '100%', padding: '8px', fontSize: '13px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '4px' }}
                     >
-                      <option value="">-- Select Employee --</option>
-                      {staff.filter(s => s.status !== 'exited').map(s => (
-                        <option key={s.id} value={s.id}>{s.fullName} ({s.payrollPolicyId ? 'Policy Assigned' : 'No Policy'})</option>
-                      ))}
+                      <optgroup label="Active Staff / Recruiter Members">
+                        {staff.filter(s => s.status !== 'exited').map(s => (
+                          <option key={s.id} value={s.id}>{s.fullName} ({s.payrollPolicyId ? 'Policy Assigned' : 'No Policy'})</option>
+                        ))}
+                      </optgroup>
+                      {staff.some(s => s.status === 'exited') && (
+                        <optgroup label="Exited / Past Staff">
+                          {staff.filter(s => s.status === 'exited').map(s => (
+                            <option key={s.id} value={s.id}>{s.fullName} (Exited) ({s.payrollPolicyId ? 'Policy Assigned' : 'No Policy'})</option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
                   </div>
 

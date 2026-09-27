@@ -375,11 +375,18 @@ export default function ExpenseClaimForm({
                 <option key={v.id} value={`vendor:${v.id}`}>{v.name} ({v.category})</option>
               ))}
             </optgroup>
-            <optgroup label="Staff / Consultants">
+            <optgroup label="Active Staff / Consultants">
               {staff.filter(s => s.status !== 'exited').map(s => (
                 <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
               ))}
             </optgroup>
+            {staff.some(s => s.status === 'exited') && (
+              <optgroup label="Exited / Past Staff & Freelancers">
+                {staff.filter(s => s.status === 'exited').map(s => (
+                  <option key={s.id} value={`staff:${s.id}`}>{s.fullName} (Exited)</option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </div>
       </div>

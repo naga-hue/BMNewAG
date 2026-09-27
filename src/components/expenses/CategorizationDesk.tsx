@@ -560,11 +560,18 @@ export default function CategorizationDesk({ onShowToast }: CategorizationDeskPr
                             <option key={v.id} value={`vendor:${v.id}`}>{v.name}</option>
                           ))}
                         </optgroup>
-                        <optgroup label="Staff / Salary Profiles">
+                        <optgroup label="Active Staff / Salary Profiles">
                           {staff.filter(s => s.status !== 'exited').map(s => (
                             <option key={s.id} value={`staff:${s.id}`}>{s.fullName}</option>
                           ))}
                         </optgroup>
+                        {staff.some(s => s.status === 'exited') && (
+                          <optgroup label="Exited / Past Staff & Freelancers">
+                            {staff.filter(s => s.status === 'exited').map(s => (
+                              <option key={s.id} value={`staff:${s.id}`}>{s.fullName} (Exited)</option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
                     </td>
 

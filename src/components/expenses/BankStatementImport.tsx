@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { UploadCloud, Grid, Trash2, CheckCircle2, Clock, Check, ArrowLeft, Search, RefreshCw, AlertCircle, FileText, Building2, Calendar, Plus } from 'lucide-react';
+import { UploadCloud, Grid, Trash2, CheckCircle2, Clock, Check, ArrowLeft, Search, RefreshCw, AlertCircle, FileText, Building2, Calendar, Plus, EyeOff, Eye, Ban } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useBoundStore } from '../../store/useBoundStore';
 import { parseAndStandardizeDate, symbolMap } from './shared';
@@ -27,6 +27,7 @@ interface CategorizedRow {
   linkedPlacementId: string;
   isCredit: boolean;
   committed: boolean;
+  ignored?: boolean;
   linkedPayrollCellId?: string | null;
   allocationMode?: string;
   manualAllocationShares?: Record<string, number>;
@@ -242,6 +243,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
   const [deskSortField, setDeskSortField] = useState<string>('date');
   const [deskSortDirection, setDeskSortDirection] = useState<'asc' | 'desc'>('asc');
   const [deskTypeFilter, setDeskTypeFilter] = useState<'all' | 'debit' | 'credit'>('all');
+  const [deskStatusFilter, setDeskStatusFilter] = useState<'active' | 'ignored' | 'all'>('active');
   const [deskBankFilter, setDeskBankFilter] = useState<string>('ALL');
   const [deskSearch, setDeskSearch] = useState('');
 
@@ -374,11 +376,13 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
 
   const deskCounts = useMemo(() => {
     const total = categorizedRows.length;
-    const debits = categorizedRows.filter(r => !r.isCredit).length;
-    const credits = categorizedRows.filter(r => r.isCredit).length;
-    const mapped = categorizedRows.filter(r => r.nominalCode).length;
+    const active = categorizedRows.filter(r => !r.ignored).length;
+    const ignored = categorizedRows.filter(r => r.ignored).length;
+    const debits = categorizedRows.filter(r => !r.isCredit && !r.ignored).length;
+    const credits = categorizedRows.filter(r => r.isCredit && !r.ignored).length;
+    const mapped = categorizedRows.filter(r => r.nominalCode && !r.ignored).length;
     const committed = categorizedRows.filter(r => r.committed).length;
-    return { total, debits, credits, mapped, committed };
+    return { total, active, ignored, debits, credits, mapped, committed };
   }, [categorizedRows]);
 
   const allRegisteredBankAccounts = useMemo(() => {
@@ -403,6 +407,13 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
 
   const sortedAndFilteredCategorizedRows = useMemo(() => {
     let list = [...categorizedRows];
+
+    // Filter by status: active | ignored | all
+    if (deskStatusFilter === 'active') {
+      list = list.filter(r => !r.ignored);
+    } else if (deskStatusFilter === 'ignored') {
+      list = list.filter(r => r.ignored);
+    }
 
     // Filter by direction: all | debit | credit
     if (deskTypeFilter === 'debit') {
@@ -450,8 +461,8 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
 
       switch (deskSortField) {
         case 'status': {
-          valA = a.committed ? 2 : a.nominalCode ? 1 : 0;
-          valB = b.committed ? 2 : b.nominalCode ? 1 : 0;
+          valA = a.committed ? 3 : a.ignored ? 0 : a.nominalCode ? 2 : 1;
+          valB = b.committed ? 3 : b.ignored ? 0 : b.nominalCode ? 2 : 1;
           break;
         }
         case 'date': {
@@ -1326,10 +1337,37 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
     }));
   };
 
+  const handleToggleRowIgnored = (rowId: string) => {
+    setCategorizedRows(prev => prev.map(r => {
+      if (r.id === rowId) {
+        return { ...r, ignored: !r.ignored };
+      }
+      return r;
+    }));
+  };
+
+  const handleBulkIgnore = (type: 'credits' | 'intercompany' | 'contra' | 'all' | 'restore_all') => {
+    let affected = 0;
+    setCategorizedRows(prev => prev.map(r => {
+      if (r.committed) return r;
+      if (type === 'credits' && r.isCredit) { affected++; return { ...r, ignored: true }; }
+      if (type === 'intercompany' && (r.isIntercompany || r.nominalCode?.includes('1200'))) { affected++; return { ...r, ignored: true }; }
+      if (type === 'contra' && (r.isContra || r.nominalCode?.includes('1100'))) { affected++; return { ...r, ignored: true }; }
+      if (type === 'all') { affected++; return { ...r, ignored: true }; }
+      if (type === 'restore_all' && r.ignored) { affected++; return { ...r, ignored: false }; }
+      return r;
+    }));
+
+    if (type === 'credits') onShowToast(`Marked ${affected} Paid In (income) rows as Ignored/On Hold.`, "info");
+    else if (type === 'intercompany') onShowToast(`Marked ${affected} Intercompany transfer rows as Ignored/On Hold.`, "info");
+    else if (type === 'contra') onShowToast(`Marked ${affected} internal Contra rows as Ignored/On Hold.`, "info");
+    else if (type === 'restore_all') onShowToast(`Restored ${affected} rows back to active.`, "success");
+  };
+
   const handleCommitBankImports = async () => {
-    const mRows = categorizedRows.filter(r => r.nominalCode && !r.committed);
+    const mRows = categorizedRows.filter(r => r.nominalCode && !r.committed && !r.ignored);
     if (mRows.length === 0) {
-      onShowToast("Please map at least one row with a Nominal code before committing.", "warning");
+      onShowToast("Please map at least one active row with a Nominal code before committing.", "warning");
       return;
     }
 
@@ -1414,7 +1452,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       onShowToast(`Successfully imported and logged ${mRows.length} bank transactions.`, "success");
       
       const updatedRows = categorizedRows.map(r => {
-        if (r.nominalCode) {
+        if (r.nominalCode && !r.ignored) {
           return { ...r, committed: true };
         }
         return r;
@@ -1465,11 +1503,13 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
       }
       updateHeldStatements(updatedHeld);
 
-      const allDone = updatedRows.every(r => r.committed);
+      const activeRows = updatedRows.filter(r => !r.ignored);
+      const allDone = activeRows.length > 0 && activeRows.every(r => r.committed);
+      const onHoldCount = updatedRows.filter(r => r.ignored).length;
       if (allDone) {
-        onShowToast("All transactions for this statement are now committed to the ledger!", "success");
+        onShowToast(`All active transactions are committed!${onHoldCount > 0 ? ` (${onHoldCount} rows remain on hold for later)` : ''}`, "success");
       } else {
-        onShowToast(`${updatedRows.filter(r => r.committed).length} rows committed. Map the remaining rows to commit them too.`, "info");
+        onShowToast(`${activeRows.filter(r => r.committed).length} rows committed.${onHoldCount > 0 ? ` (${onHoldCount} rows on hold)` : ''}`, "info");
       }
     } catch (err: any) {
       onShowToast(`Error committing statement rows: ${err.message}`, "warning");
@@ -2380,7 +2420,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                   const allKnownBanks = companies.flatMap((c: any) => c.bankAccounts || []);
                   let mappedCount = 0;
                   setCategorizedRows(prev => prev.map(r => {
-                    if (r.committed || r.nominalCode) return r;
+                    if (r.committed || r.nominalCode || r.ignored) return r;
                     const isContra = isInternalContraTransfer(r.payee, r.reference, allKnownBanks);
                     if (isContra) {
                       mappedCount++;
@@ -2418,13 +2458,47 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
               >
                 ⚡ Auto-Map All
               </button>
+
+              {/* Bulk Omit / Ignore Shortcuts */}
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => handleBulkIgnore('credits')}
+                style={{ fontSize: '11px', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                title="Omit / Put all Paid In (income) rows on hold so you don't categorize them now"
+              >
+                <Ban size={12} /> Ignore Income
+              </button>
+
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => handleBulkIgnore('intercompany')}
+                style={{ fontSize: '11px', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                title="Omit / Put all Intercompany transfers on hold so you don't categorize them now"
+              >
+                <Ban size={12} /> Ignore Intercompany
+              </button>
+
+              {deskCounts.ignored > 0 && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => handleBulkIgnore('restore_all')}
+                  style={{ fontSize: '11px', padding: '6px 10px', color: 'var(--primary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
+                  title="Restore all ignored rows back to active"
+                >
+                  <Eye size={12} /> Restore All ({deskCounts.ignored})
+                </button>
+              )}
+
               <button 
                 type="button"
                 className="btn-primary" 
                 onClick={handleCommitBankImports}
                 style={{ padding: '6px 14px', fontSize: '12px' }}
               >
-                Commit Mapped Rows ({categorizedRows.filter(r => r.nominalCode && !r.committed).length} rows)
+                Commit Mapped Rows ({categorizedRows.filter(r => r.nominalCode && !r.committed && !r.ignored).length} rows)
               </button>
             </div>
           </div>
@@ -2512,7 +2586,7 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
               <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-secondary)' }}>Show:</span>
               <button
                 type="button"
-                onClick={() => setDeskTypeFilter('all')}
+                onClick={() => { setDeskStatusFilter('active'); setDeskTypeFilter('all'); }}
                 style={{
                   border: 'none',
                   borderRadius: '6px',
@@ -2520,16 +2594,16 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                   fontSize: '11.5px',
                   fontWeight: 600,
                   cursor: 'pointer',
-                  backgroundColor: deskTypeFilter === 'all' ? 'var(--primary)' : 'var(--bg-secondary)',
-                  color: deskTypeFilter === 'all' ? '#ffffff' : 'var(--text-primary)',
-                  boxShadow: deskTypeFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                  backgroundColor: deskStatusFilter === 'active' && deskTypeFilter === 'all' ? 'var(--primary)' : 'var(--bg-secondary)',
+                  color: deskStatusFilter === 'active' && deskTypeFilter === 'all' ? '#ffffff' : 'var(--text-primary)',
+                  boxShadow: deskStatusFilter === 'active' && deskTypeFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
                 }}
               >
-                All Transactions ({deskCounts.total})
+                All Active ({deskCounts.active})
               </button>
               <button
                 type="button"
-                onClick={() => setDeskTypeFilter('debit')}
+                onClick={() => { setDeskStatusFilter('active'); setDeskTypeFilter('debit'); }}
                 style={{
                   border: 'none',
                   borderRadius: '6px',
@@ -2537,16 +2611,16 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                   fontSize: '11.5px',
                   fontWeight: 600,
                   cursor: 'pointer',
-                  backgroundColor: deskTypeFilter === 'debit' ? 'rgba(239, 68, 68, 0.9)' : 'var(--bg-secondary)',
-                  color: deskTypeFilter === 'debit' ? '#ffffff' : 'var(--danger)',
-                  boxShadow: deskTypeFilter === 'debit' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                  backgroundColor: deskStatusFilter === 'active' && deskTypeFilter === 'debit' ? 'rgba(239, 68, 68, 0.9)' : 'var(--bg-secondary)',
+                  color: deskStatusFilter === 'active' && deskTypeFilter === 'debit' ? '#ffffff' : 'var(--danger)',
+                  boxShadow: deskStatusFilter === 'active' && deskTypeFilter === 'debit' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
                 }}
               >
-                🔻 Paid Out / Debits ({deskCounts.debits})
+                🔻 Paid Out ({deskCounts.debits})
               </button>
               <button
                 type="button"
-                onClick={() => setDeskTypeFilter('credit')}
+                onClick={() => { setDeskStatusFilter('active'); setDeskTypeFilter('credit'); }}
                 style={{
                   border: 'none',
                   borderRadius: '6px',
@@ -2554,12 +2628,47 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                   fontSize: '11.5px',
                   fontWeight: 600,
                   cursor: 'pointer',
-                  backgroundColor: deskTypeFilter === 'credit' ? 'rgba(34, 197, 94, 0.9)' : 'var(--bg-secondary)',
-                  color: deskTypeFilter === 'credit' ? '#ffffff' : 'var(--success)',
-                  boxShadow: deskTypeFilter === 'credit' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                  backgroundColor: deskStatusFilter === 'active' && deskTypeFilter === 'credit' ? 'rgba(34, 197, 94, 0.9)' : 'var(--bg-secondary)',
+                  color: deskStatusFilter === 'active' && deskTypeFilter === 'credit' ? '#ffffff' : 'var(--success)',
+                  boxShadow: deskStatusFilter === 'active' && deskTypeFilter === 'credit' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
                 }}
               >
-                🟢 Paid In / Credits ({deskCounts.credits})
+                🟢 Paid In / Income ({deskCounts.credits})
+              </button>
+              <button
+                type="button"
+                onClick={() => { setDeskStatusFilter('ignored'); setDeskTypeFilter('all'); }}
+                style={{
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '4px 10px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  backgroundColor: deskStatusFilter === 'ignored' ? '#64748b' : 'var(--bg-secondary)',
+                  color: deskStatusFilter === 'ignored' ? '#ffffff' : 'var(--text-muted)',
+                  boxShadow: deskStatusFilter === 'ignored' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                }}
+                title="View rows put on hold/ignored. These will not be committed to the ledger."
+              >
+                🚫 Ignored / On Hold ({deskCounts.ignored})
+              </button>
+              <button
+                type="button"
+                onClick={() => { setDeskStatusFilter('all'); setDeskTypeFilter('all'); }}
+                style={{
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '4px 10px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  backgroundColor: deskStatusFilter === 'all' && deskTypeFilter === 'all' ? 'var(--accent)' : 'var(--bg-secondary)',
+                  color: deskStatusFilter === 'all' && deskTypeFilter === 'all' ? '#ffffff' : 'var(--text-primary)',
+                  boxShadow: deskStatusFilter === 'all' && deskTypeFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                }}
+              >
+                Show All ({deskCounts.total})
               </button>
 
               {/* Bank Account Filter */}
@@ -2647,10 +2756,14 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                   </tr>
                 ) : (
                   sortedAndFilteredCategorizedRows.map((row) => (
-                    <tr key={row.id} style={{ opacity: row.committed ? 0.6 : 1, backgroundColor: row.committed ? 'var(--bg-secondary)' : 'none' }}>
+                    <tr key={row.id} style={{ opacity: row.committed ? 0.6 : row.ignored ? 0.45 : 1, backgroundColor: row.committed ? 'var(--bg-secondary)' : row.ignored ? 'rgba(100, 116, 139, 0.05)' : 'none' }}>
                       <td style={{ textAlign: 'center' }}>
                         {row.committed ? (
                           <CheckCircle2 size={14} style={{ color: 'var(--success)' }} title="Committed to ledger" />
+                        ) : row.ignored ? (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }} title="Ignored / On Hold (Excluded from commit. Click 'Restore' to re-enable)">
+                            <EyeOff size={13} />
+                          </span>
                         ) : row.nominalCode ? (
                           <Check size={14} style={{ color: 'var(--warning)' }} title="Mapped (ready to commit)" />
                         ) : (
@@ -2694,7 +2807,12 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                       </td>
                       <td style={{ fontWeight: 600 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                          <span>{row.payee}</span>
+                          <span style={{ textDecoration: row.ignored ? 'line-through' : 'none', color: row.ignored ? 'var(--text-muted)' : 'inherit' }}>{row.payee}</span>
+                          {row.ignored && (
+                            <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-muted)', backgroundColor: 'rgba(100, 116, 139, 0.15)', padding: '1px 6px', borderRadius: '4px' }}>
+                              🚫 On Hold / Ignored
+                            </span>
+                          )}
                           {(row.isContra || row.nominalCode?.includes('1100') || row.nominalCode?.toLowerCase().includes('contra')) && (
                             <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--accent)', backgroundColor: 'rgba(99, 102, 241, 0.12)', padding: '1px 6px', borderRadius: '4px' }}>
                               🔄 Internal Contra (Overheads Excluded)
@@ -3059,21 +3177,55 @@ export default function BankStatementImport({ onShowToast }: BankStatementImport
                         )}
                       </td>
 
-                      {/* Delete Row Action */}
-                      <td>
-                        <button
-                          type="button"
-                          className="btn-danger"
-                          onClick={() => {
-                            setCategorizedRows(prev => prev.filter(r => r.id !== row.id));
-                          }}
-                          disabled={row.committed}
-                        style={{ padding: '4px 8px', fontSize: '10px' }}
-                        title="Remove this row"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </td>
+                      {/* Row Actions: Ignore/Hold Toggle & Delete */}
+                      <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => handleToggleRowIgnored(row.id)}
+                            disabled={row.committed}
+                            style={{
+                              padding: '3px 8px',
+                              fontSize: '10.5px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              backgroundColor: row.ignored ? 'rgba(99, 102, 241, 0.12)' : 'var(--bg-secondary)',
+                              borderColor: row.ignored ? 'var(--primary)' : 'var(--border-color)',
+                              color: row.ignored ? 'var(--primary)' : 'var(--text-secondary)'
+                            }}
+                            title={row.ignored ? "Restore this row to active categorization" : "Ignore / omit this row for now (saved on hold, won't be committed to ledger)"}
+                          >
+                            {row.ignored ? (
+                              <>
+                                <Eye size={12} />
+                                <span>Restore</span>
+                              </>
+                            ) : (
+                              <>
+                                <EyeOff size={12} />
+                                <span>Ignore</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            className="btn-danger"
+                            onClick={() => {
+                              if (window.confirm("Permanently delete this row from the statement? (To omit temporarily instead, click 'Ignore')")) {
+                                setCategorizedRows(prev => prev.filter(r => r.id !== row.id));
+                              }
+                            }}
+                            disabled={row.committed}
+                            style={{ padding: '3px 6px', fontSize: '10px' }}
+                            title="Permanently remove this row"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </td>
                   </tr>
                 )))}
               </tbody>

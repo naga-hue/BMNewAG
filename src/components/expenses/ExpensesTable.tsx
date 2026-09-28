@@ -83,9 +83,14 @@ export default function ExpensesTable({
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
   const [onlyUnmappedFilter, setOnlyUnmappedFilter] = useState(false);
+  const [onlyMissingNominalFilter, setOnlyMissingNominalFilter] = useState(false);
 
   const unmappedExpensesCount = useMemo(() => {
     return (expenses || []).filter(e => (!e.recipientType || e.recipientType === 'other' || !e.nominalCode) && e.status !== 'dns' && e.status !== 'cancelled').length;
+  }, [expenses]);
+
+  const missingNominalExpensesCount = useMemo(() => {
+    return (expenses || []).filter(e => !e.nominalCode && e.status !== 'dns' && e.status !== 'cancelled').length;
   }, [expenses]);
 
   // Column Visibility
@@ -392,20 +397,34 @@ export default function ExpensesTable({
       const expNominal = exp.nominalCode || '';
       const expPlMonth = exp.plMonth || '';
 
+      if (onlyMissingNominalFilter) {
+        if (expNominal) return false;
+      }
+
       if (onlyUnmappedFilter) {
         const isUnmapped = !exp.recipientType || exp.recipientType === 'other' || !exp.nominalCode;
         if (!isUnmapped) return false;
       }
 
       if (!nominalFilter.includes('all')) {
-        if (!expNominal) return false;
-        const matches = nominalFilter.some(sel => {
-          const matchesExact = expNominal === sel;
-          const matchesPrefix = expNominal.startsWith(sel + ' - ') || expNominal.startsWith(sel + ' ');
-          const matchesReverse = sel.startsWith(expNominal + ' - ');
-          return matchesExact || matchesPrefix || matchesReverse;
-        });
-        if (!matches) return false;
+        const includesNone = nominalFilter.includes('__none__');
+        const specificCodes = nominalFilter.filter(s => s !== '__none__');
+
+        if (!expNominal) {
+          if (!includesNone) return false;
+        } else {
+          if (specificCodes.length > 0) {
+            const matches = specificCodes.some(sel => {
+              const matchesExact = expNominal === sel;
+              const matchesPrefix = expNominal.startsWith(sel + ' - ') || expNominal.startsWith(sel + ' ');
+              const matchesReverse = sel.startsWith(expNominal + ' - ');
+              return matchesExact || matchesPrefix || matchesReverse;
+            });
+            if (!matches) return false;
+          } else {
+            return false;
+          }
+        }
       }
 
       if (plMonthFilter !== 'all' && expPlMonth !== plMonthFilter) return false;
@@ -474,7 +493,8 @@ export default function ExpensesTable({
   }, [
     expenses, nominalFilter, plMonthFilter, bankAccountFilter, allocationCenterFilter,
     companyFilter, deptFilter, staffFilter, vendorFilter,
-    reconciliationFilter, startDateFilter, endDateFilter, searchQuery
+    reconciliationFilter, startDateFilter, endDateFilter, searchQuery,
+    onlyUnmappedFilter, onlyMissingNominalFilter
   ]);
 
   const sortedExpenses = useMemo(() => {
@@ -553,10 +573,11 @@ export default function ExpensesTable({
   const nominalOptions = useMemo(() => {
     return [
       { value: 'all', label: 'All Nominal Codes' },
+      { value: '__none__', label: `⚠️ Unassigned / No Nominal (${missingNominalExpensesCount})` },
       ...databaseNominalOptions.activeList.map(c => ({ value: c.value, label: c.label })),
       ...databaseNominalOptions.historicalList.map(c => ({ value: c.value, label: c.label }))
     ];
-  }, [databaseNominalOptions]);
+  }, [databaseNominalOptions, missingNominalExpensesCount]);
 
   const bankAccountOptions = useMemo(() => {
     return [
@@ -1028,7 +1049,37 @@ export default function ExpensesTable({
 
           <button 
             type="button" 
-            onClick={() => setOnlyUnmappedFilter(!onlyUnmappedFilter)}
+            onClick={() => {
+              const next = !onlyMissingNominalFilter;
+              setOnlyMissingNominalFilter(next);
+              if (next) setOnlyUnmappedFilter(false);
+            }}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px', 
+              padding: '8px 12px', 
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              backgroundColor: onlyMissingNominalFilter ? '#ef4444' : 'rgba(239, 68, 68, 0.12)',
+              color: onlyMissingNominalFilter ? '#fff' : 'var(--danger)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              transition: 'all 0.2s'
+            }}
+            title="Filter expenses ledger to only show transactions missing a nominal code (needed for P&L reporting)"
+          >
+            🏷️ Missing Nominal ({missingNominalExpensesCount})
+          </button>
+
+          <button 
+            type="button" 
+            onClick={() => {
+              const next = !onlyUnmappedFilter;
+              setOnlyUnmappedFilter(next);
+              if (next) setOnlyMissingNominalFilter(false);
+            }}
             style={{ 
               display: 'flex', 
               alignItems: 'center', 

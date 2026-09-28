@@ -66,5 +66,14 @@ describe('parseAndStandardizeDate', () => {
     expect(parseAndStandardizeDate('29 Jul 2026')).toBe('2026-07-29');
     expect(parseAndStandardizeDate('29/Jul/2026')).toBe('2026-07-29');
   });
+
+  it('should detect and correct YYYY-DD-MM format where day is in middle position', () => {
+    expect(parseAndStandardizeDate('2026-29-06')).toBe('2026-06-29');
+    expect(parseAndStandardizeDate('2026-31-07')).toBe('2026-07-31');
+    expect(parseAndStandardizeDate('2026-26-03')).toBe('2026-03-26');
+    expect(parseAndStandardizeDate('2026-30-08')).toBe('2026-08-30');
+    expect(parseAndStandardizeDate('2026-15-05')).toBe('2026-05-15');
+  });
 });
+
 

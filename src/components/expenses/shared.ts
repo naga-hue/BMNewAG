@@ -68,11 +68,22 @@ export function parseAndStandardizeDate(
   dateFormat: 'UK' | 'US' = 'UK'
 ): string {
   if (!dateStr) return '';
-  const cleanStr = dateStr.trim();
+  const cleanStr = String(dateStr).trim();
   
-  // 1. If it's already standard YYYY-MM-DD, return it
-  if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) {
-    return cleanStr;
+  // 1. If it matches YYYY-XX-YY, check if month and day need validation or swapping
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(cleanStr)) {
+    const parts = cleanStr.split(/[-/]/);
+    const y = parts[0];
+    const p1 = parseInt(parts[1], 10);
+    const p2 = parseInt(parts[2], 10);
+
+    // If middle number is > 12, it cannot be a month! It's YYYY-DD-MM -> swap to YYYY-MM-DD
+    if (p1 > 12 && p2 >= 1 && p2 <= 12) {
+      return `${y}-${String(p2).padStart(2, '0')}-${String(p1).padStart(2, '0')}`;
+    }
+    if (p1 >= 1 && p1 <= 12 && p2 >= 1 && p2 <= 31) {
+      return `${y}-${String(p1).padStart(2, '0')}-${String(p2).padStart(2, '0')}`;
+    }
   }
 
   // 2. Parse using parts split by slash, hyphen, space
@@ -82,11 +93,18 @@ export function parseAndStandardizeDate(
     let monthStr = '';
     let year = '';
 
-    // Check if first part is a 4-digit year (e.g. YYYY-MM-DD with slashes or spaces)
+    // Check if first part is a 4-digit year (e.g. YYYY-MM-DD or YYYY-DD-MM)
     if (parts[0].length === 4) {
       year = parts[0];
-      monthStr = parts[1];
-      day = parts[2];
+      const p1 = parseInt(parts[1], 10);
+      const p2 = parseInt(parts[2], 10);
+      if (p1 > 12 && p2 <= 12) {
+        day = parts[1];
+        monthStr = parts[2];
+      } else {
+        monthStr = parts[1];
+        day = parts[2];
+      }
     } else {
       if (dateFormat === 'US') {
         monthStr = parts[0];
@@ -106,6 +124,15 @@ export function parseAndStandardizeDate(
 
     // Standardize month (handle names like "Jan", "Feb", "July", etc.)
     let monthNum = parseInt(monthStr, 10);
+    let dayNum = parseInt(day, 10);
+
+    // If day was placed in monthStr and is > 12 while day is <= 12, swap them
+    if (!isNaN(monthNum) && monthNum > 12 && !isNaN(dayNum) && dayNum <= 12) {
+      const temp = monthNum;
+      monthNum = dayNum;
+      dayNum = temp;
+    }
+
     if (isNaN(monthNum)) {
       const monthsMap: Record<string, string> = {
         jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
@@ -117,14 +144,13 @@ export function parseAndStandardizeDate(
       if (monthsMap[key]) {
         monthStr = monthsMap[key];
       } else {
-        // Fallback to current month if we can't parse it
         monthStr = String(new Date().getMonth() + 1).padStart(2, '0');
       }
     } else {
       monthStr = String(monthNum).padStart(2, '0');
     }
 
-    day = String(parseInt(day, 10) || 1).padStart(2, '0');
+    day = String(dayNum || 1).padStart(2, '0');
 
     return `${year}-${monthStr}-${day}`;
   }

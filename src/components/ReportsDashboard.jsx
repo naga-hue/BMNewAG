@@ -5354,6 +5354,7 @@ export default function ReportsDashboard({
                   if (!policy) return;
                   
                   let staffCost = 0;
+                  const comm = calculateCommissionForRecruiter(s.id, m);
                   if (policy.type === 'freelance') {
                     const totalBusinessDays = getBusinessDaysInMonth(m, s);
                     
@@ -5443,7 +5444,7 @@ export default function ReportsDashboard({
                       const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
                       val = val * proration;
                     }
-                    staffCost = val;
+                    staffCost = val + comm;
                   } else {
                     let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
                     let proration = 1.0;
@@ -5453,7 +5454,6 @@ export default function ReportsDashboard({
                       proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
                       basicGBP = basicGBP * proration;
                     }
-                    const comm = calculateCommissionForRecruiter(s.id, m);
                     staffCost = basicGBP + comm;
                   }
 
@@ -5473,9 +5473,8 @@ export default function ReportsDashboard({
                     const isComp = isCompanyMatch(s.companyId);
                     const isDept = isDeptMatch(s.department);
                     if (isComp && isDept) {
-                      const comm = calculateCommissionForRecruiter(s.id, m);
                       results.push({
-                        staffName: comm > 0 ? `${s.fullName} (Salary + £${Math.round(comm).toLocaleString()} Comm)` : s.fullName,
+                        staffName: comm > 0 ? `${s.fullName} (${policy.type === 'freelance' ? 'Freelancer' : 'Salary'} + £${Math.round(comm).toLocaleString()} Comm)` : s.fullName,
                         jobTitle: routedNominal,
                         department: s.department,
                         companyName: companies.find(c => c.id === s.companyId)?.name || 'Group',
@@ -6031,6 +6030,7 @@ export default function ReportsDashboard({
                 if (!policy) return;
 
                 let staffCost = 0;
+                const comm = calculateCommissionForRecruiter(s.id, mKey);
                 if (policy.type === 'freelance') {
                   const totalBusinessDays = getBusinessDaysInMonth(mKey, s);
                   
@@ -6120,7 +6120,6 @@ export default function ReportsDashboard({
                     const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
                     val = val * proration;
                   }
-                  const comm = calculateCommissionForRecruiter(s.id, mKey);
                   staffCost = val + comm;
                 } else {
                   let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
@@ -6131,7 +6130,6 @@ export default function ReportsDashboard({
                     proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
                     basicGBP = basicGBP * proration;
                   }
-                  const comm = calculateCommissionForRecruiter(s.id, mKey);
                   staffCost = basicGBP + comm;
                 }
 
@@ -6240,7 +6238,7 @@ export default function ReportsDashboard({
                         id: `proj-staff-${s.id}-${mKey}`,
                         date: `${mKey}-01`,
                         plMonth: mKey,
-                        payee: comm > 0 ? `${s.fullName} (Salary + £${Math.round(comm).toLocaleString()} Comm)` : s.fullName,
+                        payee: comm > 0 ? `${s.fullName} (${policy.type === 'freelance' ? 'Freelancer' : 'Salary'} + £${Math.round(comm).toLocaleString()} Comm)` : s.fullName,
                         nominalCode: routedNominal,
                         recipientType: 'staff',
                         recipientId: s.id,

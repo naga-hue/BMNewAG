@@ -1445,8 +1445,18 @@ export default function ReportsDashboard({
     });
     currentContractContext = null;
 
-    breakdown.__paid = paidBreakdown;
-    breakdown.__projected = projectedBreakdown;
+    Object.defineProperty(breakdown, '__paid', {
+      value: paidBreakdown,
+      enumerable: false,
+      writable: true,
+      configurable: true
+    });
+    Object.defineProperty(breakdown, '__projected', {
+      value: projectedBreakdown,
+      enumerable: false,
+      writable: true,
+      configurable: true
+    });
     return breakdown;
   };
 
@@ -1612,15 +1622,15 @@ export default function ReportsDashboard({
     const nominalProjectedBreakdown = nominalBreakdown.__projected || {};
 
     const overheadsExpenses = Object.entries(nominalBreakdown)
-      .filter(([code]) => !isNominalExcluded(code))
+      .filter(([code, v]) => !code.startsWith('__') && typeof v === 'number' && !isNaN(v) && !isNominalExcluded(code))
       .reduce((sum, [, v]) => sum + v, 0);
 
     const overheadsPaid = Object.entries(nominalPaidBreakdown)
-      .filter(([code]) => !isNominalExcluded(code))
+      .filter(([code, v]) => !code.startsWith('__') && typeof v === 'number' && !isNaN(v) && !isNominalExcluded(code))
       .reduce((sum, [, v]) => sum + v, 0);
 
     const overheadsProjected = Object.entries(nominalProjectedBreakdown)
-      .filter(([code]) => !isNominalExcluded(code))
+      .filter(([code, v]) => !code.startsWith('__') && typeof v === 'number' && !isNaN(v) && !isNominalExcluded(code))
       .reduce((sum, [, v]) => sum + v, 0);
 
     const balanceSheetBreakdown = getBalanceSheetBreakdownForMonth(monthKey);
@@ -1818,7 +1828,7 @@ export default function ReportsDashboard({
           const allCodes = Array.from(new Set([
             ...nominalCodes.map(nc => nc.code),
             ...runRateData.flatMap(d => Object.keys(d.nominalBreakdown || {}))
-          ]));
+          ])).filter(c => !c.startsWith('__'));
           const avgNominalBreakdown = {};
           allCodes.forEach(code => {
             const sum = runRateData.reduce((acc, d) => acc + (d.nominalBreakdown?.[code] || 0), 0);
@@ -1898,7 +1908,7 @@ export default function ReportsDashboard({
           let overheadsDetailHtml = '';
           const codeKeys = Array.from(new Set(
             rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
-          )).sort();
+          )).filter(c => !c.startsWith('__')).sort();
 
           codeKeys.forEach(code => {
             const total = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
@@ -3124,7 +3134,7 @@ export default function ReportsDashboard({
                   {expandedExpenses && (() => {
                     const codeKeys = Array.from(new Set(
                       rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
-                    )).sort();
+                    )).filter(c => !c.startsWith('__')).sort();
 
                     return codeKeys.map(code => {
                       const isExcluded = isNominalExcluded(code);
@@ -4612,7 +4622,7 @@ export default function ReportsDashboard({
 
               const nominalBreakdown = getNominalBreakdownForMonth(m, indiaCompanyId);
               const overheadsExpenses = Object.entries(nominalBreakdown)
-                .filter(([code]) => !isNominalExcluded(code))
+                .filter(([code, v]) => !code.startsWith('__') && typeof v === 'number' && !isNaN(v) && !isNominalExcluded(code))
                 .reduce((sum, [, v]) => sum + v, 0);
 
               const grossProfit = revenue;
@@ -4629,7 +4639,9 @@ export default function ReportsDashboard({
                 totalOverheads: toINR(totalOverheads),
                 netProfit: toINR(netProfit),
                 nominalBreakdown: Object.fromEntries(
-                  Object.entries(nominalBreakdown).map(([k, v]) => [k, toINR(v)])
+                  Object.entries(nominalBreakdown)
+                    .filter(([k, v]) => !k.startsWith('__') && typeof v === 'number' && !isNaN(v))
+                    .map(([k, v]) => [k, toINR(v)])
                 ),
                 headcount: activeStaff.length
               };

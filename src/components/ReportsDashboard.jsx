@@ -1176,7 +1176,8 @@ export default function ReportsDashboard({
             const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
             val = val * proration;
           }
-          staffCost = val;
+          const comm = calculateCommissionForRecruiter(s.id, monthKey);
+          staffCost = val + comm;
         } else {
           let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
           let proration = 1.0;
@@ -1186,12 +1187,12 @@ export default function ReportsDashboard({
             proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
             basicGBP = basicGBP * proration;
           }
-          staffCost = basicGBP;
+          const comm = calculateCommissionForRecruiter(s.id, monthKey);
+          staffCost = basicGBP + comm;
 
           // Employer NI/Pension tax accumulation
           let empNi = 0;
           let empPension = 0;
-          const comm = calculateCommissionForRecruiter(s.id, monthKey);
           const gross = basicGBP + comm;
 
           if (policy.employerNiSlabs && policy.employerNiSlabs.length > 0) {
@@ -1601,13 +1602,9 @@ export default function ReportsDashboard({
     }, 0);
 
     // 3. Salaries & 4. Commissions
+    // Recruiter commissions are categorized within the individual's payment under overheads / staff costs
     let salaries = 0;
     let commissions = 0;
-    activeStaff.forEach(s => {
-      if (monthKey > '2026-06') {
-        commissions += calculateCommissionForRecruiter(s.id, monthKey);
-      }
-    });
 
     // 5. Operating expenses + shared overhead apportionments
     const nominalBreakdown = getNominalBreakdownForMonth(monthKey);
@@ -1629,9 +1626,9 @@ export default function ReportsDashboard({
     const balanceSheetBreakdown = getBalanceSheetBreakdownForMonth(monthKey);
     const balanceSheetTotal = Object.values(balanceSheetBreakdown).reduce((sum, v) => sum + v, 0);
 
-    const grossProfit = revenue - commissions;
+    const grossProfit = revenue;
     const totalOverheads = overheadsExpenses;
-    const netProfit = revenue - commissions - totalOverheads;
+    const netProfit = revenue - totalOverheads;
 
     return {
       revenue,
@@ -1816,7 +1813,6 @@ export default function ReportsDashboard({
           const runRateData = runRateMonths.map(m => getFilteredMonthlyData(m));
           
           const avgRevenue = runRateData.reduce((sum, d) => sum + (d.revenue || 0), 0) / 3;
-          const avgCommissions = runRateData.reduce((sum, d) => sum + (d.commissions || 0), 0) / 3;
           const avgOverheads = runRateData.reduce((sum, d) => sum + (d.overheadsExpenses || 0), 0) / 3;
           
           const allCodes = Array.from(new Set([
@@ -1834,10 +1830,10 @@ export default function ReportsDashboard({
             const mKey = monthsList[idx];
             if (mKey > reconciledCutoffMonth) {
               const updatedRevenue = avgRevenue;
-              const updatedCommissions = avgCommissions;
+              const updatedCommissions = 0;
               const updatedOverheads = avgOverheads;
-              const updatedGrossProfit = updatedRevenue - updatedCommissions;
-              const updatedNetProfit = updatedGrossProfit - updatedOverheads;
+              const updatedGrossProfit = updatedRevenue;
+              const updatedNetProfit = updatedRevenue - updatedOverheads;
               return {
                 ...row,
                 revenue: updatedRevenue,
@@ -2063,13 +2059,6 @@ export default function ReportsDashboard({
                     <td colspan="${monthsList.length + 3}">Revenue stream credits</td>
                   </tr>
                   ${makeRowHtml('Net Placements Fee Billings', 'revenue', false, 16)}
-
-                  <tr class="section-header">
-                    <td colspan="${monthsList.length + 3}">Direct cost (Recruiter Commissions)</td>
-                  </tr>
-                  ${makeRowHtml('Accrued Recruiter Commissions', 'commissions', false, 16)}
-
-                  ${makeRowHtml('Gross Profit Margin', 'grossProfit', true)}
 
                   <tr class="section-header">
                     <td colspan="${monthsList.length + 3}">Overheads & Staff Expenses</td>
@@ -2963,18 +2952,6 @@ export default function ReportsDashboard({
                   </tr>
                   {renderRow('Net Placements Fee Billings', 'revenue', false, true, 'var(--success)')}
                   
-                  <tr style={{ borderBottom: '1px solid var(--border-color)' }} />
-                  
-                  <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
-                    <td>Direct cost (Recruiter Commissions)</td>
-                    <td colSpan={monthsList.length + 2} />
-                  </tr>
-                  {renderRow('Accrued Recruiter Commissions', 'commissions', false, true, 'var(--danger)')}
-
-                  <tr style={{ borderBottom: '1px solid var(--border-color)' }} />
-
-                  {renderRow('Gross Profit Margin', 'grossProfit', true, false, 'var(--accent)')}
-
                   <tr style={{ borderBottom: '1px dashed var(--border-color)', height: '8px' }} />
 
                   <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
@@ -3755,14 +3732,6 @@ export default function ReportsDashboard({
                     </tr>
                     {renderSplitRow('Net Score Placement Billings', 'revenue', false, true, 'var(--success)')}
                     
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }} />
-                    
-                    <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
-                      <td>Direct cost (Incentive Wages)</td>
-                      <td colSpan={companies.length + 1} />
-                    </tr>
-                    {renderSplitRow('Accrued Recruiter Commissions', 'commissions', false, true, 'var(--danger)')}
-
                     <tr style={{ borderBottom: '2px solid var(--border-color)' }} />
 
                     <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
@@ -3777,7 +3746,7 @@ export default function ReportsDashboard({
                     <tr style={{ fontWeight: 700, backgroundColor: 'rgba(99, 102, 241, 0.05)', fontSize: '13px' }}>
                       <td style={{ color: 'var(--accent)' }}>Net Operating Margin (Profit)</td>
                       {companies.map(c => {
-                        const cProfit = companyDataMap[c.id].revenue - companyDataMap[c.id].commissions - companyDataMap[c.id].salaries - companyDataMap[c.id].overheads;
+                        const cProfit = companyDataMap[c.id].revenue - companyDataMap[c.id].salaries - companyDataMap[c.id].overheads;
                         return (
                           <td key={c.id} style={{ textAlign: 'right', color: cProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
                             {formatGBP(cProfit)}
@@ -3786,7 +3755,7 @@ export default function ReportsDashboard({
                       })}
                       <td style={{ textAlign: 'right', color: 'var(--success)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
                         {formatGBP(companies.reduce((sum, c) => {
-                          return sum + (companyDataMap[c.id].revenue - companyDataMap[c.id].commissions - companyDataMap[c.id].salaries - companyDataMap[c.id].overheads);
+                          return sum + (companyDataMap[c.id].revenue - companyDataMap[c.id].salaries - companyDataMap[c.id].overheads);
                         }, 0))}
                       </td>
                     </tr>
@@ -4080,14 +4049,6 @@ export default function ReportsDashboard({
                     </tr>
                     {renderDeptRow('Candidate Placement Billings', 'revenue', false, true, 'var(--success)')}
 
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }} />
-                    
-                    <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
-                      <td>Direct cost (Incentive Wages)</td>
-                      <td colSpan={depts.length + 1} />
-                    </tr>
-                    {renderDeptRow('Accrued Commissions', 'commissions', false, true, 'var(--danger)')}
-
                     <tr style={{ borderBottom: '2px solid var(--border-color)' }} />
 
                     <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
@@ -4102,7 +4063,7 @@ export default function ReportsDashboard({
                     <tr style={{ fontWeight: 700, backgroundColor: 'rgba(99, 102, 241, 0.05)', fontSize: '13px' }}>
                       <td style={{ color: 'var(--accent)' }}>Net Operating Margin (Profit)</td>
                       {depts.map(d => {
-                        const dProfit = deptDataMap[d].revenue - deptDataMap[d].commissions - deptDataMap[d].salaries - deptDataMap[d].overheads;
+                        const dProfit = deptDataMap[d].revenue - deptDataMap[d].salaries - deptDataMap[d].overheads;
                         return (
                           <td key={d} style={{ textAlign: 'right', color: dProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
                             {formatGBP(dProfit)}
@@ -4111,7 +4072,7 @@ export default function ReportsDashboard({
                       })}
                       <td style={{ textAlign: 'right', color: 'var(--success)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
                         {formatGBP(depts.reduce((sum, d) => {
-                          return sum + (deptDataMap[d].revenue - deptDataMap[d].commissions - deptDataMap[d].salaries - deptDataMap[d].overheads);
+                          return sum + (deptDataMap[d].revenue - deptDataMap[d].salaries - deptDataMap[d].overheads);
                         }, 0))}
                       </td>
                     </tr>
@@ -4648,20 +4609,15 @@ export default function ReportsDashboard({
 
               let salaries = 0;
               let commissions = 0;
-              activeStaff.forEach(s => {
-                if (m > '2026-06') {
-                  commissions += calculateCommissionForRecruiter(s.id, m);
-                }
-              });
 
               const nominalBreakdown = getNominalBreakdownForMonth(m, indiaCompanyId);
               const overheadsExpenses = Object.entries(nominalBreakdown)
                 .filter(([code]) => !isNominalExcluded(code))
                 .reduce((sum, [, v]) => sum + v, 0);
 
-              const grossProfit = revenue - commissions;
+              const grossProfit = revenue;
               const totalOverheads = overheadsExpenses;
-              const netProfit = revenue - commissions - totalOverheads;
+              const netProfit = revenue - totalOverheads;
 
               return {
                 month: m,
@@ -4739,18 +4695,6 @@ export default function ReportsDashboard({
                     </tr>
                     {renderIndiaRow('Net Placements Fee Billings', 'revenue', false, true, 'var(--success)')}
                     
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }} />
-                    
-                    <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
-                      <td>Direct cost (INR)</td>
-                      <td colSpan={monthsList.length + 2} />
-                    </tr>
-                    {renderIndiaRow('Accrued Recruiter Commissions', 'commissions', false, true, 'var(--danger)')}
-
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }} />
-
-                    {renderIndiaRow('Gross Profit Margin', 'grossProfit', true, false, 'var(--accent)')}
-
                     <tr style={{ borderBottom: '1px dashed var(--border-color)', height: '8px' }} />
 
                     <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
@@ -5497,7 +5441,8 @@ export default function ReportsDashboard({
                       proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
                       basicGBP = basicGBP * proration;
                     }
-                    staffCost = basicGBP;
+                    const comm = calculateCommissionForRecruiter(s.id, m);
+                    staffCost = basicGBP + comm;
                   }
 
                   let routedNominal = policy.nominalCode;
@@ -5516,8 +5461,9 @@ export default function ReportsDashboard({
                     const isComp = isCompanyMatch(s.companyId);
                     const isDept = isDeptMatch(s.department);
                     if (isComp && isDept) {
+                      const comm = calculateCommissionForRecruiter(s.id, m);
                       results.push({
-                        staffName: s.fullName,
+                        staffName: comm > 0 ? `${s.fullName} (Salary + £${Math.round(comm).toLocaleString()} Comm)` : s.fullName,
                         jobTitle: routedNominal,
                         department: s.department,
                         companyName: companies.find(c => c.id === s.companyId)?.name || 'Group',
@@ -6162,7 +6108,8 @@ export default function ReportsDashboard({
                     const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
                     val = val * proration;
                   }
-                  staffCost = val;
+                  const comm = calculateCommissionForRecruiter(s.id, mKey);
+                  staffCost = val + comm;
                 } else {
                   let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
                   let proration = 1.0;
@@ -6172,7 +6119,8 @@ export default function ReportsDashboard({
                     proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
                     basicGBP = basicGBP * proration;
                   }
-                  staffCost = basicGBP;
+                  const comm = calculateCommissionForRecruiter(s.id, mKey);
+                  staffCost = basicGBP + comm;
                 }
 
                 let routedNominal = policy.nominalCode;
@@ -6280,7 +6228,7 @@ export default function ReportsDashboard({
                         id: `proj-staff-${s.id}-${mKey}`,
                         date: `${mKey}-01`,
                         plMonth: mKey,
-                        payee: s.fullName,
+                        payee: comm > 0 ? `${s.fullName} (Salary + £${Math.round(comm).toLocaleString()} Comm)` : s.fullName,
                         nominalCode: routedNominal,
                         recipientType: 'staff',
                         recipientId: s.id,

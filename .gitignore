@@ -36,3 +36,4 @@ run_local_api_test.js
 
 .vercel
 .env*
+scratch/

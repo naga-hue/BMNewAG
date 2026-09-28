@@ -26,6 +26,7 @@ interface StoreState {
   updateExpense: (updated: Expense) => Promise<void>;
   saveExpensesBatch: (expenses: Expense[]) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
+  deleteExpensesBatch: (ids: string[]) => Promise<void>;
   clearAllExpenses: () => Promise<void>;
   saveNominalCode: (code: any) => Promise<void>;
   deleteNominalCode: (id: string) => Promise<void>;
@@ -204,13 +205,39 @@ export const useBoundStore = create<StoreState>((set) => ({
     await firebaseService.saveStaff(updated);
   },
   updateExpense: async (updated) => {
+    set(state => {
+      const idx = state.expenses.findIndex(e => e.id === updated.id);
+      if (idx > -1) {
+        const next = [...state.expenses];
+        next[idx] = updated;
+        return { expenses: next };
+      }
+      return { expenses: [updated, ...state.expenses] };
+    });
     await firebaseService.saveExpense(updated);
   },
   saveExpensesBatch: async (expenses) => {
+    set(state => {
+      const map = new Map(state.expenses.map(e => [e.id, e]));
+      expenses.forEach(e => map.set(e.id, e));
+      return { expenses: Array.from(map.values()) };
+    });
     await firebaseService.saveExpensesBatch(expenses);
   },
   deleteExpense: async (id) => {
+    if (!id) return;
+    set(state => ({
+      expenses: state.expenses.filter(e => e.id !== id)
+    }));
     await firebaseService.deleteExpense(id);
+  },
+  deleteExpensesBatch: async (ids) => {
+    if (!ids || ids.length === 0) return;
+    const idSet = new Set(ids);
+    set(state => ({
+      expenses: state.expenses.filter(e => !idSet.has(e.id))
+    }));
+    await firebaseService.deleteExpensesBatch(ids);
   },
   clearAllExpenses: async () => {
     await firebaseService.clearAllExpenses();

@@ -308,6 +308,53 @@ export default function ReportsDashboard({
   const [activeTooltip, setActiveTooltip] = useState(null);
   const [pnlVersion, setPnlVersion] = useState('v1');
 
+  // Bank Statements Reconciliation Cutoff Date
+  const autoDetectedBankCutoff = useMemo(() => {
+    let maxDate = '';
+    (expenses || []).forEach(e => {
+      if (e.status === 'dns' || e.status === 'cancelled') return;
+      if (e.date && typeof e.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.date)) {
+        if (!maxDate || e.date > maxDate) {
+          maxDate = e.date;
+        }
+      }
+    });
+    return maxDate || '2026-08-31';
+  }, [expenses]);
+
+  const [reconciledCutoffDate, setReconciledCutoffDate] = useState(() => {
+    return localStorage.getItem('bm-bank-reconciled-cutoff') || '2026-08-31';
+  });
+
+  useEffect(() => {
+    const handleSync = () => {
+      const saved = localStorage.getItem('bm-bank-reconciled-cutoff');
+      if (saved && saved !== reconciledCutoffDate) {
+        setReconciledCutoffDate(saved);
+      }
+    };
+    window.addEventListener('bank-cutoff-updated', handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener('bank-cutoff-updated', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, [reconciledCutoffDate]);
+
+  const handleSetReconciledCutoffDate = (newDate) => {
+    if (!newDate) return;
+    setReconciledCutoffDate(newDate);
+    localStorage.setItem('bm-bank-reconciled-cutoff', newDate);
+    window.dispatchEvent(new Event('bank-cutoff-updated'));
+    if (onShowToast) {
+      onShowToast(`Bank reconciliation cutoff updated to ${newDate}`, 'info');
+    }
+  };
+
+  const reconciledCutoffMonth = useMemo(() => {
+    return (reconciledCutoffDate || '2026-08-31').substring(0, 7);
+  }, [reconciledCutoffDate]);
+
   const handleLeaguesHeaderClick = (field) => {
     if (leaguesSortField === field) {
       setLeaguesSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -1993,12 +2040,14 @@ export default function ReportsDashboard({
           const title = `Consolidated Profit & Loss (P&L) Report`;
           const sub = `Model: ${pnlVersion === 'v1' ? 'v1 - Standard Projections' : 'v2 - 3-Month Running Average'}`;
           const range = `Period: ${new Date(startMonth + '-02').toLocaleDateString(undefined, { month: 'long', year: 'numeric' })} - ${new Date(endMonth + '-02').toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}`;
+          const bankCutoffNote = `Bank Statement Cutoff: ${reconciledCutoffDate} (${reconciledCutoffDate <= '2026-08-31' ? 'Reconciled through end of August' : `Reconciled through ${reconciledCutoffDate}`})`;
 
           let tableHeadersHtml = `<th>P&L Account Line Items (GBP)</th>`;
           monthsList.forEach(m => {
             const label = new Date(m + '-02').toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
             tableHeadersHtml += `<th style="text-align: right;">${label}</th>`;
           });
+          tableHeadersHtml += `<th style="text-align: right; background-color: #e0e7ff; color: #3730a3;">YTV</th>`;
           tableHeadersHtml += `<th style="text-align: right; background-color: #f1f5f9;">Period Total</th>`;
 
           // Row helper inside print
@@ -2011,6 +2060,8 @@ export default function ReportsDashboard({
               total += val;
               html += `<td style="text-align: right;">${formatGBP(val)}</td>`;
             });
+            const ytvVal = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, row) => acc + (row[dataKey] || 0), 0);
+            html += `<td style="text-align: right; font-weight: 600; background-color: #f5f3ff;">${formatGBP(ytvVal)}</td>`;
             html += `<td style="text-align: right; font-weight: bold; background-color: #f1f5f9;">${formatGBP(total)}</td>`;
             html += `</tr>`;
             return html;
@@ -2024,12 +2075,14 @@ export default function ReportsDashboard({
 
           codeKeys.forEach(code => {
             const total = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
+            const ytvNominal = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
             overheadsDetailHtml += `<tr style="font-size: 11px; color: #475569;">`;
             overheadsDetailHtml += `<td style="padding-left: 32px; font-style: italic;">↳ ${code}</td>`;
             rowData.forEach(row => {
               const val = row.nominalBreakdown?.[code] || 0;
               overheadsDetailHtml += `<td style="text-align: right; opacity: ${val > 0 ? 1 : 0.4};">${formatGBP(val)}</td>`;
             });
+            overheadsDetailHtml += `<td style="text-align: right; font-weight: 600; background-color: #f5f3ff;">${formatGBP(ytvNominal)}</td>`;
             overheadsDetailHtml += `<td style="text-align: right; font-weight: bold; background-color: #f1f5f9;">${formatGBP(total)}</td>`;
             overheadsDetailHtml += `</tr>`;
           });
@@ -2042,12 +2095,14 @@ export default function ReportsDashboard({
 
           bsCodeKeys.forEach(code => {
             const total = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0);
+            const ytvBs = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0);
             balanceSheetDetailHtml += `<tr style="font-size: 11px; color: #475569;">`;
             balanceSheetDetailHtml += `<td style="padding-left: 32px; font-style: italic;">↳ ${code}</td>`;
             rowData.forEach(row => {
               const val = row.balanceSheetBreakdown?.[code] || 0;
               balanceSheetDetailHtml += `<td style="text-align: right; opacity: ${val > 0 ? 1 : 0.4};">${val > 0 ? formatGBP(val) : '—'}</td>`;
             });
+            balanceSheetDetailHtml += `<td style="text-align: right; font-weight: 600; background-color: #f5f3ff;">${ytvBs > 0 ? formatGBP(ytvBs) : '—'}</td>`;
             balanceSheetDetailHtml += `<td style="text-align: right; font-weight: bold; background-color: #f1f5f9;">${formatGBP(total)}</td>`;
             balanceSheetDetailHtml += `</tr>`;
           });
@@ -2060,6 +2115,8 @@ export default function ReportsDashboard({
             ebitdaTotal += row.netProfit;
             ebitdaHtml += `<td style="text-align: right; color: ${row.netProfit >= 0 ? '#15803d' : '#b91c1c'};">${formatGBP(row.netProfit)}</td>`;
           });
+          const ytvEbitda = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + r.netProfit, 0);
+          ebitdaHtml += `<td style="text-align: right; font-weight: bold; color: ${ytvEbitda >= 0 ? '#15803d' : '#b91c1c'}; background-color: #e0e7ff;">${formatGBP(ytvEbitda)}</td>`;
           ebitdaHtml += `<td style="text-align: right; color: ${ebitdaTotal >= 0 ? '#15803d' : '#b91c1c'}; background-color: #e2e8f0;">${formatGBP(ebitdaTotal)}</td>`;
           ebitdaHtml += `</tr>`;
 
@@ -2071,6 +2128,8 @@ export default function ReportsDashboard({
             cumulativePnl += row.netProfit;
             carryForwardHtml += `<td style="text-align: right; color: ${cumulativePnl >= 0 ? '#15803d' : '#b91c1c'};">${formatGBP(cumulativePnl)}</td>`;
           });
+          const ytvCumulative = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + r.netProfit, 0);
+          carryForwardHtml += `<td style="text-align: right; font-weight: bold; color: ${ytvCumulative >= 0 ? '#15803d' : '#b91c1c'}; background-color: #e0e7ff;">${formatGBP(ytvCumulative)}</td>`;
           carryForwardHtml += `<td style="text-align: right; color: ${cumulativePnl >= 0 ? '#15803d' : '#b91c1c'}; background-color: #e2e8f0;">${formatGBP(cumulativePnl)}</td>`;
           carryForwardHtml += `</tr>`;
 
@@ -2080,6 +2139,7 @@ export default function ReportsDashboard({
           rowData.forEach(row => {
             staffCountHtml += `<td style="text-align: right;">${row.headcount} active</td>`;
           });
+          staffCountHtml += `<td style="text-align: right; background-color: #f5f3ff;">—</td>`;
           staffCountHtml += `<td style="text-align: right; background-color: #f1f5f9;">—</td>`;
           staffCountHtml += `</tr>`;
 
@@ -2111,6 +2171,8 @@ export default function ReportsDashboard({
                   color: #64748b;
                   display: flex;
                   justify-content: space-between;
+                  flex-wrap: wrap;
+                  gap: 8px;
                 }
                 table {
                   width: 100%;
@@ -2157,6 +2219,7 @@ export default function ReportsDashboard({
                 <div class="meta">
                   <span>${sub}</span>
                   <span>${range}</span>
+                  <span style="color: #4f46e5; font-weight: 600;">${bankCutoffNote}</span>
                   <span>Generated on: ${new Date().toLocaleDateString()}</span>
                 </div>
               </div>
@@ -2166,19 +2229,19 @@ export default function ReportsDashboard({
                 </thead>
                 <tbody>
                   <tr class="section-header">
-                    <td colspan="${monthsList.length + 2}">Revenue stream credits</td>
+                    <td colspan="${monthsList.length + 3}">Revenue stream credits</td>
                   </tr>
                   ${makeRowHtml('Net Placements Fee Billings', 'revenue', false, 16)}
 
                   <tr class="section-header">
-                    <td colspan="${monthsList.length + 2}">Direct cost (Recruiter Commissions)</td>
+                    <td colspan="${monthsList.length + 3}">Direct cost (Recruiter Commissions)</td>
                   </tr>
                   ${makeRowHtml('Accrued Recruiter Commissions', 'commissions', false, 16)}
 
                   ${makeRowHtml('Gross Profit Margin', 'grossProfit', true)}
 
                   <tr class="section-header">
-                    <td colspan="${monthsList.length + 2}">Overheads & Staff Expenses</td>
+                    <td colspan="${monthsList.length + 3}">Overheads & Staff Expenses</td>
                   </tr>
                   ${makeRowHtml('Apportioned Overheads & SaaS', 'overheadsExpenses', false, 16)}
                   ${overheadsDetailHtml}
@@ -2188,7 +2251,7 @@ export default function ReportsDashboard({
                   ${carryForwardHtml}
 
                   <tr class="section-header">
-                    <td colspan="${monthsList.length + 2}">Non-P&L Balance Sheet Items (Cash Flow Only)</td>
+                    <td colspan="${monthsList.length + 3}">Non-P&L Balance Sheet Items (Cash Flow Only)</td>
                   </tr>
                   ${makeRowHtml('Refundable Deposits & Prepayments', 'balanceSheetTotal', false, 16)}
                   ${balanceSheetDetailHtml}
@@ -2306,8 +2369,14 @@ export default function ReportsDashboard({
         const overallCompToBillingsRatio = totalRecBillings > 0 ? (totalRecPaid / totalRecBillings) * 100 : 0;
 
         const handleCellClick = (label, categoryKey, monthKey, amount, nominalCode = null) => {
+          let periodLabel = '(YTD Period Total)';
+          if (monthKey === 'ytv') {
+            periodLabel = `(YTV Reconciled Bank Actuals through ${reconciledCutoffDate})`;
+          } else if (monthKey) {
+            periodLabel = `(${new Date(monthKey + '-02').toLocaleDateString(undefined, { month: 'short', year: 'numeric' })})`;
+          }
           setDrilldownState({
-            title: `${label} ${monthKey ? `(${new Date(monthKey + '-02').toLocaleDateString(undefined, { month: 'short', year: 'numeric' })})` : '(YTD Period Total)'}`,
+            title: `${label} ${periodLabel}`,
             label,
             categoryKey,
             monthKey,
@@ -2318,6 +2387,7 @@ export default function ReportsDashboard({
 
         const renderRow = (label, key, isBold = false, isSub = false, color = 'var(--text-primary)') => {
           const ytdSum = rowData.reduce((acc, row) => acc + (row[key] || 0), 0);
+          const ytvSum = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, row) => acc + (row[key] || 0), 0);
           return (
             <tr style={{ fontWeight: isBold ? 700 : 400 }}>
               <td 
@@ -2346,6 +2416,20 @@ export default function ReportsDashboard({
                   </td>
                 );
               })}
+              <td 
+                style={{ 
+                  textAlign: 'right', 
+                  fontWeight: 600, 
+                  color, 
+                  backgroundColor: 'rgba(99, 102, 241, 0.04)', 
+                  borderLeft: '1px solid rgba(99, 102, 241, 0.15)',
+                  cursor: 'pointer' 
+                }}
+                onClick={() => handleCellClick(label, key, 'ytv', ytvSum)}
+                title={`Click to view reconciled bank actuals through ${reconciledCutoffDate}`}
+              >
+                {formatGBP(ytvSum)}
+              </td>
               <td 
                 style={{ textAlign: 'right', fontWeight: 700, color, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer' }}
                 onClick={() => handleCellClick(label, key, null, ytdSum)}
@@ -2414,6 +2498,110 @@ export default function ReportsDashboard({
                 >
                   v2 - 3-Month Running Average
                 </button>
+              </div>
+            </div>
+
+            {/* Bank Statements Reconciliation Cutoff Banner */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: 'rgba(99, 102, 241, 0.05)',
+              padding: '10px 16px',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid rgba(99, 102, 241, 0.25)',
+              gap: '14px',
+              flexWrap: 'wrap'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '20px' }}>🏦</span>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-primary)' }}>
+                      Bank Statements Reconciled Up To:
+                    </span>
+                    <span style={{ 
+                      backgroundColor: 'rgba(99, 102, 241, 0.15)', 
+                      color: 'var(--primary)', 
+                      fontWeight: 700, 
+                      fontSize: '12px', 
+                      padding: '2px 8px', 
+                      borderRadius: '4px' 
+                    }}>
+                      {reconciledCutoffDate ? new Date(reconciledCutoffDate + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not Set'}
+                    </span>
+                    <span style={{
+                      fontSize: '11px',
+                      color: reconciledCutoffDate <= '2026-08-31' ? 'var(--success)' : '#f59e0b',
+                      fontWeight: 600
+                    }}>
+                      ({reconciledCutoffDate <= '2026-08-31' ? 'Closed through end of August' : `Reconciled up to ${new Date(reconciledCutoffDate + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`})
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    The <strong>YTV</strong> column in the table below totals actual bank transactions reconciled up through this cutoff date.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  Statement Cutoff Date:
+                </label>
+                <input
+                  type="date"
+                  value={reconciledCutoffDate}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleSetReconciledCutoffDate(e.target.value);
+                    }
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-primary)',
+                    color: 'var(--text-primary)'
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleSetReconciledCutoffDate('2026-08-31')}
+                  style={{
+                    padding: '5px 10px',
+                    fontSize: '11px',
+                    fontWeight: reconciledCutoffDate === '2026-08-31' ? 700 : 500,
+                    backgroundColor: reconciledCutoffDate === '2026-08-31' ? 'var(--primary)' : 'var(--bg-primary)',
+                    color: reconciledCutoffDate === '2026-08-31' ? '#fff' : 'var(--text-secondary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                  title="Set cutoff to end of August (2026-08-31)"
+                >
+                  End of August
+                </button>
+                {autoDetectedBankCutoff && autoDetectedBankCutoff !== '2026-08-31' && (
+                  <button
+                    type="button"
+                    onClick={() => handleSetReconciledCutoffDate(autoDetectedBankCutoff)}
+                    style={{
+                      padding: '5px 10px',
+                      fontSize: '11px',
+                      fontWeight: reconciledCutoffDate === autoDetectedBankCutoff ? 700 : 500,
+                      backgroundColor: reconciledCutoffDate === autoDetectedBankCutoff ? 'var(--primary)' : 'var(--bg-primary)',
+                      color: reconciledCutoffDate === autoDetectedBankCutoff ? '#fff' : 'var(--text-secondary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                    title={`Set cutoff to latest bank statement date (${autoDetectedBankCutoff})`}
+                  >
+                    Latest Statement ({autoDetectedBankCutoff})
+                  </button>
+                )}
               </div>
             </div>
             
@@ -2924,13 +3112,23 @@ export default function ReportsDashboard({
                       const label = new Date(m + '-02').toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
                       return <th key={m} style={{ textAlign: 'right', fontWeight: 700 }}>{label}</th>;
                     })}
+                    <th style={{ 
+                      textAlign: 'right', 
+                      fontWeight: 700, 
+                      backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                      color: 'var(--primary)',
+                      borderLeft: '1px solid rgba(99, 102, 241, 0.2)',
+                      whiteSpace: 'nowrap'
+                    }} title={`Year-To-Date Bank Actuals (Reconciled through ${reconciledCutoffDate})`}>
+                      YTV
+                    </th>
                     <th style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.04)' }}>Period Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
                     <td>Revenue stream credits</td>
-                    <td colSpan={monthsList.length + 1} />
+                    <td colSpan={monthsList.length + 2} />
                   </tr>
                   {renderRow('Net Placements Fee Billings', 'revenue', false, true, 'var(--success)')}
                   
@@ -2938,7 +3136,7 @@ export default function ReportsDashboard({
                   
                   <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
                     <td>Direct cost (Recruiter Commissions)</td>
-                    <td colSpan={monthsList.length + 1} />
+                    <td colSpan={monthsList.length + 2} />
                   </tr>
                   {renderRow('Accrued Recruiter Commissions', 'commissions', false, true, 'var(--danger)')}
 
@@ -2950,7 +3148,7 @@ export default function ReportsDashboard({
 
                   <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
                     <td>Overheads & Staff Expenses</td>
-                    <td colSpan={monthsList.length + 1} />
+                    <td colSpan={monthsList.length + 2} />
                   </tr>
 
                   {/* Apportioned Overheads & SaaS (Expandable) */}
@@ -3009,6 +3207,24 @@ export default function ReportsDashboard({
                         </td>
                       );
                     })}
+                    {(() => {
+                      const ytvOverheadsSum = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, row) => acc + (row.overheadsExpenses || 0), 0);
+                      return (
+                        <td 
+                          style={{ 
+                            textAlign: 'right', 
+                            fontWeight: 600, 
+                            backgroundColor: 'rgba(99, 102, 241, 0.04)', 
+                            borderLeft: '1px solid rgba(99, 102, 241, 0.15)',
+                            cursor: 'pointer' 
+                          }}
+                          onClick={() => handleCellClick('Apportioned Overheads & SaaS', 'overheadsExpenses', 'ytv', ytvOverheadsSum)}
+                          title={`Click to view reconciled overhead expenses through ${reconciledCutoffDate}`}
+                        >
+                          {formatGBP(ytvOverheadsSum)}
+                        </td>
+                      );
+                    })()}
                     <td 
                       style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer' }}
                       onClick={() => handleCellClick('Apportioned Overheads & SaaS', 'overheadsExpenses', null, rowData.reduce((acc, row) => acc + (row.overheadsExpenses || 0), 0))}
@@ -3026,6 +3242,7 @@ export default function ReportsDashboard({
                     return codeKeys.map(code => {
                       const isExcluded = isNominalExcluded(code);
                       const ytdSum = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
+                      const ytvSum = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
                       return (
                         <tr 
                           key={code} 
@@ -3056,7 +3273,7 @@ export default function ReportsDashboard({
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); handleToggleNominalInclusion(code); }}
                                 style={{
-                                  fontSize: '9px',
+                                   fontSize: '9px',
                                   padding: '1px 6px',
                                   borderRadius: '4px',
                                   background: 'rgba(34, 197, 94, 0.15)',
@@ -3114,6 +3331,21 @@ export default function ReportsDashboard({
                           <td 
                             style={{ 
                               textAlign: 'right', 
+                              fontWeight: 600, 
+                              backgroundColor: 'rgba(99, 102, 241, 0.04)', 
+                              borderLeft: '1px solid rgba(99, 102, 241, 0.15)',
+                              cursor: 'pointer',
+                              textDecoration: isExcluded ? 'line-through' : 'none',
+                              opacity: isExcluded ? 0.4 : 1
+                            }}
+                            onClick={() => handleCellClick(`Nominal Cost: ${code}`, 'nominal', 'ytv', ytvSum, code)}
+                            title={`Click to view reconciled ${code} transactions through ${reconciledCutoffDate}`}
+                          >
+                            {formatGBP(ytvSum)}
+                          </td>
+                          <td 
+                            style={{ 
+                              textAlign: 'right', 
                               fontWeight: 700, 
                               backgroundColor: 'rgba(255,255,255,0.02)', 
                               cursor: 'pointer',
@@ -3139,6 +3371,20 @@ export default function ReportsDashboard({
                         {formatGBP(row.netProfit)}
                       </td>
                     ))}
+                    {(() => {
+                      const ytvNetProfit = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + r.netProfit, 0);
+                      return (
+                        <td style={{ 
+                          textAlign: 'right', 
+                          fontWeight: 700, 
+                          color: ytvNetProfit >= 0 ? 'var(--success)' : 'var(--danger)', 
+                          backgroundColor: 'rgba(99, 102, 241, 0.04)',
+                          borderLeft: '1px solid rgba(99, 102, 241, 0.15)' 
+                        }} title={`Reconciled EBITDA Net Profit through ${reconciledCutoffDate}`}>
+                          {formatGBP(ytvNetProfit)}
+                        </td>
+                      );
+                    })()}
                     <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
                       {formatGBP(rowData.reduce((acc, r) => acc + r.netProfit, 0))}
                     </td>
@@ -3147,6 +3393,7 @@ export default function ReportsDashboard({
                   {/* Cumulative Carry-Forward P&L Row */}
                   {(() => {
                     let cumulativePnl = 0;
+                    const cumulativeThroughCutoff = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + r.netProfit, 0);
                     return (
                       <tr style={{ fontWeight: 800, backgroundColor: 'rgba(59, 130, 246, 0.07)', fontSize: '13px', borderTop: '1px dashed rgba(59, 130, 246, 0.3)' }}>
                         <td style={{ color: '#38bdf8' }}>📈 Cumulative Carry-Forward P&L</td>
@@ -3158,6 +3405,15 @@ export default function ReportsDashboard({
                             </td>
                           );
                         })}
+                        <td style={{ 
+                          textAlign: 'right', 
+                          fontWeight: 800, 
+                          color: cumulativeThroughCutoff >= 0 ? 'var(--success)' : 'var(--danger)', 
+                          backgroundColor: 'rgba(99, 102, 241, 0.06)',
+                          borderLeft: '1px solid rgba(99, 102, 241, 0.15)'
+                        }} title={`Cumulative Carry-Forward P&L through ${reconciledCutoffDate}`}>
+                          {formatGBP(cumulativeThroughCutoff)}
+                        </td>
                         <td style={{ textAlign: 'right', fontWeight: 800, color: cumulativePnl >= 0 ? 'var(--success)' : 'var(--danger)', backgroundColor: 'rgba(255,255,255,0.04)' }}>
                           {formatGBP(cumulativePnl)}
                         </td>
@@ -3169,7 +3425,7 @@ export default function ReportsDashboard({
 
                   <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
                     <td>Non-P&L Balance Sheet Items (Cash Flow Only)</td>
-                    <td colSpan={monthsList.length + 1} />
+                    <td colSpan={monthsList.length + 2} />
                   </tr>
 
                   <tr style={{ fontWeight: 400 }}>
@@ -3191,6 +3447,25 @@ export default function ReportsDashboard({
                         </td>
                       );
                     })}
+                    {(() => {
+                      const ytvBsTotal = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, row) => acc + (row.balanceSheetTotal || 0), 0);
+                      return (
+                        <td 
+                          style={{ 
+                            textAlign: 'right', 
+                            fontWeight: 600, 
+                            backgroundColor: 'rgba(99, 102, 241, 0.04)', 
+                            borderLeft: '1px solid rgba(99, 102, 241, 0.15)',
+                            cursor: 'pointer',
+                            color: 'var(--text-muted)'
+                          }}
+                          onClick={() => handleCellClick('Refundable Deposits & Prepayments', 'balanceSheet', 'ytv', ytvBsTotal)}
+                          title={`Click to view reconciled balance sheet items through ${reconciledCutoffDate}`}
+                        >
+                          {ytvBsTotal > 0 ? formatGBP(ytvBsTotal) : '—'}
+                        </td>
+                      );
+                    })()}
                     <td 
                       style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer', color: 'var(--text-muted)' }}
                       onClick={() => handleCellClick('Refundable Deposits & Prepayments', 'balanceSheet', null, rowData.reduce((acc, row) => acc + (row.balanceSheetTotal || 0), 0))}
@@ -3207,6 +3482,7 @@ export default function ReportsDashboard({
 
                     return codeKeys.map(code => {
                       const ytdSum = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0);
+                      const ytvSum = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0);
                       return (
                         <tr key={code} style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                           <td 
@@ -3236,7 +3512,26 @@ export default function ReportsDashboard({
                             );
                           })}
                           <td 
-                            style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.02)', cursor: 'pointer' }}
+                            style={{ 
+                              textAlign: 'right', 
+                              fontWeight: 600, 
+                              backgroundColor: 'rgba(99, 102, 241, 0.04)', 
+                              borderLeft: '1px solid rgba(99, 102, 241, 0.15)',
+                              cursor: 'pointer',
+                              color: 'var(--text-muted)'
+                            }}
+                            onClick={() => handleCellClick(`Balance Sheet Item: ${code}`, 'balanceSheet', 'ytv', ytvSum, code)}
+                            title={`Click to view reconciled ${code} items through ${reconciledCutoffDate}`}
+                          >
+                            {ytvSum > 0 ? formatGBP(ytvSum) : '—'}
+                          </td>
+                          <td 
+                            style={{ 
+                              textAlign: 'right', 
+                              fontWeight: 700, 
+                              backgroundColor: 'rgba(255,255,255,0.02)', 
+                              cursor: 'pointer' 
+                            }}
                             onClick={() => handleCellClick(`Balance Sheet Item: ${code}`, 'balanceSheet', null, ytdSum, code)}
                           >
                             {formatGBP(ytdSum)}
@@ -3266,6 +3561,7 @@ export default function ReportsDashboard({
                         {row.headcount} active
                       </td>
                     ))}
+                    <td style={{ textAlign: 'right', backgroundColor: 'rgba(99, 102, 241, 0.04)', borderLeft: '1px solid rgba(99, 102, 241, 0.15)' }}>—</td>
                     <td style={{ textAlign: 'right', backgroundColor: 'rgba(255,255,255,0.02)' }}>—</td>
                   </tr>
                 </tbody>
@@ -4430,6 +4726,7 @@ export default function ReportsDashboard({
 
             const renderIndiaRow = (label, key, isBold = false, isSub = false, color = 'var(--text-primary)') => {
               const ytdSum = rowData.reduce((acc, row) => acc + (row[key] || 0), 0);
+              const ytvSum = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, row) => acc + (row[key] || 0), 0);
               return (
                 <tr style={{ fontWeight: isBold ? 700 : 400 }}>
                   <td style={{ paddingLeft: isSub ? '24px' : '12px', color }}>{label}</td>
@@ -4438,6 +4735,9 @@ export default function ReportsDashboard({
                       {formatINR(row[key] || 0)}
                     </td>
                   ))}
+                  <td style={{ textAlign: 'right', fontWeight: 600, color, backgroundColor: 'rgba(99, 102, 241, 0.04)', borderLeft: '1px solid rgba(99, 102, 241, 0.15)' }}>
+                    {formatINR(ytvSum)}
+                  </td>
                   <td style={{ textAlign: 'right', fontWeight: 700, color, backgroundColor: 'rgba(255,255,255,0.02)' }}>
                     {formatINR(ytdSum)}
                   </td>
@@ -4464,13 +4764,23 @@ export default function ReportsDashboard({
                         const label = new Date(m + '-02').toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
                         return <th key={m} style={{ textAlign: 'right', fontWeight: 700 }}>{label}</th>;
                       })}
+                      <th style={{ 
+                        textAlign: 'right', 
+                        fontWeight: 700, 
+                        backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                        color: 'var(--primary)',
+                        borderLeft: '1px solid rgba(99, 102, 241, 0.2)',
+                        whiteSpace: 'nowrap'
+                      }} title={`Year-To-Date Bank Actuals (Reconciled through ${reconciledCutoffDate})`}>
+                        YTV
+                      </th>
                       <th style={{ textAlign: 'right', fontWeight: 700, backgroundColor: 'rgba(255,255,255,0.04)' }}>Period Total</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
                       <td>Revenue Credits (INR)</td>
-                      <td colSpan={monthsList.length + 1} />
+                      <td colSpan={monthsList.length + 2} />
                     </tr>
                     {renderIndiaRow('Net Placements Fee Billings', 'revenue', false, true, 'var(--success)')}
                     
@@ -4478,7 +4788,7 @@ export default function ReportsDashboard({
                     
                     <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
                       <td>Direct cost (INR)</td>
-                      <td colSpan={monthsList.length + 1} />
+                      <td colSpan={monthsList.length + 2} />
                     </tr>
                     {renderIndiaRow('Accrued Recruiter Commissions', 'commissions', false, true, 'var(--danger)')}
 
@@ -4490,7 +4800,7 @@ export default function ReportsDashboard({
 
                     <tr style={{ fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.01)' }}>
                       <td>Overheads & Staff Expenses (INR)</td>
-                      <td colSpan={monthsList.length + 1} />
+                      <td colSpan={monthsList.length + 2} />
                     </tr>
                     {renderIndiaRow('Apportioned Overheads & SaaS', 'overheadsExpenses', false, true)}
                     {renderIndiaRow('Total Indirect Overheads', 'totalOverheads', true, true, 'var(--text-secondary)')}
@@ -4504,6 +4814,20 @@ export default function ReportsDashboard({
                           {formatINR(row.netProfit)}
                         </td>
                       ))}
+                      {(() => {
+                        const ytvNetProfit = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + r.netProfit, 0);
+                        return (
+                          <td style={{ 
+                            textAlign: 'right', 
+                            fontWeight: 700, 
+                            color: ytvNetProfit >= 0 ? 'var(--success)' : 'var(--danger)', 
+                            backgroundColor: 'rgba(99, 102, 241, 0.04)',
+                            borderLeft: '1px solid rgba(99, 102, 241, 0.15)' 
+                          }}>
+                            {formatINR(ytvNetProfit)}
+                          </td>
+                        );
+                      })()}
                       <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
                         {formatINR(rowData.reduce((acc, r) => acc + r.netProfit, 0))}
                       </td>
@@ -4516,6 +4840,7 @@ export default function ReportsDashboard({
                           {row.headcount} active
                         </td>
                       ))}
+                      <td style={{ textAlign: 'right', backgroundColor: 'rgba(99, 102, 241, 0.04)', borderLeft: '1px solid rgba(99, 102, 241, 0.15)' }}>—</td>
                       <td style={{ textAlign: 'right', backgroundColor: 'rgba(255,255,255,0.02)' }}>—</td>
                     </tr>
                   </tbody>
@@ -5033,7 +5358,11 @@ export default function ReportsDashboard({
                 d.setMonth(d.getMonth() + 1);
                 return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
               })();
-              if (monthKey && pMonth !== monthKey) return false;
+              if (monthKey === 'ytv') {
+                if (pMonth > reconciledCutoffMonth) return false;
+              } else if (monthKey && pMonth !== monthKey) {
+                return false;
+              }
 
               const recIds = p.splits?.map(s => s.staffId).filter(Boolean) || [p.recruiterId];
               const recs = staff.filter(s => recIds.includes(s.id));
@@ -5048,7 +5377,9 @@ export default function ReportsDashboard({
             const results = [];
             (staff || []).forEach(s => {
               if (!isCompanyMatch(s.companyId) || !isDeptMatch(s.department)) return;
-              const mList = monthKey ? [monthKey] : monthsList;
+              const mList = monthKey === 'ytv' 
+                ? monthsList.filter(m => m <= reconciledCutoffMonth) 
+                : (monthKey ? [monthKey] : monthsList);
               mList.forEach(m => {
                 const commVal = calculateCommissionForRecruiter(s.id, m);
                 if (commVal > 0) {
@@ -5068,7 +5399,9 @@ export default function ReportsDashboard({
           if (categoryKey === 'salaries') {
             const results = [];
             const staffPrefixes = ['1001', '1002', '1003', '1004'];
-            const mList = monthKey ? [monthKey] : monthsList;
+            const mList = monthKey === 'ytv' 
+              ? monthsList.filter(m => m <= reconciledCutoffMonth) 
+              : (monthKey ? [monthKey] : monthsList);
             
             mList.forEach(m => {
               if (m < '2026-07') {
@@ -5246,7 +5579,9 @@ export default function ReportsDashboard({
 
           if (categoryKey === 'staffCount') {
             const results = [];
-            const mList = monthKey ? [monthKey] : monthsList;
+            const mList = monthKey === 'ytv' 
+              ? monthsList.filter(m => m <= reconciledCutoffMonth) 
+              : (monthKey ? [monthKey] : monthsList);
             mList.forEach(m => {
               (staff || []).forEach(s => {
                 if (!isCompanyMatch(s.companyId) || !isDeptMatch(s.department)) return;
@@ -5274,7 +5609,12 @@ export default function ReportsDashboard({
               if (e.status === 'dns' || e.status === 'cancelled') return false;
               if (!e.nominalCode?.trim().startsWith('9')) return false;
               const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
-              if (monthKey && eMonth !== monthKey) return false;
+              if (monthKey === 'ytv') {
+                if (eMonth > reconciledCutoffMonth) return false;
+                if (e.date && e.date.length >= 10 && e.date > reconciledCutoffDate) return false;
+              } else if (monthKey && eMonth !== monthKey) {
+                return false;
+              }
               if (nominalCode) {
                 const cleanN1 = nominalCode.split(' - ')[0]?.trim() || nominalCode;
                 const cleanN2 = e.nominalCode?.split(' - ')[0]?.trim() || e.nominalCode || '';
@@ -5315,7 +5655,12 @@ export default function ReportsDashboard({
               if (e.nominalCode?.trim().startsWith('9')) return false;
               if ((categoryKey === 'overheadsExpenses' || categoryKey === 'totalOverheads') && isNominalExcluded(e.nominalCode)) return false;
               const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
-              if (monthKey && eMonth !== monthKey) return false;
+              if (monthKey === 'ytv') {
+                if (eMonth > reconciledCutoffMonth) return false;
+                if (e.date && e.date.length >= 10 && e.date > reconciledCutoffDate) return false;
+              } else if (monthKey && eMonth !== monthKey) {
+                return false;
+              }
               if (nominalCode) {
                 const cleanN1 = nominalCode.split(' - ')[0]?.trim() || nominalCode;
                 const cleanN2 = e.nominalCode?.split(' - ')[0]?.trim() || e.nominalCode || '';
@@ -5350,7 +5695,9 @@ export default function ReportsDashboard({
             const amortizedShares = [];
             const amortizedExpensesList = (expenses || []).filter(e => e.amortize === true);
             
-            const targetAmortizeMonths = monthKey ? [monthKey] : monthsList;
+            const targetAmortizeMonths = monthKey === 'ytv' 
+              ? monthsList.filter(m => m <= reconciledCutoffMonth) 
+              : (monthKey ? [monthKey] : monthsList);
             
             targetAmortizeMonths.forEach(mKey => {
               amortizedExpensesList.forEach(e => {
@@ -5419,7 +5766,9 @@ export default function ReportsDashboard({
 
             // Unbilled Projection Items for 7001, 7002, 7003, 7004 & future nominal cells
             const projectedItems = [];
-            const targetMonths = monthKey ? [monthKey] : monthsList.filter(m => m >= '2026-07');
+            const targetMonths = monthKey === 'ytv' 
+              ? [] 
+              : (monthKey ? [monthKey] : monthsList.filter(m => m >= '2026-07'));
 
             targetMonths.forEach(mKey => {
               if (mKey < '2026-07') return;

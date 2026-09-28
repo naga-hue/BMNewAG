@@ -58,6 +58,7 @@ export interface FirebaseServiceInterface {
   saveExpense(expense: Expense): Promise<Expense>;
   saveExpensesBatch(expenses: Expense[]): Promise<boolean>;
   deleteExpense(expenseId: string): Promise<boolean>;
+  deleteExpensesBatch(expenseIds: string[]): Promise<boolean>;
   clearAllExpenses(): Promise<boolean>;
   subscribeNominalCodes(onUpdate: (codes: NominalCode[]) => void, fallbackData?: NominalCode[]): () => void;
   saveNominalCode(code: NominalCode): Promise<NominalCode>;
@@ -1031,7 +1032,8 @@ export const firebaseService: FirebaseServiceInterface = {
         }
         const list: any[] = [];
         snapshot.forEach((doc) => {
-          list.push(doc.data());
+          const data = doc.data();
+          list.push({ ...data, id: data?.id || doc.id });
         });
         localStorage.setItem('bm-expenses', JSON.stringify(list));
         onUpdate(list);
@@ -1044,26 +1046,47 @@ export const firebaseService: FirebaseServiceInterface = {
   },
 
   async saveExpense(expense) {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const local = localStorage.getItem('bm-expenses');
+        const list = local ? JSON.parse(local) : [];
+        const index = list.findIndex((e: any) => e.id === expense.id);
+        if (index > -1) {
+          list[index] = expense;
+        } else {
+          list.unshift(expense);
+        }
+        localStorage.setItem('bm-expenses', JSON.stringify(list));
+      }
+    } catch (e) {
+      console.warn("Failed to sync localStorage on saveExpense:", e);
+    }
+
     if (isConfigured && db) {
       const docRef = doc(db, 'expenses', expense.id);
       await setDoc(docRef, expense);
       return expense;
     } else {
-      const local = localStorage.getItem('bm-expenses');
-      const list = local ? JSON.parse(local) : [];
-      const index = list.findIndex(e => e.id === expense.id);
-      if (index > -1) {
-        list[index] = expense;
-      } else {
-        list.unshift(expense);
-      }
-      localStorage.setItem('bm-expenses', JSON.stringify(list));
       return expense;
     }
   },
 
   async saveExpensesBatch(expenseList) {
     if (!expenseList || expenseList.length === 0) return true;
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        let list = localStorage.getItem('bm-expenses');
+        let arr = list ? JSON.parse(list) : [];
+        const newMap = new Map(arr.map((e: any) => [e.id, e]));
+        expenseList.forEach((exp: any) => newMap.set(exp.id, exp));
+        const combined = Array.from(newMap.values());
+        localStorage.setItem('bm-expenses', JSON.stringify(combined));
+      }
+    } catch (e) {
+      console.warn("Failed to sync localStorage on saveExpensesBatch:", e);
+    }
+
     if (isConfigured && db) {
       try {
         const batchSize = 400;
@@ -1082,26 +1105,68 @@ export const firebaseService: FirebaseServiceInterface = {
         throw err;
       }
     } else {
-      const local = localStorage.getItem('bm-expenses');
-      let list = local ? JSON.parse(local) : [];
-      const newMap = new Map(list.map((e: any) => [e.id, e]));
-      expenseList.forEach((exp: any) => newMap.set(exp.id, exp));
-      const combined = Array.from(newMap.values());
-      localStorage.setItem('bm-expenses', JSON.stringify(combined));
       return true;
     }
   },
 
   async deleteExpense(expenseId) {
+    if (!expenseId) return false;
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const local = localStorage.getItem('bm-expenses');
+        if (local) {
+          const list = JSON.parse(local).filter((e: any) => e.id !== expenseId);
+          localStorage.setItem('bm-expenses', JSON.stringify(list));
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to prune localStorage on deleteExpense:", e);
+    }
+
     if (isConfigured && db) {
       const docRef = doc(db, 'expenses', expenseId);
       await deleteDoc(docRef);
       return true;
     } else {
-      const local = localStorage.getItem('bm-expenses');
-      let list = local ? JSON.parse(local) : [];
-      list = list.filter(e => e.id !== expenseId);
-      localStorage.setItem('bm-expenses', JSON.stringify(list));
+      return true;
+    }
+  },
+
+  async deleteExpensesBatch(expenseIds: string[]) {
+    if (!expenseIds || expenseIds.length === 0) return true;
+    const idSet = new Set(expenseIds.filter(Boolean));
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const local = localStorage.getItem('bm-expenses');
+        if (local) {
+          const list = JSON.parse(local).filter((e: any) => !idSet.has(e.id));
+          localStorage.setItem('bm-expenses', JSON.stringify(list));
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to prune localStorage on deleteExpensesBatch:", e);
+    }
+
+    if (isConfigured && db) {
+      try {
+        const ids = Array.from(idSet);
+        const batchSize = 400;
+        for (let i = 0; i < ids.length; i += batchSize) {
+          const chunk = ids.slice(i, i + batchSize);
+          const batch = writeBatch(db);
+          chunk.forEach(id => {
+            batch.delete(doc(db, 'expenses', id));
+          });
+          await batch.commit();
+        }
+        return true;
+      } catch (err) {
+        console.error("Failed to batch delete expenses from Firestore:", err);
+        throw err;
+      }
+    } else {
       return true;
     }
   },

@@ -76,4 +76,46 @@ describe('parseAndStandardizeDate', () => {
   });
 });
 
+import { useBoundStore } from '../../store/useBoundStore';
+import { firebaseService } from '../../services/firebase';
+import { vi } from 'vitest';
+
+describe('useBoundStore expense deletion actions', () => {
+  it('optimistically and synchronously removes single expense from store', async () => {
+    vi.spyOn(firebaseService, 'deleteExpense').mockResolvedValue(true);
+
+    useBoundStore.setState({
+      expenses: [
+        { id: 'exp-1', amount: 100, payee: 'Vendor 1' } as any,
+        { id: 'exp-2', amount: 200, payee: 'Vendor 2' } as any,
+      ]
+    });
+
+    await useBoundStore.getState().deleteExpense('exp-1');
+    const remaining = useBoundStore.getState().expenses;
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].id).toBe('exp-2');
+    expect(firebaseService.deleteExpense).toHaveBeenCalledWith('exp-1');
+  });
+
+  it('optimistically removes multiple expenses in batch from store', async () => {
+    vi.spyOn(firebaseService, 'deleteExpensesBatch').mockResolvedValue(true);
+
+    useBoundStore.setState({
+      expenses: [
+        { id: 'exp-1', amount: 100 } as any,
+        { id: 'exp-2', amount: 200 } as any,
+        { id: 'exp-3', amount: 300 } as any,
+      ]
+    });
+
+    await useBoundStore.getState().deleteExpensesBatch(['exp-1', 'exp-3']);
+    const remaining = useBoundStore.getState().expenses;
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].id).toBe('exp-2');
+    expect(firebaseService.deleteExpensesBatch).toHaveBeenCalledWith(['exp-1', 'exp-3']);
+  });
+});
+
+
 

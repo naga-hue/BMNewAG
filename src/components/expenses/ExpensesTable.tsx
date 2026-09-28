@@ -53,7 +53,9 @@ export default function ExpensesTable({
 
   const updateExpense = useBoundStore(state => state.updateExpense);
   const saveExpense = updateExpense;
+  const saveExpensesBatch = useBoundStore(state => state.saveExpensesBatch);
   const deleteExpense = useBoundStore(state => state.deleteExpense);
+  const deleteExpensesBatch = useBoundStore(state => state.deleteExpensesBatch);
   const clearAllExpenses = useBoundStore(state => state.clearAllExpenses);
 
   const handleClearAllExpenses = async () => {
@@ -93,6 +95,39 @@ export default function ExpensesTable({
   const missingNominalExpensesCount = useMemo(() => {
     return (expenses || []).filter(e => !e.nominalCode && e.status !== 'dns' && e.status !== 'cancelled').length;
   }, [expenses]);
+
+  // Bank Statements Reconciliation Cutoff Date
+  const autoDetectedBankCutoff = useMemo(() => {
+    let maxDate = '';
+    (expenses || []).forEach(e => {
+      if (e.status === 'dns' || e.status === 'cancelled') return;
+      if (e.date && typeof e.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.date)) {
+        if (!maxDate || e.date > maxDate) {
+          maxDate = e.date;
+        }
+      }
+    });
+    return maxDate || '2026-08-31';
+  }, [expenses]);
+
+  const [reconciledCutoffDate, setReconciledCutoffDate] = useState(() => {
+    return localStorage.getItem('bm-bank-reconciled-cutoff') || '2026-08-31';
+  });
+
+  useEffect(() => {
+    const handleSync = () => {
+      const saved = localStorage.getItem('bm-bank-reconciled-cutoff');
+      if (saved && saved !== reconciledCutoffDate) {
+        setReconciledCutoffDate(saved);
+      }
+    };
+    window.addEventListener('bank-cutoff-updated', handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener('bank-cutoff-updated', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, [reconciledCutoffDate]);
 
   // Column Visibility
   const [showColPicker, setShowColPicker] = useState(false);
@@ -284,23 +319,6 @@ export default function ExpensesTable({
       if (interval) clearInterval(interval);
     };
   }, [showHighRiskModal, highRiskTimer]);
-
-  // Retroactively auto-map all existing unmapped expenses on mount
-  useEffect(() => {
-    if (expenses.length > 0 && (vendors.length > 0 || staff.length > 0)) {
-      const unmapped = expenses.filter(exp => {
-        if (exp.recipientType && exp.recipientType !== 'other') return false;
-        const payeeStr = (exp.payee || '').toLowerCase();
-        const mStaff = staff.some(s => s.fullName && payeeStr.includes(s.fullName.toLowerCase()));
-        const mVendor = vendors.some(v => v.name && payeeStr.includes(v.name.toLowerCase()));
-        return mStaff || mVendor;
-      });
-
-      if (unmapped.length > 0) {
-        handleAutoMapPayeesAndVendors();
-      }
-    }
-  }, [expenses.length, vendors.length, staff.length]);
 
   const activeNominalCodes = useMemo(() => {
     return (nominalCodes || []).map((c: any) => {
@@ -741,11 +759,8 @@ export default function ExpensesTable({
     
     if (highRiskAction === 'bulk-delete') {
       try {
-        let count = 0;
-        for (const id of selectedExpenseIds) {
-          await deleteExpense(id);
-          count++;
-        }
+        const count = selectedExpenseIds.length;
+        await deleteExpensesBatch(selectedExpenseIds);
         onShowToast(`Permanently deleted ${count} expense records.`, "success");
         setSelectedExpenseIds([]);
       } catch (err: any) {
@@ -815,7 +830,8 @@ export default function ExpensesTable({
   };
 
   const handleAutoMapPayeesAndVendors = async () => {
-    let mappedCount = 0;
+    const toUpdate: Expense[] = [];
+    
     for (const exp of expenses) {
       const payeeStr = (exp.payee || '').toLowerCase();
       
@@ -833,27 +849,38 @@ export default function ExpensesTable({
       let matchedVendor = vendors.find(v => v.name && payeeStr.includes(v.name.toLowerCase()));
 
       if (matchedStaff) {
-        await saveExpense({
-          ...exp,
-          recipientType: 'staff',
-          recipientId: matchedStaff.id,
-          payee: matchedStaff.fullName,
-          allocationType: 'staff',
-          allocationTarget: [matchedStaff.id]
-        });
-        mappedCount++;
+        const isAlreadyMapped = exp.recipientType === 'staff' && exp.recipientId === matchedStaff.id;
+        if (!isAlreadyMapped) {
+          toUpdate.push({
+            ...exp,
+            recipientType: 'staff',
+            recipientId: matchedStaff.id,
+            payee: matchedStaff.fullName,
+            allocationType: exp.allocationType || 'staff',
+            allocationTarget: exp.allocationTarget?.length ? exp.allocationTarget : [matchedStaff.id]
+          });
+        }
       } else if (matchedVendor) {
-        await saveExpense({
-          ...exp,
-          recipientType: 'vendor',
-          recipientId: matchedVendor.id,
-          payee: matchedVendor.name
-        });
-        mappedCount++;
+        const isAlreadyMapped = exp.recipientType === 'vendor' && exp.recipientId === matchedVendor.id;
+        if (!isAlreadyMapped) {
+          toUpdate.push({
+            ...exp,
+            recipientType: 'vendor',
+            recipientId: matchedVendor.id,
+            payee: matchedVendor.name
+          });
+        }
       }
     }
-    if (mappedCount > 0) {
-      onShowToast(`⚡ Successfully auto-mapped ${mappedCount} expense records to registered Vendors and Staff profiles!`, 'success');
+
+    if (toUpdate.length > 0) {
+      try {
+        await saveExpensesBatch(toUpdate);
+        onShowToast(`⚡ Successfully auto-mapped ${toUpdate.length} expense records to registered Vendors and Staff profiles!`, 'success');
+      } catch (err: any) {
+        console.error("Failed to auto-map expenses:", err);
+        onShowToast(`Failed to auto-map expenses: ${err?.message || err}`, 'warning');
+      }
     } else {
       onShowToast(`All transactions are already mapped or no matching vendor/staff names were detected.`, 'info');
     }
@@ -1099,6 +1126,89 @@ export default function ExpensesTable({
           >
             ⚠️ Unmapped ({unmappedExpensesCount})
           </button>
+
+          {/* Bank Statement Reconciliation Cutoff Date Selector */}
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            backgroundColor: 'rgba(99, 102, 241, 0.08)',
+            border: '1px solid rgba(99, 102, 241, 0.25)',
+            padding: '4px 10px',
+            borderRadius: '6px',
+            fontSize: '12px'
+          }} title="Transactions through this cutoff date are treated as reconciled bank actuals in P&L reports (YTV column)">
+            <span style={{ fontWeight: 600, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              🏦 Reconciled Up To:
+            </span>
+            <input
+              type="date"
+              value={reconciledCutoffDate}
+              onChange={(e) => {
+                if (e.target.value) {
+                  setReconciledCutoffDate(e.target.value);
+                  localStorage.setItem('bm-bank-reconciled-cutoff', e.target.value);
+                  window.dispatchEvent(new Event('bank-cutoff-updated'));
+                  onShowToast?.(`Bank statement reconciliation cutoff updated to ${e.target.value}`, 'info');
+                }
+              }}
+              style={{
+                padding: '3px 6px',
+                fontSize: '11px',
+                fontWeight: 600,
+                borderRadius: '4px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'var(--bg-primary)',
+                color: 'var(--text-primary)'
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setReconciledCutoffDate('2026-08-31');
+                localStorage.setItem('bm-bank-reconciled-cutoff', '2026-08-31');
+                window.dispatchEvent(new Event('bank-cutoff-updated'));
+                onShowToast?.("Bank statement reconciliation cutoff set to 2026-08-31 (End of August)", 'info');
+              }}
+              style={{
+                padding: '2px 6px',
+                fontSize: '10px',
+                cursor: 'pointer',
+                borderRadius: '3px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: reconciledCutoffDate === '2026-08-31' ? 'var(--primary)' : 'var(--bg-primary)',
+                color: reconciledCutoffDate === '2026-08-31' ? '#fff' : 'var(--text-secondary)',
+                fontWeight: 600
+              }}
+              title="Reset cutoff to end of August 2026"
+            >
+              End of Aug
+            </button>
+            {autoDetectedBankCutoff && autoDetectedBankCutoff !== '2026-08-31' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setReconciledCutoffDate(autoDetectedBankCutoff);
+                  localStorage.setItem('bm-bank-reconciled-cutoff', autoDetectedBankCutoff);
+                  window.dispatchEvent(new Event('bank-cutoff-updated'));
+                  onShowToast?.(`Bank statement reconciliation cutoff set to ${autoDetectedBankCutoff}`, 'info');
+                }}
+                style={{
+                  padding: '2px 6px',
+                  fontSize: '10px',
+                  cursor: 'pointer',
+                  borderRadius: '3px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: reconciledCutoffDate === autoDetectedBankCutoff ? 'var(--primary)' : 'var(--bg-primary)',
+                  color: reconciledCutoffDate === autoDetectedBankCutoff ? '#fff' : 'var(--text-secondary)',
+                  fontWeight: 600
+                }}
+                title={`Set cutoff to latest bank statement date (${autoDetectedBankCutoff})`}
+              >
+                Latest ({autoDetectedBankCutoff})
+              </button>
+            )}
+          </div>
 
           {!readOnly && (
             <>
@@ -1830,10 +1940,15 @@ export default function ExpensesTable({
                             </button>
                             <button 
                               className="btn-icon delete" 
-                              onClick={() => {
+                              onClick={async () => {
                                 if (window.confirm(`Are you sure you want to delete this expense record?`)) {
-                                  deleteExpense(exp.id);
-                                  onShowToast("Deleted transaction.", "info");
+                                  try {
+                                    await deleteExpense(exp.id);
+                                    onShowToast("Deleted transaction.", "info");
+                                  } catch (err: any) {
+                                    console.error("Failed to delete transaction:", err);
+                                    onShowToast(`Failed to delete transaction: ${err?.message || err}`, "warning");
+                                  }
                                 }
                               }}
                               title="Delete transaction"

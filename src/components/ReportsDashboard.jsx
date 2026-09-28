@@ -15,6 +15,7 @@ import {
   Coins,
   Printer
 } from 'lucide-react';
+import { getCellData } from './payroll/utils';
 
 const formatGBP = (val) => {
   return '£' + Math.round(val).toLocaleString();
@@ -600,142 +601,41 @@ export default function ReportsDashboard({
     return count || 22;
   };
 
-  // Helper to fetch payroll actual overrides or default projections
+  // Helper to fetch payroll actual overrides or default projections using standard getCellData
   const getStaffPayrollForMonth = (s, monthKey) => {
-    const pr = payrollRecords.find(r => r.staffId === s.id && r.month === monthKey);
-    if (pr && pr.isReconciled) {
-      return {
-        salaries: Number(pr.basicSalary) || 0,
-        commissions: Number(pr.commission) || 0
-      };
-    }
-    
-    let salaries = 0;
-    let commissions = 0;
+    const cell = getCellData(
+      s,
+      monthKey,
+      payrollRecords,
+      payrollPolicies,
+      leaveRequests,
+      holidays,
+      staff,
+      companies,
+      placements,
+      commissionPolicies
+    );
+    const basic = Number(cell.basic) || 0;
+    const bonus = Number(cell.bonus) || 0;
+    const grossSalary = basic + bonus;
+    const comm = Number(cell.commission) || 0;
+    const empNi = Number(cell.employerNi) || 0;
+    const empPension = Number(cell.employerPension) || 0;
+    const reimbursements = Number(cell.reimbursements) || 0;
+    const totalCost = Number(cell.total) || (grossSalary + comm + empNi + empPension + reimbursements);
 
-    commissions = calculateCommissionForRecruiter(s.id, monthKey);
-    const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
-
-    if (policy && policy.type === 'freelance') {
-      const totalBusinessDays = getBusinessDaysInMonth(monthKey, s);
-      
-      const year = monthKey.substring(0, 4);
-      const yearLeaves = leaveRequests.filter(req => 
-        req.staffId === s.id && 
-        req.status === 'approved' && 
-        req.startDate && 
-        req.startDate.substring(0, 4) === year
-      );
-      const sortedLeaves = [...yearLeaves].sort((a, b) => a.startDate.localeCompare(b.startDate));
-      const lp = leavePolicies.find(p => p.id === s.leavePolicyId);
-      
-      let annualAllowed = 20;
-      if (lp) {
-        if (lp.name?.toLowerCase().includes('global recruiters')) {
-          if (s.startDate) {
-            const start = new Date(s.startDate);
-            if (!isNaN(start.getTime())) {
-              const today = new Date();
-              let years = today.getFullYear() - start.getFullYear();
-              const m = today.getMonth() - start.getMonth();
-              if (m < 0 || (m === 0 && today.getDate() < start.getDate())) {
-                years--;
-              }
-              const calculated = 20 + Math.max(0, years);
-              annualAllowed = Math.min(25, calculated);
-            }
-          }
-        } else {
-          annualAllowed = lp.annualAllowance || 20;
-        }
-      }
-      const sickAllowed = lp ? (lp.sickAllowance ?? 10) : 10;
-
-      let annualUsed = 0;
-      let sickUsed = 0;
-      let unpaidDaysInTargetMonth = 0;
-
-      sortedLeaves.forEach(req => {
-        const reqMonth = req.startDate.substring(0, 7);
-        const reqDays = Number(req.totalDays) || 0;
-        let unpaidDaysForThisRequest = 0;
-
-        if (req.leaveType === 'unpaid') {
-          unpaidDaysForThisRequest = reqDays;
-        } else if (req.leaveType === 'annual') {
-          const newTotal = annualUsed + reqDays;
-          if (newTotal > annualAllowed) {
-            const unpaidPart = Math.max(0, newTotal - annualAllowed);
-            unpaidDaysForThisRequest = Math.min(reqDays, unpaidPart);
-            annualUsed = annualAllowed;
-          } else {
-            annualUsed = newTotal;
-          }
-        } else if (req.leaveType === 'sick') {
-          const newTotal = sickUsed + reqDays;
-          if (newTotal > sickAllowed) {
-            const unpaidPart = Math.max(0, newTotal - sickAllowed);
-            unpaidDaysForThisRequest = Math.min(reqDays, unpaidPart);
-            sickUsed = sickAllowed;
-          } else {
-            sickUsed = newTotal;
-          }
-        }
-
-        if (reqMonth === monthKey) {
-          unpaidDaysInTargetMonth += unpaidDaysForThisRequest;
-        }
-      });
-
-      const attendanceDays = Math.max(0, totalBusinessDays - unpaidDaysInTargetMonth);
-
-      let dailyRate = 0;
-      if (s.salary && Number(s.salary) > 0) {
-        dailyRate = (Number(s.salary) / 12) / totalBusinessDays;
-      } else if (s.attendanceRate && Number(s.attendanceRate) > 0) {
-        dailyRate = Number(s.attendanceRate);
-      } else {
-        dailyRate = Number(policy.dailyRateDefault || 0);
-      }
-      salaries = toGBP(dailyRate * attendanceDays, s.currency || 'GBP');
-    } else {
-      salaries = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
-    }
-
-    if (s.status === 'exited') {
-      const exitMonth = s.exitDate ? s.exitDate.substring(0, 7) : '';
-      const cutoffStr = s.salaryPaidUntilDate || s.exitDate || '';
-      if (cutoffStr) {
-        const cutoffMonth = cutoffStr.substring(0, 7);
-        if (monthKey > cutoffMonth) {
-          salaries = 0;
-          commissions = 0;
-        } else if (monthKey === cutoffMonth) {
-          const [y, m, d] = cutoffStr.split('-').map(Number);
-          const daysInMonth = new Date(y, m, 0).getDate();
-          const proration = Math.min(1.0, Math.max(0.0, d / daysInMonth));
-          salaries = salaries * proration;
-        }
-      }
-      if (exitMonth && monthKey === exitMonth && s.additionalExitPayment) {
-        salaries += toGBP(Number(s.additionalExitPayment) || 0, s.currency || 'GBP');
-      }
-    }
-
-    if (s.startDate) {
-      const startMonth = s.startDate.substring(0, 7);
-      if (monthKey < startMonth) {
-        salaries = 0;
-        commissions = 0;
-      } else if (monthKey === startMonth) {
-        const [y, m, d] = s.startDate.split('-').map(Number);
-        const daysInMonth = new Date(y, m, 0).getDate();
-        const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
-        salaries = salaries * proration;
-      }
-    }
-
-    return { salaries, commissions };
+    return {
+      salaries: grossSalary,
+      basic,
+      bonus,
+      commissions: comm,
+      employerNi: empNi,
+      employerPension: empPension,
+      totalEmployerContributions: empNi + empPension,
+      reimbursements,
+      totalCost,
+      isReconciled: cell.isReconciled
+    };
   };
 
   // Dynamic shared overhead helper
@@ -892,430 +792,213 @@ export default function ReportsDashboard({
     });
     const groupActiveStaffIds = groupActiveStaff.map(s => s.id);
 
-    if (monthKey < '2026-07') {
-      const monthExpenses = expenses.filter(e => e.plMonth === monthKey && e.amortize !== true && !e.nominalCode?.trim().startsWith('9'));
-      monthExpenses.forEach(exp => {
-        const gbpAmt = toGBP(exp.amount, exp.currency);
-        let allocatedGbp = 0;
+    // Helper to identify expenses that represent staff salary / payroll settlement disbursements
+    const isPayrollDisbursement = (e) => {
+      if (e.linkedPayrollCellId) return true;
+      const cleanCode = e.nominalCode?.split(' - ')[0]?.trim() || '';
+      const isSalaryCode = cleanCode === '1002' || cleanCode === '1001' || cleanCode === '1004' || cleanCode === '7003' || cleanCode === '7004';
+      if (!isSalaryCode) return false;
+      const targetStaffIds = Array.isArray(e.allocationTarget)
+        ? e.allocationTarget
+        : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
+      const matchesStaff = staff.some(s => 
+        targetStaffIds.includes(s.id) || 
+        e.recipientId === s.id || 
+        (s.fullName && e.payee && e.payee.toLowerCase().includes(s.fullName.toLowerCase()))
+      );
+      return matchesStaff;
+    };
 
-        if (exp.allocationType === 'company') {
-          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-          if (targets.length > 0) {
-            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
-              targets.forEach(compId => {
-                const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
-                const companyShare = gbpAmt * (percent / 100);
-                const compStaff = groupActiveStaff.filter(s => s.companyId === compId);
-                const compHead = compStaff.length || 1;
-                const perStaffShare = companyShare / compHead;
-                compStaff.forEach(s => {
-                  if (activeStaffIds.includes(s.id)) {
-                    allocatedGbp += perStaffShare;
-                  }
-                });
-              });
-            } else {
-              const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.companyId));
-              const totalHead = eligibleStaff.length || 1;
-              const perStaffShare = gbpAmt / totalHead;
-              eligibleStaff.forEach(s => {
-                if (activeStaffIds.includes(s.id)) {
-                  allocatedGbp += perStaffShare;
-                }
-              });
-            }
-          }
-        } else if (exp.allocationType === 'department') {
-          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-          if (targets.length > 0) {
-            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
-              targets.forEach(dept => {
-                const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
-                const deptShare = gbpAmt * (percent / 100);
-                const deptStaff = groupActiveStaff.filter(s => s.department === dept);
-                const deptHead = deptStaff.length || 1;
-                const perStaffShare = deptShare / deptHead;
-                deptStaff.forEach(s => {
-                  if (activeStaffIds.includes(s.id)) {
-                    allocatedGbp += perStaffShare;
-                  }
-                });
-              });
-            } else {
-              const eligibleStaff = groupActiveStaff.filter(s => targets.includes(s.department));
-              const totalHead = eligibleStaff.length || 1;
-              const perStaffShare = gbpAmt / totalHead;
-              eligibleStaff.forEach(s => {
-                if (activeStaffIds.includes(s.id)) {
-                  allocatedGbp += perStaffShare;
-                }
-              });
-            }
-          }
-        } else if (exp.allocationType === 'staff') {
-          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
-          if (targets.length > 0) {
-            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
-              targets.forEach(staffId => {
-                if (groupActiveStaffIds.includes(staffId)) {
-                  const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
-                  const perStaffShare = gbpAmt * (percent / 100);
-                  if (activeStaffIds.includes(staffId)) {
-                    allocatedGbp += perStaffShare;
-                  }
-                }
-              });
-            } else {
-              const perStaffShare = gbpAmt / targets.length;
-              targets.forEach(staffId => {
-                if (groupActiveStaffIds.includes(staffId)) {
-                  if (activeStaffIds.includes(staffId)) {
-                    allocatedGbp += perStaffShare;
-                  }
-                }
-              });
-            }
-          }
-        } else {
-          const groupHead = groupActiveStaff.length || 1;
-          groupActiveStaff.forEach(s => {
-            if (activeStaffIds.includes(s.id)) {
-              allocatedGbp += gbpAmt / groupHead;
-            }
-          });
-        }
+    // 1. Process regular operational actual expenses (excluding payroll settlement disbursements)
+    const monthExpenses = expenses.filter(e => 
+      e.plMonth === monthKey && 
+      e.amortize !== true && 
+      !e.nominalCode?.trim().startsWith('9') &&
+      !isPayrollDisbursement(e)
+    );
 
-        const matchedKey = Object.keys(breakdown).find(k => k.startsWith(exp.nominalCode) || k === exp.nominalCode);
-        if (matchedKey) {
-          breakdown[matchedKey] = (breakdown[matchedKey] || 0) + allocatedGbp;
-        } else {
-          const defaultSoftwareNominal = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'))?.code || 'Unassigned';
-          if (defaultSoftwareNominal) {
-            breakdown[defaultSoftwareNominal] = (breakdown[defaultSoftwareNominal] || 0) + allocatedGbp;
-          }
-        }
-      });
-    } else {
-      // 1. Process regular actual expenses for months >= '2026-07'
-      const monthExpenses = expenses.filter(e => e.plMonth === monthKey && e.amortize !== true && !e.nominalCode?.trim().startsWith('9'));
-      monthExpenses.forEach(exp => {
-        currentExpenseContext = exp;
-        const gbpAmt = toGBP(exp.amount, exp.currency);
-        let allocatedGbp = 0;
+    monthExpenses.forEach(exp => {
+      currentExpenseContext = exp;
+      const gbpAmt = toGBP(exp.amount, exp.currency);
+      let allocatedGbp = 0;
 
-        if (exp.allocationType === 'company') {
-          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-          if (targets.length > 0) {
-            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
-              targets.forEach(compId => {
-                const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
-                const companyShare = gbpAmt * (percent / 100);
-                const compStaff = groupActiveStaff.filter(st => st.companyId === compId);
-                const compHead = compStaff.length || 1;
-                const perStaffShare = companyShare / compHead;
-                compStaff.forEach(st => {
-                  if (activeStaffIds.includes(st.id)) {
-                    allocatedGbp += perStaffShare;
-                  }
-                });
-              });
-            } else {
-              const eligibleStaff = groupActiveStaff.filter(st => targets.includes(st.companyId));
-              const totalHead = eligibleStaff.length || 1;
-              const perStaffShare = gbpAmt / totalHead;
-              eligibleStaff.forEach(st => {
+      if (exp.allocationType === 'company') {
+        const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+        if (targets.length > 0) {
+          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+            targets.forEach(compId => {
+              const percent = parseInt(exp.manualAllocationShares[compId] || 0, 10);
+              const companyShare = gbpAmt * (percent / 100);
+              const compStaff = groupActiveStaff.filter(st => st.companyId === compId);
+              const compHead = compStaff.length || 1;
+              const perStaffShare = companyShare / compHead;
+              compStaff.forEach(st => {
                 if (activeStaffIds.includes(st.id)) {
                   allocatedGbp += perStaffShare;
                 }
               });
-            }
-          }
-        } else if (exp.allocationType === 'department') {
-          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
-          if (targets.length > 0) {
-            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
-              targets.forEach(dept => {
-                const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
-                const deptShare = gbpAmt * (percent / 100);
-                const deptStaff = groupActiveStaff.filter(st => st.department === dept);
-                const deptHead = deptStaff.length || 1;
-                const perStaffShare = deptShare / deptHead;
-                deptStaff.forEach(st => {
-                  if (activeStaffIds.includes(st.id)) {
-                    allocatedGbp += perStaffShare;
-                  }
-                });
-              });
-            } else {
-              const eligibleStaff = groupActiveStaff.filter(st => targets.includes(st.department));
-              const totalHead = eligibleStaff.length || 1;
-              const perStaffShare = gbpAmt / totalHead;
-              eligibleStaff.forEach(st => {
-                if (activeStaffIds.includes(st.id)) {
-                  allocatedGbp += perStaffShare;
-                }
-              });
-            }
-          }
-        } else if (exp.allocationType === 'staff') {
-          const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
-          if (targets.length > 0) {
-            if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
-              targets.forEach(staffId => {
-                if (groupActiveStaffIds.includes(staffId)) {
-                  const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
-                  const perStaffShare = gbpAmt * (percent / 100);
-                  if (activeStaffIds.includes(staffId)) {
-                    allocatedGbp += perStaffShare;
-                  }
-                }
-              });
-            } else {
-              const perStaffShare = gbpAmt / targets.length;
-              targets.forEach(staffId => {
-                if (groupActiveStaffIds.includes(staffId)) {
-                  if (activeStaffIds.includes(staffId)) {
-                    allocatedGbp += perStaffShare;
-                  }
-                }
-              });
-            }
-          }
-        } else {
-          const groupHead = groupActiveStaff.length || 1;
-          groupActiveStaff.forEach(st => {
-            if (activeStaffIds.includes(st.id)) {
-              allocatedGbp += gbpAmt / groupHead;
-            }
-          });
-        }
-
-        const matchedKey = Object.keys(breakdown).find(k => k.startsWith(exp.nominalCode) || k === exp.nominalCode);
-        if (matchedKey) {
-          breakdown[matchedKey] = (breakdown[matchedKey] || 0) + allocatedGbp;
-        } else {
-          const defaultSoftwareNominal = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'))?.code || 'Unassigned';
-          if (defaultSoftwareNominal) {
-            breakdown[defaultSoftwareNominal] = (breakdown[defaultSoftwareNominal] || 0) + allocatedGbp;
-          }
-        }
-      });
-      currentExpenseContext = null;
-
-      // 2. Process dynamic projections for staff costs
-      groupActiveStaff.forEach(s => {
-        currentStaffContext = s;
-        const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
-        if (policy) {
-          let staffCost = 0;
-          if (policy.type === 'freelance') {
-            const totalBusinessDays = getBusinessDaysInMonth(monthKey, s);
-             
-             const year = monthKey.substring(0, 4);
-             const yearLeaves = leaveRequests.filter(req => 
-               req.staffId === s.id && 
-               req.status === 'approved' && 
-               req.startDate && 
-               req.startDate.substring(0, 4) === year
-             );
-             const sortedLeaves = [...yearLeaves].sort((a, b) => a.startDate.localeCompare(b.startDate));
-             const lp = leavePolicies.find(p => p.id === s.leavePolicyId);
-             
-             let annualAllowed = 20;
-             if (lp) {
-               if (lp.name?.toLowerCase().includes('global recruiters')) {
-                 if (s.startDate) {
-                   const start = new Date(s.startDate);
-                   if (!isNaN(start.getTime())) {
-                     const today = new Date();
-                     let years = today.getFullYear() - start.getFullYear();
-                     const m = today.getMonth() - start.getMonth();
-                     if (m < 0 || (m === 0 && today.getDate() < start.getDate())) {
-                       years--;
-                     }
-                     const calculated = 20 + Math.max(0, years);
-                     annualAllowed = Math.min(25, calculated);
-                   }
-                 }
-               } else {
-                 annualAllowed = lp.annualAllowance || 20;
-               }
-             }
-             const sickAllowed = lp ? (lp.sickAllowance ?? 10) : 10;
-
-             let annualUsed = 0;
-             let sickUsed = 0;
-             let unpaidDaysInTargetMonth = 0;
-
-             sortedLeaves.forEach(req => {
-               const reqMonth = req.startDate.substring(0, 7);
-               const reqDays = Number(req.totalDays) || 0;
-               let unpaidDaysForThisRequest = 0;
-
-               if (req.leaveType === 'unpaid') {
-                 unpaidDaysForThisRequest = reqDays;
-               } else if (req.leaveType === 'annual') {
-                 const newTotal = annualUsed + reqDays;
-                 if (newTotal > annualAllowed) {
-                   const unpaidPart = Math.max(0, newTotal - annualAllowed);
-                   unpaidDaysForThisRequest = Math.min(reqDays, unpaidPart);
-                   annualUsed = annualAllowed;
-                 } else {
-                   annualUsed = newTotal;
-                 }
-               } else if (req.leaveType === 'sick') {
-                 const newTotal = sickUsed + reqDays;
-                 if (newTotal > sickAllowed) {
-                   const unpaidPart = Math.max(0, newTotal - sickAllowed);
-                   unpaidDaysForThisRequest = Math.min(reqDays, unpaidPart);
-                   sickUsed = sickAllowed;
-                 } else {
-                   sickUsed = newTotal;
-                 }
-               }
-
-               if (reqMonth === monthKey) {
-                 unpaidDaysInTargetMonth += unpaidDaysForThisRequest;
-               }
-             });
-
-             const attendanceDays = Math.max(0, totalBusinessDays - unpaidDaysInTargetMonth);
-
-            let dailyRate = 0;
-            if (s.salary && Number(s.salary) > 0) {
-              dailyRate = (Number(s.salary) / 12) / totalBusinessDays;
-            } else if (s.attendanceRate && Number(s.attendanceRate) > 0) {
-              dailyRate = Number(s.attendanceRate);
-            } else {
-              dailyRate = Number(policy.dailyRateDefault || 0);
-            }
-
-            let val = toGBP(dailyRate * attendanceDays, s.currency || 'GBP');
-            if (s.startDate && s.startDate.substring(0, 7) === monthKey) {
-              const [y, m, d] = s.startDate.split('-').map(Number);
-              const daysInMonth = new Date(y, m, 0).getDate();
-              const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
-              val = val * proration;
-            }
-            staffCost = val;
+            });
           } else {
-            let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
-            let proration = 1.0;
-            if (s.startDate && s.startDate.substring(0, 7) === monthKey) {
-              const [y, m, d] = s.startDate.split('-').map(Number);
-              const daysInMonth = new Date(y, m, 0).getDate();
-              proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
-              basicGBP = basicGBP * proration;
-            }
-            staffCost = basicGBP;
-
-            // Employer NI/Pension tax accumulation
-            let empNi = 0;
-            let empPension = 0;
-            const comm = calculateCommissionForRecruiter(s.id, monthKey);
-            const gross = basicGBP + comm;
-
-            if (policy.employerNiSlabs && policy.employerNiSlabs.length > 0) {
-              empNi = calculateSlabCost(gross, policy.employerNiSlabs);
-            } else if (policy.employerNiRate > 0) {
-              const thresholdGBP = toGBP(Number(policy.employerNiThreshold || 0), 'GBP');
-              const taxableNiAmount = Math.max(0, gross - thresholdGBP);
-              empNi = (taxableNiAmount * Number(policy.employerNiRate)) / 100;
-            }
-            if (policy.employerPensionRate > 0) {
-              empPension = (gross * Number(policy.employerPensionRate)) / 100;
-            }
-
-            empNi = empNi * proration;
-            empPension = empPension * proration;
-
-             const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code || '1002 - Salary';
-             const taxNominal = nominalCodes.find(nc => nc.id === '501' || nc.code?.includes('501') || nc.code?.toLowerCase().includes('paye') || nc.code?.toLowerCase().includes('tax') || /\bni\b/i.test(nc.code) || nc.code?.toLowerCase().includes('pension'))?.code || salaryNominal;
-             if (taxNominal) {
-               // Only add tax/pension overhead if staff member matches active filters
-               const isComp = activeCompanyIds.includes(s.companyId);
-               const isDept = deptFilter.includes('all') || deptFilter.includes(s.department);
-               if (isComp && isDept) {
-                 breakdown[taxNominal] = (breakdown[taxNominal] || 0) + (empNi + empPension);
-               }
-             }
+            const eligibleStaff = groupActiveStaff.filter(st => targets.includes(st.companyId));
+            const totalHead = eligibleStaff.length || 1;
+            const perStaffShare = gbpAmt / totalHead;
+            eligibleStaff.forEach(st => {
+              if (activeStaffIds.includes(st.id)) {
+                allocatedGbp += perStaffShare;
+              }
+            });
           }
-
-          // Dynamic nominal routing
-          let targetNominal = policy.nominalCode;
-          if (!targetNominal) {
-            if (policy.type === 'freelance') {
-              const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code;
-              targetNominal = contractorNominal || '1001 - Freelancer Payments';
-            } else {
-              const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code;
-              targetNominal = salaryNominal || '1002 - Salary';
-            }
+        }
+      } else if (exp.allocationType === 'department') {
+        const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [exp.allocationTarget].filter(Boolean);
+        if (targets.length > 0) {
+          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+            targets.forEach(dept => {
+              const percent = parseInt(exp.manualAllocationShares[dept] || 0, 10);
+              const deptShare = gbpAmt * (percent / 100);
+              const deptStaff = groupActiveStaff.filter(st => st.department === dept);
+              const deptHead = deptStaff.length || 1;
+              const perStaffShare = deptShare / deptHead;
+              deptStaff.forEach(st => {
+                if (activeStaffIds.includes(st.id)) {
+                  allocatedGbp += perStaffShare;
+                }
+              });
+            });
+          } else {
+            const eligibleStaff = groupActiveStaff.filter(st => targets.includes(st.department));
+            const totalHead = eligibleStaff.length || 1;
+            const perStaffShare = gbpAmt / totalHead;
+            eligibleStaff.forEach(st => {
+              if (activeStaffIds.includes(st.id)) {
+                allocatedGbp += perStaffShare;
+              }
+            });
           }
+        }
+      } else if (exp.allocationType === 'staff') {
+        const targets = Array.isArray(exp.allocationTarget) ? exp.allocationTarget : [];
+        if (targets.length > 0) {
+          if (exp.allocationMode === 'manual' && exp.manualAllocationShares) {
+            targets.forEach(staffId => {
+              if (groupActiveStaffIds.includes(staffId)) {
+                const percent = parseInt(exp.manualAllocationShares[staffId] || 0, 10);
+                const perStaffShare = gbpAmt * (percent / 100);
+                if (activeStaffIds.includes(staffId)) {
+                  allocatedGbp += perStaffShare;
+                }
+              }
+            });
+          } else {
+            const perStaffShare = gbpAmt / targets.length;
+            targets.forEach(staffId => {
+              if (groupActiveStaffIds.includes(staffId)) {
+                if (activeStaffIds.includes(staffId)) {
+                  allocatedGbp += perStaffShare;
+                }
+              }
+            });
+          }
+        }
+      } else {
+        const groupHead = groupActiveStaff.length || 1;
+        groupActiveStaff.forEach(st => {
+          if (activeStaffIds.includes(st.id)) {
+            allocatedGbp += gbpAmt / groupHead;
+          }
+        });
+      }
 
-          // Reconcile dynamic projections: if this staff member already has actual payments under this nominal in this month, skip projections
-          const cleanTarget = targetNominal?.split(' - ')[0]?.trim() || '';
-          const hasActualPayment = monthExpenses.some(e => {
-            const cleanCode = e.nominalCode?.split(' - ')[0]?.trim() || '';
-            if (cleanCode !== cleanTarget) return false;
+      const matchedKey = Object.keys(breakdown).find(k => k.startsWith(exp.nominalCode) || k === exp.nominalCode);
+      if (matchedKey) {
+        breakdown[matchedKey] = (breakdown[matchedKey] || 0) + allocatedGbp;
+      } else {
+        const defaultSoftwareNominal = nominalCodes.find(nc => nc.code.toLowerCase().includes('software') || nc.code.toLowerCase().includes('subscrip') || nc.code.startsWith('750'))?.code || 'Unassigned';
+        if (defaultSoftwareNominal) {
+          breakdown[defaultSoftwareNominal] = (breakdown[defaultSoftwareNominal] || 0) + allocatedGbp;
+        }
+      }
+    });
+    currentExpenseContext = null;
 
-            const targetStaffIds = Array.isArray(e.allocationTarget) 
-              ? e.allocationTarget 
-              : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
-            const matchesId = targetStaffIds.includes(s.id) || e.recipientId === s.id;
-            const matchesName = e.payee?.toLowerCase().includes(s.fullName.toLowerCase());
-            return matchesId || matchesName;
+    // 2. Process Staff Payroll (aligned directly with Group Payroll register)
+    groupActiveStaff.forEach(s => {
+      currentStaffContext = s;
+      const pay = getStaffPayrollForMonth(s, monthKey);
+      const staffCost = pay.salaries; // Gross salary: basic + bonus
+
+      const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+      let targetNominal = policy?.nominalCode;
+      if (!targetNominal) {
+        if (policy?.type === 'freelance') {
+          const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code;
+          targetNominal = contractorNominal || '1001 - Freelancer Payments';
+        } else {
+          const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code;
+          targetNominal = salaryNominal || '1002 - Salary';
+        }
+      }
+
+      // Add Employer NI & Pension
+      const empOverhead = pay.employerNi + pay.employerPension;
+      if (empOverhead > 0) {
+        const taxNominal = nominalCodes.find(nc => nc.id === '501' || nc.code?.includes('501') || nc.code?.toLowerCase().includes('paye') || nc.code?.toLowerCase().includes('tax') || /\bni\b/i.test(nc.code) || nc.code?.toLowerCase().includes('pension'))?.code || '7009 - Tax & Regulatory Duties';
+        if (taxNominal) {
+          const isComp = overrideCompanyId ? s.companyId === overrideCompanyId : activeCompanyIds.includes(s.companyId);
+          const isDept = deptFilter.includes('all') || deptFilter.includes(s.department);
+          if (isComp && isDept) {
+            const taxKey = Object.keys(breakdown).find(k => k.startsWith(taxNominal) || k === taxNominal) || taxNominal;
+            breakdown[taxKey] = (breakdown[taxKey] || 0) + empOverhead;
+          }
+        }
+      }
+
+      if (staffCost <= 0) return;
+
+      const matchedKey = Object.keys(breakdown).find(k => k.startsWith(targetNominal) || k === targetNominal) || targetNominal;
+
+      // Apportionment check for 1004 - SA-Shared costs
+      if (targetNominal.includes('1004')) {
+        if (s.companyId && s.companyId !== 'comp-1782789370085') {
+          const isComp = overrideCompanyId ? s.companyId === overrideCompanyId : activeCompanyIds.includes(s.companyId);
+          const isDept = deptFilter.includes('all') || deptFilter.includes(s.department);
+          if (isComp && isDept) {
+            breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCost;
+          }
+        } else {
+          const targetCompanyIds = (s.allocatedCompanyIds && s.allocatedCompanyIds.length > 0) ? s.allocatedCompanyIds : null;
+          const otherStaff = groupActiveStaff.filter(os => {
+            const comp = companies.find(c => c.id === os.companyId);
+            const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== s.companyId;
+            return comp && comp.includeInConsolidation !== false && compMatch;
           });
-
-          if (hasActualPayment) {
-            return; // Skip adding projected staff cost and dynamic tax/pension for this month!
-          }
-
-          const matchedKey = Object.keys(breakdown).find(k => k.startsWith(targetNominal) || k === targetNominal) || targetNominal;
-
-          // Apportionment check for 1004 - SA-Shared costs
-          if (targetNominal.includes('1004')) {
-            if (s.companyId && s.companyId !== 'comp-1782789370085') {
-              const isComp = activeCompanyIds.includes(s.companyId);
-              const isDept = deptFilter.includes('all') || deptFilter.includes(s.department);
+          if (otherStaff.length > 0) {
+            const perStaffShare = staffCost / otherStaff.length;
+            otherStaff.forEach(os => {
+              const isComp = overrideCompanyId ? os.companyId === overrideCompanyId : activeCompanyIds.includes(os.companyId);
+              const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
               if (isComp && isDept) {
-                breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCost;
+                breakdown[matchedKey] = (breakdown[matchedKey] || 0) + perStaffShare;
               }
-            } else {
-              const targetCompanyIds = (s.allocatedCompanyIds && s.allocatedCompanyIds.length > 0) ? s.allocatedCompanyIds : null;
-              const otherStaff = groupActiveStaff.filter(os => {
-                const comp = companies.find(c => c.id === os.companyId);
-                const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== s.companyId;
-                return comp && comp.includeInConsolidation !== false && compMatch;
-              });
-              if (otherStaff.length > 0) {
-                const perStaffShare = staffCost / otherStaff.length;
-                otherStaff.forEach(os => {
-                  const isComp = activeCompanyIds.includes(os.companyId);
-                  const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
-                  if (isComp && isDept) {
-                    breakdown[matchedKey] = (breakdown[matchedKey] || 0) + perStaffShare;
-                  }
-                });
-              } else {
-                const isComp = activeCompanyIds.includes(s.companyId);
-                const isDept = deptFilter.includes('all') || deptFilter.includes(s.department);
-                if (isComp && isDept) {
-                  breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCost;
-                }
-              }
-            }
+            });
           } else {
-            // Standard direct routing
-            const isComp = activeCompanyIds.includes(s.companyId);
+            const isComp = overrideCompanyId ? s.companyId === overrideCompanyId : activeCompanyIds.includes(s.companyId);
             const isDept = deptFilter.includes('all') || deptFilter.includes(s.department);
             if (isComp && isDept) {
               breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCost;
             }
           }
         }
-      });
-      currentStaffContext = null;
+      } else {
+        // Standard direct routing
+        const isComp = overrideCompanyId ? s.companyId === overrideCompanyId : activeCompanyIds.includes(s.companyId);
+        const isDept = deptFilter.includes('all') || deptFilter.includes(s.department);
+        if (isComp && isDept) {
+          breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCost;
+        }
+      }
+    });
+    currentStaffContext = null;
 
     // Process all amortized expenses
     const amortizedExpenses = (expenses || []).filter(e => e.amortize === true);
@@ -1583,7 +1266,6 @@ export default function ReportsDashboard({
         }
       });
       currentContractContext = null;
-    }
 
     return breakdown;
   };
@@ -1743,9 +1425,9 @@ export default function ReportsDashboard({
     let salaries = 0;
     let commissions = 0;
     activeStaff.forEach(s => {
-      if (monthKey > '2026-06') {
-        commissions += calculateCommissionForRecruiter(s.id, monthKey);
-      }
+      const pay = getStaffPayrollForMonth(s, monthKey);
+      salaries += pay.salaries;
+      commissions += pay.commissions;
     });
 
     // 5. Operating expenses + shared overhead apportionments
@@ -3320,58 +3002,61 @@ export default function ReportsDashboard({
                     if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) return;
                     
                     const pay = getStaffPayrollForMonth(s, mKey);
-                    if (mKey > '2026-06') {
-                      const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
-                      let targetNominal = policy?.nominalCode;
-                      if (!targetNominal && policy) {
-                        if (policy.type === 'freelance') {
-                          const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code;
-                          targetNominal = contractorNominal || '1001 - Freelancer Payments';
-                        } else {
-                          const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code;
-                          targetNominal = salaryNominal || '1002 - Salary';
-                        }
+                    const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+                    let targetNominal = policy?.nominalCode;
+                    if (!targetNominal && policy) {
+                      if (policy.type === 'freelance') {
+                        const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code;
+                        targetNominal = contractorNominal || '1001 - Freelancer Payments';
+                      } else {
+                        const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code;
+                        targetNominal = salaryNominal || '1002 - Salary';
                       }
+                    }
 
-                      if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
-                        if (s.companyId && s.companyId !== 'comp-1782789370085') {
+                    if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
+                      if (s.companyId && s.companyId !== 'comp-1782789370085') {
+                        if (companyDataMap[s.companyId] && (deptFilter.includes('all') || deptFilter.includes(s.department))) {
+                          companyDataMap[s.companyId].salaries += pay.salaries;
+                          companyDataMap[s.companyId].commissions += pay.commissions;
+                          companyDataMap[s.companyId].overheads += (pay.employerNi + pay.employerPension);
+                        }
+                      } else {
+                        const activeStaffInMonth = staff.filter(st => {
+                          const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
+                          return daysWorked >= 10;
+                        });
+                        const targetCompanyIds = (s.allocatedCompanyIds && s.allocatedCompanyIds.length > 0) ? s.allocatedCompanyIds : null;
+                        const otherStaff = activeStaffInMonth.filter(os => {
+                          const comp = companies.find(c => c.id === os.companyId);
+                          const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== s.companyId;
+                          return comp && comp.includeInConsolidation !== false && compMatch;
+                        });
+
+                        if (otherStaff.length > 0) {
+                          const perStaffShareSal = pay.salaries / otherStaff.length;
+                          const perStaffShareComm = pay.commissions / otherStaff.length;
+                          const perStaffShareOverhead = (pay.employerNi + pay.employerPension) / otherStaff.length;
+                          otherStaff.forEach(os => {
+                            if (companyDataMap[os.companyId] && (deptFilter.includes('all') || deptFilter.includes(os.department))) {
+                              companyDataMap[os.companyId].salaries += perStaffShareSal;
+                              companyDataMap[os.companyId].commissions += perStaffShareComm;
+                              companyDataMap[os.companyId].overheads += perStaffShareOverhead;
+                            }
+                          });
+                        } else {
                           if (companyDataMap[s.companyId] && (deptFilter.includes('all') || deptFilter.includes(s.department))) {
                             companyDataMap[s.companyId].salaries += pay.salaries;
                             companyDataMap[s.companyId].commissions += pay.commissions;
-                          }
-                        } else {
-                          const activeStaffInMonth = staff.filter(st => {
-                            const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
-                            return daysWorked >= 10;
-                          });
-                          const targetCompanyIds = (s.allocatedCompanyIds && s.allocatedCompanyIds.length > 0) ? s.allocatedCompanyIds : null;
-                          const otherStaff = activeStaffInMonth.filter(os => {
-                            const comp = companies.find(c => c.id === os.companyId);
-                            const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== s.companyId;
-                            return comp && comp.includeInConsolidation !== false && compMatch;
-                          });
-
-                          if (otherStaff.length > 0) {
-                            const perStaffShareSal = pay.salaries / otherStaff.length;
-                            const perStaffShareComm = pay.commissions / otherStaff.length;
-                            otherStaff.forEach(os => {
-                              if (companyDataMap[os.companyId] && (deptFilter.includes('all') || deptFilter.includes(os.department))) {
-                                companyDataMap[os.companyId].salaries += perStaffShareSal;
-                                companyDataMap[os.companyId].commissions += perStaffShareComm;
-                              }
-                            });
-                          } else {
-                            if (companyDataMap[s.companyId] && (deptFilter.includes('all') || deptFilter.includes(s.department))) {
-                              companyDataMap[s.companyId].salaries += pay.salaries;
-                              companyDataMap[s.companyId].commissions += pay.commissions;
-                            }
+                            companyDataMap[s.companyId].overheads += (pay.employerNi + pay.employerPension);
                           }
                         }
-                      } else {
-                        if (companyDataMap[s.companyId]) {
-                          companyDataMap[s.companyId].salaries += pay.salaries;
-                          companyDataMap[s.companyId].commissions += pay.commissions;
-                        }
+                      }
+                    } else {
+                      if (companyDataMap[s.companyId]) {
+                        companyDataMap[s.companyId].salaries += pay.salaries;
+                        companyDataMap[s.companyId].commissions += pay.commissions;
+                        companyDataMap[s.companyId].overheads += (pay.employerNi + pay.employerPension);
                       }
                     }
                   });
@@ -3382,7 +3067,7 @@ export default function ReportsDashboard({
                     return daysWorked >= 10;
                   });
                   const activeStaffInMonthIds = activeStaffInMonth.map(st => st.id);
-                  const monthExpenses = expenses.filter(e => e.plMonth === mKey && !isNominalExcluded(e.nominalCode));
+                  const monthExpenses = expenses.filter(e => e.plMonth === mKey && !isNominalExcluded(e.nominalCode) && !isPayrollDisbursement(e));
 
                   monthExpenses.forEach(exp => {
                     const gbpAmt = toGBP(exp.amount, exp.currency);
@@ -3640,58 +3325,61 @@ export default function ReportsDashboard({
                     if (!activeCompanyIds.includes(s.companyId)) return;
                     
                     const pay = getStaffPayrollForMonth(s, mKey);
-                    if (mKey > '2026-06') {
-                      const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
-                      let targetNominal = policy?.nominalCode;
-                      if (!targetNominal && policy) {
-                        if (policy.type === 'freelance') {
-                          const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code;
-                          targetNominal = contractorNominal || '1001 - Freelancer Payments';
-                        } else {
-                          const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code;
-                          targetNominal = salaryNominal || '1002 - Salary';
-                        }
+                    const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+                    let targetNominal = policy?.nominalCode;
+                    if (!targetNominal && policy) {
+                      if (policy.type === 'freelance') {
+                        const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code;
+                        targetNominal = contractorNominal || '1001 - Freelancer Payments';
+                      } else {
+                        const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code;
+                        targetNominal = salaryNominal || '1002 - Salary';
                       }
+                    }
 
-                      if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
-                        if (s.companyId && s.companyId !== 'comp-1782789370085') {
+                    if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
+                      if (s.companyId && s.companyId !== 'comp-1782789370085') {
+                        if (deptDataMap[s.department] && activeCompanyIds.includes(s.companyId)) {
+                          deptDataMap[s.department].salaries += pay.salaries;
+                          deptDataMap[s.department].commissions += pay.commissions;
+                          deptDataMap[s.department].overheads += (pay.employerNi + pay.employerPension);
+                        }
+                      } else {
+                        const activeStaffInMonth = staff.filter(st => {
+                          const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
+                          return daysWorked >= 10;
+                        });
+                        const targetCompanyIds = (s.allocatedCompanyIds && s.allocatedCompanyIds.length > 0) ? s.allocatedCompanyIds : null;
+                        const otherStaff = activeStaffInMonth.filter(os => {
+                          const comp = companies.find(c => c.id === os.companyId);
+                          const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== s.companyId;
+                          return comp && comp.includeInConsolidation !== false && compMatch;
+                        });
+
+                        if (otherStaff.length > 0) {
+                          const perStaffShareSal = pay.salaries / otherStaff.length;
+                          const perStaffShareComm = pay.commissions / otherStaff.length;
+                          const perStaffShareOverhead = (pay.employerNi + pay.employerPension) / otherStaff.length;
+                          otherStaff.forEach(os => {
+                            if (deptDataMap[os.department] && activeCompanyIds.includes(os.companyId)) {
+                              deptDataMap[os.department].salaries += perStaffShareSal;
+                              deptDataMap[os.department].commissions += perStaffShareComm;
+                              deptDataMap[os.department].overheads += perStaffShareOverhead;
+                            }
+                          });
+                        } else {
                           if (deptDataMap[s.department] && activeCompanyIds.includes(s.companyId)) {
                             deptDataMap[s.department].salaries += pay.salaries;
                             deptDataMap[s.department].commissions += pay.commissions;
-                          }
-                        } else {
-                          const activeStaffInMonth = staff.filter(st => {
-                            const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
-                            return daysWorked >= 10;
-                          });
-                          const targetCompanyIds = (s.allocatedCompanyIds && s.allocatedCompanyIds.length > 0) ? s.allocatedCompanyIds : null;
-                          const otherStaff = activeStaffInMonth.filter(os => {
-                            const comp = companies.find(c => c.id === os.companyId);
-                            const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== s.companyId;
-                            return comp && comp.includeInConsolidation !== false && compMatch;
-                          });
-
-                          if (otherStaff.length > 0) {
-                            const perStaffShareSal = pay.salaries / otherStaff.length;
-                            const perStaffShareComm = pay.commissions / otherStaff.length;
-                            otherStaff.forEach(os => {
-                              if (deptDataMap[os.department] && activeCompanyIds.includes(os.companyId)) {
-                                deptDataMap[os.department].salaries += perStaffShareSal;
-                                deptDataMap[os.department].commissions += perStaffShareComm;
-                              }
-                            });
-                          } else {
-                            if (deptDataMap[s.department] && activeCompanyIds.includes(s.companyId)) {
-                              deptDataMap[s.department].salaries += pay.salaries;
-                              deptDataMap[s.department].commissions += pay.commissions;
-                            }
+                            deptDataMap[s.department].overheads += (pay.employerNi + pay.employerPension);
                           }
                         }
-                      } else {
-                        if (deptDataMap[s.department]) {
-                          deptDataMap[s.department].salaries += pay.salaries;
-                          deptDataMap[s.department].commissions += pay.commissions;
-                        }
+                      }
+                    } else {
+                      if (deptDataMap[s.department]) {
+                        deptDataMap[s.department].salaries += pay.salaries;
+                        deptDataMap[s.department].commissions += pay.commissions;
+                        deptDataMap[s.department].overheads += (pay.employerNi + pay.employerPension);
                       }
                     }
                   });
@@ -3702,7 +3390,7 @@ export default function ReportsDashboard({
                     return daysWorked >= 10;
                   });
                   const activeStaffInMonthIds = activeStaffInMonth.map(st => st.id);
-                  const monthExpenses = expenses.filter(e => e.plMonth === mKey && !isNominalExcluded(e.nominalCode));
+                  const monthExpenses = expenses.filter(e => e.plMonth === mKey && !isNominalExcluded(e.nominalCode) && !isPayrollDisbursement(e));
 
                   monthExpenses.forEach(exp => {
                     const gbpAmt = toGBP(exp.amount, exp.currency);
@@ -4398,9 +4086,9 @@ export default function ReportsDashboard({
               let salaries = 0;
               let commissions = 0;
               activeStaff.forEach(s => {
-                if (m > '2026-06') {
-                  commissions += calculateCommissionForRecruiter(s.id, m);
-                }
+                const pay = getStaffPayrollForMonth(s, m);
+                salaries += pay.salaries;
+                commissions += pay.commissions;
               });
 
               const nominalBreakdown = getNominalBreakdownForMonth(m, indiaCompanyId);
@@ -5106,115 +4794,13 @@ export default function ReportsDashboard({
                   return daysWorked >= 10;
                 });
                 groupActiveStaff.forEach(s => {
+                  const pay = getStaffPayrollForMonth(s, m);
+                  const staffCost = pay.salaries;
+
                   const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
-                  if (!policy) return;
-                  
-                  let staffCost = 0;
-                  if (policy.type === 'freelance') {
-                    const totalBusinessDays = getBusinessDaysInMonth(m, s);
-                    
-                    const year = m.substring(0, 4);
-                    const yearLeaves = leaveRequests.filter(req => 
-                      req.staffId === s.id && 
-                      req.status === 'approved' && 
-                      req.startDate && 
-                      req.startDate.substring(0, 4) === year
-                    );
-                    const sortedLeaves = [...yearLeaves].sort((a, b) => a.startDate.localeCompare(b.startDate));
-                    const lp = leavePolicies.find(p => p.id === s.leavePolicyId);
-                    
-                    let annualAllowed = 20;
-                    if (lp) {
-                      if (lp.name?.toLowerCase().includes('global recruiters')) {
-                        if (s.startDate) {
-                          const start = new Date(s.startDate);
-                          if (!isNaN(start.getTime())) {
-                            const today = new Date();
-                            let years = today.getFullYear() - start.getFullYear();
-                            const mNum = today.getMonth() - start.getMonth();
-                            if (mNum < 0 || (mNum === 0 && today.getDate() < start.getDate())) {
-                              years--;
-                            }
-                            const calculated = 20 + Math.max(0, years);
-                            annualAllowed = Math.min(25, calculated);
-                          }
-                        }
-                      } else {
-                        annualAllowed = lp.annualAllowance || 20;
-                      }
-                    }
-                    const sickAllowed = lp ? (lp.sickAllowance ?? 10) : 10;
-
-                    let annualUsed = 0;
-                    let sickUsed = 0;
-                    let unpaidDaysInTargetMonth = 0;
-
-                    sortedLeaves.forEach(req => {
-                      const reqMonth = req.startDate.substring(0, 7);
-                      const reqDays = Number(req.totalDays) || 0;
-                      let unpaidDaysForThisRequest = 0;
-
-                      if (req.leaveType === 'unpaid') {
-                        unpaidDaysForThisRequest = reqDays;
-                      } else if (req.leaveType === 'annual') {
-                        const newTotal = annualUsed + reqDays;
-                        if (newTotal > annualAllowed) {
-                          const unpaidPart = Math.max(0, newTotal - annualAllowed);
-                          unpaidDaysForThisRequest = Math.min(reqDays, unpaidPart);
-                          annualUsed = annualAllowed;
-                        } else {
-                          annualUsed = newTotal;
-                        }
-                      } else if (req.leaveType === 'sick') {
-                        const newTotal = sickUsed + reqDays;
-                        if (newTotal > sickAllowed) {
-                          const unpaidPart = Math.max(0, newTotal - sickAllowed);
-                          unpaidDaysForThisRequest = Math.min(reqDays, unpaidPart);
-                          sickUsed = sickAllowed;
-                        } else {
-                          sickUsed = newTotal;
-                        }
-                      }
-
-                      if (reqMonth === m) {
-                        unpaidDaysInTargetMonth += unpaidDaysForThisRequest;
-                      }
-                    });
-
-                    const attendanceDays = Math.max(0, totalBusinessDays - unpaidDaysInTargetMonth);
-
-                    let dailyRate = 0;
-                    if (s.salary && Number(s.salary) > 0) {
-                      dailyRate = (Number(s.salary) / 12) / totalBusinessDays;
-                    } else if (s.attendanceRate && Number(s.attendanceRate) > 0) {
-                      dailyRate = Number(s.attendanceRate);
-                    } else {
-                      dailyRate = Number(policy.dailyRateDefault || 0);
-                    }
-
-                    let val = toGBP(dailyRate * attendanceDays, s.currency || 'GBP');
-                    if (s.startDate && s.startDate.substring(0, 7) === m) {
-                      const [y, mNum, d] = s.startDate.split('-').map(Number);
-                      const daysInMonth = new Date(y, mNum, 0).getDate();
-                      const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
-                      val = val * proration;
-                    }
-                    staffCost = val;
-                  } else {
-                    let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
-                    let proration = 1.0;
-                    if (s.startDate && s.startDate.substring(0, 7) === m) {
-                      const [y, mNum, d] = s.startDate.split('-').map(Number);
-                      const daysInMonth = new Date(y, mNum, 0).getDate();
-                      proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
-                      basicGBP = basicGBP * proration;
-                    }
-                    staffCost = basicGBP;
-                  }
-
-                  let routedNominal = policy.nominalCode;
+                  let routedNominal = policy?.nominalCode;
                   if (!routedNominal) {
-                    if (policy.type === 'freelance') {
+                    if (policy?.type === 'freelance') {
                       const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code;
                       routedNominal = contractorNominal || '1001 - Freelancer Payments';
                     } else {
@@ -5229,7 +4815,7 @@ export default function ReportsDashboard({
                     const isDept = isDeptMatch(s.department);
                     if (isComp && isDept) {
                       results.push({
-                        staffName: s.fullName,
+                        staffName: s.fullName + (pay.bonus > 0 ? ` (Basic: £${Math.round(pay.basic).toLocaleString()} + Bonus: £${Math.round(pay.bonus).toLocaleString()})` : ''),
                         jobTitle: routedNominal,
                         department: s.department,
                         companyName: companies.find(c => c.id === s.companyId)?.name || 'Group',
@@ -5313,6 +4899,7 @@ export default function ReportsDashboard({
               if (e.status === 'dns' || e.status === 'cancelled') return false;
               if (e.amortize === true) return false;
               if (e.nominalCode?.trim().startsWith('9')) return false;
+              if (isPayrollDisbursement(e)) return false;
               if ((categoryKey === 'overheadsExpenses' || categoryKey === 'totalOverheads') && isNominalExcluded(e.nominalCode)) return false;
               const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
               if (monthKey && eMonth !== monthKey) return false;
@@ -5417,13 +5004,11 @@ export default function ReportsDashboard({
 
             const finalItems = [...actualItems, ...amortizedShares];
 
-            // Unbilled Projection Items for 7001, 7002, 7003, 7004 & future nominal cells
+            // Projection & Roster Items for Vendor Contracts, Staff Payroll & Overheads
             const projectedItems = [];
-            const targetMonths = monthKey ? [monthKey] : monthsList.filter(m => m >= '2026-07');
+            const targetMonths = monthKey ? [monthKey] : monthsList;
 
             targetMonths.forEach(mKey => {
-              if (mKey < '2026-07') return;
-              
               const monthActualExpenses = (expenses || []).filter(e => {
                 if (e.status === 'dns' || e.status === 'cancelled') return false;
                 if (e.amortize === true) return false;
@@ -5436,8 +5021,9 @@ export default function ReportsDashboard({
                 const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, mKey);
                 return daysWorked >= 10;
               });
-              // 1. Vendor Contracts Projections (7001, 7002 or explicit nominalCode)
-              contracts.forEach(contract => {
+              // 1. Vendor Contracts Projections (7001, 7002 or explicit nominalCode) - future months only
+              if (mKey >= '2026-07') {
+                contracts.forEach(contract => {
                 if (!contract.startDate || !contract.endDate) return;
                 const startM = contract.startDate.substring(0, 7);
                 const endM = contract.endDate.substring(0, 7);
@@ -5606,6 +5192,7 @@ export default function ReportsDashboard({
                   });
                 }
               });
+              }
 
               // 2. Staff Payroll Taxes & Pension Projections
               staff.forEach(s => {
@@ -5613,79 +5200,31 @@ export default function ReportsDashboard({
                 if (daysWorked < 10) return;
                 if (!isCompanyMatch(s.companyId) || !isDeptMatch(s.department)) return;
 
-                const sPolicy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
-                const isContractor = s.employmentStatus === 'contractor' || s.employmentStatus === 'freelance' || (sPolicy && sPolicy.type === 'freelance');
-                if (!isContractor) {
-                  const salaryNominal = nominalCodes.find(nc => nc.id === '1002' || nc.code?.startsWith('1002'))?.code || '1002 - Salary';
-                  const taxNominal = nominalCodes.find(nc => nc.id === '501' || nc.code?.includes('501') || nc.code?.toLowerCase().includes('paye') || nc.code?.toLowerCase().includes('tax') || /\bni\b/i.test(nc.code) || nc.code?.toLowerCase().includes('pension'))?.code || salaryNominal;
+                const taxNominal = nominalCodes.find(nc => nc.id === '501' || nc.code?.includes('501') || nc.code?.toLowerCase().includes('paye') || nc.code?.toLowerCase().includes('tax') || /\bni\b/i.test(nc.code) || nc.code?.toLowerCase().includes('pension'))?.code || '7009 - Tax & Regulatory Duties';
 
-                  if ((categoryKey === 'overheadsExpenses' || categoryKey === 'totalOverheads') && isNominalExcluded(taxNominal)) return;
-                  if (!nominalCode || taxNominal === nominalCode || taxNominal.startsWith(nominalCode)) {
-                    // Check if this staff member already has actual payments under salary (1002), freelance (1001), or tax (501)
-                    const cleanTaxCode = taxNominal?.split(' - ')[0]?.trim() || '';
-                    const hasActualPayment = monthActualExpenses.some(e => {
-                      const cleanCode = e.nominalCode?.split(' - ')[0]?.trim() || '';
-                      if (cleanCode !== cleanTaxCode && cleanCode !== '1002' && cleanCode !== '1001') return false;
-
-                      const targetStaffIds = Array.isArray(e.allocationTarget) 
-                        ? e.allocationTarget 
-                        : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
-                      const matchesId = targetStaffIds.includes(s.id) || e.recipientId === s.id;
-                      const matchesName = e.payee?.toLowerCase().includes(s.fullName.toLowerCase());
-                      return matchesId || matchesName;
+                if ((categoryKey === 'overheadsExpenses' || categoryKey === 'totalOverheads') && isNominalExcluded(taxNominal)) return;
+                if (!nominalCode || taxNominal === nominalCode || taxNominal.startsWith(nominalCode)) {
+                  const pay = getStaffPayrollForMonth(s, mKey);
+                  const totalTaxes = (pay.employerNi || 0) + (pay.employerPension || 0);
+                  if (totalTaxes > 0) {
+                    projectedItems.push({
+                      id: `proj-7003-${s.id}-${mKey}`,
+                      date: `${mKey}-01`,
+                      plMonth: mKey,
+                      payee: `Employer NI & Pension (${s.fullName})`,
+                      nominalCode: taxNominal,
+                      recipientType: 'staff',
+                      recipientId: s.id,
+                      amount: totalTaxes,
+                      currency: 'GBP',
+                      isProjection: mKey >= '2026-07'
                     });
-                    if (hasActualPayment) return;
-
-                    let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
-                    let proration = 1.0;
-                    if (s.startDate && s.startDate.substring(0, 7) === mKey) {
-                      const [y, m, d] = s.startDate.split('-').map(Number);
-                      const daysInMonth = new Date(y, m, 0).getDate();
-                      proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
-                      basicGBP = basicGBP * proration;
-                    }
-
-                    let empNi = 0;
-                    let empPension = 0;
-                    const comm = calculateCommissionForRecruiter(s.id, mKey);
-                    const gross = basicGBP + comm;
-                    const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
-                    if (!policy) return;
-
-                    if (policy.employerNiSlabs && policy.employerNiSlabs.length > 0) {
-                      empNi = calculateSlabCost(gross, policy.employerNiSlabs);
-                    } else if (policy.employerNiRate > 0) {
-                      const thresholdGBP = toGBP(Number(policy.employerNiThreshold || 0), 'GBP');
-                      const taxableNiAmount = Math.max(0, gross - thresholdGBP);
-                      empNi = (taxableNiAmount * Number(policy.employerNiRate)) / 100;
-                    }
-                    if (policy.employerPensionRate > 0) {
-                      empPension = (gross * Number(policy.employerPensionRate)) / 100;
-                    }
-                    empNi = empNi * proration;
-                    empPension = empPension * proration;
-
-                    const totalTaxes = empNi + empPension;
-                    if (totalTaxes > 0) {
-                      projectedItems.push({
-                        id: `proj-7003-${s.id}-${mKey}`,
-                        date: `${mKey}-01`,
-                        plMonth: mKey,
-                        payee: `Employer NI & Pension (${s.fullName})`,
-                        nominalCode: taxNominal,
-                        recipientType: 'staff',
-                        recipientId: s.id,
-                        amount: totalTaxes,
-                        currency: 'GBP',
-                        isProjection: true
-                      });
-                    }
                   }
                 }
               });
 
-              // 3. Freelancers & Subcontractors Projections (7004)
-              if (!nominalCode || nominalCode.startsWith('7004') || nominalCode === '7004 - Freelancers & Subcontractors') {
+              // 3. Freelancers & Subcontractors Projections (7004) - future unbilled months
+              if (mKey >= '2026-07' && (!nominalCode || nominalCode.startsWith('7004') || nominalCode === '7004 - Freelancers & Subcontractors')) {
                 staff.forEach(s => {
                   const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, mKey);
                   if (daysWorked < 10) return;
@@ -5753,121 +5292,15 @@ export default function ReportsDashboard({
                 });
               }
 
-              // 4. Staff Payroll/Freelance/Consulting Projections (1001, 1002, 1003, 1004)
-
+              // 4. Staff Payroll / Roster Salaries & Freelancers (1001, 1002, 1003, 1004)
               staff.forEach(s => {
                 const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, mKey);
                 if (daysWorked < 10) return;
 
                 const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
-                if (!policy) return;
-
-                let staffCost = 0;
-                if (policy.type === 'freelance') {
-                  const totalBusinessDays = getBusinessDaysInMonth(mKey, s);
-                  
-                  const year = mKey.substring(0, 4);
-                  const yearLeaves = leaveRequests.filter(req => 
-                    req.staffId === s.id && 
-                    req.status === 'approved' && 
-                    req.startDate && 
-                    req.startDate.substring(0, 4) === year
-                  );
-                  const sortedLeaves = [...yearLeaves].sort((a, b) => a.startDate.localeCompare(b.startDate));
-                  const lp = leavePolicies.find(p => p.id === s.leavePolicyId);
-                  
-                  let annualAllowed = 20;
-                  if (lp) {
-                    if (lp.name?.toLowerCase().includes('global recruiters')) {
-                      if (s.startDate) {
-                        const start = new Date(s.startDate);
-                        if (!isNaN(start.getTime())) {
-                          const today = new Date();
-                          let years = today.getFullYear() - start.getFullYear();
-                          const mNum = today.getMonth() - start.getMonth();
-                          if (mNum < 0 || (mNum === 0 && today.getDate() < start.getDate())) {
-                            years--;
-                          }
-                          const calculated = 20 + Math.max(0, years);
-                          annualAllowed = Math.min(25, calculated);
-                        }
-                      }
-                    } else {
-                      annualAllowed = lp.annualAllowance || 20;
-                    }
-                  }
-                  const sickAllowed = lp ? (lp.sickAllowance ?? 10) : 10;
-
-                  let annualUsed = 0;
-                  let sickUsed = 0;
-                  let unpaidDaysInTargetMonth = 0;
-
-                  sortedLeaves.forEach(req => {
-                    const reqMonth = req.startDate.substring(0, 7);
-                    const reqDays = Number(req.totalDays) || 0;
-                    let unpaidDaysForThisRequest = 0;
-
-                    if (req.leaveType === 'unpaid') {
-                      unpaidDaysForThisRequest = reqDays;
-                    } else if (req.leaveType === 'annual') {
-                      const newTotal = annualUsed + reqDays;
-                      if (newTotal > annualAllowed) {
-                        const unpaidPart = Math.max(0, newTotal - annualAllowed);
-                        unpaidDaysForThisRequest = Math.min(reqDays, unpaidPart);
-                        annualUsed = annualAllowed;
-                      } else {
-                        annualUsed = newTotal;
-                      }
-                    } else if (req.leaveType === 'sick') {
-                      const newTotal = sickUsed + reqDays;
-                      if (newTotal > sickAllowed) {
-                        const unpaidPart = Math.max(0, newTotal - sickAllowed);
-                        unpaidDaysForThisRequest = Math.min(reqDays, unpaidPart);
-                        sickUsed = sickAllowed;
-                      } else {
-                        sickUsed = newTotal;
-                      }
-                    }
-
-                    if (reqMonth === mKey) {
-                      unpaidDaysInTargetMonth += unpaidDaysForThisRequest;
-                    }
-                  });
-
-                  const attendanceDays = Math.max(0, totalBusinessDays - unpaidDaysInTargetMonth);
-
-                  let dailyRate = 0;
-                  if (s.salary && Number(s.salary) > 0) {
-                    dailyRate = (Number(s.salary) / 12) / totalBusinessDays;
-                  } else if (s.attendanceRate && Number(s.attendanceRate) > 0) {
-                    dailyRate = Number(s.attendanceRate);
-                  } else {
-                    dailyRate = Number(policy.dailyRateDefault || 0);
-                  }
-
-                  let val = toGBP(dailyRate * attendanceDays, s.currency || 'GBP');
-                  if (s.startDate && s.startDate.substring(0, 7) === mKey) {
-                    const [y, mNum, d] = s.startDate.split('-').map(Number);
-                    const daysInMonth = new Date(y, mNum, 0).getDate();
-                    const proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
-                    val = val * proration;
-                  }
-                  staffCost = val;
-                } else {
-                  let basicGBP = toGBP(Number(s.salary || 0) / 12, s.currency || 'GBP');
-                  let proration = 1.0;
-                  if (s.startDate && s.startDate.substring(0, 7) === mKey) {
-                    const [y, mNum, d] = s.startDate.split('-').map(Number);
-                    const daysInMonth = new Date(y, mNum, 0).getDate();
-                    proration = Math.min(1.0, Math.max(0.0, (daysInMonth - d + 1) / daysInMonth));
-                    basicGBP = basicGBP * proration;
-                  }
-                  staffCost = basicGBP;
-                }
-
-                let routedNominal = policy.nominalCode;
+                let routedNominal = policy?.nominalCode;
                 if (!routedNominal) {
-                  if (policy.type === 'freelance') {
+                  if (policy?.type === 'freelance') {
                     const contractorNominal = nominalCodes.find(nc => nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('subcontractor'))?.code;
                     routedNominal = contractorNominal || '1001 - Freelancer Payments';
                   } else {
@@ -5876,20 +5309,15 @@ export default function ReportsDashboard({
                   }
                 }
 
-                // Check if this staff member already has actual payments under routedNominal in this month
-                const cleanTarget = routedNominal?.split(' - ')[0]?.trim() || '';
-                const hasActualPayment = monthActualExpenses.some(e => {
-                  const cleanCode = e.nominalCode?.split(' - ')[0]?.trim() || '';
-                  if (cleanCode !== cleanTarget) return false;
+                if ((categoryKey === 'overheadsExpenses' || categoryKey === 'totalOverheads') && isNominalExcluded(routedNominal)) return;
 
-                  const targetStaffIds = Array.isArray(e.allocationTarget) 
-                    ? e.allocationTarget 
-                    : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
-                  const matchesId = targetStaffIds.includes(s.id) || e.recipientId === s.id;
-                  const matchesName = e.payee?.toLowerCase().includes(s.fullName.toLowerCase());
-                  return matchesId || matchesName;
-                });
-                if (hasActualPayment) return;
+                const pay = getStaffPayrollForMonth(s, mKey);
+                const staffCost = pay.salaries;
+                if (staffCost <= 0) return;
+
+                const bonusText = pay.bonus > 0 
+                  ? ` (Salary: £${pay.basic.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2})} + Bonus: £${pay.bonus.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2})})` 
+                  : '';
 
                 // Apply company & department matches
                 if (routedNominal.startsWith('1004') || routedNominal.toLowerCase().includes('shared')) {
@@ -5900,13 +5328,13 @@ export default function ReportsDashboard({
                           id: `proj-staff-${s.id}-${mKey}`,
                           date: `${mKey}-01`,
                           plMonth: mKey,
-                          payee: `${s.fullName} (Shared Cost - Direct)`,
+                          payee: `${s.fullName} (Shared Cost - Direct)${bonusText}`,
                           nominalCode: routedNominal,
                           recipientType: 'staff',
                           recipientId: s.id,
                           amount: staffCost,
                           currency: 'GBP',
-                          isProjection: true
+                          isProjection: mKey >= '2026-07'
                         });
                       }
                     }
@@ -5927,13 +5355,13 @@ export default function ReportsDashboard({
                               id: `proj-staff-${s.id}-${mKey}-${os.companyId}`,
                               date: `${mKey}-01`,
                               plMonth: mKey,
-                              payee: `${s.fullName} (Shared Cost Share via ${os.fullName})`,
+                              payee: `${s.fullName} (Shared Cost Share via ${os.fullName})${bonusText}`,
                               nominalCode: routedNominal,
                               recipientType: 'staff',
                               recipientId: s.id,
                               amount: perStaffShare,
                               currency: 'GBP',
-                              isProjection: true
+                              isProjection: mKey >= '2026-07'
                             });
                           }
                         }
@@ -5945,13 +5373,13 @@ export default function ReportsDashboard({
                             id: `proj-staff-${s.id}-${mKey}`,
                             date: `${mKey}-01`,
                             plMonth: mKey,
-                            payee: `${s.fullName} (Shared Cost - Direct)`,
+                            payee: `${s.fullName} (Shared Cost - Direct)${bonusText}`,
                             nominalCode: routedNominal,
                             recipientType: 'staff',
                             recipientId: s.id,
                             amount: staffCost,
                             currency: 'GBP',
-                            isProjection: true
+                            isProjection: mKey >= '2026-07'
                           });
                         }
                       }
@@ -5964,13 +5392,13 @@ export default function ReportsDashboard({
                         id: `proj-staff-${s.id}-${mKey}`,
                         date: `${mKey}-01`,
                         plMonth: mKey,
-                        payee: s.fullName,
+                        payee: `${s.fullName}${bonusText}`,
                         nominalCode: routedNominal,
                         recipientType: 'staff',
                         recipientId: s.id,
                         amount: staffCost,
                         currency: 'GBP',
-                        isProjection: true
+                        isProjection: mKey >= '2026-07'
                       });
                     }
                   }

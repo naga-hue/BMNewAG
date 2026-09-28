@@ -1,6 +1,7 @@
 import { Company, Staff, Placement } from '../../types';
 import { toGBP } from '../../utils/currency';
 import { useBoundStore } from '../../store/useBoundStore';
+import { getUkStaffOverhead } from './ukStaffOverheadData';
 
 export const symbolMap: Record<string, string> = { 
   GBP: '£', 
@@ -740,23 +741,50 @@ export function getCellData(
     }
   }
 
+  const ukOverhead = getUkStaffOverhead(staffMember.id, month);
+
   if (record) {
-    const bonusVal = Number(record.bonus || 0);
+    const bonusVal = record.bonus !== undefined ? Number(record.bonus || 0) : (ukOverhead ? ukOverhead.bonus : 0);
+    const basicVal = record.isReconciled 
+      ? (record.bonus !== undefined ? Number(record.basicSalary) : (ukOverhead ? ukOverhead.regularHours : Number(record.basicSalary)))
+      : (ukOverhead ? ukOverhead.regularHours : baselineBasic);
+    const niVal = record.isReconciled 
+      ? (record.employerNi !== undefined && record.bonus !== undefined ? Number(record.employerNi) : (ukOverhead ? ukOverhead.employerNi : Number(record.employerNi || 0)))
+      : (ukOverhead ? ukOverhead.employerNi : projectedEmployerNi);
+    const pensionVal = record.isReconciled 
+      ? (record.employerPension !== undefined && record.bonus !== undefined ? Number(record.employerPension) : (ukOverhead ? ukOverhead.royalLondon : Number(record.employerPension || 0)))
+      : (ukOverhead ? ukOverhead.royalLondon : projectedEmployerPension);
+
     return {
-      isReconciled: !!record.isReconciled,
-      basic: record.isReconciled ? Number(record.basicSalary) : baselineBasic,
-      commission: record.isReconciled ? Number(record.commission) : baselineCommission,
+      isReconciled: true,
+      basic: basicVal,
+      commission: record.isReconciled ? Number(record.commission || 0) : baselineCommission,
       reimbursements: record.isReconciled ? Number(record.reimbursements || 0) : 0,
       bonus: bonusVal,
-      total: record.isReconciled 
-        ? (Number(record.basicSalary) + Number(record.commission) + Number(record.reimbursements || 0) + bonusVal + Number(record.employerNi || 0) + Number(record.employerPension || 0)) 
-        : (baselineBasic + baselineCommission + projectedEmployerNi + projectedEmployerPension),
-      employerNi: record.isReconciled ? Number(record.employerNi || 0) : projectedEmployerNi,
-      employerPension: record.isReconciled ? Number(record.employerPension || 0) : projectedEmployerPension,
+      total: basicVal + Number(record.commission || 0) + Number(record.reimbursements || 0) + bonusVal + niVal + pensionVal,
+      employerNi: niVal,
+      employerPension: pensionVal,
       employeeTaxNic: record.isReconciled ? Number(record.employeeTaxNic || 0) : projectedEmployeeTaxNic,
       employeePension: record.isReconciled ? Number(record.employeePension || 0) : projectedEmployeePension,
-      notes: record.notes || '',
+      notes: record.notes || (ukOverhead ? 'Humres UK Staff Overhead Jan-Sep 2026' : ''),
       id: record.id
+    };
+  }
+
+  if (ukOverhead) {
+    return {
+      isReconciled: true,
+      basic: ukOverhead.regularHours,
+      commission: baselineCommission,
+      reimbursements: 0,
+      bonus: ukOverhead.bonus,
+      total: ukOverhead.total + baselineCommission,
+      employerNi: ukOverhead.employerNi,
+      employerPension: ukOverhead.royalLondon,
+      employeeTaxNic: projectedEmployeeTaxNic,
+      employeePension: projectedEmployeePension,
+      notes: 'Humres UK Staff Overhead Jan-Sep 2026',
+      id: `${staffMember.id}_${month}`
     };
   }
 

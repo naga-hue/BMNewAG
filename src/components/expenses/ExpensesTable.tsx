@@ -5,6 +5,7 @@ import MultiSelectFilter from '../MultiSelectFilter';
 import { useBoundStore } from '../../store/useBoundStore';
 import { toGBP } from '../../utils/currency';
 import { symbolMap } from './shared';
+import { getUkStaffOverhead, formatOverheadTitle, WithOverheadTooltip } from '../payroll/ukStaffOverheadData';
 
 interface ExpensesTableProps {
   handleEditExpense: (expense: any) => void;
@@ -1425,6 +1426,8 @@ export default function ExpensesTable({
 
               const matchedPl = placements.find(p => p.id === exp.linkedPlacementId);
               const isUnmappedRow = !exp.recipientType || exp.recipientType === 'other' || !exp.nominalCode;
+              const expMonth = exp.plMonth || (exp.date && exp.date !== 'Bulk Selection' ? exp.date.substring(0, 7) : '');
+              const ukOverhead = getUkStaffOverhead(exp.recipientId || exp.payee, expMonth);
 
               return (
                 <tr 
@@ -1621,6 +1624,35 @@ export default function ExpensesTable({
                           </div>
                         );
                       })()}
+
+                      {ukOverhead && (
+                        <div style={{ marginTop: '4px' }}>
+                          <WithOverheadTooltip item={ukOverhead} position="bottom">
+                            <span 
+                              style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                gap: '4px', 
+                                fontSize: '10px', 
+                                color: '#0369a1', 
+                                backgroundColor: 'rgba(2, 132, 199, 0.08)', 
+                                border: '1px solid rgba(2, 132, 199, 0.25)', 
+                                padding: '1px 6px', 
+                                borderRadius: '4px',
+                                cursor: 'help'
+                              }}
+                              title={formatOverheadTitle(ukOverhead)}
+                            >
+                              <span>👤 Overhead Breakdown</span>
+                              {ukOverhead.bonus > 0 && (
+                                <span style={{ color: '#059669', fontWeight: 700 }}>
+                                  (🎁 Bonus: £{Math.round(ukOverhead.bonus).toLocaleString()})
+                                </span>
+                              )}
+                            </span>
+                          </WithOverheadTooltip>
+                        </div>
+                      )}
                     </td>
                   )}
                   {visibleCols.bank && (
@@ -1637,7 +1669,24 @@ export default function ExpensesTable({
                       )}
                     </td>
                   )}
-                  {visibleCols.nominal && <td style={{ fontSize: '11px', whiteSpace: 'normal', wordBreak: 'break-word' }}>{exp.nominalCode}</td>}
+                  {visibleCols.nominal && (
+                    <td style={{ fontSize: '11px', whiteSpace: 'normal', wordBreak: 'break-word', position: 'relative' }}>
+                      {ukOverhead ? (
+                        <WithOverheadTooltip item={ukOverhead} position="top">
+                          <span style={{ cursor: 'help' }} title={formatOverheadTitle(ukOverhead)}>
+                            {exp.nominalCode}
+                            {ukOverhead.bonus > 0 && (
+                              <span style={{ display: 'block', fontSize: '9px', color: '#059669', fontWeight: 600 }}>
+                                🎁 Bonus: £{Math.round(ukOverhead.bonus).toLocaleString()}
+                              </span>
+                            )}
+                          </span>
+                        </WithOverheadTooltip>
+                      ) : (
+                        exp.nominalCode
+                      )}
+                    </td>
+                  )}
                   {visibleCols.allocation && (
                     <td style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
                       <span 
@@ -1730,11 +1779,28 @@ export default function ExpensesTable({
                   })()}
                   {visibleCols.tax && <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{exp.taxRate}%</td>}
                   {visibleCols.amount && (
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: exp.nominalCode?.includes('Wages') || exp.nominalCode?.includes('Rent') ? 'var(--danger)' : 'var(--text-primary)' }}>
-                      {exp.currency === 'GBP' ? (
-                        `£${exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    <td style={{ textAlign: 'right', fontWeight: 700, position: 'relative', color: exp.nominalCode?.includes('Wages') || exp.nominalCode?.includes('Rent') ? 'var(--danger)' : 'var(--text-primary)' }}>
+                      {ukOverhead ? (
+                        <WithOverheadTooltip item={ukOverhead} position="top">
+                          <div style={{ cursor: 'help' }} title={formatOverheadTitle(ukOverhead)}>
+                            {exp.currency === 'GBP' ? (
+                              `£${exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            ) : (
+                              `£${(exp.amountGBP ?? toGBP(exp.amount, exp.currency, exp.fxRate)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${symbol}${exp.amount.toLocaleString()})`
+                            )}
+                            {ukOverhead.bonus > 0 && (
+                              <div style={{ fontSize: '9px', color: '#059669', fontWeight: 600 }}>
+                                +£{Math.round(ukOverhead.bonus).toLocaleString()} bonus
+                              </div>
+                            )}
+                          </div>
+                        </WithOverheadTooltip>
                       ) : (
-                        `£${(exp.amountGBP ?? toGBP(exp.amount, exp.currency, exp.fxRate)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${symbol}${exp.amount.toLocaleString()})`
+                        exp.currency === 'GBP' ? (
+                          `£${exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        ) : (
+                          `£${(exp.amountGBP ?? toGBP(exp.amount, exp.currency, exp.fxRate)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${symbol}${exp.amount.toLocaleString()})`
+                        )
                       )}
                     </td>
                   )}

@@ -4,6 +4,7 @@ import { CheckCircle2, Search, Building2, Layers } from 'lucide-react';
 import MultiSelectFilter from '../MultiSelectFilter';
 import { Company, Staff, Placement, Expense, NominalCode } from '../../types';
 import { symbolMap, MONTHS, getBusinessDaysInMonth, getCellData, calculateCommissionForRecruiter } from './utils';
+import { getUkStaffOverhead, formatOverheadTitle, WithOverheadTooltip } from './ukStaffOverheadData';
 import { FX_RATES } from '../../utils/currency';
 import { jsPDF } from 'jspdf';
 
@@ -316,18 +317,31 @@ export default function PayrollRegisterTable({
       }
     }
 
+    const ukOverhead = getUkStaffOverhead(staffMember.id, month);
+    if (ukOverhead && (!record || record.bonus === undefined)) {
+      autoReconciled = true;
+      autoBasic = ukOverhead.regularHours;
+      if (!autoNotes) {
+        autoNotes = `Humres UK Overhead: Bonus £${ukOverhead.bonus.toLocaleString()}, NI £${ukOverhead.employerNi.toLocaleString()}, Pension £${ukOverhead.royalLondon.toLocaleString()}`;
+      }
+    }
+
+    const initialBonus = record?.bonus !== undefined ? Number(record.bonus) : (ukOverhead ? ukOverhead.bonus : (cell.bonus || 0));
+    const initialNi = record?.employerNi !== undefined ? Number(record.employerNi) : (ukOverhead ? ukOverhead.employerNi : (cell.employerNi || 0));
+    const initialPension = record?.employerPension !== undefined ? Number(record.employerPension) : (ukOverhead ? ukOverhead.royalLondon : (cell.employerPension || 0));
+
     setIsReconciled(autoReconciled);
     setBasicSalaryOverride(autoBasic.toFixed(2));
     setCommissionOverride(cell.commission.toFixed(2));
-    setEmployerNi((cell.employerNi || 0).toFixed(2));
-    setEmployerPension((cell.employerPension || 0).toFixed(2));
+    setEmployerNi(initialNi.toFixed(2));
+    setEmployerPension(initialPension.toFixed(2));
     setEmployeeTaxNic((cell.employeeTaxNic || 0).toFixed(2));
     setEmployeePension((cell.employeePension || 0).toFixed(2));
     setReimbursementsInput((cell.reimbursements || 0).toFixed(2));
-    setBonusOverride((cell.bonus || 0).toFixed(2));
+    setBonusOverride(initialBonus.toFixed(2));
     
     setBonusCurrency(record?.bonusCurrency || 'GBP');
-    setBonusAmountInput((record?.bonusAmountEntered !== undefined ? record.bonusAmountEntered : (cell.bonus || 0)).toFixed(2));
+    setBonusAmountInput((record?.bonusAmountEntered !== undefined ? record.bonusAmountEntered : initialBonus).toFixed(2));
     setReimbursementsCurrency(record?.reimbursementsCurrency || 'GBP');
     setReimbursementsAmountInput((record?.reimbursementsAmountEntered !== undefined ? record.reimbursementsAmountEntered : (cell.reimbursements || 0)).toFixed(2));
     
@@ -698,6 +712,7 @@ export default function PayrollRegisterTable({
       <>
         {MONTHS.map(m => {
           const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
+          const ukOverhead = getUkStaffOverhead(s.id, m);
           
           let isReconciled = cell.isReconciled;
           let displayTotal = cell.total;
@@ -725,6 +740,15 @@ export default function PayrollRegisterTable({
           annualSum += displayTotal;
           const isSubmitted = !!record?.invoicesSubmitted;
 
+          const cellTitle = ukOverhead 
+            ? formatOverheadTitle(ukOverhead, 'Click to edit override')
+            : `${s.fullName} - ${m}
+Salary (Gross): £${Math.round(displayBasic).toLocaleString()}
+Comm: £${Math.round(cell.commission).toLocaleString()}
+${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements).toLocaleString()}\n` : ''}${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleString()}\n` : ''}${cell.employerPension > 0 ? `Employer Pension: £${Math.round(cell.employerPension).toLocaleString()}\n` : ''}${cell.employeeTaxNic > 0 ? `Employee Tax/NIC: £${Math.round(cell.employeeTaxNic).toLocaleString()}\n` : ''}${cell.employeePension > 0 ? `Employee Pension: £${Math.round(cell.employeePension).toLocaleString()}\n` : ''}Click to edit override`;
+
+          const effectiveBonus = ukOverhead ? ukOverhead.bonus : cell.bonus;
+
           return (
             <td 
               key={m}
@@ -738,25 +762,41 @@ export default function PayrollRegisterTable({
                 transition: 'all 0.15s'
               }}
               className={`payroll-cell ${isReconciled ? 'reconciled' : 'projected'}`}
-              title={`${s.fullName} - ${m}
-Salary (Gross): £${Math.round(displayBasic).toLocaleString()}
-Comm: £${Math.round(cell.commission).toLocaleString()}
-${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements).toLocaleString()}\n` : ''}${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleString()}\n` : ''}${cell.employerPension > 0 ? `Employer Pension: £${Math.round(cell.employerPension).toLocaleString()}\n` : ''}${cell.employeeTaxNic > 0 ? `Employee Tax/NIC: £${Math.round(cell.employeeTaxNic).toLocaleString()}\n` : ''}${cell.employeePension > 0 ? `Employee Pension: £${Math.round(cell.employeePension).toLocaleString()}\n` : ''}Click to edit override`}
+              title={cellTitle}
             >
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                <span>£{Math.round(displayTotal).toLocaleString()}</span>
-                {isReconciled ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', fontSize: '8px', fontWeight: 700, color: 'var(--success)', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '1px 4px', borderRadius: '3px' }}>
-                    <CheckCircle2 size={7} /> Paid
-                  </span>
-                ) : isSubmitted ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', fontSize: '8px', fontWeight: 700, color: 'var(--primary)', backgroundColor: 'rgba(59, 130, 246, 0.1)', padding: '1px 4px', borderRadius: '3px' }} title={`Invoices submitted on ${new Date(record.invoicesSubmittedAt || '').toLocaleString()}`}>
-                    📤 Submitted
-                  </span>
-                ) : (
-                  <span style={{ fontSize: '8px', color: 'var(--text-muted)' }}>Proj</span>
-                )}
-              </div>
+              <WithOverheadTooltip item={ukOverhead} position="bottom">
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                  <span>£{Math.round(displayTotal).toLocaleString()}</span>
+                  {effectiveBonus > 0 ? (
+                    <span 
+                      style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '2px', 
+                        fontSize: '8px', 
+                        fontWeight: 700, 
+                        color: '#059669', 
+                        backgroundColor: 'rgba(16, 185, 129, 0.12)', 
+                        padding: '1px 4px', 
+                        borderRadius: '3px' 
+                      }}
+                      title={`Bonus: £${Number(effectiveBonus).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                    >
+                      🎁 +£{Math.round(effectiveBonus).toLocaleString()}
+                    </span>
+                  ) : isReconciled ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', fontSize: '8px', fontWeight: 700, color: 'var(--success)', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '1px 4px', borderRadius: '3px' }}>
+                      <CheckCircle2 size={7} /> Paid
+                    </span>
+                  ) : isSubmitted ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', fontSize: '8px', fontWeight: 700, color: 'var(--primary)', backgroundColor: 'rgba(59, 130, 246, 0.1)', padding: '1px 4px', borderRadius: '3px' }} title={`Invoices submitted on ${new Date(record.invoicesSubmittedAt || '').toLocaleString()}`}>
+                      📤 Submitted
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '8px', color: 'var(--text-muted)' }}>Proj</span>
+                  )}
+                </div>
+              </WithOverheadTooltip>
             </td>
           );
         })}

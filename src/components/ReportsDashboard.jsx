@@ -13,7 +13,8 @@ import {
   Globe, 
   PieChart, 
   Coins,
-  Printer
+  Printer,
+  Settings
 } from 'lucide-react';
 
 const formatGBP = (val) => {
@@ -119,6 +120,36 @@ export default function ReportsDashboard({
   const [drilldownState, setDrilldownState] = useState(null);
   const [drilldownSearch, setDrilldownSearch] = useState('');
   const [drilldownTypeFilter, setDrilldownTypeFilter] = useState('all'); // 'all', 'paid', 'projected'
+  const [drilldownVisibleCols, setDrilldownVisibleCols] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bm-drilldown-expense-cols');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      date: true,
+      plMonth: true,
+      payee: true,
+      contract: true,
+      nominal: true,
+      allocation: true,
+      status: true,
+      amount: true,
+      tax: false,
+      bank: false,
+      receipt: false
+    };
+  });
+  const [showDrilldownColPicker, setShowDrilldownColPicker] = useState(false);
+
+  const handleToggleDrilldownCol = (key) => {
+    setDrilldownVisibleCols(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem('bm-drilldown-expense-cols', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  };
   const [selectedRecruiterPlacements, setSelectedRecruiterPlacements] = useState(null); // { recruiterName, placements: [...] }
   const [expandedExitedRatios, setExpandedExitedRatios] = useState(false);
   const [expandedExitedLeaguesBillings, setExpandedExitedLeaguesLeaguesBillings] = useState(false);
@@ -6324,7 +6355,7 @@ export default function ReportsDashboard({
         };
 
         const rawItems = getDrilldownItems();
-        const isOverheadDrilldown = drilldownState.categoryKey === 'overheadsExpenses' || drilldownState.categoryKey === 'nominal' || drilldownState.categoryKey === 'totalOverheads';
+        const isOverheadDrilldown = drilldownState.categoryKey === 'overheadsExpenses' || drilldownState.categoryKey === 'nominal' || drilldownState.categoryKey === 'totalOverheads' || drilldownState.categoryKey === 'balanceSheet';
 
         const paidItems = rawItems.filter(item => !item.isProjected);
         const projectedItems = rawItems.filter(item => item.isProjected);
@@ -6384,7 +6415,7 @@ export default function ReportsDashboard({
               </div>
 
               {/* Toolbar */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <input 
                   type="text" 
                   placeholder="Filter by payee, recruiter, client, or role..." 
@@ -6393,9 +6424,108 @@ export default function ReportsDashboard({
                   className="search-input" 
                   style={{ width: '100%', maxWidth: '380px' }}
                 />
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                  Showing {filteredItems.length} of {rawItems.length} contributing records
-                </span>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    Showing {filteredItems.length} of {rawItems.length} records
+                  </span>
+
+                  {isOverheadDrilldown && (
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowDrilldownColPicker(prev => !prev)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '6px 12px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)',
+                          backgroundColor: showDrilldownColPicker ? 'var(--primary)' : 'var(--bg-secondary)',
+                          color: showDrilldownColPicker ? '#fff' : 'var(--text-primary)',
+                          cursor: 'pointer'
+                        }}
+                        title="Choose which columns appear in this itemization pop-up"
+                      >
+                        <Settings size={13} /> Columns ({Object.values(drilldownVisibleCols).filter(Boolean).length})
+                      </button>
+
+                      {showDrilldownColPicker && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '100%',
+                          right: 0,
+                          zIndex: 250,
+                          backgroundColor: 'var(--bg-secondary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: '12px',
+                          minWidth: '220px',
+                          boxShadow: 'var(--shadow-xl)',
+                          marginTop: '6px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px'
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                              Choose Columns
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const resetCols = {
+                                  date: true,
+                                  plMonth: true,
+                                  payee: true,
+                                  contract: true,
+                                  nominal: true,
+                                  allocation: true,
+                                  status: true,
+                                  amount: true,
+                                  tax: false,
+                                  bank: false,
+                                  receipt: false
+                                };
+                                setDrilldownVisibleCols(resetCols);
+                                try { localStorage.setItem('bm-drilldown-expense-cols', JSON.stringify(resetCols)); } catch (e) {}
+                              }}
+                              style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '10px', fontWeight: 600, padding: 0 }}
+                            >
+                              Reset
+                            </button>
+                          </div>
+                          {[
+                            { key: 'date', label: 'Transaction Date' },
+                            { key: 'plMonth', label: 'P&L Month' },
+                            { key: 'payee', label: 'Payee / Supplier' },
+                            { key: 'contract', label: 'Linked Contract' },
+                            { key: 'nominal', label: 'Nominal Code' },
+                            { key: 'allocation', label: 'Allocation (For Whom)' },
+                            { key: 'bank', label: 'Bank / Source' },
+                            { key: 'tax', label: 'Tax Rate (VAT)' },
+                            { key: 'status', label: 'Status / Nature' },
+                            { key: 'amount', label: 'Amount (Gross GBP)' },
+                            { key: 'receipt', label: 'Invoice / Receipt' }
+                          ].map(col => (
+                            <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', cursor: 'pointer', margin: 0, color: 'var(--text-primary)' }}>
+                              <input 
+                                type="checkbox"
+                                checked={!!drilldownVisibleCols[col.key]}
+                                onChange={() => handleToggleDrilldownCol(col.key)}
+                                style={{ cursor: 'pointer' }}
+                              />
+                              <span>{col.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Overhead Projected vs Paid Summary Cards & Filter Tabs */}
@@ -6645,16 +6775,19 @@ export default function ReportsDashboard({
                           <th style={{ textAlign: 'right' }}>Active Status</th>
                         </>
                       )}
-                      {(drilldownState.categoryKey === 'overheadsExpenses' || drilldownState.categoryKey === 'nominal' || drilldownState.categoryKey === 'totalOverheads') && (
+                      {isOverheadDrilldown && (
                         <>
-                          <th>Date</th>
-                          <th>P&L Month</th>
-                          <th>Payee / Vendor</th>
-                          <th>Linked Contract</th>
-                          <th>Nominal Code</th>
-                          <th>Allocated To (For Whom)</th>
-                          <th>Status / Nature</th>
-                          <th style={{ textAlign: 'right' }}>Amount (Gross)</th>
+                          {drilldownVisibleCols.date && <th>Date</th>}
+                          {drilldownVisibleCols.plMonth && <th>P&L Month</th>}
+                          {drilldownVisibleCols.payee && <th>Payee / Vendor</th>}
+                          {drilldownVisibleCols.contract && <th>Linked Contract</th>}
+                          {drilldownVisibleCols.nominal && <th>Nominal Code</th>}
+                          {drilldownVisibleCols.allocation && <th>Allocated To (For Whom)</th>}
+                          {drilldownVisibleCols.bank && <th>Bank / Source</th>}
+                          {drilldownVisibleCols.tax && <th style={{ textAlign: 'right' }}>Tax (VAT)</th>}
+                          {drilldownVisibleCols.status && <th>Status / Nature</th>}
+                          {drilldownVisibleCols.amount && <th style={{ textAlign: 'right' }}>Amount (Gross)</th>}
+                          {drilldownVisibleCols.receipt && <th style={{ textAlign: 'center' }}>Receipt</th>}
                         </>
                       )}
                     </tr>
@@ -6662,7 +6795,7 @@ export default function ReportsDashboard({
                   <tbody>
                     {filteredItems.length === 0 ? (
                       <tr>
-                        <td colSpan={isOverheadDrilldown ? 8 : 7} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)' }}>
+                        <td colSpan={isOverheadDrilldown ? Object.values(drilldownVisibleCols).filter(Boolean).length : 7} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)' }}>
                           No matching itemized records found for this period.
                         </td>
                       </tr>
@@ -6799,21 +6932,36 @@ export default function ReportsDashboard({
 
                         return (
                           <tr key={item.id || idx} style={isMuted ? { opacity: 0.6 } : undefined}>
-                            <td>{item.date}</td>
-                            <td>{item.plMonth}</td>
-                            <td style={{ fontWeight: 600 }}>{item.payee}</td>
-                            <td>{contracts.find(c => c.id === item.linkedContractId)?.name || 'General Vendor'}</td>
-                            <td>{item.nominalCode}</td>
-                            <td style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 600 }}>{targetStr}</td>
-                            <td>{statusBadge}</td>
-                            <td style={{ textAlign: 'right', fontWeight: 700, color: isMuted ? 'var(--text-muted)' : (item.isProjected ? 'var(--accent)' : 'inherit'), textDecoration: isMuted ? 'line-through' : 'none' }}>
-                              {formatGBP(toGBP(item.amount || 0, item.currency || 'GBP'))}
-                              {isMuted && (
-                                <div style={{ fontSize: '9px', fontWeight: 'normal', color: 'var(--text-muted)', textDecoration: 'none' }}>
-                                  (Not in P&L)
-                                </div>
-                              )}
-                            </td>
+                            {drilldownVisibleCols.date && <td>{item.date}</td>}
+                            {drilldownVisibleCols.plMonth && <td>{item.plMonth}</td>}
+                            {drilldownVisibleCols.payee && <td style={{ fontWeight: 600 }}>{item.payee}</td>}
+                            {drilldownVisibleCols.contract && <td>{contracts.find(c => c.id === item.linkedContractId)?.name || (item.linkedContractId ? 'Contract' : 'General Vendor')}</td>}
+                            {drilldownVisibleCols.nominal && <td>{item.nominalCode}</td>}
+                            {drilldownVisibleCols.allocation && <td style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 600 }}>{targetStr}</td>}
+                            {drilldownVisibleCols.bank && <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{item.bankAccount || (item.isProjection ? '— (Forecast)' : 'Bank')}</td>}
+                            {drilldownVisibleCols.tax && <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{item.taxRate !== undefined && item.taxRate !== null && item.taxRate !== '' ? `${item.taxRate}%` : '—'}</td>}
+                            {drilldownVisibleCols.status && <td>{statusBadge}</td>}
+                            {drilldownVisibleCols.amount && (
+                              <td style={{ textAlign: 'right', fontWeight: 700, color: isMuted ? 'var(--text-muted)' : (item.isProjected ? 'var(--accent)' : 'inherit'), textDecoration: isMuted ? 'line-through' : 'none' }}>
+                                {formatGBP(toGBP(item.amount || 0, item.currency || 'GBP'))}
+                                {isMuted && (
+                                  <div style={{ fontSize: '9px', fontWeight: 'normal', color: 'var(--text-muted)', textDecoration: 'none' }}>
+                                    (Not in P&L)
+                                  </div>
+                                )}
+                              </td>
+                            )}
+                            {drilldownVisibleCols.receipt && (
+                              <td style={{ textAlign: 'center' }}>
+                                {item.invoiceUrl && item.invoiceUrl !== '#' ? (
+                                  <a href={item.invoiceUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '11px', fontWeight: 600 }} title="Open Invoice / Receipt">
+                                    📄 View
+                                  </a>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>—</span>
+                                )}
+                              </td>
+                            )}
                           </tr>
                         );
                       })

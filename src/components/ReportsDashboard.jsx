@@ -638,6 +638,24 @@ export default function ReportsDashboard({
     };
   };
 
+  // Helper to identify expenses that represent staff salary / payroll settlement disbursements
+  const isPayrollDisbursement = (e) => {
+    if (!e) return false;
+    if (e.linkedPayrollCellId) return true;
+    const cleanCode = e.nominalCode?.split(' - ')[0]?.trim() || '';
+    const isSalaryCode = cleanCode === '1002' || cleanCode === '1001' || cleanCode === '1004' || cleanCode === '7003' || cleanCode === '7004';
+    if (!isSalaryCode) return false;
+    const targetStaffIds = Array.isArray(e.allocationTarget)
+      ? e.allocationTarget
+      : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
+    const matchesStaff = (staff || []).some(s => 
+      targetStaffIds.includes(s.id) || 
+      e.recipientId === s.id || 
+      (s.fullName && e.payee && e.payee.toLowerCase().includes(s.fullName.toLowerCase()))
+    );
+    return matchesStaff;
+  };
+
   // Dynamic shared overhead helper
   const getDynamicOverheadApportionment = (monthKey) => {
     const activeStaff = staff.filter(s => {
@@ -791,23 +809,6 @@ export default function ReportsDashboard({
       return daysWorked >= 10;
     });
     const groupActiveStaffIds = groupActiveStaff.map(s => s.id);
-
-    // Helper to identify expenses that represent staff salary / payroll settlement disbursements
-    const isPayrollDisbursement = (e) => {
-      if (e.linkedPayrollCellId) return true;
-      const cleanCode = e.nominalCode?.split(' - ')[0]?.trim() || '';
-      const isSalaryCode = cleanCode === '1002' || cleanCode === '1001' || cleanCode === '1004' || cleanCode === '7003' || cleanCode === '7004';
-      if (!isSalaryCode) return false;
-      const targetStaffIds = Array.isArray(e.allocationTarget)
-        ? e.allocationTarget
-        : (e.recipientId ? [e.recipientId] : e.selectedStaffIds || []);
-      const matchesStaff = staff.some(s => 
-        targetStaffIds.includes(s.id) || 
-        e.recipientId === s.id || 
-        (s.fullName && e.payee && e.payee.toLowerCase().includes(s.fullName.toLowerCase()))
-      );
-      return matchesStaff;
-    };
 
     // 1. Process regular operational actual expenses (excluding payroll settlement disbursements)
     const monthExpenses = expenses.filter(e => 

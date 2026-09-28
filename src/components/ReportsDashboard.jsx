@@ -99,6 +99,23 @@ export default function ReportsDashboard({
   }, [currentUser, isManager, userDept]);
   const [expandedExpenses, setExpandedExpenses] = useState(false);
   const [expandedBalanceSheet, setExpandedBalanceSheet] = useState(false);
+  const [hideZeroNominals, setHideZeroNominals] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bm-hide-zero-nominals');
+      if (saved !== null) return saved === 'true';
+    } catch (e) {}
+    return true; // Default to hiding nominal rows with £0 balance
+  });
+
+  const handleToggleHideZeroNominals = () => {
+    setHideZeroNominals(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('bm-hide-zero-nominals', String(next));
+      } catch (e) {}
+      return next;
+    });
+  };
   const [drilldownState, setDrilldownState] = useState(null);
   const [drilldownSearch, setDrilldownSearch] = useState('');
   const [drilldownTypeFilter, setDrilldownTypeFilter] = useState('all'); // 'all', 'paid', 'projected'
@@ -1908,7 +1925,14 @@ export default function ReportsDashboard({
           let overheadsDetailHtml = '';
           const codeKeys = Array.from(new Set(
             rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
-          )).filter(c => !c.startsWith('__')).sort();
+          )).filter(c => {
+            if (c.startsWith('__')) return false;
+            if (hideZeroNominals) {
+              const total = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[c] || 0), 0);
+              if (total === 0) return false;
+            }
+            return true;
+          }).sort();
 
           codeKeys.forEach(code => {
             const total = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
@@ -1928,7 +1952,13 @@ export default function ReportsDashboard({
           let balanceSheetDetailHtml = '';
           const bsCodeKeys = Array.from(new Set(
             rowData.flatMap(r => Object.keys(r.balanceSheetBreakdown || {}))
-          )).sort();
+          )).filter(c => {
+            if (hideZeroNominals) {
+              const total = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[c] || 0), 0);
+              if (total === 0) return false;
+            }
+            return true;
+          }).sort();
 
           bsCodeKeys.forEach(code => {
             const total = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0);
@@ -3040,6 +3070,24 @@ export default function ReportsDashboard({
                             {mode.label}
                           </button>
                         ))}
+                        <button
+                          type="button"
+                          onClick={handleToggleHideZeroNominals}
+                          style={{
+                            fontSize: '9px',
+                            padding: '2px 7px',
+                            marginLeft: '6px',
+                            borderRadius: '4px',
+                            border: hideZeroNominals ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid var(--border-color)',
+                            backgroundColor: hideZeroNominals ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.04)',
+                            color: hideZeroNominals ? '#10b981' : 'var(--text-secondary)',
+                            cursor: 'pointer',
+                            fontWeight: 600
+                          }}
+                          title={hideZeroNominals ? "Nominals with £0 are hidden. Click to show all." : "Showing all nominals. Click to hide £0 nominals."}
+                        >
+                          {hideZeroNominals ? '🚫 £0 Hidden' : '👁️ Show All £0'}
+                        </button>
                       </div>
                     </td>
                     {rowData.map((row, idx) => {
@@ -3134,7 +3182,16 @@ export default function ReportsDashboard({
                   {expandedExpenses && (() => {
                     const codeKeys = Array.from(new Set(
                       rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
-                    )).filter(c => !c.startsWith('__')).sort();
+                    )).filter(c => {
+                      if (c.startsWith('__')) return false;
+                      if (hideZeroNominals) {
+                        const ytdSum = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[c] || 0), 0);
+                        const ytdPaidSum = rowData.reduce((acc, r) => acc + (r.nominalPaidBreakdown?.[c] || 0), 0);
+                        const ytdProjSum = rowData.reduce((acc, r) => acc + (r.nominalProjectedBreakdown?.[c] || 0), 0);
+                        if (ytdSum === 0 && ytdPaidSum === 0 && ytdProjSum === 0) return false;
+                      }
+                      return true;
+                    }).sort();
 
                     return codeKeys.map(code => {
                       const isExcluded = isNominalExcluded(code);
@@ -3420,7 +3477,13 @@ export default function ReportsDashboard({
                   {expandedBalanceSheet && (() => {
                     const codeKeys = Array.from(new Set(
                       rowData.flatMap(r => Object.keys(r.balanceSheetBreakdown || {}))
-                    )).sort();
+                    )).filter(c => {
+                      if (hideZeroNominals) {
+                        const ytdSum = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[c] || 0), 0);
+                        if (ytdSum === 0) return false;
+                      }
+                      return true;
+                    }).sort();
 
                     return codeKeys.map(code => {
                       const ytdSum = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0);

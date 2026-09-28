@@ -43,7 +43,7 @@
   --transition-fast: 0.15s ease;
   --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   
-  --sidebar-width: 280px;
+  --sidebar-width: 260px;
 }
 
 /* Light Theme Variables */
@@ -279,10 +279,17 @@ button, input, select, textarea {
 
 /* Dashboard Metrics & Layout */
 .content-wrapper {
-  padding: 24px 32px;
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
+}
+
+@media (max-width: 1440px) {
+  .content-wrapper {
+    padding: 16px 18px;
+    gap: 14px;
+  }
 }
 
 .metrics-grid {

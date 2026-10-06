@@ -142,6 +142,44 @@ describe('Payroll Calculations', () => {
     expect(cell.employeeTaxNic).toBe(0);
   });
 
+  it('should project 0 for exited freelance contractor staff in months after exit', () => {
+    const exitedContractor: any = {
+      id: 'contractor-exited',
+      fullName: 'Exited Contractor',
+      startDate: '2024-01-01',
+      status: 'exited',
+      exitDate: '2026-05-01',
+      payrollPolicyId: 'policy-freelance',
+      salary: 48000,
+      attendanceRate: 400,
+      currency: 'GBP'
+    };
+
+    const policies = [{
+      id: 'policy-freelance',
+      type: 'freelance',
+      name: 'Contractor Policy',
+      nominalCode: '1001 - Freelancer Payments'
+    }];
+
+    // June 2026 is after May 2026 exit date
+    const cellJune = getCellData(
+      exitedContractor,
+      '2026-06',
+      [],
+      policies,
+      [],
+      [],
+      [exitedContractor],
+      [],
+      [],
+      []
+    );
+
+    expect(cellJune.basic).toBe(0);
+    expect(cellJune.total).toBe(0);
+  });
+
   it('should fall back to global rates if not specified on the policy template', () => {
     const mockStorage: Record<string, string> = {
       'bm-global-payroll-rates': JSON.stringify({

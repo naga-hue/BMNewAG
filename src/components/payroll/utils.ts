@@ -561,7 +561,8 @@ export function getCellData(
   );
 
   // Calculate proration based on actual working days in the month and actual days worked
-  const proration = calculateProrationFactor(staffMember, month, holidays);
+  const prorationDetails = getProrationDetails(staffMember, month, holidays);
+  const proration = prorationDetails.factor;
   baselineBasic = baselineBasic * proration;
 
   if (staffMember.status === 'exited') {
@@ -660,11 +661,12 @@ export function getCellData(
         }
       });
 
-      const attendanceDays = Math.max(0, totalBusinessDays - unpaidDaysInTargetMonth);
+      const effectiveBusinessDays = prorationDetails.activeDays;
+      const attendanceDays = Math.max(0, effectiveBusinessDays - unpaidDaysInTargetMonth);
 
       let dailyRate = 0;
       if (staffMember.salary && Number(staffMember.salary) > 0) {
-        dailyRate = (Number(staffMember.salary) / 12) / totalBusinessDays;
+        dailyRate = (Number(staffMember.salary) / 12) / (totalBusinessDays || 1);
       } else if (staffMember.attendanceRate && Number(staffMember.attendanceRate) > 0) {
         dailyRate = Number(staffMember.attendanceRate);
       } else {
@@ -721,6 +723,20 @@ export function getCellData(
     }
   }
 
+  // Zero out all costs for exited staff for any month after their exit / cutoff date
+  const cutoffStr = staffMember.salaryPaidUntilDate || staffMember.exitDate || '';
+  if ((staffMember.status === 'exited' || !!staffMember.exitDate) && cutoffStr) {
+    const cutoffMonth = cutoffStr.substring(0, 7);
+    if (month > cutoffMonth) {
+      baselineBasic = 0;
+      baselineCommission = 0;
+      projectedEmployerNi = 0;
+      projectedEmployerPension = 0;
+      projectedEmployeeTaxNic = 0;
+      projectedEmployeePension = 0;
+    }
+  }
+
   if (staffMember.startDate) {
     const startMonth = staffMember.startDate.substring(0, 7);
     if (month < startMonth) {
@@ -745,6 +761,26 @@ export function getCellData(
   const ukOverhead = getUkStaffOverhead(staffMember.id, month);
 
   if (record) {
+    const cutoffMonth = cutoffStr ? cutoffStr.substring(0, 7) : '';
+    const isPastExit = (staffMember.status === 'exited' || !!staffMember.exitDate) && cutoffMonth && month > cutoffMonth;
+
+    if (isPastExit && !record.isReconciled) {
+      return {
+        isReconciled: false,
+        basic: 0,
+        commission: 0,
+        reimbursements: 0,
+        bonus: 0,
+        total: 0,
+        totalWithReimbursements: 0,
+        employerNi: 0,
+        employerPension: 0,
+        employeeTaxNic: 0,
+        employeePension: 0,
+        notes: '',
+        id: record.id
+      };
+    }
     const bonusVal = record.bonus !== undefined ? Number(record.bonus || 0) : (ukOverhead ? ukOverhead.bonus : 0);
     const basicVal = record.isReconciled 
       ? (record.bonus !== undefined ? Number(record.basicSalary) : (ukOverhead ? ukOverhead.regularHours : Number(record.basicSalary)))

@@ -68,14 +68,24 @@ const formatMonthLabel = (mKey: string): string => {
 
 // Helper to determine if a staff member was active during a given month
 const isStaffActiveInMonth = (s: Staff, monthKey: string, cellTotal: number): boolean => {
-  if (cellTotal > 0) return true;
-  if (!s.startDate) return false;
-  const startMonth = s.startDate.substring(0, 7);
-  if (startMonth > monthKey) return false;
-  if (s.status === 'exited' && s.exitDate) {
-    const exitMonth = s.exitDate.substring(0, 7);
-    if (exitMonth < monthKey) return false;
+  // 1. If staff member has exited, they cannot be active in months after their exit/cutoff date
+  if (s.status === 'exited' || !!s.exitDate) {
+    const cutoffStr = s.salaryPaidUntilDate || s.exitDate || '';
+    if (cutoffStr) {
+      const exitMonth = cutoffStr.substring(0, 7);
+      if (exitMonth < monthKey) return false;
+    }
   }
+
+  // 2. If before start date, they cannot be active
+  if (s.startDate) {
+    const startMonth = s.startDate.substring(0, 7);
+    if (startMonth > monthKey) return false;
+  } else {
+    return false;
+  }
+
+  if (cellTotal > 0) return true;
   return true;
 };
 

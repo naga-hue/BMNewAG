@@ -285,9 +285,11 @@ export default function DepartmentTeamCostTab({
   }, [monthsList, filteredStaff, staffMonthlyData]);
 
   // 1. Identify shared staff members:
-  // - SA Shared (Danielle, Global Recruiters SA comp-1782789370085, or nominal 1004)
-  // - Consulting Director / Directors (jobTitle contains director, consulting, or nominal 1003)
-  // - Staff with allocatedCompanyIds (Shared Cost Company Allocation)
+  // - SA Shared staff (Global Recruiters SA comp-1782789370085 with nominal 1004 / SA-Shared costs, e.g. Danielle)
+  // - Staff with explicit allocatedCompanyIds (Shared Cost Company Allocation)
+  // Note: Operating directors (like Spencer Wicks in Huntek Construction, Charlie Davies in Sterling,
+  // Sebastian Bacon in Totaco) belong directly to their own company & department and stay there.
+  // Their costs are direct team remuneration in their own department, NOT apportioned to other departments like Civils.
   const sharedStaffList = useMemo(() => {
     return staff.filter(s => {
       // Exclude if already in filteredStaff (already shown as a direct team member)
@@ -296,26 +298,17 @@ export default function DepartmentTeamCostTab({
       const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
       const policyNom = (policy?.nominalCode || '').toLowerCase();
       const jobLower = (s.jobTitle || '').toLowerCase();
-      const roleLower = (s.role || '').toLowerCase();
 
-      const isSaShared = s.companyId === 'comp-1782789370085' ||
+      // Only staff whose nominal is specifically 1004 (SA Shared) or who belong to SA Shared operations
+      const isSaShared = (s.companyId === 'comp-1782789370085' && (policyNom.includes('1004') || policyNom.includes('sa-shared') || policyNom.includes('sa shared') || jobLower.includes('sa shared'))) ||
                          policyNom.includes('1004') ||
-                         policyNom.includes('sa-shared') ||
-                         policyNom.includes('sa shared') ||
-                         (s.department && s.department.toLowerCase().includes('sa shared')) ||
-                         jobLower.includes('sa shared');
+                         policyNom.includes('sa-shared');
 
-      const isDirector = jobLower.includes('director') ||
-                         jobLower.includes('consulting') ||
-                         jobLower.includes('managing') ||
-                         roleLower.includes('director') ||
-                         policyNom.includes('1003') ||
-                         policyNom.includes('director');
-
+      // Staff explicitly configured with cross-company allocation targets
       const hasCompanyAllocations = Array.isArray(s.allocatedCompanyIds) && s.allocatedCompanyIds.length > 0;
       const isSharedMode = s.allocationMode === 'shared';
 
-      return isSaShared || isDirector || hasCompanyAllocations || isSharedMode;
+      return isSaShared || hasCompanyAllocations || isSharedMode;
     });
   }, [staff, filteredStaff, payrollPolicies]);
 
@@ -1068,7 +1061,7 @@ export default function DepartmentTeamCostTab({
 
       if (relevantSharedStaff.length > 0) {
         staffRows.push([]);
-        staffRows.push(['APPORTIONED SHARED ROLES, DIRECTORS & SA COSTS (HEADCOUNT PRO-RATA)']);
+        staffRows.push(['APPORTIONED SA SHARED COSTS & SHARED ROLES (HEADCOUNT PRO-RATA)']);
         relevantSharedStaff.forEach(s => {
           let sharedAnnualTotal = 0;
           let sharedYtvTotal = 0;
@@ -1647,7 +1640,7 @@ export default function DepartmentTeamCostTab({
                   <>
                     <tr style={{ backgroundColor: 'rgba(99, 102, 241, 0.05)', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)' }}>
                       <td colSpan={monthsList.length + 3} style={{ padding: '6px 20px', fontSize: '10px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Apportioned Shared Roles, Directors &amp; SA Shared Costs (Headcount Split)
+                        Apportioned SA Shared Costs &amp; Shared Roles (Headcount Split)
                       </td>
                     </tr>
 

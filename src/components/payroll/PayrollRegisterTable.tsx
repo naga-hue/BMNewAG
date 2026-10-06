@@ -79,6 +79,8 @@ export default function PayrollRegisterTable({
   const [bonusAmountInput, setBonusAmountInput] = useState('0.00');
   const [reimbursementsCurrency, setReimbursementsCurrency] = useState('GBP');
   const [reimbursementsAmountInput, setReimbursementsAmountInput] = useState('0.00');
+  const [reimbursementNominalCode, setReimbursementNominalCode] = useState('');
+  const [reimbursementAllocation, setReimbursementAllocation] = useState<'company' | 'staff'>('company');
 
   const allAvailableDepts = useMemo(() => {
     const depts: string[] = [];
@@ -345,6 +347,10 @@ export default function PayrollRegisterTable({
     setReimbursementsCurrency(record?.reimbursementsCurrency || 'GBP');
     setReimbursementsAmountInput((record?.reimbursementsAmountEntered !== undefined ? record.reimbursementsAmountEntered : (cell.reimbursements || 0)).toFixed(2));
     
+    const defaultReimburseNominal = record?.reimbursementNominalCode || nominalCodes.find(c => c.code?.toLowerCase().includes('travel') || c.code?.toLowerCase().includes('expense') || c.code?.toLowerCase().includes('reimburse'))?.code || (nominalCodes[0]?.code || '7400 - Travel & Entertaining');
+    setReimbursementNominalCode(defaultReimburseNominal);
+    setReimbursementAllocation((record?.reimbursementAllocation as 'company' | 'staff') || 'company');
+
     setLinkedExpenseId(autoExpenseId);
     setInitialLinkedExpenseId(record?.linkedExpenseId || '');
     
@@ -530,7 +536,9 @@ export default function PayrollRegisterTable({
       bonusCurrency,
       bonusAmountEntered: Number(bonusAmountInput) || 0,
       reimbursementsCurrency,
-      reimbursementsAmountEntered: Number(reimbursementsAmountInput) || 0
+      reimbursementsAmountEntered: Number(reimbursementsAmountInput) || 0,
+      reimbursementNominalCode,
+      reimbursementAllocation
     };
 
     try {
@@ -562,6 +570,7 @@ export default function PayrollRegisterTable({
         await onDeleteExpense(`payroll-tax-${staffMember.id}-${month}`);
         await onDeleteExpense(`payroll-pension-${staffMember.id}-${month}`);
         await onDeleteExpense(`payroll-exp-${staffMember.id}-${month}`);
+        await onDeleteExpense(`payroll-reimburse-${staffMember.id}-${month}`);
       } else {
         await onDeleteExpense(`payroll-exp-${staffMember.id}-${month}`);
 
@@ -569,7 +578,8 @@ export default function PayrollRegisterTable({
         const taxNominal = nominalCodes.find(c => c.id === '501' || c.code?.includes('501') || c.code?.toLowerCase().includes('paye') || c.code?.toLowerCase().includes('tax') || c.code?.toLowerCase().includes('ni'))?.code || '501 - HMRC PAYE & NI Contributions';
         const pensionNominal = nominalCodes.find(c => c.id === '502' || c.code?.includes('502') || c.code?.toLowerCase().includes('pension'))?.code || '502 - Royal London Pension Contributions';
 
-        const netSalaryAmt = baseVal + commVal + bonusVal + reimbursementsVal - taxNicVal - pensionVal;
+        // 1. Net Salary Expense (strictly salary + commission + bonus less employee deductions)
+        const netSalaryAmt = baseVal + commVal + bonusVal - taxNicVal - pensionVal;
         const netExp = {
           id: `payroll-salary-${staffMember.id}-${month}`,
           date: `${month}-28`,
@@ -580,9 +590,30 @@ export default function PayrollRegisterTable({
           allocationType: 'staff' as const,
           allocationTarget: [staffMember.id],
           plMonth: month,
-          notes: `Net take-home pay. Reconciled via Group Payroll Module. ${reconcileNotes.trim()}`
+          notes: `Net take-home pay (Basic + Commission + Bonus less deductions). Reconciled via Group Payroll Module. ${reconcileNotes.trim()}`
         };
         await onSaveExpense(netExp);
+
+        // 2. Separate Reimbursement Expense booked to chosen nominal code and allocated to Company
+        if (reimbursementsVal > 0) {
+          const targetReimburseNominal = reimbursementNominalCode || nominalCodes.find(c => c.code?.toLowerCase().includes('travel') || c.code?.toLowerCase().includes('expense') || c.code?.toLowerCase().includes('reimburse'))?.code || '7400 - Travel & Entertaining';
+          const isCompanyAbsorption = reimbursementAllocation === 'company';
+          const reimburseExp = {
+            id: `payroll-reimburse-${staffMember.id}-${month}`,
+            date: `${month}-28`,
+            payee: `Reimbursement: ${staffMember.fullName}`,
+            amount: reimbursementsVal,
+            currency: staffMember.currency || 'GBP',
+            nominalCode: targetReimburseNominal,
+            allocationType: (isCompanyAbsorption ? 'company' : 'staff') as const,
+            allocationTarget: isCompanyAbsorption ? [staffMember.companyId] : [staffMember.id],
+            plMonth: month,
+            notes: `Expense reimbursement for ${staffMember.fullName}. Reconciled via Group Payroll Module. Cost absorbed by: ${isCompanyAbsorption ? 'Company Overhead (Staff not burdened)' : 'Staff Member'}. ${reconcileNotes.trim()}`
+          };
+          await onSaveExpense(reimburseExp);
+        } else {
+          await onDeleteExpense(`payroll-reimburse-${staffMember.id}-${month}`);
+        }
 
         const totalHmrcAmt = empNiVal + taxNicVal;
         if (totalHmrcAmt > 0) {
@@ -1817,6 +1848,42 @@ ${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}
                 {reimbursementsCurrency !== 'GBP' && (
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
                     Rate: 1 {reimbursementsCurrency} = £{(FX_RATES[reimbursementsCurrency] || 1.0).toFixed(4)} | <strong>GBP Equivalent: £{reimbursementsInput}</strong>
+                  </div>
+                )}
+
+                {(Number(reimbursementsAmountInput) > 0 || Number(reimbursementsInput) > 0) && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px', backgroundColor: 'var(--bg-secondary)', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
+                        Nominal Code for Reimbursement:
+                      </label>
+                      <select
+                        className="select-filter"
+                        value={reimbursementNominalCode}
+                        onChange={(e) => setReimbursementNominalCode(e.target.value)}
+                        disabled={isRecruiter}
+                        style={{ width: '100%', padding: '8px', fontSize: '11px' }}
+                      >
+                        {nominalCodes.map(nc => (
+                          <option key={nc.id} value={nc.code}>{nc.code}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
+                        Cost Absorption (Who Pays?):
+                      </label>
+                      <select
+                        className="select-filter"
+                        value={reimbursementAllocation}
+                        onChange={(e) => setReimbursementAllocation(e.target.value as 'company' | 'staff')}
+                        disabled={isRecruiter}
+                        style={{ width: '100%', padding: '8px', fontSize: '11px' }}
+                      >
+                        <option value="company">🏢 Company Overhead (Staff does NOT absorb)</option>
+                        <option value="staff">👤 Staff Direct Cost (Staff absorbs in P&L)</option>
+                      </select>
+                    </div>
                   </div>
                 )}
               </div>

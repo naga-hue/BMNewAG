@@ -95,6 +95,14 @@ export interface PayrollRecord {
   linkedExpenseId?: string;
   invoicesSubmitted?: boolean;
   invoicesSubmittedAt?: string;
+  reimbursements?: number;
+  bonus?: number;
+  bonusCurrency?: string;
+  bonusAmountEntered?: number;
+  reimbursementsCurrency?: string;
+  reimbursementsAmountEntered?: number;
+  reimbursementNominalCode?: string;
+  reimbursementAllocation?: 'company' | 'staff';
 }
 
 export interface CrmClientCompany {

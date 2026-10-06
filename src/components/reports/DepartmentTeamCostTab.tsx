@@ -284,6 +284,135 @@ export default function DepartmentTeamCostTab({
     return counts;
   }, [monthsList, filteredStaff, staffMonthlyData]);
 
+  // 1. Identify shared staff members:
+  // - SA Shared (Danielle, Global Recruiters SA comp-1782789370085, or nominal 1004)
+  // - Consulting Director / Directors (jobTitle contains director, consulting, or nominal 1003)
+  // - Staff with allocatedCompanyIds (Shared Cost Company Allocation)
+  const sharedStaffList = useMemo(() => {
+    return staff.filter(s => {
+      // Exclude if already in filteredStaff (already shown as a direct team member)
+      if (filteredStaff.some(fs => fs.id === s.id)) return false;
+
+      const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+      const policyNom = (policy?.nominalCode || '').toLowerCase();
+      const jobLower = (s.jobTitle || '').toLowerCase();
+      const roleLower = (s.role || '').toLowerCase();
+
+      const isSaShared = s.companyId === 'comp-1782789370085' ||
+                         policyNom.includes('1004') ||
+                         policyNom.includes('sa-shared') ||
+                         policyNom.includes('sa shared') ||
+                         (s.department && s.department.toLowerCase().includes('sa shared')) ||
+                         jobLower.includes('sa shared');
+
+      const isDirector = jobLower.includes('director') ||
+                         jobLower.includes('consulting') ||
+                         jobLower.includes('managing') ||
+                         roleLower.includes('director') ||
+                         policyNom.includes('1003') ||
+                         policyNom.includes('director');
+
+      const hasCompanyAllocations = Array.isArray(s.allocatedCompanyIds) && s.allocatedCompanyIds.length > 0;
+      const isSharedMode = s.allocationMode === 'shared';
+
+      return isSaShared || isDirector || hasCompanyAllocations || isSharedMode;
+    });
+  }, [staff, filteredStaff, payrollPolicies]);
+
+  // Calculate monthly apportioned share for each shared staff member based on active team headcount
+  const sharedStaffMonthlyData = useMemo(() => {
+    const matrix: Record<string, Record<string, {
+      fullCost: number;
+      shareRatio: number;
+      apportionedCost: number;
+      viewStaffCount: number;
+      totalStaffCount: number;
+      subtext: string;
+      roleBadge: string;
+    }>> = {};
+
+    sharedStaffList.forEach(s => {
+      matrix[s.id] = {};
+      const targetCompanyIds = (s.allocatedCompanyIds && s.allocatedCompanyIds.length > 0) ? s.allocatedCompanyIds : null;
+
+      const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
+      const policyNom = (policy?.nominalCode || '').toLowerCase();
+      const jobLower = (s.jobTitle || '').toLowerCase();
+
+      const isSaShared = s.companyId === 'comp-1782789370085' || policyNom.includes('1004') || jobLower.includes('sa shared');
+      const isDirector = jobLower.includes('director') || jobLower.includes('consulting') || policyNom.includes('1003');
+      const roleBadge = isSaShared ? '🌍 SA Shared' : isDirector ? '👑 Consulting Director' : '🤝 Shared Salary';
+
+      monthsList.forEach(m => {
+        // Calculate full monthly remuneration of the shared staff/director
+        const cell = getCellData(
+          s,
+          m,
+          payrollRecords,
+          payrollPolicies,
+          leaveRequests,
+          holidays,
+          staff,
+          companies,
+          placements,
+          commissionPolicies
+        );
+        const fullCost = cell.total;
+
+        // Group active staff across target companies
+        const eligibleGroupStaff = staff.filter(os => {
+          const comp = companies.find(c => c.id === os.companyId);
+          if (!comp || comp.includeInConsolidation === false) return false;
+          if (targetCompanyIds) {
+            if (!targetCompanyIds.includes(os.companyId)) return false;
+          } else {
+            if (os.companyId === s.companyId) return false;
+          }
+          const c = getCellData(os, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
+          return isStaffActiveInMonth(os, m, c.total);
+        });
+
+        // Staff in current filtered view (matching companyFilter and deptFilter)
+        const viewStaff = eligibleGroupStaff.filter(os => {
+          const compMatch = companyFilter.includes('all') || companyFilter.includes(os.companyId);
+          const deptMatch = deptFilter.includes('all') || deptFilter.includes(os.department);
+          return compMatch && deptMatch;
+        });
+
+        let shareRatio = 0;
+        let apportionedCost = 0;
+        let subtext = '';
+
+        if (eligibleGroupStaff.length > 0 && viewStaff.length > 0) {
+          shareRatio = viewStaff.length / eligibleGroupStaff.length;
+          apportionedCost = fullCost * shareRatio;
+          subtext = `${viewStaff.length}/${eligibleGroupStaff.length} staff (${(shareRatio * 100).toFixed(1)}%)`;
+        }
+
+        matrix[s.id][m] = {
+          fullCost,
+          shareRatio,
+          apportionedCost,
+          viewStaffCount: viewStaff.length,
+          totalStaffCount: eligibleGroupStaff.length,
+          subtext,
+          roleBadge
+        };
+      });
+    });
+
+    return matrix;
+  }, [sharedStaffList, monthsList, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies, companyFilter, deptFilter]);
+
+  // Relevant shared staff who have apportioned cost > 0 in the period
+  const relevantSharedStaff = useMemo(() => {
+    return sharedStaffList.filter(s => {
+      const monthData = sharedStaffMonthlyData[s.id];
+      if (!monthData) return false;
+      return monthsList.some(m => (monthData[m]?.apportionedCost || 0) > 0);
+    });
+  }, [sharedStaffList, sharedStaffMonthlyData, monthsList]);
+
   // Filter tools applicable to current department and company selection
   const relevantTools = useMemo(() => {
     return departmentTools.filter(t => {
@@ -340,9 +469,56 @@ export default function DepartmentTeamCostTab({
         let subtext = '';
 
         if (costBasis === 'per_company') {
-          const compCount = matchingComps.length;
-          cost = compCount * unitCostGBP;
-          subtext = `${compCount} ${compCount === 1 ? 'comp' : 'comps'}`;
+          // If viewing all departments, each matching company is charged unitCostGBP
+          // If filtering by department, each matching company's fee is split across its departments
+          let totalCompCost = 0;
+
+          matchingComps.forEach(compId => {
+            const compDepts = companyDepartmentsMap[compId] || allDepartments;
+            const compEffectiveDepts = toolDepts.includes('all') 
+              ? compDepts 
+              : compDepts.filter(d => toolDepts.includes(d));
+
+            const compMatchingDepts = deptFilter.includes('all')
+              ? compEffectiveDepts
+              : compEffectiveDepts.filter(d => deptFilter.includes(d));
+
+            if (compMatchingDepts.length === 0) return;
+
+            const isAllDepts = deptFilter.includes('all') || compMatchingDepts.length === compEffectiveDepts.length;
+
+            if (isAllDepts) {
+              totalCompCost += unitCostGBP;
+            } else if (splitMethod === 'pro_rata_headcount') {
+              const compTotalStaff = staff.filter(s => {
+                if (s.companyId !== compId) return false;
+                if (!toolDepts.includes('all') && !toolDepts.includes(s.department)) return false;
+                const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
+                return isStaffActiveInMonth(s, m, cell.total);
+              }).length;
+
+              const compDeptStaff = staff.filter(s => {
+                if (s.companyId !== compId) return false;
+                if (!compMatchingDepts.includes(s.department)) return false;
+                const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
+                return isStaffActiveInMonth(s, m, cell.total);
+              }).length;
+
+              const ratio = compTotalStaff > 0 ? (compDeptStaff / compTotalStaff) : (compMatchingDepts.length / Math.max(1, compEffectiveDepts.length));
+              totalCompCost += unitCostGBP * ratio;
+            } else {
+              // Equal split across departments in this company
+              const ratio = compMatchingDepts.length / Math.max(1, compEffectiveDepts.length);
+              totalCompCost += unitCostGBP * ratio;
+            }
+          });
+
+          cost = totalCompCost;
+          if (deptFilter.includes('all')) {
+            subtext = `${matchingComps.length} ${matchingComps.length === 1 ? 'comp' : 'comps'}`;
+          } else {
+            subtext = splitMethod === 'pro_rata_headcount' ? 'Dept pro-rata' : 'Dept split';
+          }
         } else if (costBasis === 'per_department') {
           const deptCount = matchingDepts.length;
           cost = deptCount * unitCostGBP;
@@ -434,7 +610,7 @@ export default function DepartmentTeamCostTab({
     });
   }, [relevantTools, monthsList, staff, payrollRecords, payrollPolicies, leaveRequests, holidays, companies, placements, commissionPolicies, reconciledCutoffMonth, allDepartments, companyFilter, deptFilter]);
 
-  // Aggregate Remuneration Totals across Months
+  // Aggregate Remuneration Totals across Months (Direct Team + Apportioned Shared Roles, Directors & SA Shared)
   const staffRemunerationTotals = useMemo(() => {
     const monthlySum: Record<string, number> = {};
     let grandTotal = 0;
@@ -442,11 +618,17 @@ export default function DepartmentTeamCostTab({
 
     monthsList.forEach(m => {
       let mSum = 0;
+      // 1. Direct team members
       filteredStaff.forEach(s => {
         const cell = staffMonthlyData[s.id]?.[m];
-        // actual staff cost without reimbursements
         mSum += cell?.total || 0;
       });
+      // 2. Apportioned shared staff (SA Shared, Consulting Director, Shared Salaries)
+      relevantSharedStaff.forEach(s => {
+        const d = sharedStaffMonthlyData[s.id]?.[m];
+        mSum += d?.apportionedCost || 0;
+      });
+
       monthlySum[m] = mSum;
       grandTotal += mSum;
       if (m <= reconciledCutoffMonth) {
@@ -455,7 +637,7 @@ export default function DepartmentTeamCostTab({
     });
 
     return { monthlySum, grandTotal, ytvTotal };
-  }, [monthsList, filteredStaff, staffMonthlyData, reconciledCutoffMonth]);
+  }, [monthsList, filteredStaff, staffMonthlyData, relevantSharedStaff, sharedStaffMonthlyData, reconciledCutoffMonth]);
 
   // Aggregate Software Tools Totals across Months
   const toolTotals = useMemo(() => {
@@ -484,20 +666,26 @@ export default function DepartmentTeamCostTab({
     return monthsList.map(m => getFilteredMonthlyData(m));
   }, [monthsList, getFilteredMonthlyData]);
 
-  // Extract all distinct nominal codes matching filters
+  // Extract all distinct nominal codes matching filters (excluding payroll nominals captured in Section 1)
   const nominalCodeKeys = useMemo(() => {
     const allCodes = Array.from(new Set(
       pnlMonthlyData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
     )).filter(c => !c.startsWith('__'));
 
+    const staffPayrollNominals = ['1001', '1002', '1003', '1004', '7003', '7004', '500'];
+    const nonStaffCodes = allCodes.filter(c => {
+      const prefix = c.split(' - ')[0]?.trim();
+      return !staffPayrollNominals.includes(prefix);
+    });
+
     if (hideZeroNominals) {
-      return allCodes.filter(c => {
+      return nonStaffCodes.filter(c => {
         const total = pnlMonthlyData.reduce((acc, r) => acc + (r.nominalBreakdown?.[c] || 0), 0);
         return total !== 0;
       }).sort();
     }
 
-    return allCodes.sort();
+    return nonStaffCodes.sort();
   }, [pnlMonthlyData, hideZeroNominals]);
 
   // Aggregate Department Overheads & Operational Nominals
@@ -877,6 +1065,31 @@ export default function DepartmentTeamCostTab({
           Math.round(staffAnnualTotal)
         ]);
       });
+
+      if (relevantSharedStaff.length > 0) {
+        staffRows.push([]);
+        staffRows.push(['APPORTIONED SHARED ROLES, DIRECTORS & SA COSTS (HEADCOUNT PRO-RATA)']);
+        relevantSharedStaff.forEach(s => {
+          let sharedAnnualTotal = 0;
+          let sharedYtvTotal = 0;
+          const monthData = sharedStaffMonthlyData[s.id] || {};
+          const monthCols = monthsList.map(m => {
+            const val = monthData[m]?.apportionedCost || 0;
+            sharedAnnualTotal += val;
+            if (m <= reconciledCutoffMonth) sharedYtvTotal += val;
+            return Math.round(val);
+          });
+
+          staffRows.push([
+            s.fullName || '',
+            s.jobTitle || 'Shared Cost',
+            s.companyId === 'comp-1782789370085' ? 'SA Shared (Apportioned)' : 'Shared / Director (Apportioned)',
+            ...monthCols,
+            Math.round(sharedYtvTotal),
+            Math.round(sharedAnnualTotal)
+          ]);
+        });
+      }
 
       staffRows.push([
         'TOTAL TEAM REMUNERATION',
@@ -1334,7 +1547,7 @@ export default function DepartmentTeamCostTab({
                   Apportioned Team Remuneration
                 </span>
                 <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                  ({filteredStaff.length} team members • Ex-Reimbursements)
+                  ({filteredStaff.length} direct team members{relevantSharedStaff.length > 0 ? ` + ${relevantSharedStaff.length} apportioned shared roles` : ''} • Ex-Reimbursements)
                 </span>
               </td>
               {monthsList.map(m => (
@@ -1353,7 +1566,7 @@ export default function DepartmentTeamCostTab({
             {/* Expanded Staff Members Sub-rows */}
             {expandedTeam && (
               <>
-                {filteredStaff.length === 0 ? (
+                {filteredStaff.length === 0 && relevantSharedStaff.length === 0 ? (
                   <tr>
                     <td colSpan={monthsList.length + 3} style={{ padding: '12px 32px', color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '11px' }}>
                       No team members found matching current filters.
@@ -1427,6 +1640,91 @@ export default function DepartmentTeamCostTab({
                       </tr>
                     );
                   })
+                )}
+
+                {/* Apportioned Shared Roles & Directors Subsection */}
+                {relevantSharedStaff.length > 0 && (
+                  <>
+                    <tr style={{ backgroundColor: 'rgba(99, 102, 241, 0.05)', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)' }}>
+                      <td colSpan={monthsList.length + 3} style={{ padding: '6px 20px', fontSize: '10px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Apportioned Shared Roles, Directors &amp; SA Shared Costs (Headcount Split)
+                      </td>
+                    </tr>
+
+                    {relevantSharedStaff.map(s => {
+                      let sharedRowTotal = 0;
+                      let sharedYtvTotal = 0;
+                      const monthData = sharedStaffMonthlyData[s.id] || {};
+
+                      return (
+                        <tr 
+                          key={s.id} 
+                          style={{ 
+                            fontSize: '11px', 
+                            borderBottom: '1px solid var(--border-color)',
+                            backgroundColor: 'rgba(99, 102, 241, 0.015)'
+                          }}
+                        >
+                          <td style={{ 
+                            paddingLeft: '36px', 
+                            position: 'sticky', 
+                            left: 0, 
+                            backgroundColor: 'var(--bg-primary)', 
+                            zIndex: 1 
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <span style={{ color: 'var(--accent)' }}>↳</span>
+                              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.fullName}</span>
+                              <span style={{
+                                fontSize: '9px',
+                                backgroundColor: s.companyId === 'comp-1782789370085' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(99, 102, 241, 0.12)',
+                                color: s.companyId === 'comp-1782789370085' ? 'var(--success)' : 'var(--accent)',
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                fontWeight: 600
+                              }}>
+                                {s.companyId === 'comp-1782789370085' ? '🌍 SA Shared' : (s.jobTitle?.toLowerCase().includes('director') || s.jobTitle?.toLowerCase().includes('consulting')) ? '👑 Consulting Director' : '🤝 Shared Salary'}
+                              </span>
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '10px' }}>
+                                — {s.jobTitle || 'Shared Cost'}
+                              </span>
+                            </div>
+                          </td>
+                          {monthsList.map(m => {
+                            const d = monthData[m];
+                            const val = d?.apportionedCost || 0;
+                            sharedRowTotal += val;
+                            if (m <= reconciledCutoffMonth) sharedYtvTotal += val;
+
+                            return (
+                              <td 
+                                key={m} 
+                                style={{ 
+                                  textAlign: 'right', 
+                                  fontFamily: 'monospace', 
+                                  opacity: val > 0 ? 1 : 0.4 
+                                }}
+                                title={`Shared Role: ${s.fullName}\nMonth: ${m}\n• Full Monthly Cost: ${formatGBPExact(d?.fullCost || 0)}\n• Team Apportionment: ${d?.subtext || '—'}\n• Apportioned Cost to Dept: ${formatGBPExact(val)}`}
+                              >
+                                <div>{val > 0 ? formatGBP(val) : '—'}</div>
+                                {val > 0 && (
+                                  <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                                    {d?.subtext}
+                                  </div>
+                                )}
+                              </td>
+                            );
+                          })}
+                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, backgroundColor: 'rgba(99, 102, 241, 0.04)' }}>
+                            {sharedYtvTotal > 0 ? formatGBP(sharedYtvTotal) : '—'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {formatGBP(sharedRowTotal)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </>
                 )}
 
                 {/* Active Headcount row */}

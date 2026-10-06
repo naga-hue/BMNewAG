@@ -168,29 +168,40 @@ export default function MergeDepartmentsModal({
   };
 
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.65)',
-      backdropFilter: 'blur(3px)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 100005,
-      padding: '16px'
-    }}>
-      <div style={{
-        backgroundColor: 'var(--bg-primary)',
-        border: '1px solid var(--border-color)',
-        borderRadius: '12px',
-        width: '100%',
-        maxWidth: '560px',
-        maxHeight: '90vh',
+    <div 
+      onClick={(e) => {
+        e.stopPropagation();
+        if (e.target === e.currentTarget && !isMerging) {
+          onClose();
+        }
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        backdropFilter: 'blur(3px)',
         display: 'flex',
-        flexDirection: 'column',
-        boxShadow: '0 20px 40px -15px rgba(0, 0, 0, 0.5)',
-        overflow: 'hidden'
-      }}>
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 100005,
+        padding: '16px'
+      }}
+    >
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          backgroundColor: 'var(--bg-primary)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '12px',
+          width: '100%',
+          maxWidth: '560px',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '0 20px 40px -15px rgba(0, 0, 0, 0.5)',
+          overflow: 'hidden'
+        }}
+      >
         {/* Header */}
         <div style={{
           padding: '16px 20px',

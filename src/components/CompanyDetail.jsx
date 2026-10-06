@@ -1914,13 +1914,15 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
 
       {/* Merge Departments Modal */}
       {showMergeDeptModal && (
-        <MergeDepartmentsModal
-          isOpen={showMergeDeptModal}
-          onClose={() => setShowMergeDeptModal(false)}
-          company={company}
-          onShowToast={onShowToast}
-          onCompanyUpdated={onUpdateCompany}
-        />
+        <div onClick={(e) => e.stopPropagation()}>
+          <MergeDepartmentsModal
+            isOpen={showMergeDeptModal}
+            onClose={() => setShowMergeDeptModal(false)}
+            company={company}
+            onShowToast={onShowToast}
+            onCompanyUpdated={onUpdateCompany}
+          />
+        </div>
       )}
     </div>
   );

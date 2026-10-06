@@ -123,10 +123,12 @@ export default function DepartmentTeamCostTab({
   const managerDept = currentUser?.department || staff.find(s => s.id === currentUser?.id)?.department;
 
   // View state toggles (matching P&L UI)
+  const [expandedSales, setExpandedSales] = useState<boolean>(true);
   const [expandedTeam, setExpandedTeam] = useState<boolean>(true);
   const [expandedTools, setExpandedTools] = useState<boolean>(true);
   const [expandedNominals, setExpandedNominals] = useState<boolean>(true);
   const [hideZeroNominals, setHideZeroNominals] = useState<boolean>(true);
+  const [excludeNominals, setExcludeNominals] = useState<boolean>(false);
   const [showDashboard, setShowDashboard] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
 
@@ -778,7 +780,85 @@ export default function DepartmentTeamCostTab({
     return { monthlySum, grandTotal, ytvTotal };
   }, [monthsList, pnlMonthlyData, nominalCodeKeys, isNominalExcluded, reconciledCutoffMonth]);
 
-  // Combined Department Operating Costs (Staff Remuneration + Tools + Nominals)
+  // Consultant-level and monthly Sales / Placements billings
+  const consultantSalesData = useMemo(() => {
+    const matrix: Record<string, {
+      consultant: Staff;
+      monthlySales: Record<string, number>;
+      grandTotal: number;
+      ytvTotal: number;
+      placementCount: number;
+    }> = {};
+
+    filteredStaff.forEach(s => {
+      matrix[s.id] = {
+        consultant: s,
+        monthlySales: {},
+        grandTotal: 0,
+        ytvTotal: 0,
+        placementCount: 0
+      };
+      monthsList.forEach(m => {
+        matrix[s.id].monthlySales[m] = 0;
+      });
+    });
+
+    placements.forEach(p => {
+      if (!p.startDate || p.status === 'dns') return;
+      const pMonth = p.startDate.substring(0, 7);
+      if (!monthsList.includes(pMonth)) return;
+
+      const pVal = Number(p.netScoreValue) || 0;
+      const pCurr = p.currency || 'GBP';
+
+      if (p.splits && p.splits.length > 0) {
+        p.splits.forEach(sp => {
+          if (matrix[sp.staffId]) {
+            const splitVal = toGBP((pVal * (Number(sp.percentage) || 0)) / 100, pCurr);
+            matrix[sp.staffId].monthlySales[pMonth] += splitVal;
+            matrix[sp.staffId].grandTotal += splitVal;
+            if (pMonth <= reconciledCutoffMonth) {
+              matrix[sp.staffId].ytvTotal += splitVal;
+            }
+            matrix[sp.staffId].placementCount += 1;
+          }
+        });
+      } else if (p.recruiterId && matrix[p.recruiterId]) {
+        const fullVal = toGBP(pVal, pCurr);
+        matrix[p.recruiterId].monthlySales[pMonth] += fullVal;
+        matrix[p.recruiterId].grandTotal += fullVal;
+        if (pMonth <= reconciledCutoffMonth) {
+          matrix[p.recruiterId].ytvTotal += fullVal;
+        }
+        matrix[p.recruiterId].placementCount += 1;
+      }
+    });
+
+    return matrix;
+  }, [filteredStaff, placements, monthsList, reconciledCutoffMonth]);
+
+  // Aggregate Team Sales Totals
+  const teamSalesTotals = useMemo(() => {
+    const monthlySum: Record<string, number> = {};
+    let grandTotal = 0;
+    let ytvTotal = 0;
+
+    monthsList.forEach(m => {
+      let sum = 0;
+      filteredStaff.forEach(s => {
+        sum += consultantSalesData[s.id]?.monthlySales[m] || 0;
+      });
+      monthlySum[m] = sum;
+      grandTotal += sum;
+      if (m <= reconciledCutoffMonth) {
+        ytvTotal += sum;
+      }
+    });
+
+    return { monthlySum, grandTotal, ytvTotal };
+  }, [monthsList, filteredStaff, consultantSalesData, reconciledCutoffMonth]);
+
+  // Combined Department Operating Costs (Staff Remuneration + Tools + (excludeNominals ? 0 : Nominals))
   const combinedDepartmentTotals = useMemo(() => {
     const monthlySum: Record<string, number> = {};
     const avgCostPerHead: Record<string, number> = {};
@@ -788,7 +868,7 @@ export default function DepartmentTeamCostTab({
     monthsList.forEach(m => {
       const staffCost = staffRemunerationTotals.monthlySum[m] || 0;
       const toolCost = toolTotals.monthlySum[m] || 0;
-      const nominalCost = nominalTotals.monthlySum[m] || 0;
+      const nominalCost = excludeNominals ? 0 : (nominalTotals.monthlySum[m] || 0);
       const total = staffCost + toolCost + nominalCost;
 
       monthlySum[m] = total;
@@ -812,7 +892,51 @@ export default function DepartmentTeamCostTab({
       avgHeadcount,
       overallAvgCostPerHead
     };
-  }, [monthsList, staffRemunerationTotals, toolTotals, nominalTotals, monthlyHeadcount, reconciledCutoffMonth]);
+  }, [monthsList, staffRemunerationTotals, toolTotals, nominalTotals, excludeNominals, monthlyHeadcount, reconciledCutoffMonth]);
+
+  // Department Net Contribution / P&L Totals (Sales - Operating Costs)
+  const departmentPnlTotals = useMemo(() => {
+    const monthlyNetProfit: Record<string, number> = {};
+    const monthlyMarginPct: Record<string, number> = {};
+    const monthlyNetContributionPerHead: Record<string, number> = {};
+    let grandNetProfit = 0;
+    let ytvNetProfit = 0;
+
+    monthsList.forEach(m => {
+      const sales = teamSalesTotals.monthlySum[m] || 0;
+      const costs = combinedDepartmentTotals.monthlySum[m] || 0;
+      const profit = sales - costs;
+
+      monthlyNetProfit[m] = profit;
+      monthlyMarginPct[m] = sales > 0 ? (profit / sales) * 100 : 0;
+
+      const hc = monthlyHeadcount[m] || 0;
+      monthlyNetContributionPerHead[m] = hc > 0 ? profit / hc : 0;
+
+      grandNetProfit += profit;
+      if (m <= reconciledCutoffMonth) {
+        ytvNetProfit += profit;
+      }
+    });
+
+    const overallMarginPct = teamSalesTotals.grandTotal > 0 
+      ? (grandNetProfit / teamSalesTotals.grandTotal) * 100 
+      : 0;
+
+    const overallContributionPerHead = combinedDepartmentTotals.avgHeadcount > 0
+      ? grandNetProfit / combinedDepartmentTotals.avgHeadcount
+      : 0;
+
+    return {
+      monthlyNetProfit,
+      monthlyMarginPct,
+      monthlyNetContributionPerHead,
+      grandNetProfit,
+      ytvNetProfit,
+      overallMarginPct,
+      overallContributionPerHead
+    };
+  }, [monthsList, teamSalesTotals, combinedDepartmentTotals, monthlyHeadcount, reconciledCutoffMonth]);
 
   // Total unutilized seats across all department tools (latest cutoff month)
   const unutilizedStats = useMemo(() => {
@@ -1055,10 +1179,11 @@ export default function DepartmentTeamCostTab({
       const deptLabel = deptFilter.includes('all') ? 'All Departments' : deptFilter.join(', ');
       const monthHeaders = monthsList.map(m => formatMonthLabel(m));
 
-      // 1. Department Consolidated Summary Sheet
+      // 1. Department Consolidated Summary & P&L Sheet
       const summaryRows = [
-        ['HUMRES BUSINESS MANAGEMENT - DEPARTMENT TEAM & TOOL COSTS STATEMENT'],
+        ['HUMRES BUSINESS MANAGEMENT - DEPARTMENT TEAM & TOOL COSTS STATEMENT (P&L)'],
         [`Department(s): ${deptLabel}`, `Period Range: ${startMonth} to ${endMonth}`, `Exported on: ${new Date().toLocaleDateString('en-GB')}`],
+        [excludeNominals ? 'Mode: Point 3 Nominals Excluded (Sales, Team & Tool Cost Focus)' : 'Mode: Consolidated Full P&L (Including Nominals)'],
         [],
         ['Metric / Account Line Item (GBP)', ...monthHeaders, 'YTV (Reconciled)', 'Period Total'],
         [
@@ -1068,31 +1193,55 @@ export default function DepartmentTeamCostTab({
           Math.round(combinedDepartmentTotals.avgHeadcount) + ' (Avg)'
         ],
         [
-          '1. Staff Remuneration Paid (Ex-Reimbursements)',
+          '➕ Team Sales & Placements Billings (Revenue)',
+          ...monthsList.map(m => Math.round(teamSalesTotals.monthlySum[m] || 0)),
+          Math.round(teamSalesTotals.ytvTotal),
+          Math.round(teamSalesTotals.grandTotal)
+        ],
+        [
+          '➖ 1. Staff Remuneration Paid (Ex-Reimbursements)',
           ...monthsList.map(m => Math.round(staffRemunerationTotals.monthlySum[m] || 0)),
           Math.round(staffRemunerationTotals.ytvTotal),
           Math.round(staffRemunerationTotals.grandTotal)
         ],
         [
-          '2. Software & Tool Licenses (Contract Ratchet)',
+          '➖ 2. Software & Tool Licenses (Contract Ratchet)',
           ...monthsList.map(m => Math.round(toolTotals.monthlySum[m] || 0)),
           Math.round(toolTotals.ytvTotal),
           Math.round(toolTotals.grandTotal)
         ],
         [
-          '3. Department Overheads & Operational SaaS (Nominals)',
-          ...monthsList.map(m => Math.round(nominalTotals.monthlySum[m] || 0)),
-          Math.round(nominalTotals.ytvTotal),
-          Math.round(nominalTotals.grandTotal)
+          excludeNominals ? '➖ 3. Department Overheads & Nominals (EXCLUDED FROM P&L)' : '➖ 3. Department Overheads & Operational SaaS (Nominals)',
+          ...monthsList.map(m => Math.round(excludeNominals ? 0 : (nominalTotals.monthlySum[m] || 0))),
+          Math.round(excludeNominals ? 0 : nominalTotals.ytvTotal),
+          Math.round(excludeNominals ? 0 : nominalTotals.grandTotal)
         ],
         [
-          'GRAND TOTAL DEPARTMENT OPERATING COST',
+          'TOTAL DEPARTMENT OPERATING COSTS',
           ...monthsList.map(m => Math.round(combinedDepartmentTotals.monthlySum[m] || 0)),
           Math.round(combinedDepartmentTotals.ytvTotal),
           Math.round(combinedDepartmentTotals.grandTotal)
         ],
         [
-          'Average Cost per Recruiter / Team Member',
+          '🏆 DEPARTMENT NET PROFIT / CONTRIBUTION (P&L)',
+          ...monthsList.map(m => Math.round(departmentPnlTotals.monthlyNetProfit[m] || 0)),
+          Math.round(departmentPnlTotals.ytvNetProfit),
+          Math.round(departmentPnlTotals.grandNetProfit)
+        ],
+        [
+          'Net Margin % (Profit ÷ Sales)',
+          ...monthsList.map(m => (departmentPnlTotals.monthlyMarginPct[m] || 0).toFixed(1) + '%'),
+          '—',
+          departmentPnlTotals.overallMarginPct.toFixed(1) + '%'
+        ],
+        [
+          'Average Net Contribution per Consultant',
+          ...monthsList.map(m => Math.round(departmentPnlTotals.monthlyNetContributionPerHead[m] || 0)),
+          '—',
+          Math.round(departmentPnlTotals.overallContributionPerHead)
+        ],
+        [
+          'Average Operating Cost per Recruiter / Team Member',
           ...monthsList.map(m => Math.round(combinedDepartmentTotals.avgCostPerHead[m] || 0)),
           '—',
           Math.round(combinedDepartmentTotals.overallAvgCostPerHead)
@@ -1100,7 +1249,31 @@ export default function DepartmentTeamCostTab({
       ];
 
       const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
-      XLSX.utils.book_append_sheet(wb, wsSummary, 'Department Summary');
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Department P&L Summary');
+
+      // 1B. Team Sales & Placements Billings Sheet
+      const salesRows = [
+        ['TEAM SALES & PLACEMENTS BILLINGS (CONSULTANT BREAKDOWN)'],
+        [`Department(s): ${deptLabel}`, `Period: ${startMonth} to ${endMonth}`],
+        [],
+        ['Consultant / Recruiter', 'Job Title', 'Deals', ...monthHeaders, 'YTV Sales (£)', 'Total Sales (£)']
+      ];
+
+      filteredStaff.forEach(s => {
+        const sSales = consultantSalesData[s.id] || { monthlySales: {}, grandTotal: 0, ytvTotal: 0, placementCount: 0 };
+        const monthCols = monthsList.map(m => Math.round(sSales.monthlySales[m] || 0));
+        salesRows.push([
+          s.fullName || '',
+          s.jobTitle || 'Recruiter',
+          sSales.placementCount,
+          ...monthCols,
+          Math.round(sSales.ytvTotal),
+          Math.round(sSales.grandTotal)
+        ]);
+      });
+
+      const wsSales = XLSX.utils.aoa_to_sheet(salesRows);
+      XLSX.utils.book_append_sheet(wb, wsSales, 'Team Sales');
 
       // 2. Staff Remuneration Sheet
       const staffRows = [
@@ -1342,6 +1515,30 @@ export default function DepartmentTeamCostTab({
 
           <button
             type="button"
+            onClick={() => setExcludeNominals(!excludeNominals)}
+            style={{
+              padding: '4px 10px',
+              fontSize: '11px',
+              fontWeight: 700,
+              borderRadius: 'var(--radius-sm)',
+              border: excludeNominals ? '1px solid #f59e0b' : '1px solid var(--border-color)',
+              backgroundColor: excludeNominals ? 'rgba(245, 158, 11, 0.15)' : 'var(--bg-primary)',
+              color: excludeNominals ? '#d97706' : 'var(--text-secondary)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all 0.15s ease'
+            }}
+            title={excludeNominals 
+              ? "Point 3 nominal overheads are currently excluded from P&L costs. Click to re-include nominals." 
+              : "Click to exclude Point 3 overhead nominals to focus P&L purely on direct Sales, Team & Tool costs."}
+          >
+            {excludeNominals ? '🚫 Point 3 Nominals Excluded' : '⚖️ Include All Nominals'}
+          </button>
+
+          <button
+            type="button"
             onClick={handleExportExcel}
             style={{
               background: 'none',
@@ -1401,9 +1598,62 @@ export default function DepartmentTeamCostTab({
       {showDashboard && (
         <div style={{ 
           display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', 
           gap: '14px' 
         }}>
+          {/* Card 0A: Team Sales / Placements Billings */}
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid rgba(16, 185, 129, 0.3)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--success)' }}>TEAM SALES (BILLINGS)</span>
+              <TrendingUp size={16} style={{ color: 'var(--success)' }} />
+            </div>
+            <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--success)', fontFamily: 'monospace' }}>
+              {formatGBP(teamSalesTotals.grandTotal)}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+              Direct deals by {filteredStaff.length} consultants ({startMonth} - {endMonth})
+            </div>
+          </div>
+
+          {/* Card 0B: Department Net Contribution / Profit (P&L) */}
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: `1px solid ${departmentPnlTotals.grandNetProfit >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+            borderRadius: 'var(--radius-lg)',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: departmentPnlTotals.grandNetProfit >= 0 ? 'var(--success)' : '#ef4444' }}>
+                NET CONTRIBUTION (P&L)
+              </span>
+              <DollarSign size={16} style={{ color: departmentPnlTotals.grandNetProfit >= 0 ? 'var(--success)' : '#ef4444' }} />
+            </div>
+            <div style={{ 
+              fontSize: '24px', 
+              fontWeight: 800, 
+              color: departmentPnlTotals.grandNetProfit >= 0 ? 'var(--success)' : '#ef4444', 
+              fontFamily: 'monospace' 
+            }}>
+              {departmentPnlTotals.grandNetProfit >= 0 ? '+' : ''}{formatGBP(departmentPnlTotals.grandNetProfit)}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+              Net margin: {departmentPnlTotals.overallMarginPct.toFixed(1)}% {excludeNominals ? '• (Excl. Nominals)' : '• (Full P&L)'}
+            </div>
+          </div>
+
           {/* Card 1: Total Department Operating Cost */}
           <div style={{
             backgroundColor: 'var(--bg-card)',
@@ -1423,7 +1673,7 @@ export default function DepartmentTeamCostTab({
               {formatGBP(combinedDepartmentTotals.grandTotal)}
             </div>
             <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-              Remuneration + Tools + Nominals ({startMonth} - {endMonth})
+              {excludeNominals ? 'Remuneration + Tools (Nominals Excluded)' : 'Remuneration + Tools + Nominals'}
             </div>
           </div>
 
@@ -1567,6 +1817,109 @@ export default function DepartmentTeamCostTab({
             </tr>
           </thead>
           <tbody>
+
+            {/* ==========================================================
+                SECTION 0: TEAM SALES & PLACEMENTS BILLINGS (REVENUE)
+                ========================================================== */}
+            <tr className="section-header" style={{ backgroundColor: 'var(--bg-card)', borderTop: '2px solid var(--border-color)' }}>
+              <td 
+                colSpan={monthsList.length + 3} 
+                style={{ 
+                  padding: '8px 14px', 
+                  fontWeight: 800, 
+                  fontSize: '12px', 
+                  color: 'var(--success)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  backgroundColor: 'rgba(16, 185, 129, 0.08)'
+                }}
+              >
+                0. Team Sales & Placements Billings (Revenue)
+              </td>
+            </tr>
+
+            {/* Main Collapsible Sales Row */}
+            <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'rgba(16, 185, 129, 0.03)' }}>
+              <td 
+                style={{ 
+                  padding: '10px 14px', 
+                  position: 'sticky', 
+                  left: 0, 
+                  backgroundColor: 'var(--bg-primary)', 
+                  zIndex: 2, 
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+                onClick={() => setExpandedSales(!expandedSales)}
+              >
+                <span style={{ fontSize: '11px', color: 'var(--success)' }}>
+                  {expandedSales ? '▼' : '▶'}
+                </span>
+                <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--success)' }}>
+                  Team Placements Billings (Sales Revenue)
+                </span>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                  ({filteredStaff.length} consultants • Click to {expandedSales ? 'collapse' : 'expand'})
+                </span>
+              </td>
+              {monthsList.map(m => (
+                <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--success)' }}>
+                  {formatGBP(teamSalesTotals.monthlySum[m] || 0)}
+                </td>
+              ))}
+              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--success)', backgroundColor: 'rgba(16, 185, 129, 0.1)' }}>
+                {formatGBP(teamSalesTotals.ytvTotal)}
+              </td>
+              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, color: 'var(--success)', fontSize: '13px' }}>
+                {formatGBP(teamSalesTotals.grandTotal)}
+              </td>
+            </tr>
+
+            {/* Consultant Sales Breakdown Rows */}
+            {expandedSales && (
+              <>
+                {filteredStaff.length === 0 ? (
+                  <tr>
+                    <td colSpan={monthsList.length + 3} style={{ padding: '12px 24px', fontStyle: 'italic', color: 'var(--text-secondary)' }}>
+                      No consultants found for the selected department filter.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredStaff.map(s => {
+                    const sSales = consultantSalesData[s.id] || { monthlySales: {}, grandTotal: 0, ytvTotal: 0, placementCount: 0 };
+                    return (
+                      <tr key={`sales-${s.id}`} style={{ fontSize: '12px', borderBottom: '1px solid var(--border-color)', opacity: sSales.grandTotal === 0 ? 0.6 : 1 }}>
+                        <td style={{ padding: '8px 14px 8px 32px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.fullName}</span>
+                            <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>({s.jobTitle || 'Recruiter'})</span>
+                            {sSales.placementCount > 0 && (
+                              <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--success)', fontWeight: 600 }}>
+                                {sSales.placementCount} deals
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        {monthsList.map(m => (
+                          <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace', color: (sSales.monthlySales[m] || 0) > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                            {formatGBP(sSales.monthlySales[m] || 0)}
+                          </td>
+                        ))}
+                        <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(16, 185, 129, 0.05)', fontWeight: 600 }}>
+                          {formatGBP(sSales.ytvTotal)}
+                        </td>
+                        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: sSales.grandTotal > 0 ? 'var(--success)' : 'inherit' }}>
+                          {formatGBP(sSales.grandTotal)}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </>
+            )}
 
             {/* ==========================================================
                 SECTION 1: APPORTIONED TEAM REMUNERATION
@@ -2068,12 +2421,27 @@ export default function DepartmentTeamCostTab({
                   padding: '8px 14px', 
                   fontWeight: 800, 
                   fontSize: '12px', 
-                  color: 'var(--text-secondary)',
+                  color: excludeNominals ? '#d97706' : 'var(--text-secondary)',
                   textTransform: 'uppercase',
-                  letterSpacing: '0.05em'
+                  letterSpacing: '0.05em',
+                  backgroundColor: excludeNominals ? 'rgba(245, 158, 11, 0.08)' : undefined
                 }}
               >
                 3. Department Overheads & Operational Expenses (All Nominals)
+                {excludeNominals && (
+                  <span style={{ 
+                    marginLeft: '12px', 
+                    padding: '2px 8px', 
+                    borderRadius: '4px', 
+                    fontSize: '10px', 
+                    backgroundColor: '#f59e0b', 
+                    color: '#fff', 
+                    fontWeight: 700, 
+                    textTransform: 'none' 
+                  }}>
+                    🚫 Excluded from P&L Summary (Focusing on Sales, Team & Tool Costs)
+                  </span>
+                )}
               </td>
             </tr>
 
@@ -2225,7 +2593,7 @@ export default function DepartmentTeamCostTab({
             )}
 
             {/* ==========================================================
-                SECTION 4: CONSOLIDATED DEPARTMENT OPERATING SUMMARY
+                SECTION 4: CONSOLIDATED DEPARTMENT SUMMARY & TEAM P&L
                 ========================================================== */}
             <tr className="section-header" style={{ backgroundColor: 'var(--bg-card)', borderTop: '3px solid var(--border-color)' }}>
               <td 
@@ -2239,14 +2607,32 @@ export default function DepartmentTeamCostTab({
                   letterSpacing: '0.05em'
                 }}
               >
-                4. Consolidated Department Summary & P&L Totals
+                4. Consolidated Department Summary & Team P&L Statement
+              </td>
+            </tr>
+
+            {/* Row: Team Sales / Billings Revenue */}
+            <tr style={{ fontSize: '12px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'rgba(16, 185, 129, 0.04)' }}>
+              <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1, fontWeight: 700, color: 'var(--success)' }}>
+                ➕ Team Sales & Placements Billings (Revenue)
+              </td>
+              {monthsList.map(m => (
+                <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--success)' }}>
+                  {formatGBP(teamSalesTotals.monthlySum[m] || 0)}
+                </td>
+              ))}
+              <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(16, 185, 129, 0.1)', fontWeight: 700, color: 'var(--success)' }}>
+                {formatGBP(teamSalesTotals.ytvTotal)}
+              </td>
+              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, color: 'var(--success)' }}>
+                {formatGBP(teamSalesTotals.grandTotal)}
               </td>
             </tr>
 
             {/* Row: Team Remuneration Summary */}
             <tr style={{ fontSize: '12px', borderBottom: '1px solid var(--border-color)' }}>
               <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1, fontWeight: 600 }}>
-                1. Team Remuneration (Salaries, Freelance & Commissions)
+                ➖ 1. Team Remuneration (Salaries, Freelance & Commissions)
               </td>
               {monthsList.map(m => (
                 <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
@@ -2264,7 +2650,7 @@ export default function DepartmentTeamCostTab({
             {/* Row: Software Tools Summary */}
             <tr style={{ fontSize: '12px', borderBottom: '1px solid var(--border-color)' }}>
               <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1, fontWeight: 600 }}>
-                2. Contracted Software & Tool Licenses
+                ➖ 2. Contracted Software & Tool Licenses
               </td>
               {monthsList.map(m => (
                 <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
@@ -2280,38 +2666,151 @@ export default function DepartmentTeamCostTab({
             </tr>
 
             {/* Row: Operational Nominals Summary */}
-            <tr style={{ fontSize: '12px', borderBottom: '1px solid var(--border-color)' }}>
+            <tr style={{ 
+              fontSize: '12px', 
+              borderBottom: '1px solid var(--border-color)', 
+              opacity: excludeNominals ? 0.5 : 1,
+              backgroundColor: excludeNominals ? 'rgba(245, 158, 11, 0.02)' : 'transparent' 
+            }}>
               <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1, fontWeight: 600 }}>
-                3. Department Overhead & Expense Nominals
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ textDecoration: excludeNominals ? 'line-through' : 'none' }}>
+                    ➖ 3. Department Overhead & Expense Nominals
+                  </span>
+                  {excludeNominals && (
+                    <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 700 }}>
+                      (EXCLUDED FROM P&L)
+                    </span>
+                  )}
+                </div>
               </td>
               {monthsList.map(m => (
-                <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
-                  {formatGBP(nominalTotals.monthlySum[m] || 0)}
+                <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace', textDecoration: excludeNominals ? 'line-through' : 'none', color: excludeNominals ? 'var(--text-muted)' : 'inherit' }}>
+                  {formatGBP(excludeNominals ? 0 : (nominalTotals.monthlySum[m] || 0))}
                 </td>
               ))}
-              <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', fontWeight: 600 }}>
-                {formatGBP(nominalTotals.ytvTotal)}
+              <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', fontWeight: 600, textDecoration: excludeNominals ? 'line-through' : 'none', color: excludeNominals ? 'var(--text-muted)' : 'inherit' }}>
+                {formatGBP(excludeNominals ? 0 : nominalTotals.ytvTotal)}
               </td>
-              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
-                {formatGBP(nominalTotals.grandTotal)}
+              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, textDecoration: excludeNominals ? 'line-through' : 'none', color: excludeNominals ? 'var(--text-muted)' : 'inherit' }}>
+                {formatGBP(excludeNominals ? 0 : nominalTotals.grandTotal)}
               </td>
             </tr>
 
-            {/* Grand Total Row */}
-            <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 800, borderTop: '2px solid var(--border-color)', borderBottom: '2px solid var(--border-color)', fontSize: '13px' }}>
-              <td style={{ padding: '12px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 2, color: 'var(--accent)' }}>
-                GRAND TOTAL DEPARTMENT OPERATING COST
+            {/* Grand Total Operating Cost Row */}
+            <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 800, borderTop: '2px solid var(--border-color)', borderBottom: '1px solid var(--border-color)', fontSize: '13px' }}>
+              <td style={{ padding: '10px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 2, color: 'var(--text-primary)' }}>
+                TOTAL DEPARTMENT OPERATING COSTS
+                {excludeNominals && (
+                  <span style={{ fontSize: '10px', marginLeft: '6px', fontWeight: 600, color: '#f59e0b' }}>
+                    (Team + Tools)
+                  </span>
+                )}
               </td>
               {monthsList.map(m => (
-                <td key={m} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--accent)' }}>
+                <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-primary)' }}>
                   {formatGBP(combinedDepartmentTotals.monthlySum[m] || 0)}
                 </td>
               ))}
-              <td style={{ padding: '12px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--accent)', backgroundColor: 'rgba(99, 102, 241, 0.1)' }}>
+              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-primary)', backgroundColor: 'rgba(99, 102, 241, 0.1)' }}>
                 {formatGBP(combinedDepartmentTotals.ytvTotal)}
               </td>
-              <td style={{ padding: '12px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--accent)', fontSize: '14px' }}>
+              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-primary)', fontSize: '14px' }}>
                 {formatGBP(combinedDepartmentTotals.grandTotal)}
+              </td>
+            </tr>
+
+            {/* Department Net Profit / Contribution Row (P&L) */}
+            <tr style={{ 
+              backgroundColor: departmentPnlTotals.grandNetProfit >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', 
+              fontWeight: 800, 
+              borderBottom: '2px solid var(--border-color)', 
+              fontSize: '13px' 
+            }}>
+              <td style={{ 
+                padding: '12px 14px', 
+                position: 'sticky', 
+                left: 0, 
+                backgroundColor: departmentPnlTotals.grandNetProfit >= 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', 
+                zIndex: 2, 
+                color: departmentPnlTotals.grandNetProfit >= 0 ? 'var(--success)' : '#ef4444' 
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>🏆 DEPARTMENT NET PROFIT / CONTRIBUTION (P&L)</span>
+                </div>
+              </td>
+              {monthsList.map(m => {
+                const profit = departmentPnlTotals.monthlyNetProfit[m] || 0;
+                return (
+                  <td key={m} style={{ 
+                    padding: '12px 8px', 
+                    textAlign: 'right', 
+                    fontFamily: 'monospace', 
+                    color: profit >= 0 ? 'var(--success)' : '#ef4444',
+                    fontWeight: 800 
+                  }}>
+                    {profit >= 0 ? '+' : ''}{formatGBP(profit)}
+                  </td>
+                );
+              })}
+              <td style={{ 
+                padding: '12px 12px', 
+                textAlign: 'right', 
+                fontFamily: 'monospace', 
+                color: departmentPnlTotals.ytvNetProfit >= 0 ? 'var(--success)' : '#ef4444', 
+                fontWeight: 800,
+                backgroundColor: departmentPnlTotals.ytvNetProfit >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)' 
+              }}>
+                {departmentPnlTotals.ytvNetProfit >= 0 ? '+' : ''}{formatGBP(departmentPnlTotals.ytvNetProfit)}
+              </td>
+              <td style={{ 
+                padding: '12px 12px', 
+                textAlign: 'right', 
+                fontFamily: 'monospace', 
+                color: departmentPnlTotals.grandNetProfit >= 0 ? 'var(--success)' : '#ef4444', 
+                fontSize: '15px',
+                fontWeight: 900 
+              }}>
+                {departmentPnlTotals.grandNetProfit >= 0 ? '+' : ''}{formatGBP(departmentPnlTotals.grandNetProfit)}
+              </td>
+            </tr>
+
+            {/* Net Margin % Row */}
+            <tr style={{ backgroundColor: 'rgba(99, 102, 241, 0.04)', fontSize: '11px', borderBottom: '1px solid var(--border-color)' }}>
+              <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                Net Margin % (Profit ÷ Sales)
+              </td>
+              {monthsList.map(m => {
+                const margin = departmentPnlTotals.monthlyMarginPct[m] || 0;
+                return (
+                  <td key={m} style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', color: margin >= 0 ? 'var(--success)' : '#ef4444', fontWeight: 600 }}>
+                    {margin !== 0 ? `${margin.toFixed(1)}%` : '—'}
+                  </td>
+                );
+              })}
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
+                —
+              </td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', color: departmentPnlTotals.overallMarginPct >= 0 ? 'var(--success)' : '#ef4444', fontWeight: 700 }}>
+                {departmentPnlTotals.overallMarginPct.toFixed(1)}%
+              </td>
+            </tr>
+
+            {/* Average Net Contribution Per Head Row */}
+            <tr style={{ backgroundColor: 'rgba(16, 185, 129, 0.04)', fontSize: '11px', borderBottom: '1px solid var(--border-color)' }}>
+              <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                Average Net Contribution per Consultant
+              </td>
+              {monthsList.map(m => (
+                <td key={m} style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', color: (departmentPnlTotals.monthlyNetContributionPerHead[m] || 0) >= 0 ? 'var(--success)' : '#ef4444' }}>
+                  {formatGBP(departmentPnlTotals.monthlyNetContributionPerHead[m] || 0)}
+                </td>
+              ))}
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
+                —
+              </td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', color: departmentPnlTotals.overallContributionPerHead >= 0 ? 'var(--success)' : '#ef4444', fontWeight: 700 }}>
+                {formatGBP(departmentPnlTotals.overallContributionPerHead)}
               </td>
             </tr>
 

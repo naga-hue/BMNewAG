@@ -157,6 +157,7 @@ export interface DepartmentTool {
   contractStartDate?: string; // e.g. "2026-01-01"
   renewalDate?: string; // e.g. "2026-12-31"
   baselineCommittedSeats: number; // baseline committed seats
+  isBaselineOverridden?: boolean; // whether baseline seats were manually overridden
   manualCommittedSeatsOverride?: Record<string, number>;
   vendorName?: string;
   notes?: string;

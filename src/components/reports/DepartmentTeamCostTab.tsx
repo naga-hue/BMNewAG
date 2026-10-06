@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { 
   Users, 
   Wrench, 
@@ -119,6 +119,30 @@ export default function DepartmentTeamCostTab({
   const [showDashboard, setShowDashboard] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
 
+  // Extract distinct departments from staff roster for tool assignments
+  const allDepartments = useMemo(() => {
+    const depts = new Set<string>();
+    staff.forEach(s => {
+      if (s.department && s.department.trim()) {
+        depts.add(s.department.trim());
+      }
+    });
+    return Array.from(depts).sort();
+  }, [staff]);
+
+  // Helper to compute active staff count for a set of companies and departments at a given date/month
+  const calculateStaffCountAtDate = useCallback((dateStr: string, compIds: string[], deptNames: string[]) => {
+    const monthKey = dateStr ? dateStr.substring(0, 7) : (startMonth || '2026-01');
+    return staff.filter(s => {
+      const compMatch = compIds.includes('all') || compIds.includes(s.companyId);
+      const deptMatch = deptNames.includes('all') || deptNames.includes(s.department);
+      if (!compMatch || !deptMatch) return false;
+
+      const cell = getCellData(s, monthKey, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
+      return isStaffActiveInMonth(s, monthKey, cell.total);
+    }).length;
+  }, [staff, payrollRecords, payrollPolicies, leaveRequests, holidays, companies, placements, commissionPolicies, startMonth]);
+
   // Tool Modal state
   const [showToolModal, setShowToolModal] = useState<boolean>(false);
   const [editingTool, setEditingTool] = useState<DepartmentTool | null>(null);
@@ -133,6 +157,7 @@ export default function DepartmentTeamCostTab({
     currency: string;
     billingFrequency: 'monthly' | 'annual';
     baselineCommittedSeats: number;
+    isBaselineOverridden: boolean;
     contractStartDate: string;
     renewalDate: string;
     vendorName: string;
@@ -147,22 +172,17 @@ export default function DepartmentTeamCostTab({
     currency: 'GBP',
     billingFrequency: 'monthly',
     baselineCommittedSeats: 5,
+    isBaselineOverridden: false,
     contractStartDate: `${startMonth}-01`,
     renewalDate: `${endMonth}-31`,
     vendorName: '',
     notes: ''
   });
 
-  // Extract distinct departments from staff roster for tool assignments
-  const allDepartments = useMemo(() => {
-    const depts = new Set<string>();
-    staff.forEach(s => {
-      if (s.department && s.department.trim()) {
-        depts.add(s.department.trim());
-      }
-    });
-    return Array.from(depts).sort();
-  }, [staff]);
+  // Calculate active staff count on the contract start date for the currently selected companies and departments
+  const staffCountAtStartDate = useMemo(() => {
+    return calculateStaffCountAtDate(toolForm.contractStartDate, toolForm.companyIds, toolForm.departments);
+  }, [calculateStaffCountAtDate, toolForm.contractStartDate, toolForm.companyIds, toolForm.departments]);
 
   // Filter staff by company and department filters
   const filteredStaff = useMemo(() => {
@@ -528,6 +548,21 @@ export default function DepartmentTeamCostTab({
     }));
   };
 
+  // Keep baseline seats synced with start date staff count if not manually overridden
+  useEffect(() => {
+    if (showToolModal && !toolForm.isBaselineOverridden) {
+      setToolForm(prev => {
+        if (prev.isBaselineOverridden) return prev;
+        const count = calculateStaffCountAtDate(prev.contractStartDate, prev.companyIds, prev.departments);
+        if (prev.baselineCommittedSeats === count) return prev;
+        return {
+          ...prev,
+          baselineCommittedSeats: count
+        };
+      });
+    }
+  }, [showToolModal, toolForm.contractStartDate, toolForm.companyIds, toolForm.departments, toolForm.isBaselineOverridden, calculateStaffCountAtDate]);
+
   // Handle Open Tool Modal
   const handleOpenAddTool = () => {
     setEditingTool(null);
@@ -537,6 +572,8 @@ export default function DepartmentTeamCostTab({
     const initialComps = (!companyFilter.includes('all') && companyFilter.length > 0)
       ? [...companyFilter]
       : ['all'];
+    const startDate = `${startMonth}-01`;
+    const initialStaffCount = calculateStaffCountAtDate(startDate, initialComps, initialDepts);
 
     setToolForm({
       name: '',
@@ -547,8 +584,9 @@ export default function DepartmentTeamCostTab({
       licenseCostPerSeat: 45,
       currency: 'GBP',
       billingFrequency: 'monthly',
-      baselineCommittedSeats: monthlyHeadcount[monthsList[0]] || 5,
-      contractStartDate: `${startMonth}-01`,
+      baselineCommittedSeats: initialStaffCount,
+      isBaselineOverridden: false,
+      contractStartDate: startDate,
       renewalDate: `${endMonth}-31`,
       vendorName: '',
       notes: ''
@@ -564,6 +602,11 @@ export default function DepartmentTeamCostTab({
     const toolComps = (tool.companyIds && tool.companyIds.length > 0)
       ? tool.companyIds
       : [tool.companyId || 'all'];
+    const startDate = tool.contractStartDate || `${startMonth}-01`;
+    const staffAtStart = calculateStaffCountAtDate(startDate, toolComps, toolDepts);
+    const isOverridden = tool.isBaselineOverridden !== undefined
+      ? !!tool.isBaselineOverridden
+      : (tool.baselineCommittedSeats !== staffAtStart);
 
     setToolForm({
       id: tool.id,
@@ -575,8 +618,9 @@ export default function DepartmentTeamCostTab({
       licenseCostPerSeat: tool.licenseCostPerSeat,
       currency: tool.currency || 'GBP',
       billingFrequency: tool.billingFrequency || 'monthly',
-      baselineCommittedSeats: tool.baselineCommittedSeats || 1,
-      contractStartDate: tool.contractStartDate || `${startMonth}-01`,
+      baselineCommittedSeats: tool.baselineCommittedSeats !== undefined ? tool.baselineCommittedSeats : staffAtStart,
+      isBaselineOverridden: isOverridden,
+      contractStartDate: startDate,
       renewalDate: tool.renewalDate || `${endMonth}-31`,
       vendorName: tool.vendorName || '',
       notes: tool.notes || ''
@@ -609,7 +653,8 @@ export default function DepartmentTeamCostTab({
         licenseCostPerSeat: Number(toolForm.licenseCostPerSeat) || 0,
         currency: toolForm.currency || 'GBP',
         billingFrequency: toolForm.billingFrequency,
-        baselineCommittedSeats: Number(toolForm.baselineCommittedSeats) || 1,
+        baselineCommittedSeats: Number(toolForm.baselineCommittedSeats) || 0,
+        isBaselineOverridden: !!toolForm.isBaselineOverridden,
         contractStartDate: toolForm.contractStartDate,
         renewalDate: toolForm.renewalDate,
         vendorName: toolForm.vendorName?.trim(),
@@ -2092,18 +2137,27 @@ export default function DepartmentTeamCostTab({
                 </div>
               </div>
 
+              {/* Contract Term Dates */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-primary)' }}>
-                    Baseline Contract Seats *
+                    Contract Start Date *
                   </label>
                   <input
-                    type="number"
-                    min="1"
+                    type="date"
                     required
-                    placeholder="10"
-                    value={toolForm.baselineCommittedSeats}
-                    onChange={(e) => setToolForm({ ...toolForm, baselineCommittedSeats: parseInt(e.target.value, 10) || 1 })}
+                    value={toolForm.contractStartDate}
+                    onChange={(e) => {
+                      const newStartDate = e.target.value;
+                      setToolForm(prev => {
+                        const count = calculateStaffCountAtDate(newStartDate, prev.companyIds, prev.departments);
+                        return {
+                          ...prev,
+                          contractStartDate: newStartDate,
+                          baselineCommittedSeats: prev.isBaselineOverridden ? prev.baselineCommittedSeats : count
+                        };
+                      });
+                    }}
                     style={{
                       width: '100%',
                       padding: '8px 12px',
@@ -2115,7 +2169,7 @@ export default function DepartmentTeamCostTab({
                     }}
                   />
                   <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                    Minimum committed seats in contract
+                    Baseline seats are calculated from staff active on this date
                   </span>
                 </div>
 
@@ -2137,6 +2191,117 @@ export default function DepartmentTeamCostTab({
                       fontSize: '13px'
                     }}
                   />
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    End of current annual/contract commitment period
+                  </span>
+                </div>
+              </div>
+
+              {/* Baseline Committed Seats with Auto-Calculation & Manual Override */}
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--bg-secondary)',
+                border: `1px solid ${toolForm.isBaselineOverridden ? 'rgba(245, 158, 11, 0.4)' : 'var(--border-color)'}`
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>Baseline Contract Seats *</span>
+                    <span style={{
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      backgroundColor: toolForm.isBaselineOverridden ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                      color: toolForm.isBaselineOverridden ? '#f59e0b' : 'var(--success)'
+                    }}>
+                      {toolForm.isBaselineOverridden ? 'Manual Override Active' : 'Auto-Calculated from Start Date'}
+                    </span>
+                  </label>
+
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={toolForm.isBaselineOverridden}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setToolForm(prev => ({
+                          ...prev,
+                          isBaselineOverridden: checked,
+                          baselineCommittedSeats: !checked ? staffCountAtStartDate : prev.baselineCommittedSeats
+                        }));
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span style={{ fontWeight: 600, color: toolForm.isBaselineOverridden ? '#f59e0b' : 'var(--text-secondary)' }}>
+                      Override staff count
+                    </span>
+                  </label>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    placeholder="e.g. 10"
+                    value={toolForm.baselineCommittedSeats}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setToolForm(prev => ({
+                        ...prev,
+                        baselineCommittedSeats: isNaN(val) ? 0 : val,
+                        isBaselineOverridden: true
+                      }));
+                    }}
+                    style={{
+                      width: '130px',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-md)',
+                      border: `1px solid ${toolForm.isBaselineOverridden ? '#f59e0b' : 'var(--border-color)'}`,
+                      backgroundColor: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '14px',
+                      fontWeight: 700
+                    }}
+                  />
+
+                  {toolForm.isBaselineOverridden && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setToolForm(prev => ({
+                          ...prev,
+                          isBaselineOverridden: false,
+                          baselineCommittedSeats: staffCountAtStartDate
+                        }));
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid rgba(99, 102, 241, 0.4)',
+                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                        color: 'var(--accent)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ↺ Reset to Staff Count ({staffCountAtStartDate})
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ marginTop: '6px', fontSize: '11px', lineHeight: '1.4' }}>
+                  {toolForm.isBaselineOverridden ? (
+                    <span style={{ color: '#f59e0b' }}>
+                      ⚠️ Manually overridden to {toolForm.baselineCommittedSeats} seats. Active staff across selected scope on {toolForm.contractStartDate || 'contract start date'} was <strong>{staffCountAtStartDate} staff</strong>.
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--success)' }}>
+                      ✓ Auto-calculated: Exactly <strong>{staffCountAtStartDate} active staff</strong> were in the selected companies &amp; departments on {toolForm.contractStartDate || 'contract start date'}.
+                    </span>
+                  )}
                 </div>
               </div>
 

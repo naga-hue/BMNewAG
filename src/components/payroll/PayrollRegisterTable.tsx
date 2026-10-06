@@ -663,6 +663,14 @@ export default function PayrollRegisterTable({
             });
           }
         }
+      } else if (linkedExpenseId) {
+        const curExp = expenses.find(e => e.id === linkedExpenseId);
+        if (curExp && curExp.linkedPayrollCellId !== `${staffMember.id}_${month}`) {
+          await onSaveExpense({
+            ...curExp,
+            linkedPayrollCellId: `${staffMember.id}_${month}`
+          });
+        }
       }
 
       // Cleanup any previously booked reimbursement expenses for this staff member + month
@@ -678,25 +686,27 @@ export default function PayrollRegisterTable({
         await onDeleteExpense(`payroll-pension-${staffMember.id}-${month}`);
         await onDeleteExpense(`payroll-exp-${staffMember.id}-${month}`);
       } else {
-        await onDeleteExpense(`payroll-exp-${staffMember.id}-${month}`);
-
-        const salaryNominal = nominalCodes.find(c => c.id === '500' || c.code?.includes('500') || c.code?.toLowerCase().includes('salary'))?.code || '500 - Salaries & Wages';
+        const policy = payrollPolicies.find(p => p.id === staffMember.payrollPolicyId);
+        const isFreelance = policy?.type === 'freelance' || (staffMember as any).employmentStatus === 'contractor' || (staffMember as any).employmentStatus === 'freelance' || (staffMember as any).contractType === 'contractor' || (staffMember as any).contractType === 'freelance';
+        const freelanceNominal = policy?.nominalCode || nominalCodes.find(nc => nc.code?.toLowerCase().includes('freelance') || nc.code?.toLowerCase().includes('contractor') || nc.code?.toLowerCase().includes('subcontractor'))?.code || '1001 - Freelancer Payments';
+        const standardSalaryNominal = nominalCodes.find(c => c.id === '500' || c.code?.includes('500') || c.code?.toLowerCase().includes('salary'))?.code || '500 - Salaries & Wages';
+        const salaryNominal = isFreelance ? freelanceNominal : standardSalaryNominal;
         const taxNominal = nominalCodes.find(c => c.id === '501' || c.code?.includes('501') || c.code?.toLowerCase().includes('paye') || c.code?.toLowerCase().includes('tax') || c.code?.toLowerCase().includes('ni'))?.code || '501 - HMRC PAYE & NI Contributions';
         const pensionNominal = nominalCodes.find(c => c.id === '502' || c.code?.includes('502') || c.code?.toLowerCase().includes('pension'))?.code || '502 - Royal London Pension Contributions';
 
-        // 1. Net Salary Expense (strictly salary + commission + bonus less employee deductions)
+        // 1. Net Remuneration Expense (strictly basic + commission + bonus less employee deductions)
         const netSalaryAmt = pureBasicVal + commVal + bonusVal - taxNicVal - pensionVal;
         const netExp = {
           id: `payroll-salary-${staffMember.id}-${month}`,
           date: `${month}-28`,
-          payee: `Net Salary: ${staffMember.fullName}`,
+          payee: `${isFreelance ? 'Freelancer Payment' : 'Net Salary'}: ${staffMember.fullName}`,
           amount: netSalaryAmt,
-          currency: staffMember.currency || 'GBP',
+          currency: 'GBP',
           nominalCode: salaryNominal,
           allocationType: 'staff' as const,
           allocationTarget: [staffMember.id],
           plMonth: month,
-          notes: `Net take-home pay (Basic + Commission + Bonus less deductions). Reconciled via Group Payroll Module. ${reconcileNotes.trim()}`
+          notes: `${isFreelance ? 'Freelancer net remuneration' : 'Net take-home pay'} (Basic + Commission + Bonus less deductions). Reconciled via Group Payroll Module. ${reconcileNotes.trim()}`
         };
         await onSaveExpense(netExp);
 

@@ -193,6 +193,51 @@ export default function ReportsDashboard({
     return excludedNominalCodes.some(ex => matchesNominal(ex, code));
   };
 
+  const isExpenseSupersededByPayroll = (e) => {
+    if (!e || !e.id) return false;
+    // Generated payroll items are never superseded
+    if (
+      e.id.startsWith('payroll-salary-') ||
+      e.id.startsWith('payroll-reimburse-') ||
+      e.id.startsWith('payroll-tax-') ||
+      e.id.startsWith('payroll-pension-') ||
+      e.id.startsWith('payroll-exp-')
+    ) {
+      return false;
+    }
+
+    const allExpenses = expenses || [];
+    const pRecords = payrollRecords || [];
+
+    // Check if directly linked via linkedPayrollCellId (e.g. "staff-xxx_2026-03")
+    if (e.linkedPayrollCellId) {
+      const parts = e.linkedPayrollCellId.split('_');
+      const staffId = parts[0];
+      const targetMonth = parts[1] || e.plMonth;
+      const hasSalaryExpense = allExpenses.some(pe => 
+        pe.id === `payroll-salary-${staffId}-${targetMonth}` || 
+        pe.id === `payroll-salary-${staffId}-${e.plMonth}` || 
+        pe.id === `payroll-salary-${e.linkedPayrollCellId}` ||
+        pe.id.startsWith(`payroll-salary-${staffId}-${targetMonth}`) ||
+        pe.id.startsWith(`payroll-salary-${staffId}-${e.plMonth}`)
+      );
+      if (hasSalaryExpense) return true;
+    }
+
+    // Check if referenced by a reconciled payroll record
+    const matchingRecord = pRecords.find(r => r.linkedExpenseId === e.id && r.isReconciled);
+    if (matchingRecord) {
+      const hasSalaryExpense = allExpenses.some(pe => 
+        pe.id === `payroll-salary-${matchingRecord.staffId}-${matchingRecord.month}` || 
+        pe.id === `payroll-salary-${matchingRecord.id}` ||
+        pe.id.startsWith(`payroll-salary-${matchingRecord.staffId}-${matchingRecord.month}`)
+      );
+      if (hasSalaryExpense) return true;
+    }
+
+    return false;
+  };
+
   const handleToggleNominalInclusion = (code) => {
     setExcludedNominalCodes(prev => {
       const isEx = isNominalExcluded(code);
@@ -882,7 +927,7 @@ export default function ReportsDashboard({
       deptHeadcounts[s.department] = (deptHeadcounts[s.department] || 0) + 1;
     });
 
-    const monthExpenses = expenses.filter(e => e.plMonth === monthKey);
+    const monthExpenses = expenses.filter(e => e.plMonth === monthKey && !isExpenseSupersededByPayroll(e));
 
     let consolidatedOverhead = 0;
     const companyOverheadMap = {};
@@ -1098,7 +1143,7 @@ export default function ReportsDashboard({
     };
 
     // 1. Regular actual non-amortized expenses for this month
-    const monthExpenses = (expenses || []).filter(e => e.plMonth === monthKey && e.amortize !== true && !e.nominalCode?.trim().startsWith('9') && e.status !== 'dns' && e.status !== 'cancelled');
+    const monthExpenses = (expenses || []).filter(e => e.plMonth === monthKey && e.amortize !== true && !e.nominalCode?.trim().startsWith('9') && e.status !== 'dns' && e.status !== 'cancelled' && !isExpenseSupersededByPayroll(e));
     monthExpenses.forEach(exp => {
       currentExpenseContext = exp;
       allocateExpenseToMap(exp, paidBreakdown);
@@ -3912,7 +3957,7 @@ export default function ReportsDashboard({
                     return daysWorked >= 10;
                   });
                   const activeStaffInMonthIds = activeStaffInMonth.map(st => st.id);
-                  const monthExpenses = expenses.filter(e => e.plMonth === mKey && !isNominalExcluded(e.nominalCode));
+                  const monthExpenses = expenses.filter(e => e.plMonth === mKey && !isNominalExcluded(e.nominalCode) && !isExpenseSupersededByPayroll(e));
 
                   monthExpenses.forEach(exp => {
                     const gbpAmt = toGBP(exp.amount, exp.currency);
@@ -4224,7 +4269,7 @@ export default function ReportsDashboard({
                     return daysWorked >= 10;
                   });
                   const activeStaffInMonthIds = activeStaffInMonth.map(st => st.id);
-                  const monthExpenses = expenses.filter(e => e.plMonth === mKey && !isNominalExcluded(e.nominalCode));
+                  const monthExpenses = expenses.filter(e => e.plMonth === mKey && !isNominalExcluded(e.nominalCode) && !isExpenseSupersededByPayroll(e));
 
                   monthExpenses.forEach(exp => {
                     const gbpAmt = toGBP(exp.amount, exp.currency);
@@ -5062,7 +5107,7 @@ export default function ReportsDashboard({
           {(() => {
             const targetMonth = startMonth;
 
-            const monthExpenses = expenses.filter(e => e.plMonth === targetMonth && !isNominalExcluded(e.nominalCode));
+            const monthExpenses = expenses.filter(e => e.plMonth === targetMonth && !isNominalExcluded(e.nominalCode) && !isExpenseSupersededByPayroll(e));
             const totalSharedPool = monthExpenses.reduce((sum, exp) => {
               if (exp.allocationType === 'company' || exp.allocationType === 'department' || exp.allocationType === 'staff') {
                 return sum;
@@ -5858,6 +5903,7 @@ export default function ReportsDashboard({
               if (e.amortize === true) return false;
               if (e.nominalCode?.trim().startsWith('9')) return false;
               if ((categoryKey === 'overheadsExpenses' || categoryKey === 'totalOverheads') && isNominalExcluded(e.nominalCode)) return false;
+              if (isExpenseSupersededByPayroll(e)) return false;
               const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
               if (monthKey === 'ytv') {
                 if (eMonth > reconciledCutoffMonth) return false;

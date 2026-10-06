@@ -80,7 +80,8 @@ export default function PayrollRegisterTable({
   const [reimbursementsCurrency, setReimbursementsCurrency] = useState('GBP');
   const [reimbursementsAmountInput, setReimbursementsAmountInput] = useState('0.00');
   const [reimbursementNominalCode, setReimbursementNominalCode] = useState('');
-  const [reimbursementAllocation, setReimbursementAllocation] = useState<'company' | 'staff'>('company');
+  const [reimbursementAllocation, setReimbursementAllocation] = useState<'company' | 'department' | 'staff'>('company');
+  const [reimbursementDepartment, setReimbursementDepartment] = useState('');
   const [reimbursementItems, setReimbursementItems] = useState<ReimbursementItem[]>([]);
 
   const totalReimbursementsGBP = useMemo(() => {
@@ -93,6 +94,7 @@ export default function PayrollRegisterTable({
 
   const handleAddReimbursementItem = () => {
     const defaultReimburseNominal = nominalCodes.find(c => c.code?.toLowerCase().includes('travel') || c.code?.toLowerCase().includes('expense') || c.code?.toLowerCase().includes('reimburse'))?.code || (nominalCodes[0]?.code || '7400 - Travel & Entertaining');
+    const defaultDept = selectedCell?.staffMember?.department || (allAvailableDepts[0] || 'Operations');
     setReimbursementItems(prev => [
       ...prev,
       {
@@ -101,7 +103,8 @@ export default function PayrollRegisterTable({
         amount: '',
         currency: 'GBP',
         nominalCode: defaultReimburseNominal,
-        allocation: 'company'
+        allocation: 'company',
+        department: defaultDept
       }
     ]);
   };
@@ -380,8 +383,10 @@ export default function PayrollRegisterTable({
     setReimbursementsAmountInput((record?.reimbursementsAmountEntered !== undefined ? record.reimbursementsAmountEntered : (cell.reimbursements || 0)).toFixed(2));
     
     const defaultReimburseNominal = record?.reimbursementNominalCode || nominalCodes.find(c => c.code?.toLowerCase().includes('travel') || c.code?.toLowerCase().includes('expense') || c.code?.toLowerCase().includes('reimburse'))?.code || (nominalCodes[0]?.code || '7400 - Travel & Entertaining');
+    const defaultReimburseDept = (record as any)?.reimbursementDepartment || staffMember.department || (allAvailableDepts[0] || 'Operations');
     setReimbursementNominalCode(defaultReimburseNominal);
-    setReimbursementAllocation((record?.reimbursementAllocation as 'company' | 'staff') || 'company');
+    setReimbursementAllocation((record?.reimbursementAllocation as 'company' | 'department' | 'staff') || 'company');
+    setReimbursementDepartment(defaultReimburseDept);
 
     let initialReimbItems: ReimbursementItem[] = [];
     if (record?.reimbursementItems && Array.isArray(record.reimbursementItems) && record.reimbursementItems.length > 0) {
@@ -391,7 +396,8 @@ export default function PayrollRegisterTable({
         amount: item.amount !== undefined ? item.amount : '',
         currency: item.currency || 'GBP',
         nominalCode: item.nominalCode || defaultReimburseNominal,
-        allocation: item.allocation || 'company'
+        allocation: item.allocation || 'company',
+        department: item.department || defaultReimburseDept
       }));
     } else if (record?.reimbursementsAmountEntered !== undefined && Number(record.reimbursementsAmountEntered) > 0) {
       initialReimbItems = [{
@@ -400,7 +406,8 @@ export default function PayrollRegisterTable({
         amount: record.reimbursementsAmountEntered.toString(),
         currency: record.reimbursementsCurrency || 'GBP',
         nominalCode: record.reimbursementNominalCode || defaultReimburseNominal,
-        allocation: (record.reimbursementAllocation as 'company' | 'staff') || 'company'
+        allocation: (record.reimbursementAllocation as 'company' | 'department' | 'staff') || 'company',
+        department: defaultReimburseDept
       }];
     } else if (cell.reimbursements && cell.reimbursements > 0) {
       initialReimbItems = [{
@@ -409,7 +416,8 @@ export default function PayrollRegisterTable({
         amount: cell.reimbursements.toString(),
         currency: 'GBP',
         nominalCode: defaultReimburseNominal,
-        allocation: 'company'
+        allocation: 'company',
+        department: defaultReimburseDept
       }];
     }
     setReimbursementItems(initialReimbItems);
@@ -602,7 +610,8 @@ export default function PayrollRegisterTable({
       reimbursementsCurrency: reimbursementItems.length === 1 ? reimbursementItems[0].currency : 'GBP',
       reimbursementsAmountEntered: reimbursementItems.length === 1 ? (Number(reimbursementItems[0].amount) || 0) : reimbursementsVal,
       reimbursementNominalCode: reimbursementItems.length === 1 ? reimbursementItems[0].nominalCode : (reimbursementNominalCode || ''),
-      reimbursementAllocation: reimbursementItems.length === 1 ? reimbursementItems[0].allocation : (reimbursementAllocation || 'company')
+      reimbursementAllocation: reimbursementItems.length === 1 ? reimbursementItems[0].allocation : (reimbursementAllocation || 'company'),
+      reimbursementDepartment: reimbursementItems.length === 1 ? (reimbursementItems[0].department || '') : (reimbursementDepartment || '')
     };
 
     try {
@@ -672,8 +681,22 @@ export default function PayrollRegisterTable({
             if (itemAmt <= 0) continue;
 
             const targetReimburseNominal = item.nominalCode || reimbursementNominalCode || nominalCodes.find(c => c.code?.toLowerCase().includes('travel') || c.code?.toLowerCase().includes('expense') || c.code?.toLowerCase().includes('reimburse'))?.code || '7400 - Travel & Entertaining';
-            const isCompanyAbsorption = item.allocation === 'company';
             const itemDesc = item.description?.trim() ? `: ${item.description.trim()}` : '';
+
+            let allocationType: 'company' | 'department' | 'staff' = 'company';
+            let allocationTarget: string[] = [staffMember.companyId];
+            let costNote = 'Company Overhead (Staff not burdened)';
+
+            if (item.allocation === 'department') {
+              allocationType = 'department';
+              const targetDept = item.department || staffMember.department || (allAvailableDepts[0] || 'Operations');
+              allocationTarget = [targetDept];
+              costNote = `Department Overhead: ${targetDept} (Staff not burdened)`;
+            } else if (item.allocation === 'staff') {
+              allocationType = 'staff';
+              allocationTarget = [staffMember.id];
+              costNote = 'Staff Member (Direct personal P&L cost)';
+            }
 
             const reimburseExp = {
               id: `payroll-reimburse-${staffMember.id}-${month}-${item.id || idx}`,
@@ -682,10 +705,10 @@ export default function PayrollRegisterTable({
               amount: itemAmt,
               currency: item.currency || staffMember.currency || 'GBP',
               nominalCode: targetReimburseNominal,
-              allocationType: (isCompanyAbsorption ? 'company' : 'staff') as const,
-              allocationTarget: isCompanyAbsorption ? [staffMember.companyId] : [staffMember.id],
+              allocationType,
+              allocationTarget,
               plMonth: month,
-              notes: `Expense reimbursement for ${staffMember.fullName}${itemDesc ? ' - ' + item.description.trim() : ''}. Reconciled via Group Payroll Module. Cost absorbed by: ${isCompanyAbsorption ? 'Company Overhead (Staff not burdened)' : 'Staff Member'}. ${reconcileNotes.trim()}`
+              notes: `Expense reimbursement for ${staffMember.fullName}${itemDesc ? ' - ' + item.description.trim() : ''}. Reconciled via Group Payroll Module. Cost absorbed by: ${costNote}. ${reconcileNotes.trim()}`
             };
             await onSaveExpense(reimburseExp);
           }
@@ -2011,8 +2034,13 @@ ${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}
                             </select>
                           </div>
 
-                          {/* Row 3: Nominal Code + Cost Absorption */}
-                          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px', paddingTop: '2px' }}>
+                          {/* Row 3: Nominal Code + Cost Absorption + Target Department (if department) */}
+                          <div style={{ 
+                            display: 'grid', 
+                            gridTemplateColumns: item.allocation === 'department' ? '1fr 1fr 1fr' : '1.2fr 1fr', 
+                            gap: '8px', 
+                            paddingTop: '2px' 
+                          }}>
                             <div>
                               <label style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>
                                 Nominal Code:
@@ -2036,14 +2064,39 @@ ${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}
                               <select
                                 className="select-filter"
                                 value={item.allocation}
-                                onChange={(e) => handleUpdateReimbursementItem(item.id, { allocation: e.target.value as 'company' | 'staff' })}
+                                onChange={(e) => {
+                                  const newAlloc = e.target.value as 'company' | 'department' | 'staff';
+                                  handleUpdateReimbursementItem(item.id, {
+                                    allocation: newAlloc,
+                                    department: item.department || selectedCell?.staffMember?.department || allAvailableDepts[0] || 'Operations'
+                                  });
+                                }}
                                 disabled={isRecruiter}
                                 style={{ width: '100%', padding: '6px 8px', fontSize: '11px' }}
                               >
                                 <option value="company">🏢 Company Overhead</option>
+                                <option value="department">📂 Department Overhead</option>
                                 <option value="staff">👤 Staff Direct Cost</option>
                               </select>
                             </div>
+                            {item.allocation === 'department' && (
+                              <div>
+                                <label style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>
+                                  Target Department:
+                                </label>
+                                <select
+                                  className="select-filter"
+                                  value={item.department || selectedCell?.staffMember?.department || allAvailableDepts[0] || ''}
+                                  onChange={(e) => handleUpdateReimbursementItem(item.id, { department: e.target.value })}
+                                  disabled={isRecruiter}
+                                  style={{ width: '100%', padding: '6px 8px', fontSize: '11px' }}
+                                >
+                                  {allAvailableDepts.map(d => (
+                                    <option key={d} value={d}>{d}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );

@@ -19,7 +19,7 @@ import {
   Filter
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Company, Staff, Placement, PayrollRecord, DepartmentTool, NominalCode } from '../../types';
+import { Company, Staff, Placement, PayrollRecord, DepartmentTool, NominalCode, ToolCostBasis, ToolSplitMethod } from '../../types';
 import { useBoundStore } from '../../store/useBoundStore';
 import { getCellData } from '../payroll/utils';
 import { toGBP } from '../../utils/currency';
@@ -154,6 +154,8 @@ export default function DepartmentTeamCostTab({
     departments: string[];
     companyId: string;
     companyIds: string[];
+    costBasis: ToolCostBasis;
+    splitMethod: ToolSplitMethod;
     licenseCostPerSeat: number;
     currency: string;
     billingFrequency: 'monthly' | 'annual';
@@ -169,6 +171,8 @@ export default function DepartmentTeamCostTab({
     departments: (!deptFilter.includes('all') && deptFilter.length > 0) ? [...deptFilter] : ['all'],
     companyId: (!companyFilter.includes('all') && companyFilter.length > 0) ? companyFilter[0] : 'all',
     companyIds: (!companyFilter.includes('all') && companyFilter.length > 0) ? [...companyFilter] : ['all'],
+    costBasis: 'per_seat',
+    splitMethod: 'equal',
     licenseCostPerSeat: 45,
     currency: 'GBP',
     billingFrequency: 'monthly',
@@ -297,9 +301,11 @@ export default function DepartmentTeamCostTab({
     });
   }, [departmentTools, deptFilter, companyFilter]);
 
-  // High-Water Mark Ratchet Engine for Software Tools (Supporting Multi-Dept & Multi-Company)
+  // High-Water Mark Ratchet Engine for Software Tools (Supporting Multi-Dept, Multi-Company & Multiple Cost Bases)
   const toolRatchetData = useMemo(() => {
     return relevantTools.map(tool => {
+      const costBasis: ToolCostBasis = tool.costBasis || 'per_seat';
+      const splitMethod: ToolSplitMethod = tool.splitMethod || 'equal';
       const baseline = Number(tool.baselineCommittedSeats) || 0;
       const unitCostGBP = toGBP(tool.licenseCostPerSeat || 0, tool.currency || 'GBP');
       const toolDepts = (tool.departments && tool.departments.length > 0) ? tool.departments : [tool.department || 'all'];
@@ -311,38 +317,95 @@ export default function DepartmentTeamCostTab({
         unutilizedSeats: number;
         costGBP: number;
         isRatcheted: boolean;
+        subtext: string;
       }> = {};
 
       let peakSoFar = baseline;
       let periodTotalCost = 0;
       let ytvCost = 0;
 
+      // Effective companies and departments
+      const effectiveComps = toolComps.includes('all') ? companies.map(c => c.id) : toolComps;
+      const matchingComps = companyFilter.includes('all') ? effectiveComps : effectiveComps.filter(c => companyFilter.includes(c));
+
+      const effectiveDepts = toolDepts.includes('all') ? allDepartments : toolDepts;
+      const matchingDepts = deptFilter.includes('all') ? effectiveDepts : effectiveDepts.filter(d => deptFilter.includes(d));
+
       monthsList.forEach((m) => {
-        // Headcount for this tool's scope across its assigned departments and companies
-        const activeHeadcountForTool = staff.filter(s => {
-          const compMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
-          const deptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
-          if (!compMatch || !deptMatch) return false;
+        let cost = 0;
+        let activeHeadcountForTool = 0;
+        let committed = 0;
+        let unutilized = 0;
+        let isRatcheted = false;
+        let subtext = '';
 
-          const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
-          return isStaffActiveInMonth(s, m, cell.total);
-        }).length;
+        if (costBasis === 'per_company') {
+          const compCount = matchingComps.length;
+          cost = compCount * unitCostGBP;
+          subtext = `${compCount} ${compCount === 1 ? 'comp' : 'comps'}`;
+        } else if (costBasis === 'per_department') {
+          const deptCount = matchingDepts.length;
+          cost = deptCount * unitCostGBP;
+          subtext = `${deptCount} ${deptCount === 1 ? 'dept' : 'depts'}`;
+        } else if (costBasis === 'fixed_total') {
+          const isFullScope = companyFilter.includes('all') && deptFilter.includes('all');
+          if (isFullScope) {
+            cost = unitCostGBP;
+            subtext = 'Fixed total';
+          } else if (splitMethod === 'pro_rata_headcount') {
+            const totalStaffAllAssigned = staff.filter(s => {
+              const compMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
+              const deptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
+              if (!compMatch || !deptMatch) return false;
+              const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
+              return isStaffActiveInMonth(s, m, cell.total);
+            }).length;
 
-        // Ratchet up if active headcount exceeds prior peak
-        if (activeHeadcountForTool > peakSoFar) {
-          peakSoFar = activeHeadcountForTool;
+            const staffInFilteredView = staff.filter(s => {
+              const inViewComp = companyFilter.includes('all') || companyFilter.includes(s.companyId);
+              const inViewDept = deptFilter.includes('all') || deptFilter.includes(s.department);
+              const toolCompMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
+              const toolDeptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
+              if (!inViewComp || !inViewDept || !toolCompMatch || !toolDeptMatch) return false;
+              const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
+              return isStaffActiveInMonth(s, m, cell.total);
+            }).length;
+
+            const ratio = totalStaffAllAssigned > 0 ? (staffInFilteredView / totalStaffAllAssigned) : (matchingDepts.length / Math.max(1, effectiveDepts.length));
+            cost = unitCostGBP * ratio;
+            subtext = `Pro-rata (${staffInFilteredView}/${totalStaffAllAssigned} staff)`;
+          } else {
+            const ratio = matchingDepts.length / Math.max(1, effectiveDepts.length);
+            cost = unitCostGBP * ratio;
+            subtext = `Split (${matchingDepts.length}/${effectiveDepts.length} depts)`;
+          }
+        } else {
+          // Standard Per Seat Ratchet Engine
+          activeHeadcountForTool = staff.filter(s => {
+            const compMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
+            const deptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
+            if (!compMatch || !deptMatch) return false;
+
+            const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
+            return isStaffActiveInMonth(s, m, cell.total);
+          }).length;
+
+          if (activeHeadcountForTool > peakSoFar) {
+            peakSoFar = activeHeadcountForTool;
+          }
+
+          committed = peakSoFar;
+          if (tool.manualCommittedSeatsOverride && tool.manualCommittedSeatsOverride[m] !== undefined) {
+            committed = Number(tool.manualCommittedSeatsOverride[m]);
+          }
+
+          unutilized = Math.max(0, committed - activeHeadcountForTool);
+          cost = committed * unitCostGBP;
+          isRatcheted = committed > baseline;
+          subtext = unutilized > 0 ? `${committed} seats (${unutilized} spare)` : `${committed} seats`;
         }
 
-        // Check for manual override if user negotiated a change
-        let committed = peakSoFar;
-        if (tool.manualCommittedSeatsOverride && tool.manualCommittedSeatsOverride[m] !== undefined) {
-          committed = Number(tool.manualCommittedSeatsOverride[m]);
-        }
-
-        const unutilized = Math.max(0, committed - activeHeadcountForTool);
-        const cost = committed * unitCostGBP;
         periodTotalCost += cost;
-
         if (m <= reconciledCutoffMonth) {
           ytvCost += cost;
         }
@@ -352,12 +415,15 @@ export default function DepartmentTeamCostTab({
           committedSeats: committed,
           unutilizedSeats: unutilized,
           costGBP: cost,
-          isRatcheted: committed > baseline
+          isRatcheted,
+          subtext
         };
       });
 
       return {
         tool,
+        costBasis,
+        splitMethod,
         toolDepts,
         toolComps,
         unitCostGBP,
@@ -366,7 +432,7 @@ export default function DepartmentTeamCostTab({
         ytvCost
       };
     });
-  }, [relevantTools, monthsList, staff, payrollRecords, payrollPolicies, leaveRequests, holidays, companies, placements, commissionPolicies, reconciledCutoffMonth]);
+  }, [relevantTools, monthsList, staff, payrollRecords, payrollPolicies, leaveRequests, holidays, companies, placements, commissionPolicies, reconciledCutoffMonth, allDepartments, companyFilter, deptFilter]);
 
   // Aggregate Remuneration Totals across Months
   const staffRemunerationTotals = useMemo(() => {
@@ -504,11 +570,13 @@ export default function DepartmentTeamCostTab({
     let totalWastedCost = 0;
 
     toolRatchetData.forEach(t => {
-      const d = t.monthlyDetails[targetMonth];
-      if (d) {
-        totalCommitted += d.committedSeats;
-        totalActive += d.activeSeats;
-        totalWastedCost += d.unutilizedSeats * t.unitCostGBP;
+      if (t.costBasis === 'per_seat') {
+        const d = t.monthlyDetails[targetMonth];
+        if (d) {
+          totalCommitted += d.committedSeats;
+          totalActive += d.activeSeats;
+          totalWastedCost += d.unutilizedSeats * t.unitCostGBP;
+        }
       }
     });
 
@@ -585,7 +653,7 @@ export default function DepartmentTeamCostTab({
 
   // Keep baseline seats synced with start date staff count if not manually overridden
   useEffect(() => {
-    if (showToolModal && !toolForm.isBaselineOverridden) {
+    if (showToolModal && !toolForm.isBaselineOverridden && toolForm.costBasis === 'per_seat') {
       setToolForm(prev => {
         if (prev.isBaselineOverridden) return prev;
         const count = calculateStaffCountAtDate(prev.contractStartDate, prev.companyIds, prev.departments);
@@ -596,7 +664,7 @@ export default function DepartmentTeamCostTab({
         };
       });
     }
-  }, [showToolModal, toolForm.contractStartDate, toolForm.companyIds, toolForm.departments, toolForm.isBaselineOverridden, calculateStaffCountAtDate]);
+  }, [showToolModal, toolForm.contractStartDate, toolForm.companyIds, toolForm.departments, toolForm.isBaselineOverridden, toolForm.costBasis, calculateStaffCountAtDate]);
 
   // Handle Open Tool Modal
   const handleOpenAddTool = () => {
@@ -616,6 +684,8 @@ export default function DepartmentTeamCostTab({
       departments: initialDepts,
       companyId: initialComps.includes('all') ? 'all' : initialComps[0],
       companyIds: initialComps,
+      costBasis: 'per_seat',
+      splitMethod: 'equal',
       licenseCostPerSeat: 45,
       currency: 'GBP',
       billingFrequency: 'monthly',
@@ -650,6 +720,8 @@ export default function DepartmentTeamCostTab({
       departments: toolDepts,
       companyId: toolComps.includes('all') ? 'all' : toolComps[0],
       companyIds: toolComps,
+      costBasis: tool.costBasis || 'per_seat',
+      splitMethod: tool.splitMethod || 'equal',
       licenseCostPerSeat: tool.licenseCostPerSeat,
       currency: tool.currency || 'GBP',
       billingFrequency: tool.billingFrequency || 'monthly',
@@ -685,10 +757,12 @@ export default function DepartmentTeamCostTab({
         departments: depts,
         companyId: comps.includes('all') ? 'all' : comps[0],
         companyIds: comps,
+        costBasis: toolForm.costBasis,
+        splitMethod: toolForm.splitMethod,
         licenseCostPerSeat: Number(toolForm.licenseCostPerSeat) || 0,
         currency: toolForm.currency || 'GBP',
         billingFrequency: toolForm.billingFrequency,
-        baselineCommittedSeats: Number(toolForm.baselineCommittedSeats) || 0,
+        baselineCommittedSeats: toolForm.costBasis === 'per_seat' ? (Number(toolForm.baselineCommittedSeats) || 0) : 0,
         isBaselineOverridden: !!toolForm.isBaselineOverridden,
         contractStartDate: toolForm.contractStartDate,
         renewalDate: toolForm.renewalDate,
@@ -818,10 +892,10 @@ export default function DepartmentTeamCostTab({
 
       // 3. Software Licenses Sheet
       const toolRows = [
-        ['SOFTWARE & TOOL LICENSES (HIGH-WATER MARK CONTRACT RATIO)'],
+        ['SOFTWARE & TOOL LICENSES (MULTI-TIER COST BASIS & RATCHET MATRIX)'],
         [`Department(s): ${deptLabel}`, `Period: ${startMonth} to ${endMonth}`],
         [],
-        ['Tool Name', 'Vendor', 'Companies', 'Departments', 'Baseline Seats', 'Cost / Seat (£)', ...monthHeaders.map(m => `${m} Cost`), 'YTV Cost (£)', 'Period Total (£)']
+        ['Tool Name', 'Vendor', 'Cost Basis', 'Split Method', 'Companies', 'Departments', 'Baseline Seats', 'Unit Cost (£)', ...monthHeaders.map(m => `${m} Cost`), 'YTV Cost (£)', 'Period Total (£)']
       ];
 
       toolRatchetData.forEach(t => {
@@ -831,12 +905,23 @@ export default function DepartmentTeamCostTab({
           ? 'All Companies'
           : t.toolComps.map(cId => companies.find(c => c.id === cId)?.name || cId).join(', ');
 
+        const costBasisLabel = t.costBasis === 'per_company' ? 'Per Company'
+          : t.costBasis === 'per_department' ? 'Per Department'
+          : t.costBasis === 'fixed_total' ? 'Fixed Total'
+          : 'Per Seat';
+
+        const splitMethodLabel = t.costBasis === 'fixed_total'
+          ? (t.splitMethod === 'pro_rata_headcount' ? 'Pro-Rata Headcount' : 'Equal Split')
+          : '—';
+
         toolRows.push([
           t.tool.name,
           t.tool.vendorName || '-',
+          costBasisLabel,
+          splitMethodLabel,
           compStr,
           deptStr,
-          t.tool.baselineCommittedSeats,
+          t.costBasis === 'per_seat' ? (t.tool.baselineCommittedSeats || 0) : '—',
           Number(t.unitCostGBP.toFixed(2)),
           ...monthCosts,
           Math.round(t.ytvCost),
@@ -1433,7 +1518,9 @@ export default function DepartmentTeamCostTab({
                     </td>
                   </tr>
                 ) : (
-                  toolRatchetData.map(({ tool, toolDepts, toolComps, unitCostGBP, monthlyDetails, periodTotalCost, ytvCost }) => (
+                  toolRatchetData.map(({ tool, costBasis, splitMethod, toolDepts, toolComps, unitCostGBP, monthlyDetails, periodTotalCost, ytvCost }) => {
+                    const effectiveBasis = costBasis || 'per_seat';
+                    return (
                     <tr 
                       key={tool.id} 
                       style={{ 
@@ -1454,11 +1541,61 @@ export default function DepartmentTeamCostTab({
                             <span style={{ color: 'var(--text-muted)' }}>↳</span>
                             <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{tool.name}</span>
 
+                            {/* Cost Basis Badge */}
+                            {effectiveBasis === 'per_seat' && (
+                              <span style={{
+                                fontSize: '9px',
+                                backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                                color: 'var(--accent)',
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                fontWeight: 600
+                              }}>
+                                👤 Per Seat
+                              </span>
+                            )}
+                            {effectiveBasis === 'per_company' && (
+                              <span style={{
+                                fontSize: '9px',
+                                backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                                color: 'var(--success)',
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                fontWeight: 600
+                              }}>
+                                🏢 Per Company
+                              </span>
+                            )}
+                            {effectiveBasis === 'per_department' && (
+                              <span style={{
+                                fontSize: '9px',
+                                backgroundColor: 'rgba(79, 70, 229, 0.12)',
+                                color: '#4f46e5',
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                fontWeight: 600
+                              }}>
+                                📁 Per Dept
+                              </span>
+                            )}
+                            {effectiveBasis === 'fixed_total' && (
+                              <span style={{
+                                fontSize: '9px',
+                                backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                                color: '#d97706',
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                fontWeight: 600
+                              }}>
+                                ⚖️ Fixed Total ({splitMethod === 'pro_rata_headcount' ? 'Headcount Pro-Rata' : 'Equal Split'})
+                              </span>
+                            )}
+
                             {/* Department Scope Badge */}
                             <span style={{
                               fontSize: '9px',
-                              backgroundColor: 'rgba(99, 102, 241, 0.12)',
-                              color: 'var(--accent)',
+                              backgroundColor: 'rgba(107, 114, 128, 0.12)',
+                              color: 'var(--text-secondary)',
                               padding: '1px 5px',
                               borderRadius: '4px',
                               fontWeight: 600
@@ -1471,8 +1608,8 @@ export default function DepartmentTeamCostTab({
                             {/* Company Scope Badge */}
                             <span style={{
                               fontSize: '9px',
-                              backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                              color: 'var(--success)',
+                              backgroundColor: 'rgba(107, 114, 128, 0.12)',
+                              color: 'var(--text-secondary)',
                               padding: '1px 5px',
                               borderRadius: '4px',
                               fontWeight: 600
@@ -1484,8 +1621,12 @@ export default function DepartmentTeamCostTab({
                                     : `${companies.find(c => c.id === toolComps[0])?.name || toolComps[0]} +${toolComps.length - 1}`)}
                             </span>
 
+                            {/* Rate Subtitle */}
                             <span style={{ color: 'var(--text-secondary)', fontSize: '10px' }}>
-                              ({tool.baselineCommittedSeats} seats baseline @ {formatGBPExact(unitCostGBP)}/seat)
+                              {effectiveBasis === 'per_seat' && `(${tool.baselineCommittedSeats || 0} seats baseline @ ${formatGBPExact(unitCostGBP)}/seat)`}
+                              {effectiveBasis === 'per_company' && `(${formatGBPExact(unitCostGBP)}/company/mo)`}
+                              {effectiveBasis === 'per_department' && `(${formatGBPExact(unitCostGBP)}/dept/mo)`}
+                              {effectiveBasis === 'fixed_total' && `(${formatGBPExact(unitCostGBP)}/mo fixed)`}
                             </span>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1510,6 +1651,7 @@ export default function DepartmentTeamCostTab({
                         const d = monthlyDetails[m];
                         if (!d) return <td key={m} style={{ textAlign: 'right' }}>—</td>;
 
+                        const hasUnutilized = effectiveBasis === 'per_seat' && d.unutilizedSeats > 0;
                         return (
                           <td 
                             key={m} 
@@ -1518,15 +1660,15 @@ export default function DepartmentTeamCostTab({
                               fontFamily: 'monospace',
                               padding: '8px 8px'
                             }}
-                            title={`Tool: ${tool.name}\nMonth: ${m}\n• Committed: ${d.committedSeats} seats\n• Active: ${d.activeSeats}\n• Unutilized: ${d.unutilizedSeats} spare seats\n• Monthly Cost: ${formatGBPExact(d.costGBP)}`}
+                            title={`Tool: ${tool.name}\nMonth: ${m}\n• Pricing Basis: ${effectiveBasis}\n• Monthly Cost: ${formatGBPExact(d.costGBP)}${effectiveBasis === 'per_seat' ? `\n• Committed: ${d.committedSeats} seats\n• Active: ${d.activeSeats}\n• Unutilized: ${d.unutilizedSeats} spare seats` : ''}`}
                           >
                             <div>{formatGBP(d.costGBP)}</div>
                             <div style={{ 
                               fontSize: '9px', 
-                              color: d.unutilizedSeats > 0 ? '#f59e0b' : 'var(--text-muted)',
-                              fontWeight: d.unutilizedSeats > 0 ? 600 : 400 
+                              color: hasUnutilized ? '#f59e0b' : 'var(--text-muted)',
+                              fontWeight: hasUnutilized ? 600 : 400 
                             }}>
-                              {d.committedSeats} seats {d.unutilizedSeats > 0 ? `(${d.unutilizedSeats} spare)` : ''}
+                              {d.subtext || (effectiveBasis === 'per_seat' ? `${d.committedSeats} seats` : '')}
                             </div>
                           </td>
                         );
@@ -1538,7 +1680,8 @@ export default function DepartmentTeamCostTab({
                         {formatGBP(periodTotalCost)}
                       </td>
                     </tr>
-                  ))
+                  );
+                })
                 )}
               </>
             )}
@@ -1928,6 +2071,113 @@ export default function DepartmentTeamCostTab({
                 </div>
               </div>
 
+              {/* Billing & Cost Basis Selection */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--text-primary)' }}>
+                  Billing &amp; Cost Basis *
+                </label>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))',
+                  gap: '8px'
+                }}>
+                  {[
+                    {
+                      id: 'per_seat' as ToolCostBasis,
+                      icon: '👤',
+                      title: 'Per Seat / User',
+                      desc: 'Scales with active headcount ratchet & committed baseline'
+                    },
+                    {
+                      id: 'per_company' as ToolCostBasis,
+                      icon: '🏢',
+                      title: 'Per Company',
+                      desc: 'Fixed monthly fee per assigned company entity'
+                    },
+                    {
+                      id: 'per_department' as ToolCostBasis,
+                      icon: '📁',
+                      title: 'Per Department',
+                      desc: 'Fixed monthly fee per assigned department'
+                    },
+                    {
+                      id: 'fixed_total' as ToolCostBasis,
+                      icon: '⚖️',
+                      title: 'Shared Total Fee',
+                      desc: 'Single lump-sum fee apportioned across teams'
+                    }
+                  ].map(option => {
+                    const isSelected = toolForm.costBasis === option.id;
+                    return (
+                      <div
+                        key={option.id}
+                        onClick={() => setToolForm(prev => ({ ...prev, costBasis: option.id }))}
+                        style={{
+                          border: `1.5px solid ${isSelected ? 'var(--accent)' : 'var(--border-color)'}`,
+                          backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-secondary)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: '10px 12px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+                          <span style={{ fontSize: '14px' }}>{option.icon}</span>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: isSelected ? 'var(--accent)' : 'var(--text-primary)' }}>
+                            {option.title}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                          {option.desc}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Shared Total Split Method (when fixed_total is selected) */}
+              {toolForm.costBasis === 'fixed_total' && (
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: 'rgba(245, 158, 11, 0.06)',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px'
+                }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>⚖️ Allocation / Split Method *</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                      <input
+                        type="radio"
+                        name="splitMethod"
+                        value="equal"
+                        checked={toolForm.splitMethod === 'equal'}
+                        onChange={() => setToolForm(prev => ({ ...prev, splitMethod: 'equal' }))}
+                      />
+                      <span>Equal Split across Assigned Departments</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                      <input
+                        type="radio"
+                        name="splitMethod"
+                        value="pro_rata_headcount"
+                        checked={toolForm.splitMethod === 'pro_rata_headcount'}
+                        onChange={() => setToolForm(prev => ({ ...prev, splitMethod: 'pro_rata_headcount' }))}
+                      />
+                      <span>Pro-Rata by Active Team Headcount</span>
+                    </label>
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    When filtering report views by specific companies or departments, the fixed fee will be apportioned accordingly.
+                  </span>
+                </div>
+              )}
+
               {/* Hierarchical Company & Department Tree Dropdown */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
@@ -2198,14 +2448,22 @@ export default function DepartmentTeamCostTab({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-primary)' }}>
-                    Cost Per Seat (Monthly) *
+                    {toolForm.costBasis === 'per_seat' && 'Cost Per Seat (Monthly) *'}
+                    {toolForm.costBasis === 'per_company' && 'Monthly Rate per Company *'}
+                    {toolForm.costBasis === 'per_department' && 'Monthly Rate per Department *'}
+                    {toolForm.costBasis === 'fixed_total' && 'Total Fixed Monthly Fee *'}
                   </label>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     required
-                    placeholder="45.00"
+                    placeholder={
+                      toolForm.costBasis === 'per_seat' ? '45.00'
+                      : toolForm.costBasis === 'per_company' ? '250.00'
+                      : toolForm.costBasis === 'per_department' ? '150.00'
+                      : '500.00'
+                    }
                     value={toolForm.licenseCostPerSeat}
                     onChange={(e) => setToolForm({ ...toolForm, licenseCostPerSeat: parseFloat(e.target.value) || 0 })}
                     style={{
@@ -2218,6 +2476,12 @@ export default function DepartmentTeamCostTab({
                       fontSize: '13px'
                     }}
                   />
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginTop: '2px' }}>
+                    {toolForm.costBasis === 'per_seat' && 'Billed per allocated/ratcheted user seat per month'}
+                    {toolForm.costBasis === 'per_company' && 'Recurring subscription fee billed for each active company entity'}
+                    {toolForm.costBasis === 'per_department' && 'Recurring subscription fee billed for each active department'}
+                    {toolForm.costBasis === 'fixed_total' && 'Single recurring invoice amount apportioned across assigned teams'}
+                  </span>
                 </div>
 
                 <div>
@@ -2249,11 +2513,11 @@ export default function DepartmentTeamCostTab({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-primary)' }}>
-                    Contract Start Date *
+                    {toolForm.costBasis === 'per_seat' ? 'Contract Start Date *' : 'Contract Start Date (Optional)'}
                   </label>
                   <input
                     type="date"
-                    required
+                    required={toolForm.costBasis === 'per_seat'}
                     value={toolForm.contractStartDate}
                     onChange={(e) => {
                       const newStartDate = e.target.value;
@@ -2277,13 +2541,15 @@ export default function DepartmentTeamCostTab({
                     }}
                   />
                   <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                    Baseline seats are calculated from staff active on this date
+                    {toolForm.costBasis === 'per_seat' 
+                      ? 'Baseline seats are auto-calculated from staff active on this date'
+                      : 'Initial start or agreement date of the software subscription'}
                   </span>
                 </div>
 
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-primary)' }}>
-                    Contract Renewal Date
+                    Contract Renewal Date (Optional)
                   </label>
                   <input
                     type="date"
@@ -2305,113 +2571,166 @@ export default function DepartmentTeamCostTab({
                 </div>
               </div>
 
-              {/* Baseline Committed Seats with Auto-Calculation & Manual Override */}
-              <div style={{
-                padding: '12px 14px',
-                borderRadius: 'var(--radius-md)',
-                backgroundColor: 'var(--bg-secondary)',
-                border: `1px solid ${toolForm.isBaselineOverridden ? 'rgba(245, 158, 11, 0.4)' : 'var(--border-color)'}`
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
-                  <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span>Baseline Contract Seats *</span>
-                    <span style={{
-                      fontSize: '10px',
-                      fontWeight: 600,
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      backgroundColor: toolForm.isBaselineOverridden ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                      color: toolForm.isBaselineOverridden ? '#f59e0b' : 'var(--success)'
-                    }}>
-                      {toolForm.isBaselineOverridden ? 'Manual Override Active' : 'Auto-Calculated from Start Date'}
-                    </span>
-                  </label>
+              {/* Conditional: Per Seat Baseline Box vs Fixed/Company/Dept Live Summary Preview */}
+              {toolForm.costBasis === 'per_seat' ? (
+                /* Baseline Committed Seats with Auto-Calculation & Manual Override */
+                <div style={{
+                  padding: '12px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: `1px solid ${toolForm.isBaselineOverridden ? 'rgba(245, 158, 11, 0.4)' : 'var(--border-color)'}`
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>Baseline Contract Seats *</span>
+                      <span style={{
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        backgroundColor: toolForm.isBaselineOverridden ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                        color: toolForm.isBaselineOverridden ? '#f59e0b' : 'var(--success)'
+                      }}>
+                        {toolForm.isBaselineOverridden ? 'Manual Override Active' : 'Auto-Calculated from Start Date'}
+                      </span>
+                    </label>
 
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', cursor: 'pointer', userSelect: 'none' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', cursor: 'pointer', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={toolForm.isBaselineOverridden}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setToolForm(prev => ({
+                            ...prev,
+                            isBaselineOverridden: checked,
+                            baselineCommittedSeats: !checked ? staffCountAtStartDate : prev.baselineCommittedSeats
+                          }));
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <span style={{ fontWeight: 600, color: toolForm.isBaselineOverridden ? '#f59e0b' : 'var(--text-secondary)' }}>
+                        Override staff count
+                      </span>
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <input
-                      type="checkbox"
-                      checked={toolForm.isBaselineOverridden}
+                      type="number"
+                      min="0"
+                      required
+                      placeholder="e.g. 10"
+                      value={toolForm.baselineCommittedSeats}
                       onChange={(e) => {
-                        const checked = e.target.checked;
+                        const val = parseInt(e.target.value, 10);
                         setToolForm(prev => ({
                           ...prev,
-                          isBaselineOverridden: checked,
-                          baselineCommittedSeats: !checked ? staffCountAtStartDate : prev.baselineCommittedSeats
-                        }));
-                      }}
-                      style={{ cursor: 'pointer' }}
-                    />
-                    <span style={{ fontWeight: 600, color: toolForm.isBaselineOverridden ? '#f59e0b' : 'var(--text-secondary)' }}>
-                      Override staff count
-                    </span>
-                  </label>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <input
-                    type="number"
-                    min="0"
-                    required
-                    placeholder="e.g. 10"
-                    value={toolForm.baselineCommittedSeats}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      setToolForm(prev => ({
-                        ...prev,
-                        baselineCommittedSeats: isNaN(val) ? 0 : val,
-                        isBaselineOverridden: true
-                      }));
-                    }}
-                    style={{
-                      width: '130px',
-                      padding: '8px 12px',
-                      borderRadius: 'var(--radius-md)',
-                      border: `1px solid ${toolForm.isBaselineOverridden ? '#f59e0b' : 'var(--border-color)'}`,
-                      backgroundColor: 'var(--bg-primary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '14px',
-                      fontWeight: 700
-                    }}
-                  />
-
-                  {toolForm.isBaselineOverridden && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setToolForm(prev => ({
-                          ...prev,
-                          isBaselineOverridden: false,
-                          baselineCommittedSeats: staffCountAtStartDate
+                          baselineCommittedSeats: isNaN(val) ? 0 : val,
+                          isBaselineOverridden: true
                         }));
                       }}
                       style={{
-                        padding: '6px 12px',
+                        width: '130px',
+                        padding: '8px 12px',
                         borderRadius: 'var(--radius-md)',
-                        border: '1px solid rgba(99, 102, 241, 0.4)',
-                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                        color: 'var(--accent)',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'pointer'
+                        border: `1px solid ${toolForm.isBaselineOverridden ? '#f59e0b' : 'var(--border-color)'}`,
+                        backgroundColor: 'var(--bg-primary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '14px',
+                        fontWeight: 700
                       }}
-                    >
-                      ↺ Reset to Staff Count ({staffCountAtStartDate})
-                    </button>
-                  )}
-                </div>
+                    />
 
-                <div style={{ marginTop: '6px', fontSize: '11px', lineHeight: '1.4' }}>
-                  {toolForm.isBaselineOverridden ? (
-                    <span style={{ color: '#f59e0b' }}>
-                      ⚠️ Manually overridden to {toolForm.baselineCommittedSeats} seats. Active staff across selected scope on {toolForm.contractStartDate || 'contract start date'} was <strong>{staffCountAtStartDate} staff</strong>.
-                    </span>
-                  ) : (
-                    <span style={{ color: 'var(--success)' }}>
-                      ✓ Auto-calculated: Exactly <strong>{staffCountAtStartDate} active staff</strong> were in the selected companies &amp; departments on {toolForm.contractStartDate || 'contract start date'}.
-                    </span>
-                  )}
+                    {toolForm.isBaselineOverridden && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setToolForm(prev => ({
+                            ...prev,
+                            isBaselineOverridden: false,
+                            baselineCommittedSeats: staffCountAtStartDate
+                          }));
+                        }}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px solid rgba(99, 102, 241, 0.4)',
+                          backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                          color: 'var(--accent)',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        ↺ Reset to Staff Count ({staffCountAtStartDate})
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ marginTop: '6px', fontSize: '11px', lineHeight: '1.4' }}>
+                    {toolForm.isBaselineOverridden ? (
+                      <span style={{ color: '#f59e0b' }}>
+                        ⚠️ Manually overridden to {toolForm.baselineCommittedSeats} seats. Active staff across selected scope on {toolForm.contractStartDate || 'contract start date'} was <strong>{staffCountAtStartDate} staff</strong>.
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--success)' }}>
+                        ✓ Auto-calculated: Exactly <strong>{staffCountAtStartDate} active staff</strong> were in the selected companies &amp; departments on {toolForm.contractStartDate || 'contract start date'}.
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                /* Live Total Summary Card for Per Company, Per Department, and Fixed Total */
+                (() => {
+                  const effectiveCompCount = toolForm.companyIds.includes('all') ? companies.length : toolForm.companyIds.length;
+                  const effectiveDeptCount = toolForm.departments.includes('all') ? allDepartments.length : toolForm.departments.length;
+                  const unitRate = Number(toolForm.licenseCostPerSeat) || 0;
+                  const totalMonthlyCost = toolForm.costBasis === 'per_company'
+                    ? effectiveCompCount * unitRate
+                    : toolForm.costBasis === 'per_department'
+                      ? effectiveDeptCount * unitRate
+                      : unitRate;
+
+                  return (
+                    <div style={{
+                      padding: '12px 14px',
+                      borderRadius: 'var(--radius-md)',
+                      backgroundColor: 'rgba(99, 102, 241, 0.05)',
+                      border: '1px solid rgba(99, 102, 241, 0.2)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent)' }}>
+                          📊 Live Monthly Cost Summary
+                        </div>
+                        <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                          {formatGBPExact(totalMonthlyCost)} / mo
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                        {toolForm.costBasis === 'per_company' && (
+                          <span>
+                            {effectiveCompCount} assigned {effectiveCompCount === 1 ? 'company' : 'companies'} × {formatGBPExact(unitRate)} = <strong>{formatGBPExact(totalMonthlyCost)}/month</strong>
+                          </span>
+                        )}
+                        {toolForm.costBasis === 'per_department' && (
+                          <span>
+                            {effectiveDeptCount} assigned {effectiveDeptCount === 1 ? 'department' : 'departments'} × {formatGBPExact(unitRate)} = <strong>{formatGBPExact(totalMonthlyCost)}/month</strong>
+                          </span>
+                        )}
+                        {toolForm.costBasis === 'fixed_total' && (
+                          <span>
+                            Fixed total fee of <strong>{formatGBPExact(totalMonthlyCost)}/month</strong> split via <strong>{toolForm.splitMethod === 'pro_rata_headcount' ? 'headcount pro-rata' : 'equal split'}</strong> across {effectiveDeptCount} assigned departments.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
 
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-primary)' }}>

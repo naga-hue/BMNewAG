@@ -144,6 +144,9 @@ export interface CrmCandidate {
   notes?: string;
 }
 
+export type ToolCostBasis = 'per_seat' | 'per_company' | 'per_department' | 'fixed_total';
+export type ToolSplitMethod = 'equal' | 'pro_rata_headcount';
+
 export interface DepartmentTool {
   id: string;
   name: string; // e.g. "Dialpad", "Recruitly CRM", "LinkedIn Recruiter"
@@ -151,7 +154,9 @@ export interface DepartmentTool {
   departments?: string[]; // multiple selected departments, e.g. ["Civils", "Rail"] or ["all"]
   companyId?: string; // primary company ID or "all"
   companyIds?: string[]; // multiple selected company IDs or ["all"]
-  licenseCostPerSeat: number; // cost per seat
+  costBasis?: ToolCostBasis; // 'per_seat' | 'per_company' | 'per_department' | 'fixed_total'
+  splitMethod?: ToolSplitMethod; // 'equal' | 'pro_rata_headcount'
+  licenseCostPerSeat: number; // cost per seat or unit cost per company/dept/total
   currency: string; // 'GBP', 'USD', 'ZAR', etc.
   billingFrequency: 'monthly' | 'annual';
   contractStartDate?: string; // e.g. "2026-01-01"

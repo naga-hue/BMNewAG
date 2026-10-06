@@ -202,19 +202,42 @@ export default function CompanyDeptTreeFilter({
       return "All Companies & Departments (Consolidated)";
     }
     const selectedCompsCount = isAllCompanies ? companies.length : selectedCompanyIds.length;
-    const selectedDeptsCount = isAllDepartments 
-      ? Array.from(new Set(companyTree.flatMap(c => c.departments))).length 
-      : selectedDepartments.length;
+
+    // Count how many department desks are selected across the active companies
+    const activeComps = isAllCompanies 
+      ? companyTree 
+      : companyTree.filter(c => selectedCompanyIds.includes(c.id));
+
+    let selectedDeptsCount = 0;
+    if (isAllDepartments) {
+      activeComps.forEach(c => {
+        selectedDeptsCount += c.departments.length;
+      });
+    } else {
+      activeComps.forEach(c => {
+        c.departments.forEach(dept => {
+          if (isDeptSelected(dept)) {
+            selectedDeptsCount++;
+          }
+        });
+      });
+    }
+
+    if (selectedDeptsCount === 0 && selectedDepartments.length > 0 && !selectedDepartments.includes('all')) {
+      selectedDeptsCount = selectedDepartments.length;
+    }
 
     if (selectedCompsCount === 1 && !isAllCompanies) {
       const compObj = companies.find(c => c.id === selectedCompanyIds[0]);
       if (compObj) {
         if (isAllDepartments) return `${compObj.name} (All Depts)`;
-        return `${compObj.name} (${selectedDeptsCount} Depts)`;
+        return `${compObj.name} (${selectedDeptsCount} ${selectedDeptsCount === 1 ? 'Dept' : 'Depts'})`;
       }
     }
 
-    return `${selectedCompsCount} Companies, ${selectedDeptsCount} Departments`;
+    const compLabel = `${selectedCompsCount} ${selectedCompsCount === 1 ? 'Company' : 'Companies'}`;
+    const deptLabel = `${selectedDeptsCount} ${selectedDeptsCount === 1 ? 'Department' : 'Departments'}`;
+    return `${compLabel}, ${deptLabel}`;
   };
 
   return (

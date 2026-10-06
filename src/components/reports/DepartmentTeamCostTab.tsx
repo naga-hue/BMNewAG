@@ -224,6 +224,31 @@ export default function DepartmentTeamCostTab({
     return map;
   }, [companies, staff]);
 
+  // Calculate total department desks across currently selected companies and departments in toolForm
+  const toolFormDeptCount = useMemo(() => {
+    const activeComps = toolForm.companyIds.includes('all')
+      ? companies
+      : companies.filter(c => toolForm.companyIds.includes(c.id));
+
+    let count = 0;
+    if (toolForm.departments.includes('all')) {
+      activeComps.forEach(c => {
+        const compDepts = companyDepartmentsMap[c.id] || [];
+        count += compDepts.length > 0 ? compDepts.length : 1;
+      });
+    } else {
+      activeComps.forEach(c => {
+        const compDepts = companyDepartmentsMap[c.id] || [];
+        compDepts.forEach(d => {
+          if (toolForm.departments.includes(d)) {
+            count++;
+          }
+        });
+      });
+    }
+    return count > 0 ? count : (toolForm.departments.includes('all') ? allDepartments.length : toolForm.departments.length);
+  }, [toolForm.companyIds, toolForm.departments, companies, companyDepartmentsMap, allDepartments]);
+
   // Departments to display in the department pills section (supports company filter)
   const displayedDepartments = useMemo(() => {
     if (deptScopeCompanyFilter === 'all') {
@@ -523,7 +548,25 @@ export default function DepartmentTeamCostTab({
             subtext = splitMethod === 'pro_rata_headcount' ? 'Dept pro-rata' : 'Dept split';
           }
         } else if (costBasis === 'per_department') {
-          const deptCount = matchingDepts.length;
+          // Count assigned department desks across matching companies
+          let deptCount = 0;
+          matchingComps.forEach(compId => {
+            const compDepts = companyDepartmentsMap[compId] || [];
+            const compEffectiveDepts = toolDepts.includes('all')
+              ? compDepts
+              : compDepts.filter(d => toolDepts.includes(d));
+
+            const compMatchingDepts = deptFilter.includes('all')
+              ? compEffectiveDepts
+              : compEffectiveDepts.filter(d => deptFilter.includes(d));
+
+            deptCount += compMatchingDepts.length;
+          });
+
+          if (deptCount === 0 && matchingComps.length > 0) {
+            deptCount = matchingDepts.length;
+          }
+
           cost = deptCount * unitCostGBP;
           subtext = `${deptCount} ${deptCount === 1 ? 'dept' : 'depts'}`;
         } else if (costBasis === 'fixed_total') {
@@ -554,9 +597,27 @@ export default function DepartmentTeamCostTab({
             cost = unitCostGBP * ratio;
             subtext = `Pro-rata (${staffInFilteredView}/${totalStaffAllAssigned} staff)`;
           } else {
-            const ratio = matchingDepts.length / Math.max(1, effectiveDepts.length);
+            // Count total assigned department desks across all effective companies for this tool
+            let totalAssignedDepts = 0;
+            effectiveComps.forEach(compId => {
+              const compDepts = companyDepartmentsMap[compId] || [];
+              const compEff = toolDepts.includes('all') ? compDepts : compDepts.filter(d => toolDepts.includes(d));
+              totalAssignedDepts += compEff.length;
+            });
+            if (totalAssignedDepts === 0) totalAssignedDepts = Math.max(1, effectiveDepts.length);
+
+            // Count assigned department desks within the current view filter
+            let viewMatchingDepts = 0;
+            matchingComps.forEach(compId => {
+              const compDepts = companyDepartmentsMap[compId] || [];
+              const compEff = toolDepts.includes('all') ? compDepts : compDepts.filter(d => toolDepts.includes(d));
+              const compMatch = deptFilter.includes('all') ? compEff : compEff.filter(d => deptFilter.includes(d));
+              viewMatchingDepts += compMatch.length;
+            });
+
+            const ratio = viewMatchingDepts / Math.max(1, totalAssignedDepts);
             cost = unitCostGBP * ratio;
-            subtext = `Split (${matchingDepts.length}/${effectiveDepts.length} depts)`;
+            subtext = `Split (${viewMatchingDepts}/${totalAssignedDepts} depts)`;
           }
         } else {
           // Standard Per Seat Ratchet Engine
@@ -1903,7 +1964,17 @@ export default function DepartmentTeamCostTab({
                             }}>
                               {toolDepts.includes('all')
                                 ? 'All Depts'
-                                : (toolDepts.length === 1 ? toolDepts[0] : `${toolDepts[0]} +${toolDepts.length - 1} depts`)}
+                                : (() => {
+                                    let totalDepts = 0;
+                                    const targetComps = toolComps.includes('all') ? companies.map(c => c.id) : toolComps;
+                                    targetComps.forEach(compId => {
+                                      const compDepts = companyDepartmentsMap[compId] || [];
+                                      const compEff = toolDepts.includes('all') ? compDepts : compDepts.filter(d => toolDepts.includes(d));
+                                      totalDepts += compEff.length;
+                                    });
+                                    const count = totalDepts || toolDepts.length;
+                                    return count === 1 ? toolDepts[0] : `${count} depts (${toolDepts.join(', ')})`;
+                                  })()}
                             </span>
 
                             {/* Company Scope Badge */}
@@ -2737,7 +2808,7 @@ export default function DepartmentTeamCostTab({
                 <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '3px', display: 'block' }}>
                   {toolForm.departments.includes('all')
                     ? 'Shared across all departments in the business'
-                    : `Applies to ${toolForm.departments.length} selected department${toolForm.departments.length === 1 ? '' : 's'}`}
+                    : `Applies to ${toolFormDeptCount} selected department${toolFormDeptCount === 1 ? '' : 's'}`}
                   {deptScopeCompanyFilter !== 'all' && (
                     <span style={{ marginLeft: '6px', color: 'var(--accent)', fontWeight: 600 }}>
                       (Filtered to {companies.find(c => c.id === deptScopeCompanyFilter)?.name})
@@ -2985,7 +3056,7 @@ export default function DepartmentTeamCostTab({
                 /* Live Total Summary Card for Per Company, Per Department, and Fixed Total */
                 (() => {
                   const effectiveCompCount = toolForm.companyIds.includes('all') ? companies.length : toolForm.companyIds.length;
-                  const effectiveDeptCount = toolForm.departments.includes('all') ? allDepartments.length : toolForm.departments.length;
+                  const effectiveDeptCount = toolFormDeptCount;
                   const unitRate = Number(toolForm.licenseCostPerSeat) || 0;
                   const totalMonthlyCost = toolForm.costBasis === 'per_company'
                     ? effectiveCompCount * unitRate

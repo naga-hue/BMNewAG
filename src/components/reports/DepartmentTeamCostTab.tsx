@@ -1438,9 +1438,534 @@ export default function DepartmentTeamCostTab({
     }
   };
 
+  // Export Clean Landscape PDF Statement (Targeted Table Print)
+  const handlePrintPDF = () => {
+    try {
+      const printWin = window.open('', '_blank');
+      if (!printWin) {
+        if (onShowToast) onShowToast('Please allow popups to open the PDF print preview', 'warning');
+        return;
+      }
+
+      const deptLabel = deptFilter.includes('all') ? 'All Departments' : deptFilter.join(', ');
+      const activeCompanyNames = companyFilter.includes('all') 
+        ? 'All Companies' 
+        : companyFilter.map(id => companies.find(c => c.id === id)?.name || id).join(', ');
+      
+      const monthHeaders = monthsList.map(m => formatMonthLabel(m));
+
+      // Build Consultant Sales rows
+      let salesRowsHtml = '';
+      filteredStaff.forEach(s => {
+        const sSales = consultantSalesData[s.id] || { monthlySales: {}, grandTotal: 0, ytvTotal: 0, placementCount: 0 };
+        salesRowsHtml += `
+          <tr class="sub-row">
+            <td>${s.fullName} <span style="color:#64748b; font-size:7pt;">(${s.jobTitle || 'Recruiter'}${sSales.placementCount > 0 ? ` • ${sSales.placementCount} deals` : ''})</span></td>
+            ${monthsList.map(m => `<td>${formatGBP(sSales.monthlySales[m] || 0)}</td>`).join('')}
+            <td style="font-weight:600; background:#f0fdf4;">${formatGBP(sSales.ytvTotal)}</td>
+            <td style="font-weight:700; color:#059669;">${formatGBP(sSales.grandTotal)}</td>
+          </tr>
+        `;
+      });
+
+      // Build Direct Team Remuneration rows
+      let teamRowsHtml = '';
+      filteredStaff.forEach(s => {
+        const staffCost = staffMonthlyData[s.id] || {};
+        let sTotal = 0;
+        let sYtv = 0;
+        const cols = monthsList.map(m => {
+          const val = staffCost[m]?.total || 0;
+          sTotal += val;
+          if (m <= reconciledCutoffMonth) sYtv += val;
+          return `<td>${formatGBP(val)}</td>`;
+        }).join('');
+
+        teamRowsHtml += `
+          <tr class="sub-row">
+            <td>${s.fullName} <span style="color:#64748b; font-size:7pt;">(${s.jobTitle || 'Recruiter'})</span></td>
+            ${cols}
+            <td style="font-weight:600; background:#f8fafc;">${formatGBP(sYtv)}</td>
+            <td style="font-weight:700;">${formatGBP(sTotal)}</td>
+          </tr>
+        `;
+      });
+
+      // Build Shared Staff rows
+      let sharedRowsHtml = '';
+      if (relevantSharedStaff.length > 0) {
+        sharedRowsHtml += `
+          <tr class="sub-hdr">
+            <td colspan="${monthsList.length + 3}" style="padding-left:14px; font-weight:700; color:#475569; font-size:7.5pt; background:#f1f5f9;">
+              ↳ Apportioned SA Shared Roles & Shared Direction (Headcount Pro-Rata)
+            </td>
+          </tr>
+        `;
+        relevantSharedStaff.forEach(s => {
+          const sData = sharedStaffMonthlyData[s.id] || {};
+          let sTotal = 0;
+          let sYtv = 0;
+          const cols = monthsList.map(m => {
+            const val = sData[m]?.apportionedCost || 0;
+            sTotal += val;
+            if (m <= reconciledCutoffMonth) sYtv += val;
+            return `<td>${formatGBP(val)}</td>`;
+          }).join('');
+
+          sharedRowsHtml += `
+            <tr class="sub-row" style="color:#4338ca;">
+              <td>${s.fullName} <span style="font-size:7pt;">(${sData[reconciledCutoffMonth || monthsList[0]]?.roleBadge || 'Shared'})</span></td>
+              ${cols}
+              <td style="font-weight:600; background:#f8fafc;">${formatGBP(sYtv)}</td>
+              <td style="font-weight:700;">${formatGBP(sTotal)}</td>
+            </tr>
+          `;
+        });
+      }
+
+      // Build Tool rows
+      let toolRowsHtml = '';
+      relevantTools.forEach(t => {
+        const ratchet = toolRatchetData.find(rd => rd.toolId === t.id);
+        const monthly = ratchet?.monthlyDetails || {};
+        let tTotal = 0;
+        let tYtv = 0;
+        const cols = monthsList.map(m => {
+          const val = monthly[m]?.totalCostGBP || 0;
+          tTotal += val;
+          if (m <= reconciledCutoffMonth) tYtv += val;
+          return `<td>${formatGBP(val)}</td>`;
+        }).join('');
+
+        toolRowsHtml += `
+          <tr class="sub-row">
+            <td>${t.name} <span style="color:#64748b; font-size:7pt;">(${t.costBasis === 'per_seat' ? 'Per-Seat Ratchet' : 'Fixed'})</span></td>
+            ${cols}
+            <td style="font-weight:600; background:#f8fafc;">${formatGBP(tYtv)}</td>
+            <td style="font-weight:700;">${formatGBP(tTotal)}</td>
+          </tr>
+        `;
+      });
+
+      // Build Nominal rows
+      let nominalRowsHtml = '';
+      if (excludeNominals) {
+        nominalRowsHtml = `
+          <tr class="sub-row" style="color:#94a3b8; font-style:italic;">
+            <td>Point 3 Overheads Excluded from P&L</td>
+            ${monthsList.map(() => `<td>£0</td>`).join('')}
+            <td>£0</td>
+            <td>£0</td>
+          </tr>
+        `;
+      } else {
+        nominalCodeKeys.forEach(code => {
+          const isExcluded = isNominalExcluded(code);
+          let nTotal = 0;
+          let nYtv = 0;
+          const cols = monthsList.map((m, idx) => {
+            const val = pnlMonthlyData[idx]?.nominalBreakdown?.[code] || 0;
+            if (!isExcluded) {
+              nTotal += val;
+              if (m <= reconciledCutoffMonth) nYtv += val;
+            }
+            return `<td style="${isExcluded ? 'text-decoration:line-through; color:#94a3b8;' : ''}">${formatGBP(val)}</td>`;
+          }).join('');
+
+          nominalRowsHtml += `
+            <tr class="sub-row" style="${isExcluded ? 'opacity:0.5;' : ''}">
+              <td style="${isExcluded ? 'text-decoration:line-through; color:#94a3b8;' : ''}">
+                ${code} ${isExcluded ? '<span style="color:#ef4444; font-size:7pt;">(Excluded)</span>' : ''}
+              </td>
+              ${cols}
+              <td style="font-weight:600; background:#f8fafc; ${isExcluded ? 'text-decoration:line-through; color:#94a3b8;' : ''}">${formatGBP(nYtv)}</td>
+              <td style="font-weight:700; ${isExcluded ? 'text-decoration:line-through; color:#94a3b8;' : ''}">${formatGBP(nTotal)}</td>
+            </tr>
+          `;
+        });
+      }
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Department P&L Statement - ${deptLabel}</title>
+          <style>
+            @page {
+              size: A4 landscape;
+              margin: 6mm 6mm;
+            }
+            * { box-sizing: border-box; }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+              color: #0f172a;
+              background-color: #ffffff;
+              padding: 10px;
+              margin: 0;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            .no-print {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 10px;
+              background: #f8fafc;
+              padding: 8px 12px;
+              border: 1px solid #e2e8f0;
+              border-radius: 6px;
+            }
+            .print-btn {
+              background-color: #059669;
+              color: white;
+              border: none;
+              padding: 8px 18px;
+              font-size: 13px;
+              font-weight: 700;
+              border-radius: 6px;
+              cursor: pointer;
+            }
+            @media print {
+              .no-print { display: none !important; }
+              body { padding: 0 !important; margin: 0 !important; }
+            }
+            .pnl-header {
+              border-bottom: 2px solid #0f172a;
+              padding-bottom: 8px;
+              margin-bottom: 8px;
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-end;
+            }
+            .pnl-title h1 {
+              margin: 0 0 4px 0;
+              font-size: 16px;
+              font-weight: 800;
+              color: #0f172a;
+            }
+            .pnl-title .meta {
+              font-size: 9.5px;
+              color: #475569;
+              display: flex;
+              gap: 12px;
+            }
+            .pnl-kpi-ribbon {
+              display: grid;
+              grid-template-columns: repeat(5, 1fr);
+              gap: 6px;
+              margin-bottom: 8px;
+            }
+            .kpi-box {
+              border: 1px solid #cbd5e1;
+              border-radius: 4px;
+              padding: 5px 8px;
+              background-color: #f8fafc;
+            }
+            .kpi-box .lbl {
+              font-size: 7.5pt;
+              font-weight: 700;
+              color: #64748b;
+              text-transform: uppercase;
+            }
+            .kpi-box .val {
+              font-size: 11pt;
+              font-weight: 800;
+              font-family: monospace;
+              color: #0f172a;
+              margin-top: 1px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 7.5pt;
+              table-layout: fixed;
+            }
+            th {
+              background-color: #f1f5f9;
+              color: #1e293b;
+              font-weight: 700;
+              padding: 4px 2px;
+              border: 1px solid #cbd5e1;
+              text-align: right;
+              font-size: 7.5pt;
+            }
+            th:first-child {
+              text-align: left;
+              width: 25%;
+              padding-left: 6px;
+            }
+            td {
+              padding: 3px 2px;
+              border: 1px solid #e2e8f0;
+              font-size: 7.5pt;
+              text-align: right;
+              font-family: monospace;
+            }
+            td:first-child {
+              text-align: left;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              padding-left: 6px;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+            .section-hdr {
+              background-color: #f8fafc;
+              font-weight: 800;
+              text-transform: uppercase;
+              letter-spacing: 0.04em;
+              font-size: 7pt;
+              border-top: 1.5px solid #0f172a;
+            }
+            .row-summary {
+              font-weight: 700;
+              background-color: #f8fafc;
+            }
+            .row-pnl {
+              background-color: ${departmentPnlTotals.grandNetProfit >= 0 ? '#ecfdf5' : '#fef2f2'};
+              font-weight: 800;
+              font-size: 8.5pt;
+              border-top: 2px solid #0f172a;
+              border-bottom: 2px solid #0f172a;
+            }
+            .sub-row {
+              font-size: 7pt;
+              color: #334155;
+            }
+            .sub-row td:first-child {
+              padding-left: 14px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="no-print">
+            <span style="font-size:12px; font-weight:600; color:#334155;">
+              🖨️ PDF Print Preview: Department Team & Tool Costs P&L (${deptLabel})
+            </span>
+            <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
+          </div>
+
+          <div class="pnl-header">
+            <div class="pnl-title">
+              <h1>${activeCompanyNames} • ${deptLabel} P&L Statement</h1>
+              <div class="meta">
+                <span><strong>Period:</strong> ${startMonth} to ${endMonth}</span>
+                <span><strong>Reconciled Cutoff:</strong> ${reconciledCutoffMonth}</span>
+                <span><strong>Mode:</strong> ${excludeNominals ? 'Direct Sales, Team & Tool Costs (Nominals Excluded)' : 'Consolidated P&L (Including Nominals)'}</span>
+                <span><strong>Exported:</strong> ${new Date().toLocaleDateString('en-GB')}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pnl-kpi-ribbon">
+            <div class="kpi-box">
+              <div class="lbl">Active Team Headcount</div>
+              <div class="val">${Math.round(combinedDepartmentTotals.avgHeadcount)} avg</div>
+            </div>
+            <div class="kpi-box" style="border-color:#10b981; background:#f0fdf4;">
+              <div class="lbl" style="color:#059669;">Team Sales (Billings)</div>
+              <div class="val" style="color:#059669;">${formatGBP(teamSalesTotals.grandTotal)}</div>
+            </div>
+            <div class="kpi-box">
+              <div class="lbl">Total Operating Costs</div>
+              <div class="val">${formatGBP(combinedDepartmentTotals.grandTotal)}</div>
+            </div>
+            <div class="kpi-box" style="border-color:${departmentPnlTotals.grandNetProfit >= 0 ? '#10b981' : '#ef4444'}; background:${departmentPnlTotals.grandNetProfit >= 0 ? '#f0fdf4' : '#fef2f2'};">
+              <div class="lbl" style="color:${departmentPnlTotals.grandNetProfit >= 0 ? '#059669' : '#dc2626'};">Net Profit / Contribution</div>
+              <div class="val" style="color:${departmentPnlTotals.grandNetProfit >= 0 ? '#059669' : '#dc2626'};">
+                ${departmentPnlTotals.grandNetProfit >= 0 ? '+' : ''}${formatGBP(departmentPnlTotals.grandNetProfit)}
+              </div>
+            </div>
+            <div class="kpi-box">
+              <div class="lbl">Net Margin %</div>
+              <div class="val" style="color:${departmentPnlTotals.overallMarginPct >= 0 ? '#059669' : '#dc2626'};">
+                ${departmentPnlTotals.overallMarginPct.toFixed(1)}%
+              </div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Account Line Item (GBP)</th>
+                ${monthHeaders.map(mh => `<th>${mh}</th>`).join('')}
+                <th style="background:#e0e7ff;">YTV</th>
+                <th style="background:#f1f5f9;">Period Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Section 0: Team Sales -->
+              <tr class="section-hdr" style="color:#059669; background:#f0fdf4;">
+                <td colspan="${monthsList.length + 3}">0. Team Sales & Placements Billings (Revenue)</td>
+              </tr>
+              <tr class="row-summary" style="color:#059669; background:#f0fdf4;">
+                <td>Team Placements Billings</td>
+                ${monthsList.map(m => `<td>${formatGBP(teamSalesTotals.monthlySum[m] || 0)}</td>`).join('')}
+                <td style="font-weight:700;">${formatGBP(teamSalesTotals.ytvTotal)}</td>
+                <td style="font-weight:800;">${formatGBP(teamSalesTotals.grandTotal)}</td>
+              </tr>
+              ${salesRowsHtml}
+
+              <!-- Section 1: Team Remuneration -->
+              <tr class="section-hdr">
+                <td colspan="${monthsList.length + 3}">1. Team Remuneration (Salaries, Freelance & Commissions)</td>
+              </tr>
+              <tr class="row-summary">
+                <td>Apportioned Team Remuneration</td>
+                ${monthsList.map(m => `<td>${formatGBP(staffRemunerationTotals.monthlySum[m] || 0)}</td>`).join('')}
+                <td style="font-weight:700;">${formatGBP(staffRemunerationTotals.ytvTotal)}</td>
+                <td style="font-weight:800;">${formatGBP(staffRemunerationTotals.grandTotal)}</td>
+              </tr>
+              ${teamRowsHtml}
+              ${sharedRowsHtml}
+
+              <!-- Section 2: Software Tools -->
+              <tr class="section-hdr">
+                <td colspan="${monthsList.length + 3}">2. Software Licenses & CRM Systems (Ratchet Engine)</td>
+              </tr>
+              <tr class="row-summary">
+                <td>Contracted Software & Tool Licenses</td>
+                ${monthsList.map(m => `<td>${formatGBP(toolTotals.monthlySum[m] || 0)}</td>`).join('')}
+                <td style="font-weight:700;">${formatGBP(toolTotals.ytvTotal)}</td>
+                <td style="font-weight:800;">${formatGBP(toolTotals.grandTotal)}</td>
+              </tr>
+              ${toolRowsHtml}
+
+              <!-- Section 3: Nominals -->
+              <tr class="section-hdr" style="${excludeNominals ? 'color:#d97706; background:#fffbeb;' : ''}">
+                <td colspan="${monthsList.length + 3}">
+                  3. Department Overheads & Operational SaaS (Nominals)
+                  ${excludeNominals ? ' • [EXCLUDED FROM P&L]' : ''}
+                </td>
+              </tr>
+              <tr class="row-summary" style="${excludeNominals ? 'opacity:0.5; text-decoration:line-through;' : ''}">
+                <td>Apportioned Overheads & SaaS</td>
+                ${monthsList.map(m => `<td>${formatGBP(excludeNominals ? 0 : (nominalTotals.monthlySum[m] || 0))}</td>`).join('')}
+                <td style="font-weight:700;">${formatGBP(excludeNominals ? 0 : nominalTotals.ytvTotal)}</td>
+                <td style="font-weight:800;">${formatGBP(excludeNominals ? 0 : nominalTotals.grandTotal)}</td>
+              </tr>
+              ${nominalRowsHtml}
+
+              <!-- Section 4: Consolidated Summary & P&L Statement -->
+              <tr class="section-hdr" style="border-top:2px solid #0f172a; font-size:7.5pt;">
+                <td colspan="${monthsList.length + 3}">4. Consolidated Department Summary & Team P&L Statement</td>
+              </tr>
+              <tr style="font-weight:700; color:#059669; background:#f0fdf4;">
+                <td>➕ Team Sales & Placements Billings</td>
+                ${monthsList.map(m => `<td>${formatGBP(teamSalesTotals.monthlySum[m] || 0)}</td>`).join('')}
+                <td>${formatGBP(teamSalesTotals.ytvTotal)}</td>
+                <td>${formatGBP(teamSalesTotals.grandTotal)}</td>
+              </tr>
+              <tr style="font-weight:600;">
+                <td>➖ 1. Team Remuneration (Salaries & Commissions)</td>
+                ${monthsList.map(m => `<td>${formatGBP(staffRemunerationTotals.monthlySum[m] || 0)}</td>`).join('')}
+                <td>${formatGBP(staffRemunerationTotals.ytvTotal)}</td>
+                <td>${formatGBP(staffRemunerationTotals.grandTotal)}</td>
+              </tr>
+              <tr style="font-weight:600;">
+                <td>➖ 2. Contracted Software & Tool Licenses</td>
+                ${monthsList.map(m => `<td>${formatGBP(toolTotals.monthlySum[m] || 0)}</td>`).join('')}
+                <td>${formatGBP(toolTotals.ytvTotal)}</td>
+                <td>${formatGBP(toolTotals.grandTotal)}</td>
+              </tr>
+              <tr style="font-weight:600; ${excludeNominals ? 'opacity:0.5; text-decoration:line-through;' : ''}">
+                <td>➖ 3. Department Overhead Nominals ${excludeNominals ? '(EXCLUDED)' : ''}</td>
+                ${monthsList.map(m => `<td>${formatGBP(excludeNominals ? 0 : (nominalTotals.monthlySum[m] || 0))}</td>`).join('')}
+                <td>${formatGBP(excludeNominals ? 0 : nominalTotals.ytvTotal)}</td>
+                <td>${formatGBP(excludeNominals ? 0 : nominalTotals.grandTotal)}</td>
+              </tr>
+              <tr style="font-weight:800; background:#f8fafc; border-top:1.5px solid #0f172a;">
+                <td>TOTAL DEPARTMENT OPERATING COSTS</td>
+                ${monthsList.map(m => `<td>${formatGBP(combinedDepartmentTotals.monthlySum[m] || 0)}</td>`).join('')}
+                <td>${formatGBP(combinedDepartmentTotals.ytvTotal)}</td>
+                <td style="font-size:8.5pt;">${formatGBP(combinedDepartmentTotals.grandTotal)}</td>
+              </tr>
+              <tr class="row-pnl">
+                <td style="color:${departmentPnlTotals.grandNetProfit >= 0 ? '#059669' : '#dc2626'};">
+                  🏆 DEPARTMENT NET PROFIT / CONTRIBUTION (P&L)
+                </td>
+                ${monthsList.map(m => {
+                  const p = departmentPnlTotals.monthlyNetProfit[m] || 0;
+                  return `<td style="color:${p >= 0 ? '#059669' : '#dc2626'};">${p >= 0 ? '+' : ''}${formatGBP(p)}</td>`;
+                }).join('')}
+                <td style="color:${departmentPnlTotals.ytvNetProfit >= 0 ? '#059669' : '#dc2626'};">
+                  ${departmentPnlTotals.ytvNetProfit >= 0 ? '+' : ''}${formatGBP(departmentPnlTotals.ytvNetProfit)}
+                </td>
+                <td style="color:${departmentPnlTotals.grandNetProfit >= 0 ? '#059669' : '#dc2626'}; font-size:9.5pt;">
+                  ${departmentPnlTotals.grandNetProfit >= 0 ? '+' : ''}${formatGBP(departmentPnlTotals.grandNetProfit)}
+                </td>
+              </tr>
+              <tr style="font-weight:600; font-size:7pt; color:#475569;">
+                <td>Net Margin % (Profit ÷ Sales)</td>
+                ${monthsList.map(m => `<td>${(departmentPnlTotals.monthlyMarginPct[m] || 0).toFixed(1)}%</td>`).join('')}
+                <td>—</td>
+                <td style="font-weight:700;">${departmentPnlTotals.overallMarginPct.toFixed(1)}%</td>
+              </tr>
+              <tr style="font-size:7pt; color:#475569;">
+                <td>Average Net Contribution per Consultant</td>
+                ${monthsList.map(m => `<td>${formatGBP(departmentPnlTotals.monthlyNetContributionPerHead[m] || 0)}</td>`).join('')}
+                <td>—</td>
+                <td style="font-weight:700;">${formatGBP(departmentPnlTotals.overallContributionPerHead)}</td>
+              </tr>
+              <tr style="font-size:7pt; color:#64748b;">
+                <td>Average Operating Cost per Recruiter / Head</td>
+                ${monthsList.map(m => `<td>${formatGBP(combinedDepartmentTotals.avgCostPerHead[m] || 0)}</td>`).join('')}
+                <td>—</td>
+                <td>${formatGBP(combinedDepartmentTotals.overallAvgCostPerHead)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </body>
+        </html>
+      `;
+
+      printWin.document.open();
+      printWin.document.write(html);
+      printWin.document.close();
+      setTimeout(() => {
+        printWin.focus();
+        printWin.print();
+      }, 400);
+    } catch (err: any) {
+      console.error('Error generating PDF print preview:', err);
+      if (onShowToast) onShowToast('Failed to generate PDF: ' + err.message, 'error');
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', paddingBottom: '40px' }}>
-      
+      {/* Print-specific stylesheet for browser Cmd+P fallback */}
+      <style>{`
+        @media print {
+          @page {
+            size: landscape;
+            margin: 8mm 6mm;
+          }
+          nav, header, .app-sidebar, .sidebar, .header-actions, .filter-toolbar, button {
+            display: none !important;
+          }
+          body, #root, main, .main-content {
+            background: #fff !important;
+            color: #000 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          .table-container {
+            overflow: visible !important;
+            border: none !important;
+          }
+          table {
+            width: 100% !important;
+            min-width: 100% !important;
+            font-size: 8pt !important;
+          }
+          th, td {
+            padding: 3px 2px !important;
+          }
+        }
+      `}</style>
+
       {/* Top Header & P&L Performance Summary Panel */}
       <div style={{ 
         display: 'flex', 
@@ -1558,7 +2083,7 @@ export default function DepartmentTeamCostTab({
 
           <button
             type="button"
-            onClick={() => window.print()}
+            onClick={handlePrintPDF}
             style={{
               background: 'none',
               border: 'none',
@@ -1570,6 +2095,7 @@ export default function DepartmentTeamCostTab({
               alignItems: 'center',
               gap: '6px'
             }}
+            title="Export clean, publication-ready landscape PDF statement of this department table"
           >
             <Printer size={14} /> Print PDF
           </button>
@@ -1797,21 +2323,21 @@ export default function DepartmentTeamCostTab({
           MAIN P&L MATRIX TABLE
           ============================================================== */}
       <div className="table-container" style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
-        <table className="entity-table dense" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+        <table className="entity-table dense" style={{ width: '100%', minWidth: '1050px', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
             <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
-              <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '12px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 3, minWidth: '320px' }}>
+              <th style={{ padding: '8px 12px', fontWeight: 700, fontSize: '11.5px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 3, minWidth: '220px', width: '22%' }}>
                 Department Account Line Item (GBP)
               </th>
               {monthsList.map(m => (
-                <th key={m} style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, fontSize: '12px', minWidth: '95px' }}>
+                <th key={m} style={{ padding: '8px 4px', textAlign: 'right', fontWeight: 700, fontSize: '11px', minWidth: '65px' }}>
                   {formatMonthLabel(m)}
                 </th>
               ))}
-              <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, fontSize: '12px', backgroundColor: 'rgba(99, 102, 241, 0.08)', minWidth: '110px' }}>
-                YTV (Reconciled)
+              <th style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, fontSize: '11px', backgroundColor: 'rgba(99, 102, 241, 0.08)', minWidth: '85px' }}>
+                YTV
               </th>
-              <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, fontSize: '12px', backgroundColor: 'var(--bg-secondary)', minWidth: '110px' }}>
+              <th style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, fontSize: '11px', backgroundColor: 'var(--bg-secondary)', minWidth: '88px' }}>
                 Period Total
               </th>
             </tr>

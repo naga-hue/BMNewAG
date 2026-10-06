@@ -1866,5 +1866,75 @@ export const firebaseService: FirebaseServiceInterface = {
       localStorage.setItem('bm-reminder-settings', JSON.stringify(settings));
       return settings;
     }
+  },
+
+  subscribeDepartmentTools(onUpdate: (tools: any[]) => void, fallbackData = []) {
+    const localCache = localStorage.getItem('bm-department-tools');
+    if (localCache) {
+      try {
+        onUpdate(JSON.parse(localCache));
+      } catch (e) {
+        onUpdate(fallbackData);
+      }
+    } else {
+      onUpdate(fallbackData);
+    }
+
+    if (isConfigured && db) {
+      const refCol = collection(db, 'departmentTools');
+      return onSnapshot(refCol, (snapshot) => {
+        const list: any[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push({ ...docSnap.data(), id: docSnap.id });
+        });
+        localStorage.setItem('bm-department-tools', JSON.stringify(list));
+        onUpdate(list);
+      }, (error) => {
+        console.error("Firestore departmentTools snapshot error:", error);
+      });
+    } else {
+      return () => {};
+    }
+  },
+
+  async saveDepartmentTool(tool: any) {
+    if (isConfigured && db) {
+      const toolId = tool.id || `dept-tool-${Date.now()}`;
+      const docRef = doc(db, 'departmentTools', toolId);
+      const data = {
+        ...tool,
+        id: toolId,
+        updatedAt: new Date().toISOString()
+      };
+      await setDoc(docRef, data, { merge: true });
+      return data;
+    } else {
+      const local = localStorage.getItem('bm-department-tools');
+      const list = local ? JSON.parse(local) : [];
+      const toolId = tool.id || `dept-tool-${Date.now()}`;
+      const data = { ...tool, id: toolId, updatedAt: new Date().toISOString() };
+      const idx = list.findIndex((t: any) => t.id === toolId);
+      if (idx >= 0) {
+        list[idx] = data;
+      } else {
+        list.push(data);
+      }
+      localStorage.setItem('bm-department-tools', JSON.stringify(list));
+      return data;
+    }
+  },
+
+  async deleteDepartmentTool(id: string) {
+    if (isConfigured && db) {
+      const docRef = doc(db, 'departmentTools', id);
+      await deleteDoc(docRef);
+      return id;
+    } else {
+      const local = localStorage.getItem('bm-department-tools');
+      const list = local ? JSON.parse(local) : [];
+      const filtered = list.filter((t: any) => t.id !== id);
+      localStorage.setItem('bm-department-tools', JSON.stringify(filtered));
+      return id;
+    }
   }
 };

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { firebaseService } from '../services/firebase';
-import { Company, Staff, Expense, Placement, Vendor, NominalCode, PayrollRecord, CrmClientCompany, CrmCandidate } from '../types';
+import { Company, Staff, Expense, Placement, Vendor, NominalCode, PayrollRecord, CrmClientCompany, CrmCandidate, DepartmentTool } from '../types';
 
 interface StoreState {
   companies: Company[];
@@ -18,6 +18,7 @@ interface StoreState {
   reimbursementClaims: any[];
   crmClientCompanies: CrmClientCompany[];
   crmCandidates: CrmCandidate[];
+  departmentTools: DepartmentTool[];
 
   initSubscriptions: (initialData?: any) => () => void;
   updatePlacement: (updated: Placement) => Promise<void>;
@@ -37,6 +38,8 @@ interface StoreState {
   deleteCrmClientCompany: (id: string) => Promise<void>;
   saveCrmCandidate: (candidate: CrmCandidate) => Promise<void>;
   deleteCrmCandidate: (id: string) => Promise<void>;
+  saveDepartmentTool: (tool: DepartmentTool) => Promise<void>;
+  deleteDepartmentTool: (id: string) => Promise<void>;
 }
 
 export const useBoundStore = create<StoreState>((set) => ({
@@ -55,6 +58,7 @@ export const useBoundStore = create<StoreState>((set) => ({
   reimbursementClaims: [],
   crmClientCompanies: [],
   crmCandidates: [],
+  departmentTools: [],
 
   // Subscriptions Setup
   initSubscriptions: (initialData = {}) => {
@@ -186,6 +190,15 @@ export const useBoundStore = create<StoreState>((set) => ({
       );
     }
 
+    // Department Tools
+    if (firebaseService.subscribeDepartmentTools) {
+      unsubscribes.push(
+        firebaseService.subscribeDepartmentTools((list: DepartmentTool[]) => {
+          set({ departmentTools: list });
+        }, initialData.departmentTools || [])
+      );
+    }
+
     // Return combined unsubscribe
     return () => {
       unsubscribes.forEach((unsub) => {
@@ -269,5 +282,24 @@ export const useBoundStore = create<StoreState>((set) => ({
   },
   deleteCrmCandidate: async (id) => {
     await firebaseService.deleteCrmCandidate(id);
+  },
+  saveDepartmentTool: async (tool) => {
+    set(state => {
+      const idx = state.departmentTools.findIndex(t => t.id === tool.id);
+      if (idx > -1) {
+        const next = [...state.departmentTools];
+        next[idx] = tool;
+        return { departmentTools: next };
+      }
+      return { departmentTools: [...state.departmentTools, tool] };
+    });
+    await firebaseService.saveDepartmentTool(tool);
+  },
+  deleteDepartmentTool: async (id) => {
+    if (!id) return;
+    set(state => ({
+      departmentTools: state.departmentTools.filter(t => t.id !== id)
+    }));
+    await firebaseService.deleteDepartmentTool(id);
   }
 }));

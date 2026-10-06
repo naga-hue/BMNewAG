@@ -143,3 +143,22 @@ export interface CrmCandidate {
   cvName?: string;
   notes?: string;
 }
+
+export interface DepartmentTool {
+  id: string;
+  name: string; // e.g. "Dialpad", "Recruitly CRM", "LinkedIn Recruiter"
+  department: string; // e.g. "Civils", "Rail", or "all"
+  companyId?: string; // optional company ID or "all"
+  licenseCostPerSeat: number; // cost per seat
+  currency: string; // 'GBP', 'USD', 'ZAR', etc.
+  billingFrequency: 'monthly' | 'annual';
+  contractStartDate?: string; // e.g. "2026-01-01"
+  renewalDate?: string; // e.g. "2026-12-31"
+  baselineCommittedSeats: number; // baseline committed seats
+  manualCommittedSeatsOverride?: Record<string, number>;
+  vendorName?: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+

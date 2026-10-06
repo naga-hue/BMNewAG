@@ -126,9 +126,6 @@ export default function DepartmentTeamCostTab({
   const [expandedSales, setExpandedSales] = useState<boolean>(true);
   const [expandedTeam, setExpandedTeam] = useState<boolean>(true);
   const [expandedTools, setExpandedTools] = useState<boolean>(true);
-  const [expandedNominals, setExpandedNominals] = useState<boolean>(true);
-  const [hideZeroNominals, setHideZeroNominals] = useState<boolean>(true);
-  const [excludeNominals, setExcludeNominals] = useState<boolean>(false);
   const [showDashboard, setShowDashboard] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
 
@@ -726,59 +723,7 @@ export default function DepartmentTeamCostTab({
     return { monthlySum, grandTotal, ytvTotal };
   }, [monthsList, toolRatchetData, reconciledCutoffMonth]);
 
-  // Fetch P&L monthly nominal data using getFilteredMonthlyData
-  const pnlMonthlyData = useMemo(() => {
-    if (!getFilteredMonthlyData) return [];
-    return monthsList.map(m => getFilteredMonthlyData(m));
-  }, [monthsList, getFilteredMonthlyData]);
 
-  // Extract all distinct nominal codes matching filters (excluding payroll nominals captured in Section 1)
-  const nominalCodeKeys = useMemo(() => {
-    const allCodes = Array.from(new Set(
-      pnlMonthlyData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
-    )).filter(c => !c.startsWith('__'));
-
-    const staffPayrollNominals = ['1001', '1002', '1003', '1004', '7003', '7004', '500'];
-    const nonStaffCodes = allCodes.filter(c => {
-      const prefix = c.split(' - ')[0]?.trim();
-      return !staffPayrollNominals.includes(prefix);
-    });
-
-    if (hideZeroNominals) {
-      return nonStaffCodes.filter(c => {
-        const total = pnlMonthlyData.reduce((acc, r) => acc + (r.nominalBreakdown?.[c] || 0), 0);
-        return total !== 0;
-      }).sort();
-    }
-
-    return nonStaffCodes.sort();
-  }, [pnlMonthlyData, hideZeroNominals]);
-
-  // Aggregate Department Overheads & Operational Nominals
-  const nominalTotals = useMemo(() => {
-    const monthlySum: Record<string, number> = {};
-    let grandTotal = 0;
-    let ytvTotal = 0;
-
-    monthsList.forEach((m, idx) => {
-      const row = pnlMonthlyData[idx];
-      let mSum = 0;
-
-      nominalCodeKeys.forEach(code => {
-        if (!isNominalExcluded(code)) {
-          mSum += row?.nominalBreakdown?.[code] || 0;
-        }
-      });
-
-      monthlySum[m] = mSum;
-      grandTotal += mSum;
-      if (m <= reconciledCutoffMonth) {
-        ytvTotal += mSum;
-      }
-    });
-
-    return { monthlySum, grandTotal, ytvTotal };
-  }, [monthsList, pnlMonthlyData, nominalCodeKeys, isNominalExcluded, reconciledCutoffMonth]);
 
   // Consultant-level and monthly Sales / Placements billings
   const consultantSalesData = useMemo(() => {
@@ -858,7 +803,7 @@ export default function DepartmentTeamCostTab({
     return { monthlySum, grandTotal, ytvTotal };
   }, [monthsList, filteredStaff, consultantSalesData, reconciledCutoffMonth]);
 
-  // Combined Department Operating Costs (Staff Remuneration + Tools + (excludeNominals ? 0 : Nominals))
+  // Combined Department Operating Costs (Staff Remuneration + Software Tools)
   const combinedDepartmentTotals = useMemo(() => {
     const monthlySum: Record<string, number> = {};
     const avgCostPerHead: Record<string, number> = {};
@@ -868,8 +813,7 @@ export default function DepartmentTeamCostTab({
     monthsList.forEach(m => {
       const staffCost = staffRemunerationTotals.monthlySum[m] || 0;
       const toolCost = toolTotals.monthlySum[m] || 0;
-      const nominalCost = excludeNominals ? 0 : (nominalTotals.monthlySum[m] || 0);
-      const total = staffCost + toolCost + nominalCost;
+      const total = staffCost + toolCost;
 
       monthlySum[m] = total;
       grandTotal += total;
@@ -892,15 +836,17 @@ export default function DepartmentTeamCostTab({
       avgHeadcount,
       overallAvgCostPerHead
     };
-  }, [monthsList, staffRemunerationTotals, toolTotals, nominalTotals, excludeNominals, monthlyHeadcount, reconciledCutoffMonth]);
+  }, [monthsList, staffRemunerationTotals, toolTotals, monthlyHeadcount, reconciledCutoffMonth]);
 
-  // Department Net Contribution / P&L Totals (Sales - Operating Costs)
+  // Department Net Contribution / P&L Totals (Sales - Operating Costs) & Cumulative Running Balance
   const departmentPnlTotals = useMemo(() => {
     const monthlyNetProfit: Record<string, number> = {};
     const monthlyMarginPct: Record<string, number> = {};
     const monthlyNetContributionPerHead: Record<string, number> = {};
+    const monthlyRunningBalance: Record<string, number> = {};
     let grandNetProfit = 0;
     let ytvNetProfit = 0;
+    let runningCum = 0;
 
     monthsList.forEach(m => {
       const sales = teamSalesTotals.monthlySum[m] || 0;
@@ -912,6 +858,9 @@ export default function DepartmentTeamCostTab({
 
       const hc = monthlyHeadcount[m] || 0;
       monthlyNetContributionPerHead[m] = hc > 0 ? profit / hc : 0;
+
+      runningCum += profit;
+      monthlyRunningBalance[m] = runningCum;
 
       grandNetProfit += profit;
       if (m <= reconciledCutoffMonth) {
@@ -931,6 +880,7 @@ export default function DepartmentTeamCostTab({
       monthlyNetProfit,
       monthlyMarginPct,
       monthlyNetContributionPerHead,
+      monthlyRunningBalance,
       grandNetProfit,
       ytvNetProfit,
       overallMarginPct,
@@ -1183,7 +1133,7 @@ export default function DepartmentTeamCostTab({
       const summaryRows = [
         ['HUMRES BUSINESS MANAGEMENT - DEPARTMENT TEAM & TOOL COSTS STATEMENT (P&L)'],
         [`Department(s): ${deptLabel}`, `Period Range: ${startMonth} to ${endMonth}`, `Exported on: ${new Date().toLocaleDateString('en-GB')}`],
-        [excludeNominals ? 'Mode: Point 3 Nominals Excluded (Sales, Team & Tool Cost Focus)' : 'Mode: Consolidated Full P&L (Including Nominals)'],
+        ['Direct Sales, Team Remuneration & Software Tools P&L Statement'],
         [],
         ['Metric / Account Line Item (GBP)', ...monthHeaders, 'YTV (Reconciled)', 'Period Total'],
         [
@@ -1209,12 +1159,6 @@ export default function DepartmentTeamCostTab({
           ...monthsList.map(m => Math.round(toolTotals.monthlySum[m] || 0)),
           Math.round(toolTotals.ytvTotal),
           Math.round(toolTotals.grandTotal)
-        ],
-        [
-          excludeNominals ? '➖ 3. Department Overheads & Nominals (EXCLUDED FROM P&L)' : '➖ 3. Department Overheads & Operational SaaS (Nominals)',
-          ...monthsList.map(m => Math.round(excludeNominals ? 0 : (nominalTotals.monthlySum[m] || 0))),
-          Math.round(excludeNominals ? 0 : nominalTotals.ytvTotal),
-          Math.round(excludeNominals ? 0 : nominalTotals.grandTotal)
         ],
         [
           'TOTAL DEPARTMENT OPERATING COSTS',
@@ -1245,6 +1189,12 @@ export default function DepartmentTeamCostTab({
           ...monthsList.map(m => Math.round(combinedDepartmentTotals.avgCostPerHead[m] || 0)),
           '—',
           Math.round(combinedDepartmentTotals.overallAvgCostPerHead)
+        ],
+        [
+          '📈 CUMULATIVE RUNNING BALANCE (P&L)',
+          ...monthsList.map(m => Math.round(departmentPnlTotals.monthlyRunningBalance[m] || 0)),
+          Math.round(departmentPnlTotals.monthlyRunningBalance[reconciledCutoffMonth] ?? departmentPnlTotals.ytvNetProfit),
+          Math.round(departmentPnlTotals.grandNetProfit)
         ]
       ];
 
@@ -1394,39 +1344,6 @@ export default function DepartmentTeamCostTab({
       const wsTools = XLSX.utils.aoa_to_sheet(toolRows);
       XLSX.utils.book_append_sheet(wb, wsTools, 'Software Licenses');
 
-      // 4. All Nominals Sheet
-      const nominalRows = [
-        ['DEPARTMENT OVERHEADS & OPERATIONAL EXPENSES (ALL NOMINALS)'],
-        [`Department(s): ${deptLabel}`, `Period: ${startMonth} to ${endMonth}`],
-        [],
-        ['Nominal Code / Line Item', 'Status', ...monthHeaders, 'YTV (£)', 'Period Total (£)']
-      ];
-
-      nominalCodeKeys.forEach(code => {
-        const isExcluded = isNominalExcluded(code);
-        const vals = monthsList.map((m, idx) => Math.round(pnlMonthlyData[idx]?.nominalBreakdown?.[code] || 0));
-        const ytvNominal = Math.round(pnlMonthlyData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r?.nominalBreakdown?.[code] || 0), 0));
-        const totalNominal = Math.round(pnlMonthlyData.reduce((acc, r) => acc + (r?.nominalBreakdown?.[code] || 0), 0));
-        nominalRows.push([
-          code,
-          isExcluded ? 'Excluded' : 'Included',
-          ...vals,
-          ytvNominal,
-          totalNominal
-        ]);
-      });
-
-      nominalRows.push([
-        'TOTAL DEPARTMENT OVERHEAD NOMINALS',
-        '',
-        ...monthsList.map(m => Math.round(nominalTotals.monthlySum[m] || 0)),
-        Math.round(nominalTotals.ytvTotal),
-        Math.round(nominalTotals.grandTotal)
-      ]);
-
-      const wsNominals = XLSX.utils.aoa_to_sheet(nominalRows);
-      XLSX.utils.book_append_sheet(wb, wsNominals, 'All Nominals');
-
       // Write and download
       const filename = `Department_Cost_Statement_${deptFilter.join('_')}_${startMonth}_to_${endMonth}.xlsx`;
       XLSX.writeFile(wb, filename);
@@ -1546,44 +1463,6 @@ export default function DepartmentTeamCostTab({
           </tr>
         `;
       });
-
-      // Build Nominal rows
-      let nominalRowsHtml = '';
-      if (excludeNominals) {
-        nominalRowsHtml = `
-          <tr class="sub-row" style="color:#94a3b8; font-style:italic;">
-            <td>Point 3 Overheads Excluded from P&L</td>
-            ${monthsList.map(() => `<td>£0</td>`).join('')}
-            <td>£0</td>
-            <td>£0</td>
-          </tr>
-        `;
-      } else {
-        nominalCodeKeys.forEach(code => {
-          const isExcluded = isNominalExcluded(code);
-          let nTotal = 0;
-          let nYtv = 0;
-          const cols = monthsList.map((m, idx) => {
-            const val = pnlMonthlyData[idx]?.nominalBreakdown?.[code] || 0;
-            if (!isExcluded) {
-              nTotal += val;
-              if (m <= reconciledCutoffMonth) nYtv += val;
-            }
-            return `<td style="${isExcluded ? 'text-decoration:line-through; color:#94a3b8;' : ''}">${formatGBP(val)}</td>`;
-          }).join('');
-
-          nominalRowsHtml += `
-            <tr class="sub-row" style="${isExcluded ? 'opacity:0.5;' : ''}">
-              <td style="${isExcluded ? 'text-decoration:line-through; color:#94a3b8;' : ''}">
-                ${code} ${isExcluded ? '<span style="color:#ef4444; font-size:7pt;">(Excluded)</span>' : ''}
-              </td>
-              ${cols}
-              <td style="font-weight:600; background:#f8fafc; ${isExcluded ? 'text-decoration:line-through; color:#94a3b8;' : ''}">${formatGBP(nYtv)}</td>
-              <td style="font-weight:700; ${isExcluded ? 'text-decoration:line-through; color:#94a3b8;' : ''}">${formatGBP(nTotal)}</td>
-            </tr>
-          `;
-        });
-      }
 
       const html = `
         <!DOCTYPE html>
@@ -1752,7 +1631,7 @@ export default function DepartmentTeamCostTab({
               <div class="meta">
                 <span><strong>Period:</strong> ${startMonth} to ${endMonth}</span>
                 <span><strong>Reconciled Cutoff:</strong> ${reconciledCutoffMonth}</span>
-                <span><strong>Mode:</strong> ${excludeNominals ? 'Direct Sales, Team & Tool Costs (Nominals Excluded)' : 'Consolidated P&L (Including Nominals)'}</span>
+                <span><strong>Statement Type:</strong> Direct Team & Tools P&L</span>
                 <span><strong>Exported:</strong> ${new Date().toLocaleDateString('en-GB')}</span>
               </div>
             </div>
@@ -1832,24 +1711,9 @@ export default function DepartmentTeamCostTab({
               </tr>
               ${toolRowsHtml}
 
-              <!-- Section 3: Nominals -->
-              <tr class="section-hdr" style="${excludeNominals ? 'color:#d97706; background:#fffbeb;' : ''}">
-                <td colspan="${monthsList.length + 3}">
-                  3. Department Overheads & Operational SaaS (Nominals)
-                  ${excludeNominals ? ' • [EXCLUDED FROM P&L]' : ''}
-                </td>
-              </tr>
-              <tr class="row-summary" style="${excludeNominals ? 'opacity:0.5; text-decoration:line-through;' : ''}">
-                <td>Apportioned Overheads & SaaS</td>
-                ${monthsList.map(m => `<td>${formatGBP(excludeNominals ? 0 : (nominalTotals.monthlySum[m] || 0))}</td>`).join('')}
-                <td style="font-weight:700;">${formatGBP(excludeNominals ? 0 : nominalTotals.ytvTotal)}</td>
-                <td style="font-weight:800;">${formatGBP(excludeNominals ? 0 : nominalTotals.grandTotal)}</td>
-              </tr>
-              ${nominalRowsHtml}
-
-              <!-- Section 4: Consolidated Summary & P&L Statement -->
+              <!-- Section 3: Consolidated Summary & P&L Statement -->
               <tr class="section-hdr" style="border-top:2px solid #0f172a; font-size:7.5pt;">
-                <td colspan="${monthsList.length + 3}">4. Consolidated Department Summary & Team P&L Statement</td>
+                <td colspan="${monthsList.length + 3}">3. Consolidated Department Summary & Team P&L Statement</td>
               </tr>
               <tr style="font-weight:700; color:#059669; background:#f0fdf4;">
                 <td>➕ Team Sales & Placements Billings</td>
@@ -1868,12 +1732,6 @@ export default function DepartmentTeamCostTab({
                 ${monthsList.map(m => `<td>${formatGBP(toolTotals.monthlySum[m] || 0)}</td>`).join('')}
                 <td>${formatGBP(toolTotals.ytvTotal)}</td>
                 <td>${formatGBP(toolTotals.grandTotal)}</td>
-              </tr>
-              <tr style="font-weight:600; ${excludeNominals ? 'opacity:0.5; text-decoration:line-through;' : ''}">
-                <td>➖ 3. Department Overhead Nominals ${excludeNominals ? '(EXCLUDED)' : ''}</td>
-                ${monthsList.map(m => `<td>${formatGBP(excludeNominals ? 0 : (nominalTotals.monthlySum[m] || 0))}</td>`).join('')}
-                <td>${formatGBP(excludeNominals ? 0 : nominalTotals.ytvTotal)}</td>
-                <td>${formatGBP(excludeNominals ? 0 : nominalTotals.grandTotal)}</td>
               </tr>
               <tr style="font-weight:800; background:#f8fafc; border-top:1.5px solid #0f172a;">
                 <td>TOTAL DEPARTMENT OPERATING COSTS</td>
@@ -1913,6 +1771,22 @@ export default function DepartmentTeamCostTab({
                 ${monthsList.map(m => `<td>${formatGBP(combinedDepartmentTotals.avgCostPerHead[m] || 0)}</td>`).join('')}
                 <td>—</td>
                 <td>${formatGBP(combinedDepartmentTotals.overallAvgCostPerHead)}</td>
+              </tr>
+              <!-- Concluding Row: Cumulative Running Balance of P&L -->
+              <tr style="background:#f1f5f9; font-weight:800; font-size:8pt; border-top:1.5px solid #0f172a; border-bottom:2px solid #0f172a;">
+                <td style="color:${departmentPnlTotals.grandNetProfit >= 0 ? '#059669' : '#dc2626'};">
+                  📈 CUMULATIVE RUNNING BALANCE (P&L)
+                </td>
+                ${monthsList.map(m => {
+                  const cum = departmentPnlTotals.monthlyRunningBalance[m] || 0;
+                  return `<td style="color:${cum >= 0 ? '#059669' : '#dc2626'};">${cum >= 0 ? '+' : ''}${formatGBP(cum)}</td>`;
+                }).join('')}
+                <td style="color:${(departmentPnlTotals.monthlyRunningBalance[reconciledCutoffMonth] ?? departmentPnlTotals.ytvNetProfit) >= 0 ? '#059669' : '#dc2626'}; font-weight:800;">
+                  ${(departmentPnlTotals.monthlyRunningBalance[reconciledCutoffMonth] ?? departmentPnlTotals.ytvNetProfit) >= 0 ? '+' : ''}${formatGBP(departmentPnlTotals.monthlyRunningBalance[reconciledCutoffMonth] ?? departmentPnlTotals.ytvNetProfit)}
+                </td>
+                <td style="color:${departmentPnlTotals.grandNetProfit >= 0 ? '#059669' : '#dc2626'}; font-weight:900; font-size:9.5pt;">
+                  ${departmentPnlTotals.grandNetProfit >= 0 ? '+' : ''}${formatGBP(departmentPnlTotals.grandNetProfit)}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -1994,7 +1868,7 @@ export default function DepartmentTeamCostTab({
               fontWeight: 700,
               marginLeft: '8px'
             }}>
-              P&L Nominal Structure
+              Direct Team & Tools P&L
             </span>
           </div>
         </div>
@@ -2021,49 +1895,6 @@ export default function DepartmentTeamCostTab({
 
           <button
             type="button"
-            onClick={() => setHideZeroNominals(!hideZeroNominals)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: hideZeroNominals ? '#10b981' : 'var(--text-secondary)',
-              fontWeight: 600,
-              fontSize: '12px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-            title={hideZeroNominals ? "Nominals with £0 are hidden. Click to show all." : "Showing all nominals. Click to hide £0 nominals."}
-          >
-            {hideZeroNominals ? '🚫 £0 Hidden' : '👁️ Show All £0'}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setExcludeNominals(!excludeNominals)}
-            style={{
-              padding: '4px 10px',
-              fontSize: '11px',
-              fontWeight: 700,
-              borderRadius: 'var(--radius-sm)',
-              border: excludeNominals ? '1px solid #f59e0b' : '1px solid var(--border-color)',
-              backgroundColor: excludeNominals ? 'rgba(245, 158, 11, 0.15)' : 'var(--bg-primary)',
-              color: excludeNominals ? '#d97706' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              transition: 'all 0.15s ease'
-            }}
-            title={excludeNominals 
-              ? "Point 3 nominal overheads are currently excluded from P&L costs. Click to re-include nominals." 
-              : "Click to exclude Point 3 overhead nominals to focus P&L purely on direct Sales, Team & Tool costs."}
-          >
-            {excludeNominals ? '🚫 Point 3 Nominals Excluded' : '⚖️ Include All Nominals'}
-          </button>
-
-          <button
-            type="button"
             onClick={handleExportExcel}
             style={{
               background: 'none',
@@ -2076,7 +1907,7 @@ export default function DepartmentTeamCostTab({
               alignItems: 'center',
               gap: '6px'
             }}
-            title="Export complete department statement, team roster, tools, and nominal breakdown to Excel (.xlsx)"
+            title="Export department statement, team roster, and software tools to Excel (.xlsx)"
           >
             <FileSpreadsheet size={14} /> Export to Excel
           </button>
@@ -2176,7 +2007,7 @@ export default function DepartmentTeamCostTab({
               {departmentPnlTotals.grandNetProfit >= 0 ? '+' : ''}{formatGBP(departmentPnlTotals.grandNetProfit)}
             </div>
             <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-              Net margin: {departmentPnlTotals.overallMarginPct.toFixed(1)}% {excludeNominals ? '• (Excl. Nominals)' : '• (Full P&L)'}
+              Net margin: {departmentPnlTotals.overallMarginPct.toFixed(1)}%
             </div>
           </div>
 
@@ -2199,7 +2030,7 @@ export default function DepartmentTeamCostTab({
               {formatGBP(combinedDepartmentTotals.grandTotal)}
             </div>
             <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-              {excludeNominals ? 'Remuneration + Tools (Nominals Excluded)' : 'Remuneration + Tools + Nominals'}
+              Remuneration + Software Tools
             </div>
           </div>
 
@@ -2249,10 +2080,10 @@ export default function DepartmentTeamCostTab({
             </div>
           </div>
 
-          {/* Card 4: Department Overheads (Nominals) */}
+          {/* Card 4: Cumulative Running Balance (P&L) */}
           <div style={{
             backgroundColor: 'var(--bg-card)',
-            border: '1px solid var(--border-color)',
+            border: `1px solid ${departmentPnlTotals.grandNetProfit >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
             borderRadius: 'var(--radius-lg)',
             padding: '16px',
             display: 'flex',
@@ -2261,14 +2092,21 @@ export default function DepartmentTeamCostTab({
             boxShadow: 'var(--shadow-sm)'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>DEPARTMENT OVERHEAD NOMINALS</span>
-              <Layers size={16} style={{ color: 'var(--warning)' }} />
+              <span style={{ fontSize: '11px', fontWeight: 700, color: departmentPnlTotals.grandNetProfit >= 0 ? 'var(--success)' : '#ef4444' }}>
+                RUNNING BALANCE (P&L)
+              </span>
+              <TrendingUp size={16} style={{ color: departmentPnlTotals.grandNetProfit >= 0 ? 'var(--success)' : '#ef4444' }} />
             </div>
-            <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--warning)', fontFamily: 'monospace' }}>
-              {formatGBP(nominalTotals.grandTotal)}
+            <div style={{ 
+              fontSize: '24px', 
+              fontWeight: 800, 
+              color: departmentPnlTotals.grandNetProfit >= 0 ? 'var(--success)' : '#ef4444', 
+              fontFamily: 'monospace' 
+            }}>
+              {departmentPnlTotals.grandNetProfit >= 0 ? '+' : ''}{formatGBP(departmentPnlTotals.grandNetProfit)}
             </div>
             <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-              {nominalCodeKeys.length} nominal expense accounts
+              YTV Reconciled: {departmentPnlTotals.ytvNetProfit >= 0 ? '+' : ''}{formatGBP(departmentPnlTotals.ytvNetProfit)}
             </div>
           </div>
 
@@ -2314,8 +2152,7 @@ export default function DepartmentTeamCostTab({
       }}>
         <HelpCircle size={16} style={{ color: 'var(--accent)', marginTop: '2px', flexShrink: 0 }} />
         <div style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.5 }}>
-          <strong>Department P&L Alignment:</strong> This statement combines <em>Actual Team Remuneration</em> (strictly excluding reimbursable overheads), 
-          <em>Software Tool Licenses</em> with automatic upward seat ratchets, and <em>All Department Nominal Codes</em> matching your entity, department, period, and nominal filters.
+          <strong>Department P&L Alignment:</strong> This statement tracks <em>Team Sales & Placements Billings</em> against direct operating costs (<em>Actual Team Remuneration</em> excluding reimbursable overheads and <em>Software Tool Licenses</em> with upward seat ratchets), providing a clear monthly running balance of departmental P&L.
         </div>
       </div>
 
@@ -2938,188 +2775,7 @@ export default function DepartmentTeamCostTab({
             )}
 
             {/* ==========================================================
-                SECTION 3: DEPARTMENT OVERHEADS & EXPENSES (ALL NOMINALS)
-                ========================================================== */}
-            <tr className="section-header" style={{ backgroundColor: 'var(--bg-card)', borderTop: '2px solid var(--border-color)' }}>
-              <td 
-                colSpan={monthsList.length + 3} 
-                style={{ 
-                  padding: '8px 14px', 
-                  fontWeight: 800, 
-                  fontSize: '12px', 
-                  color: excludeNominals ? '#d97706' : 'var(--text-secondary)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  backgroundColor: excludeNominals ? 'rgba(245, 158, 11, 0.08)' : undefined
-                }}
-              >
-                3. Department Overheads & Operational Expenses (All Nominals)
-                {excludeNominals && (
-                  <span style={{ 
-                    marginLeft: '12px', 
-                    padding: '2px 8px', 
-                    borderRadius: '4px', 
-                    fontSize: '10px', 
-                    backgroundColor: '#f59e0b', 
-                    color: '#fff', 
-                    fontWeight: 700, 
-                    textTransform: 'none' 
-                  }}>
-                    🚫 Excluded from P&L Summary (Focusing on Sales, Team & Tool Costs)
-                  </span>
-                )}
-              </td>
-            </tr>
-
-            {/* Main Collapsible Nominals Row */}
-            <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-primary)' }}>
-              <td 
-                style={{ 
-                  padding: '10px 14px', 
-                  position: 'sticky', 
-                  left: 0, 
-                  backgroundColor: 'var(--bg-primary)', 
-                  zIndex: 2, 
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-                onClick={() => setExpandedNominals(!expandedNominals)}
-              >
-                <span style={{ fontSize: '11px', color: 'var(--accent)' }}>
-                  {expandedNominals ? '▼' : '▶'}
-                </span>
-                <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
-                  Apportioned Overheads & Operational SaaS
-                </span>
-                {excludedNominalCodes.length > 0 ? (
-                  <span style={{ 
-                    fontSize: '10px', 
-                    padding: '2px 8px', 
-                    borderRadius: '12px', 
-                    backgroundColor: 'rgba(239, 68, 68, 0.15)', 
-                    color: '#ef4444', 
-                    fontWeight: 600 
-                  }}>
-                    ⚠️ {excludedNominalCodes.length} Excluded
-                  </span>
-                ) : (
-                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                    ({nominalCodeKeys.length} nominal codes included)
-                  </span>
-                )}
-              </td>
-              {monthsList.map(m => (
-                <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: 'var(--warning)' }}>
-                  {formatGBP(nominalTotals.monthlySum[m] || 0)}
-                </td>
-              ))}
-              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, backgroundColor: 'rgba(99, 102, 241, 0.04)', color: 'var(--warning)' }}>
-                {formatGBP(nominalTotals.ytvTotal)}
-              </td>
-              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--warning)', fontSize: '13px' }}>
-                {formatGBP(nominalTotals.grandTotal)}
-              </td>
-            </tr>
-
-            {/* Expanded Nominals Sub-rows */}
-            {expandedNominals && (
-              <>
-                {nominalCodeKeys.length === 0 ? (
-                  <tr>
-                    <td colSpan={monthsList.length + 3} style={{ padding: '12px 32px', color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '11px' }}>
-                      No nominal expense items found matching current filters.
-                    </td>
-                  </tr>
-                ) : (
-                  nominalCodeKeys.map(code => {
-                    const isExcluded = isNominalExcluded(code);
-                    const totalNominal = pnlMonthlyData.reduce((acc, r) => acc + (r?.nominalBreakdown?.[code] || 0), 0);
-                    const ytvNominal = pnlMonthlyData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r?.nominalBreakdown?.[code] || 0), 0);
-
-                    return (
-                      <tr 
-                        key={code} 
-                        style={{ 
-                          fontSize: '11px', 
-                          borderBottom: '1px solid var(--border-color)',
-                          color: isExcluded ? 'var(--text-muted)' : 'var(--text-secondary)',
-                          backgroundColor: isExcluded ? 'rgba(239, 68, 68, 0.02)' : 'transparent',
-                          opacity: isExcluded ? 0.5 : 1
-                        }}
-                      >
-                        <td style={{ 
-                          paddingLeft: '36px', 
-                          position: 'sticky', 
-                          left: 0, 
-                          backgroundColor: 'var(--bg-primary)', 
-                          zIndex: 1 
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ color: 'var(--text-muted)' }}>↳</span>
-                              <span style={{ 
-                                fontWeight: isExcluded ? 400 : 500,
-                                textDecoration: isExcluded ? 'line-through' : 'none',
-                                color: isExcluded ? 'var(--text-muted)' : 'var(--text-primary)'
-                              }}>
-                                {code}
-                              </span>
-                            </div>
-
-                            {onToggleNominalInclusion && (
-                              <button
-                                type="button"
-                                onClick={() => onToggleNominalInclusion(code)}
-                                style={{
-                                  fontSize: '9px',
-                                  padding: '1px 6px',
-                                  borderRadius: '4px',
-                                  border: isExcluded ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(239, 68, 68, 0.2)',
-                                  backgroundColor: isExcluded ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.06)',
-                                  color: isExcluded ? '#22c55e' : '#ef4444',
-                                  cursor: 'pointer',
-                                  fontWeight: 600
-                                }}
-                              >
-                                {isExcluded ? '+ Include' : '✕ Exclude'}
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                        {monthsList.map((m, idx) => {
-                          const val = pnlMonthlyData[idx]?.nominalBreakdown?.[code] || 0;
-                          return (
-                            <td 
-                              key={m} 
-                              style={{ 
-                                textAlign: 'right', 
-                                fontFamily: 'monospace', 
-                                opacity: val > 0 ? 1 : 0.3,
-                                textDecoration: isExcluded ? 'line-through' : 'none'
-                              }}
-                            >
-                              {val > 0 ? formatGBP(val) : '—'}
-                            </td>
-                          );
-                        })}
-                        <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', fontWeight: 600 }}>
-                          {ytvNominal > 0 ? formatGBP(ytvNominal) : '—'}
-                        </td>
-                        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: isExcluded ? 'var(--text-muted)' : 'var(--text-primary)' }}>
-                          {formatGBP(totalNominal)}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </>
-            )}
-
-            {/* ==========================================================
-                SECTION 4: CONSOLIDATED DEPARTMENT SUMMARY & TEAM P&L
+                SECTION 3: CONSOLIDATED DEPARTMENT SUMMARY & TEAM P&L
                 ========================================================== */}
             <tr className="section-header" style={{ backgroundColor: 'var(--bg-card)', borderTop: '3px solid var(--border-color)' }}>
               <td 
@@ -3133,7 +2789,7 @@ export default function DepartmentTeamCostTab({
                   letterSpacing: '0.05em'
                 }}
               >
-                4. Consolidated Department Summary & Team P&L Statement
+                3. Consolidated Department Summary & Team P&L Statement
               </td>
             </tr>
 
@@ -3191,47 +2847,10 @@ export default function DepartmentTeamCostTab({
               </td>
             </tr>
 
-            {/* Row: Operational Nominals Summary */}
-            <tr style={{ 
-              fontSize: '12px', 
-              borderBottom: '1px solid var(--border-color)', 
-              opacity: excludeNominals ? 0.5 : 1,
-              backgroundColor: excludeNominals ? 'rgba(245, 158, 11, 0.02)' : 'transparent' 
-            }}>
-              <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1, fontWeight: 600 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ textDecoration: excludeNominals ? 'line-through' : 'none' }}>
-                    ➖ 3. Department Overhead & Expense Nominals
-                  </span>
-                  {excludeNominals && (
-                    <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 700 }}>
-                      (EXCLUDED FROM P&L)
-                    </span>
-                  )}
-                </div>
-              </td>
-              {monthsList.map(m => (
-                <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace', textDecoration: excludeNominals ? 'line-through' : 'none', color: excludeNominals ? 'var(--text-muted)' : 'inherit' }}>
-                  {formatGBP(excludeNominals ? 0 : (nominalTotals.monthlySum[m] || 0))}
-                </td>
-              ))}
-              <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', fontWeight: 600, textDecoration: excludeNominals ? 'line-through' : 'none', color: excludeNominals ? 'var(--text-muted)' : 'inherit' }}>
-                {formatGBP(excludeNominals ? 0 : nominalTotals.ytvTotal)}
-              </td>
-              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, textDecoration: excludeNominals ? 'line-through' : 'none', color: excludeNominals ? 'var(--text-muted)' : 'inherit' }}>
-                {formatGBP(excludeNominals ? 0 : nominalTotals.grandTotal)}
-              </td>
-            </tr>
-
             {/* Grand Total Operating Cost Row */}
             <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 800, borderTop: '2px solid var(--border-color)', borderBottom: '1px solid var(--border-color)', fontSize: '13px' }}>
               <td style={{ padding: '10px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 2, color: 'var(--text-primary)' }}>
-                TOTAL DEPARTMENT OPERATING COSTS
-                {excludeNominals && (
-                  <span style={{ fontSize: '10px', marginLeft: '6px', fontWeight: 600, color: '#f59e0b' }}>
-                    (Team + Tools)
-                  </span>
-                )}
+                TOTAL DEPARTMENT OPERATING COSTS (Team + Tools)
               </td>
               {monthsList.map(m => (
                 <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-primary)' }}>
@@ -3250,7 +2869,7 @@ export default function DepartmentTeamCostTab({
             <tr style={{ 
               backgroundColor: departmentPnlTotals.grandNetProfit >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', 
               fontWeight: 800, 
-              borderBottom: '2px solid var(--border-color)', 
+              borderBottom: '1px solid var(--border-color)', 
               fontSize: '13px' 
             }}>
               <td style={{ 
@@ -3341,7 +2960,7 @@ export default function DepartmentTeamCostTab({
             </tr>
 
             {/* Average Cost Per Head Row */}
-            <tr style={{ backgroundColor: 'rgba(59, 130, 246, 0.04)', fontSize: '11px' }}>
+            <tr style={{ backgroundColor: 'rgba(59, 130, 246, 0.04)', fontSize: '11px', borderBottom: '1px solid var(--border-color)' }}>
               <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1, color: 'var(--text-secondary)' }}>
                 Average Operating Cost per Recruiter / Head
               </td>
@@ -3355,6 +2974,63 @@ export default function DepartmentTeamCostTab({
               </td>
               <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-secondary)', fontWeight: 700 }}>
                 {formatGBP(combinedDepartmentTotals.overallAvgCostPerHead)}
+              </td>
+            </tr>
+
+            {/* Cumulative Running Balance (P&L) Row - Concluding Bottom Row */}
+            <tr style={{ 
+              backgroundColor: 'rgba(99, 102, 241, 0.12)', 
+              fontWeight: 800, 
+              borderTop: '2px solid var(--border-color)',
+              borderBottom: '2px solid var(--border-color)', 
+              fontSize: '13px' 
+            }}>
+              <td style={{ 
+                padding: '12px 14px', 
+                position: 'sticky', 
+                left: 0, 
+                backgroundColor: 'rgba(99, 102, 241, 0.18)', 
+                zIndex: 2, 
+                color: 'var(--accent)' 
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>📈 CUMULATIVE RUNNING BALANCE (P&L)</span>
+                </div>
+              </td>
+              {monthsList.map(m => {
+                const bal = departmentPnlTotals.monthlyRunningBalance[m] || 0;
+                return (
+                  <td key={m} style={{ 
+                    padding: '12px 8px', 
+                    textAlign: 'right', 
+                    fontFamily: 'monospace', 
+                    color: bal >= 0 ? 'var(--success)' : '#ef4444',
+                    fontWeight: 800 
+                  }}>
+                    {bal >= 0 ? '+' : ''}{formatGBP(bal)}
+                  </td>
+                );
+              })}
+              <td style={{ 
+                padding: '12px 12px', 
+                textAlign: 'right', 
+                fontFamily: 'monospace', 
+                color: (departmentPnlTotals.monthlyRunningBalance[reconciledCutoffMonth] ?? departmentPnlTotals.ytvNetProfit) >= 0 ? 'var(--success)' : '#ef4444', 
+                fontWeight: 800,
+                backgroundColor: 'rgba(99, 102, 241, 0.22)' 
+              }}>
+                {(departmentPnlTotals.monthlyRunningBalance[reconciledCutoffMonth] ?? departmentPnlTotals.ytvNetProfit) >= 0 ? '+' : ''}
+                {formatGBP(departmentPnlTotals.monthlyRunningBalance[reconciledCutoffMonth] ?? departmentPnlTotals.ytvNetProfit)}
+              </td>
+              <td style={{ 
+                padding: '12px 12px', 
+                textAlign: 'right', 
+                fontFamily: 'monospace', 
+                color: departmentPnlTotals.grandNetProfit >= 0 ? 'var(--success)' : '#ef4444', 
+                fontSize: '15px',
+                fontWeight: 900 
+              }}>
+                {departmentPnlTotals.grandNetProfit >= 0 ? '+' : ''}{formatGBP(departmentPnlTotals.grandNetProfit)}
               </td>
             </tr>
 

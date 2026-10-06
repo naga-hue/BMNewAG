@@ -126,4 +126,23 @@ describe('Department Team & Tool Costs - Contract Ratchet Engine', () => {
     expect(committed).toBe(4);
     expect(committed * tool.licenseCostPerSeat).toBe(400);
   });
+
+  it('apportions per_seat contract committed seats and cost proportionally when viewing a filtered department', () => {
+    // 26 baseline seats contract shared across 7 departments @ £75/seat (total £1,950/mo)
+    const unitCost = 75;
+    const contractCommitted = 26;
+    const totalActiveAcrossAllDepts = 24;
+
+    // In Civils department, 6 active consultants
+    const civilsActive = 6;
+    const civilsRatio = civilsActive / totalActiveAcrossAllDepts; // 6/24 = 0.25 (25%)
+    const civilsCommitted = contractCommitted * civilsRatio; // 26 * 0.25 = 6.5 seats
+    const civilsCost = civilsCommitted * unitCost; // 6.5 * 75 = £487.50
+
+    expect(civilsCommitted).toBe(6.5);
+    expect(civilsCost).toBe(487.5);
+    // Unutilized spare seats allocated to Civils:
+    const civilsSpare = civilsCommitted - civilsActive;
+    expect(civilsSpare).toBe(0.5);
+  });
 });

@@ -620,7 +620,8 @@ export default function DepartmentTeamCostTab({
           }
         } else {
           // Standard Per Seat Ratchet Engine
-          activeHeadcountForTool = staff.filter(s => {
+          // 1. Calculate contract-level total active headcount across all assigned companies and departments for this tool
+          const totalActiveStaffForTool = staff.filter(s => {
             const compMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
             const deptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
             if (!compMatch || !deptMatch) return false;
@@ -629,19 +630,66 @@ export default function DepartmentTeamCostTab({
             return isStaffActiveInMonth(s, m, cell.total);
           }).length;
 
-          if (activeHeadcountForTool > peakSoFar) {
-            peakSoFar = activeHeadcountForTool;
+          // Track contract-level high-water mark ratchet
+          if (totalActiveStaffForTool > peakSoFar) {
+            peakSoFar = totalActiveStaffForTool;
           }
 
-          committed = peakSoFar;
+          let contractCommitted = peakSoFar;
           if (tool.manualCommittedSeatsOverride && tool.manualCommittedSeatsOverride[m] !== undefined) {
-            committed = Number(tool.manualCommittedSeatsOverride[m]);
+            contractCommitted = Number(tool.manualCommittedSeatsOverride[m]);
           }
 
-          unutilized = Math.max(0, committed - activeHeadcountForTool);
-          cost = committed * unitCostGBP;
-          isRatcheted = committed > baseline;
-          subtext = unutilized > 0 ? `${committed} seats (${unutilized} spare)` : `${committed} seats`;
+          const isContractRatcheted = contractCommitted > baseline;
+
+          // 2. Check if current view is full scope or filtered by department/company
+          const isFullScope = companyFilter.includes('all') && deptFilter.includes('all');
+
+          if (isFullScope) {
+            activeHeadcountForTool = totalActiveStaffForTool;
+            committed = contractCommitted;
+            unutilized = Math.max(0, committed - activeHeadcountForTool);
+            cost = committed * unitCostGBP;
+            isRatcheted = isContractRatcheted;
+            subtext = unutilized > 0 ? `${committed} seats (${unutilized} spare)` : `${committed} seats`;
+          } else {
+            // View filter is active (e.g. Civils department selected)
+            const viewActiveStaffForTool = staff.filter(s => {
+              const inViewComp = companyFilter.includes('all') || companyFilter.includes(s.companyId);
+              const inViewDept = deptFilter.includes('all') || deptFilter.includes(s.department);
+              const toolCompMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
+              const toolDeptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
+              if (!inViewComp || !inViewDept || !toolCompMatch || !toolDeptMatch) return false;
+
+              const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
+              return isStaffActiveInMonth(s, m, cell.total);
+            }).length;
+
+            activeHeadcountForTool = viewActiveStaffForTool;
+
+            // Apportion contracted committed seats based on active headcount share:
+            // If totalActiveStaffForTool > 0, ratio is viewActive / totalActive
+            // If totalActiveStaffForTool === 0, split committed seats equally across assigned departments
+            const ratio = totalActiveStaffForTool > 0
+              ? (viewActiveStaffForTool / totalActiveStaffForTool)
+              : (matchingDepts.length / Math.max(1, effectiveDepts.length));
+
+            committed = contractCommitted * ratio;
+            cost = committed * unitCostGBP;
+            unutilized = Math.max(0, committed - activeHeadcountForTool);
+            isRatcheted = isContractRatcheted && committed > 0;
+
+            const formatSeats = (num: number) => {
+              const rounded = Math.round(num * 10) / 10;
+              return rounded % 1 === 0 ? rounded.toString() : rounded.toFixed(1);
+            };
+
+            if (unutilized > 0.05) {
+              subtext = `${formatSeats(committed)} seats (${formatSeats(unutilized)} spare)`;
+            } else {
+              subtext = `${formatSeats(committed)} seats`;
+            }
+          }
         }
 
         periodTotalCost += cost;
@@ -1442,24 +1490,23 @@ export default function DepartmentTeamCostTab({
 
       // Build Tool rows
       let toolRowsHtml = '';
-      relevantTools.forEach(t => {
-        const ratchet = toolRatchetData.find(rd => rd.toolId === t.id);
-        const monthly = ratchet?.monthlyDetails || {};
-        let tTotal = 0;
-        let tYtv = 0;
+      toolRatchetData.forEach(({ tool: t, costBasis, monthlyDetails, ytvCost, periodTotalCost }) => {
         const cols = monthsList.map(m => {
-          const val = monthly[m]?.totalCostGBP || 0;
-          tTotal += val;
-          if (m <= reconciledCutoffMonth) tYtv += val;
+          const val = monthlyDetails[m]?.costGBP || 0;
           return `<td>${formatGBP(val)}</td>`;
         }).join('');
 
+        const basisLabel = costBasis === 'per_seat' ? 'Per-Seat'
+          : costBasis === 'per_company' ? 'Per Company'
+          : costBasis === 'per_department' ? 'Per Dept'
+          : 'Fixed';
+
         toolRowsHtml += `
           <tr class="sub-row">
-            <td>${t.name} <span style="color:#64748b; font-size:7pt;">(${t.costBasis === 'per_seat' ? 'Per-Seat Ratchet' : 'Fixed'})</span></td>
+            <td>${t.name} <span style="color:#64748b; font-size:7pt;">(${basisLabel})</span></td>
             ${cols}
-            <td style="font-weight:600; background:#f8fafc;">${formatGBP(tYtv)}</td>
-            <td style="font-weight:700;">${formatGBP(tTotal)}</td>
+            <td style="font-weight:600; background:#f8fafc;">${formatGBP(ytvCost)}</td>
+            <td style="font-weight:700;">${formatGBP(periodTotalCost)}</td>
           </tr>
         `;
       });

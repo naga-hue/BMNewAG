@@ -14,8 +14,10 @@ import {
   PieChart, 
   Coins,
   Printer,
-  Settings
+  Settings,
+  FileSpreadsheet
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 const formatGBP = (val) => {
   return '£' + Math.round(val).toLocaleString();
@@ -2158,6 +2160,184 @@ export default function ReportsDashboard({
           printWindow.document.close();
         };
 
+        const handleExportPnlExcel = () => {
+          try {
+            const wb = XLSX.utils.book_new();
+
+            // 1. P&L Summary Sheet
+            const summaryAoa = [];
+            
+            // Header metadata
+            summaryAoa.push(["Humres Technical Recruitment - Consolidated Profit & Loss (P&L) Report"]);
+            summaryAoa.push(["Forecasting Model:", pnlVersion === 'v1' ? 'v1 - Standard Projections' : 'v2 - 3-Month Running Average (April-June 2026 Baseline)']);
+            summaryAoa.push(["Period Range:", `${startMonth} to ${endMonth}`]);
+            summaryAoa.push(["Bank Reconciliation Cutoff:", `${reconciledCutoffDate} (Actuals through cutoff, forecast thereafter)`]);
+            summaryAoa.push(["Entities Included:", activeCompaniesForPL.map(c => c.name).join(', ') || 'All Consolidated Entities']);
+            summaryAoa.push(["Department Filter:", deptFilter.includes('all') ? 'All Departments' : deptFilter.join(', ')]);
+            summaryAoa.push(["Export Date:", new Date().toLocaleDateString('en-GB')]);
+            summaryAoa.push([]); // blank spacer row
+
+            // Column Headers
+            const monthHeaders = monthsList.map(m => new Date(m + '-02').toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }));
+            summaryAoa.push(["P&L Account Line Items (GBP)", ...monthHeaders, "YTV (Reconciled)", "Period Total"]);
+
+            // Helper to add data rows
+            const addDataRow = (label, dataKey) => {
+              const vals = rowData.map(r => Math.round(r[dataKey] || 0));
+              const ytvVal = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r[dataKey] || 0), 0));
+              const totalVal = Math.round(rowData.reduce((acc, r) => acc + (r[dataKey] || 0), 0));
+              summaryAoa.push([label, ...vals, ytvVal, totalVal]);
+            };
+
+            // Section 1: Revenue stream credits
+            summaryAoa.push(["Revenue stream credits"]);
+            addDataRow("  Net Placements Fee Billings", "revenue");
+            summaryAoa.push([]);
+
+            // Section 2: Overheads & Staff Expenses
+            summaryAoa.push(["Overheads & Staff Expenses"]);
+            addDataRow("  Apportioned Overheads & SaaS", "overheadsExpenses");
+
+            // Nominal breakdowns
+            const codeKeys = Array.from(new Set(
+              rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
+            )).filter(c => {
+              if (c.startsWith('__')) return false;
+              if (hideZeroNominals) {
+                const total = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[c] || 0), 0);
+                if (total === 0) return false;
+              }
+              return true;
+            }).sort();
+
+            codeKeys.forEach(code => {
+              const isExcluded = isNominalExcluded(code);
+              const vals = rowData.map(r => Math.round(r.nominalBreakdown?.[code] || 0));
+              const ytvNominal = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0));
+              const totalNominal = Math.round(rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0));
+              summaryAoa.push([`    ↳ ${code}${isExcluded ? ' (Excluded from overheads)' : ''}`, ...vals, ytvNominal, totalNominal]);
+            });
+
+            addDataRow("Total Indirect Overheads", "totalOverheads");
+            summaryAoa.push([]);
+
+            // Section 3: EBITDA Net Profit
+            const ebitdaVals = rowData.map(r => Math.round(r.netProfit || 0));
+            const ytvEbitda = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.netProfit || 0), 0));
+            const totalEbitda = Math.round(rowData.reduce((acc, r) => acc + (r.netProfit || 0), 0));
+            summaryAoa.push(["EBITDA Net Profit Margin", ...ebitdaVals, ytvEbitda, totalEbitda]);
+
+            // Section 4: Cumulative Carry-Forward P&L
+            let cum = 0;
+            const cumVals = rowData.map(r => {
+              cum += Math.round(r.netProfit || 0);
+              return cum;
+            });
+            const ytvCum = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.netProfit || 0), 0));
+            summaryAoa.push(["Cumulative Carry-Forward P&L", ...cumVals, ytvCum, cum]);
+            summaryAoa.push([]);
+
+            // Section 5: Non-P&L Balance Sheet Items
+            summaryAoa.push(["Non-P&L Balance Sheet Items (Cash Flow Only)"]);
+            addDataRow("  Refundable Deposits & Prepayments", "balanceSheetTotal");
+
+            // Balance sheet nominal breakdowns
+            const bsCodeKeys = Array.from(new Set(
+              rowData.flatMap(r => Object.keys(r.balanceSheetBreakdown || {}))
+            )).filter(c => {
+              if (hideZeroNominals) {
+                const total = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[c] || 0), 0);
+                if (total === 0) return false;
+              }
+              return true;
+            }).sort();
+
+            bsCodeKeys.forEach(code => {
+              const vals = rowData.map(r => Math.round(r.balanceSheetBreakdown?.[code] || 0));
+              const ytvBs = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0));
+              const totalBs = Math.round(rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0));
+              summaryAoa.push([`    ↳ ${code}`, ...vals, ytvBs, totalBs]);
+            });
+            summaryAoa.push([]);
+
+            // Section 6: Staff Headcount
+            const headcounts = rowData.map(r => r.headcount || 0);
+            summaryAoa.push(["Staff Count in Apportionment", ...headcounts, "—", "—"]);
+
+            const wsSummary = XLSX.utils.aoa_to_sheet(summaryAoa);
+            wsSummary['!cols'] = [
+              { wch: 42 },
+              ...monthsList.map(() => ({ wch: 14 })),
+              { wch: 16 },
+              { wch: 16 }
+            ];
+            XLSX.utils.book_append_sheet(wb, wsSummary, "P&L Summary");
+
+            // 2. Paid vs Projected Comparison Sheet
+            const compAoa = [];
+            compAoa.push(["Overheads & Expenses - Bank Paid vs Projected Comparison"]);
+            compAoa.push(["Period Range:", `${startMonth} to ${endMonth}`]);
+            compAoa.push(["Bank Cutoff Date:", `${reconciledCutoffDate} (Actuals through cutoff, forecast thereafter)`]);
+            compAoa.push([]);
+            compAoa.push(["Nominal Code / Line Item", "Type", ...monthHeaders, "YTV", "Period Total"]);
+
+            // Total Apportioned
+            const ytvOverheads = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.overheadsExpenses || 0), 0));
+            const ytvPaid = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.overheadsPaid || 0), 0));
+            const ytvProj = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.overheadsProjected || 0), 0));
+            const totOverheads = Math.round(rowData.reduce((acc, r) => acc + (r.overheadsExpenses || 0), 0));
+            const totPaid = Math.round(rowData.reduce((acc, r) => acc + (r.overheadsPaid || 0), 0));
+            const totProj = Math.round(rowData.reduce((acc, r) => acc + (r.overheadsProjected || 0), 0));
+
+            compAoa.push(["Total Apportioned Overheads", "P&L Recognized", ...rowData.map(r => Math.round(r.overheadsExpenses || 0)), ytvOverheads, totOverheads]);
+            compAoa.push(["", "Bank Paid (Actuals)", ...rowData.map(r => Math.round(r.overheadsPaid || 0)), ytvPaid, totPaid]);
+            compAoa.push(["", "Projected Forecast", ...rowData.map(r => Math.round(r.overheadsProjected || 0)), ytvProj, totProj]);
+            compAoa.push([]);
+
+            // Each nominal code
+            codeKeys.forEach(code => {
+              const recVals = rowData.map(r => Math.round(r.nominalBreakdown?.[code] || 0));
+              const paidVals = rowData.map(r => Math.round(r.nominalPaidBreakdown?.[code] || 0));
+              const projVals = rowData.map(r => Math.round(r.nominalProjectedBreakdown?.[code] || 0));
+
+              const ytvRecCode = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0));
+              const ytvPaidCode = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.nominalPaidBreakdown?.[code] || 0), 0));
+              const ytvProjCode = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.nominalProjectedBreakdown?.[code] || 0), 0));
+
+              const totRecCode = Math.round(rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0));
+              const totPaidCode = Math.round(rowData.reduce((acc, r) => acc + (r.nominalPaidBreakdown?.[code] || 0), 0));
+              const totProjCode = Math.round(rowData.reduce((acc, r) => acc + (r.nominalProjectedBreakdown?.[code] || 0), 0));
+
+              compAoa.push([code, "P&L Recognized", ...recVals, ytvRecCode, totRecCode]);
+              compAoa.push(["", "Bank Paid", ...paidVals, ytvPaidCode, totPaidCode]);
+              compAoa.push(["", "Projected", ...projVals, ytvProjCode, totProjCode]);
+            });
+
+            const wsComp = XLSX.utils.aoa_to_sheet(compAoa);
+            wsComp['!cols'] = [
+              { wch: 35 },
+              { wch: 20 },
+              ...monthsList.map(() => ({ wch: 14 })),
+              { wch: 16 },
+              { wch: 16 }
+            ];
+            XLSX.utils.book_append_sheet(wb, wsComp, "Paid vs Projected");
+
+            // Write File
+            const filename = `Consolidated_PnL_${startMonth}_to_${endMonth}.xlsx`;
+            XLSX.writeFile(wb, filename);
+
+            if (onShowToast) {
+              onShowToast(`P&L report exported successfully to ${filename}`, 'success');
+            }
+          } catch (err) {
+            console.error("Failed to export P&L to Excel:", err);
+            if (onShowToast) {
+              onShowToast("Failed to generate Excel export. Please check console for details.", "error");
+            }
+          }
+        };
+
         // Recruiter Ratios calculations for Overall compensation to billings gauge
         const recruiterRatios = staff.map(rec => {
           if (!companyFilter.includes('all') && !companyFilter.includes(rec.companyId)) return null;
@@ -2512,6 +2692,24 @@ export default function ReportsDashboard({
                 <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>P&L Performance Summary Dashboard</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <button
+                  type="button"
+                  onClick={handleExportPnlExcel}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--primary)',
+                    fontWeight: 700,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                  title="Export complete P&L statement, nominal breakdown, and actuals vs budget to Excel (.xlsx)"
+                >
+                  <FileSpreadsheet size={14} /> Export to Excel
+                </button>
                 <button
                   type="button"
                   onClick={handlePrintPnl}
@@ -6388,6 +6586,157 @@ export default function ReportsDashboard({
           }
         }
 
+        const handleExportDrilldownExcel = () => {
+          try {
+            if (!filteredItems || filteredItems.length === 0) {
+              if (onShowToast) onShowToast("No records to export in current view.", "warning");
+              return;
+            }
+
+            const wb = XLSX.utils.book_new();
+            const rawTitle = drilldownState?.label || drilldownState?.title || "P&L_Itemization";
+            const sanitizedTitle = rawTitle.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 31);
+
+            const rows = [];
+            rows.push([`P&L Itemization: ${drilldownState?.label || ''}`]);
+            rows.push(["Period:", drilldownState.monthKey || 'Full Period']);
+            rows.push(["Generated on:", new Date().toLocaleDateString('en-GB')]);
+            rows.push(["Total Records:", filteredItems.length]);
+            rows.push([]);
+
+            if (drilldownState.categoryKey === 'revenue') {
+              rows.push(["Placement ID", "Candidate", "Client / Company", "Job Role", "Start Date", "Net Fee (GBP)"]);
+              filteredItems.forEach(item => {
+                rows.push([
+                  item.placementId || item.id || '',
+                  item.candidateName || '',
+                  item.clientName || '',
+                  item.jobTitle || '',
+                  item.startDate || '',
+                  Math.round(toGBP(item.netScoreValue || 0, item.currency || 'GBP'))
+                ]);
+              });
+            } else if (drilldownState.categoryKey === 'commissions') {
+              rows.push(["Recruiter Name", "Department", "Month", "Commission Tier Policy", "Accrued Commission (GBP)"]);
+              filteredItems.forEach(item => {
+                rows.push([
+                  item.recruiterName || '',
+                  item.department || '',
+                  item.monthKey || '',
+                  item.policy || '',
+                  Math.round(item.commVal || 0)
+                ]);
+              });
+            } else if (drilldownState.categoryKey === 'salaries') {
+              rows.push(["Staff Member", "Job Title", "Department", "Company", "Month", "Salary (GBP)"]);
+              filteredItems.forEach(item => {
+                rows.push([
+                  item.staffName || '',
+                  item.jobTitle || '',
+                  item.department || '',
+                  item.companyName || '',
+                  item.monthKey || '',
+                  Math.round(item.amount || 0)
+                ]);
+              });
+            } else if (drilldownState.categoryKey === 'staffCount') {
+              rows.push(["Staff Member", "Job Title", "Department", "Company", "Month", "Start Date", "Days Worked"]);
+              filteredItems.forEach(item => {
+                rows.push([
+                  item.staffName || '',
+                  item.jobTitle || '',
+                  item.department || '',
+                  item.companyName || '',
+                  item.monthKey || '',
+                  item.startDate || '',
+                  item.daysWorked || 0
+                ]);
+              });
+            } else {
+              // Overheads / Nominals / Total Overheads / Balance Sheet
+              rows.push([
+                "Date",
+                "P&L Month",
+                "Payee / Vendor",
+                "Linked Contract",
+                "Nominal Code",
+                "Allocated To (For Whom)",
+                "Bank / Source",
+                "Tax Rate (%)",
+                "Status / Nature",
+                "Amount (Gross GBP)",
+                "Invoice / Receipt URL"
+              ]);
+
+              filteredItems.forEach(item => {
+                const contractObj = contracts.find(c => c.id === item.linkedContractId);
+                let targetStr = 'Group Corporate Overhead';
+                if (item.recipientType === 'staff' && item.recipientId) {
+                  const sObj = staff.find(s => s.id === item.recipientId);
+                  targetStr = `Direct Staff: ${sObj?.fullName || 'Staff Member'}`;
+                } else if (item.allocationType === 'staff') {
+                  const ids = Array.isArray(item.allocationTarget) ? item.allocationTarget : (item.selectedStaffIds || []);
+                  const names = ids.map(id => staff.find(s => s.id === id)?.fullName).filter(Boolean);
+                  targetStr = names.length > 0 ? `${names.length} Staff Seats: ${names.join(', ')}` : 'Staff Seats';
+                } else if (item.allocationType === 'company') {
+                  const ids = Array.isArray(item.allocationTarget) ? item.allocationTarget : [item.allocationTarget].filter(Boolean);
+                  const names = ids.map(id => companies.find(c => c.id === id)?.name).filter(Boolean);
+                  targetStr = names.length > 0 ? `Entity Overhead: ${names.join(', ')}` : 'Entity Overhead';
+                }
+
+                let natureStr = 'Bank Paid';
+                if (item.isProjected) {
+                  natureStr = item.isSuppressed ? 'Projected (Suppressed)' : (item.isClosedReconciled ? 'Closed (Reconciled)' : 'Projected Forecast');
+                } else if (item.status) {
+                  natureStr = item.status;
+                }
+
+                rows.push([
+                  item.date || '',
+                  item.plMonth || '',
+                  item.payee || '',
+                  contractObj?.name || (item.linkedContractId ? 'Contract' : 'General Vendor'),
+                  item.nominalCode || '',
+                  targetStr,
+                  item.bankAccount || (item.isProjection ? '— (Forecast)' : 'Bank'),
+                  item.taxRate !== undefined && item.taxRate !== null && item.taxRate !== '' ? `${item.taxRate}%` : '—',
+                  natureStr,
+                  Math.round(toGBP(item.amount || 0, item.currency || 'GBP')),
+                  (item.invoiceUrl && item.invoiceUrl !== '#') ? item.invoiceUrl : ''
+                ]);
+              });
+            }
+
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            ws['!cols'] = [
+              { wch: 14 },
+              { wch: 12 },
+              { wch: 28 },
+              { wch: 24 },
+              { wch: 20 },
+              { wch: 28 },
+              { wch: 16 },
+              { wch: 14 },
+              { wch: 20 },
+              { wch: 18 },
+              { wch: 35 }
+            ];
+            XLSX.utils.book_append_sheet(wb, ws, "Itemized Records");
+
+            const filename = `${sanitizedTitle}_${new Date().toISOString().split('T')[0]}.xlsx`;
+            XLSX.writeFile(wb, filename);
+
+            if (onShowToast) {
+              onShowToast(`Exported to ${filename}`, 'success');
+            }
+          } catch (err) {
+            console.error("Failed to export drilldown to Excel:", err);
+            if (onShowToast) {
+              onShowToast("Failed to export to Excel.", "error");
+            }
+          }
+        };
+
         return (
           <div className="form-wizard-overlay" onClick={() => setDrilldownState(null)} style={{ zIndex: 1200 }}>
             <div className="form-wizard-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '960px', width: '90%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', gap: '16px', padding: '24px' }}>
@@ -6525,6 +6874,27 @@ export default function ReportsDashboard({
                       )}
                     </div>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={handleExportDrilldownExcel}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '6px 12px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-secondary)',
+                      color: 'var(--success)',
+                      cursor: 'pointer'
+                    }}
+                    title="Export current itemized records to Excel (.xlsx)"
+                  >
+                    <FileSpreadsheet size={13} /> Export Excel
+                  </button>
                 </div>
               </div>
 

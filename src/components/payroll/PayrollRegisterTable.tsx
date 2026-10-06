@@ -910,9 +910,10 @@ export default function PayrollRegisterTable({
           const cellTitle = ukOverhead 
             ? formatOverheadTitle(ukOverhead, 'Click to edit override')
             : `${s.fullName} - ${m}
+Actual Staff Cost: £${Math.round(displayTotal).toLocaleString()}
 Salary (Gross): £${Math.round(displayBasic).toLocaleString()}
 Comm: £${Math.round(cell.commission).toLocaleString()}
-${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}${cell.reimbursements > 0 ? `Reimbursements: £${Math.round(cell.reimbursements).toLocaleString()}\n` : ''}${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleString()}\n` : ''}${cell.employerPension > 0 ? `Employer Pension: £${Math.round(cell.employerPension).toLocaleString()}\n` : ''}${cell.employeeTaxNic > 0 ? `Employee Tax/NIC: £${Math.round(cell.employeeTaxNic).toLocaleString()}\n` : ''}${cell.employeePension > 0 ? `Employee Pension: £${Math.round(cell.employeePension).toLocaleString()}\n` : ''}Click to edit override`;
+${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}${cell.reimbursements > 0 ? `Reimbursements (Overhead): £${Math.round(cell.reimbursements).toLocaleString()}\nTotal Paid by Bank: £${Math.round(displayTotal + cell.reimbursements).toLocaleString()}\n` : ''}${cell.employerNi > 0 ? `Employer NI: £${Math.round(cell.employerNi).toLocaleString()}\n` : ''}${cell.employerPension > 0 ? `Employer Pension: £${Math.round(cell.employerPension).toLocaleString()}\n` : ''}${cell.employeeTaxNic > 0 ? `Employee Tax/NIC: £${Math.round(cell.employeeTaxNic).toLocaleString()}\n` : ''}${cell.employeePension > 0 ? `Employee Pension: £${Math.round(cell.employeePension).toLocaleString()}\n` : ''}Click to edit override`;
 
           const effectiveBonus = ukOverhead ? ukOverhead.bonus : cell.bonus;
 
@@ -934,6 +935,21 @@ ${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}
               <WithOverheadTooltip item={ukOverhead} position="bottom">
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
                   <span>£{Math.round(displayTotal).toLocaleString()}</span>
+                  {cell.reimbursements > 0 && (
+                    <span 
+                      style={{ 
+                        fontSize: '8px', 
+                        fontWeight: 600,
+                        color: '#6366f1', 
+                        backgroundColor: 'rgba(99, 102, 241, 0.1)', 
+                        padding: '1px 4px', 
+                        borderRadius: '3px' 
+                      }}
+                      title={`Reimbursements: £${Number(cell.reimbursements).toLocaleString(undefined, { minimumFractionDigits: 2 })} (Overhead, excluded from staff cost)`}
+                    >
+                      +£{Math.round(cell.reimbursements).toLocaleString()} reimb
+                    </span>
+                  )}
                   {effectiveBonus > 0 ? (
                     <span 
                       style={{ 
@@ -2328,16 +2344,32 @@ ${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}
                   <span>Gross Earnings (Basic + Comm + Bonus):</span>
                   <span>£{((splitFromTotalPaid ? derivedPureBasicSalary : (Number(basicSalaryOverride) || 0)) + Number(commissionOverride) + Number(bonusOverride)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
+                {totalReimbursementsGBP > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#6366f1', fontSize: '11px' }}>
+                    <span>Expense Reimbursements (Company/Dept Overhead):</span>
+                    <span style={{ fontWeight: 600 }}>
+                      +£{totalReimbursementsGBP.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
-                  <span>Net Take-Home Pay (to Recruiter):</span>
+                  <span>Net Remuneration (excl. Reimbursements):</span>
                   <span style={{ fontWeight: 600, color: 'var(--success)' }}>
-                    £{((splitFromTotalPaid ? derivedPureBasicSalary : (Number(basicSalaryOverride) || 0)) + Number(commissionOverride) + Number(bonusOverride) + totalReimbursementsGBP - Number(employeeTaxNic) - Number(employeePension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    £{((splitFromTotalPaid ? derivedPureBasicSalary : (Number(basicSalaryOverride) || 0)) + Number(commissionOverride) + Number(bonusOverride) - Number(employeeTaxNic) - Number(employeePension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>
+                {totalReimbursementsGBP > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
+                    <span>Total Cash Disbursed (Remuneration + Reimbursements):</span>
+                    <span style={{ fontWeight: 600 }}>
+                      £{((splitFromTotalPaid ? derivedPureBasicSalary : (Number(basicSalaryOverride) || 0)) + Number(commissionOverride) + Number(bonusOverride) + totalReimbursementsGBP - Number(employeeTaxNic) - Number(employeePension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', borderTop: '1px dashed var(--border-color)', paddingTop: '4px', marginTop: '4px' }}>
-                  <span>Total Cost to Company (CoC):</span>
-                  <span style={{ fontWeight: 600, color: 'var(--primary)' }}>
-                    £{((splitFromTotalPaid ? derivedPureBasicSalary : (Number(basicSalaryOverride) || 0)) + Number(commissionOverride) + Number(bonusOverride) + totalReimbursementsGBP + Number(employerNi) + Number(employerPension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  <span>Actual Staff Cost to Business (excl. Reimbursements):</span>
+                  <span style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                    £{((splitFromTotalPaid ? derivedPureBasicSalary : (Number(basicSalaryOverride) || 0)) + Number(commissionOverride) + Number(bonusOverride) + Number(employerNi) + Number(employerPension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>

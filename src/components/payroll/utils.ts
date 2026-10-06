@@ -508,6 +508,7 @@ export interface PayrollCellData {
   reimbursements: number;
   bonus: number;
   total: number;
+  totalWithReimbursements?: number;
   employerNi: number;
   employerPension: number;
   employeeTaxNic: number;
@@ -761,7 +762,8 @@ export function getCellData(
       commission: record.isReconciled ? Number(record.commission || 0) : baselineCommission,
       reimbursements: record.isReconciled ? Number(record.reimbursements || 0) : 0,
       bonus: bonusVal,
-      total: basicVal + Number(record.commission || 0) + Number(record.reimbursements || 0) + bonusVal + niVal + pensionVal,
+      total: basicVal + Number(record.commission || 0) + bonusVal + niVal + pensionVal,
+      totalWithReimbursements: basicVal + Number(record.commission || 0) + Number(record.reimbursements || 0) + bonusVal + niVal + pensionVal,
       employerNi: niVal,
       employerPension: pensionVal,
       employeeTaxNic: record.isReconciled ? Number(record.employeeTaxNic || 0) : projectedEmployeeTaxNic,

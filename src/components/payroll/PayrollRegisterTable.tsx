@@ -83,6 +83,7 @@ export default function PayrollRegisterTable({
   const [reimbursementAllocation, setReimbursementAllocation] = useState<'company' | 'department' | 'staff'>('company');
   const [reimbursementDepartment, setReimbursementDepartment] = useState('');
   const [reimbursementItems, setReimbursementItems] = useState<ReimbursementItem[]>([]);
+  const [splitFromTotalPaid, setSplitFromTotalPaid] = useState(true);
 
   const totalReimbursementsGBP = useMemo(() => {
     return reimbursementItems.reduce((sum, item) => {
@@ -91,6 +92,20 @@ export default function PayrollRegisterTable({
       return sum + (amt * rate);
     }, 0);
   }, [reimbursementItems]);
+
+  const derivedPureBasicSalary = useMemo(() => {
+    if (!splitFromTotalPaid) {
+      return Number(basicSalaryOverride) || 0;
+    }
+    const totalPaid = Number(basicSalaryOverride) || 0;
+    const comm = Number(commissionOverride) || 0;
+    const bonus = Number(bonusOverride) || 0;
+    const reimbursements = totalReimbursementsGBP;
+    const eeTax = Number(employeeTaxNic) || 0;
+    const eePension = Number(employeePension) || 0;
+
+    return Math.max(0, totalPaid - comm - bonus - reimbursements + eeTax + eePension);
+  }, [splitFromTotalPaid, basicSalaryOverride, commissionOverride, bonusOverride, totalReimbursementsGBP, employeeTaxNic, employeePension]);
 
   const handleAddReimbursementItem = () => {
     const defaultReimburseNominal = nominalCodes.find(c => c.code?.toLowerCase().includes('travel') || c.code?.toLowerCase().includes('expense') || c.code?.toLowerCase().includes('reimburse'))?.code || (nominalCodes[0]?.code || '7400 - Travel & Entertaining');
@@ -368,7 +383,16 @@ export default function PayrollRegisterTable({
     const initialPension = record?.employerPension !== undefined ? Number(record.employerPension) : (ukOverhead ? ukOverhead.royalLondon : (cell.employerPension || 0));
 
     setIsReconciled(autoReconciled);
-    setBasicSalaryOverride(autoBasic.toFixed(2));
+    const isSplit = record?.splitFromTotalPaid !== undefined ? record.splitFromTotalPaid : true;
+    setSplitFromTotalPaid(isSplit);
+
+    let initialBasicVal = autoBasic;
+    if (isSplit && record?.totalPaidAmount !== undefined) {
+      initialBasicVal = record.totalPaidAmount;
+    } else if (isSplit && record?.isReconciled && record?.basicSalary !== undefined) {
+      initialBasicVal = (record.basicSalary || 0) + (record.commission || 0) + (record.bonus || 0) + (record.reimbursements || 0) - (record.employeeTaxNic || 0) - (record.employeePension || 0);
+    }
+    setBasicSalaryOverride(initialBasicVal.toFixed(2));
     setCommissionOverride(cell.commission.toFixed(2));
     setEmployerNi(initialNi.toFixed(2));
     setEmployerPension(initialPension.toFixed(2));
@@ -580,7 +604,8 @@ export default function PayrollRegisterTable({
     if (!selectedCell) return;
     const { staffMember, month } = selectedCell;
 
-    const baseVal = Number(basicSalaryOverride) || 0;
+    const pureBasicVal = splitFromTotalPaid ? derivedPureBasicSalary : (Number(basicSalaryOverride) || 0);
+    const totalPaidVal = Number(basicSalaryOverride) || 0;
     const commVal = Number(commissionOverride) || 0;
     const bonusVal = Number(bonusOverride) || 0;
     const empNiVal = Number(employerNi) || 0;
@@ -594,7 +619,9 @@ export default function PayrollRegisterTable({
       staffId: staffMember.id,
       month,
       isReconciled,
-      basicSalary: baseVal,
+      basicSalary: pureBasicVal,
+      splitFromTotalPaid,
+      totalPaidAmount: splitFromTotalPaid ? totalPaidVal : undefined,
       commission: commVal,
       reimbursements: reimbursementsVal,
       reimbursementItems,
@@ -658,7 +685,7 @@ export default function PayrollRegisterTable({
         const pensionNominal = nominalCodes.find(c => c.id === '502' || c.code?.includes('502') || c.code?.toLowerCase().includes('pension'))?.code || '502 - Royal London Pension Contributions';
 
         // 1. Net Salary Expense (strictly salary + commission + bonus less employee deductions)
-        const netSalaryAmt = baseVal + commVal + bonusVal - taxNicVal - pensionVal;
+        const netSalaryAmt = pureBasicVal + commVal + bonusVal - taxNicVal - pensionVal;
         const netExp = {
           id: `payroll-salary-${staffMember.id}-${month}`,
           date: `${month}-28`,
@@ -1769,6 +1796,7 @@ ${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}
                             const expMatched = expenses.find(item => item.id === val);
                             if (expMatched) {
                               setIsReconciled(true);
+                              setSplitFromTotalPaid(true);
                               setBasicSalaryOverride(expMatched.amount.toFixed(2));
                               setCommissionOverride('0.00');
                               setReconcileNotes(prev => `Linked to payment: ${expMatched.payee.split(' [Ref:')[0]} on ${expMatched.date}. ${prev}`);
@@ -1803,10 +1831,65 @@ ${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}
                 })()}
               </div>
 
+              {/* Reconciliation Input Mode Selector */}
+              <div style={{ marginBottom: '14px' }}>
+                <div style={{ display: 'flex', gap: '6px', backgroundColor: 'var(--bg-secondary)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setSplitFromTotalPaid(true)}
+                    style={{
+                      flex: 1,
+                      padding: '7px 10px',
+                      fontSize: '11px',
+                      fontWeight: splitFromTotalPaid ? 700 : 500,
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      backgroundColor: splitFromTotalPaid ? 'var(--primary)' : 'transparent',
+                      color: splitFromTotalPaid ? '#fff' : 'var(--text-secondary)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    ⚡ Total Paid is Split (Remittance)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSplitFromTotalPaid(false)}
+                    style={{
+                      flex: 1,
+                      padding: '7px 10px',
+                      fontSize: '11px',
+                      fontWeight: !splitFromTotalPaid ? 700 : 500,
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      backgroundColor: !splitFromTotalPaid ? 'var(--primary)' : 'transparent',
+                      color: !splitFromTotalPaid ? '#fff' : 'var(--text-secondary)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    ➕ Additive Components (Base + Extra)
+                  </button>
+                </div>
+              </div>
+
               <div className="form-group">
                 <label className="form-label" style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span>Basic Salary Component (£ GBP) <span>*</span></span>
-                  <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--text-secondary)' }}>Standard monthly baseline contract rate / salary</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>
+                      {splitFromTotalPaid ? 'Total Remittance / Payment to Staff (£ GBP)' : 'Basic Salary Component (£ GBP)'} <span>*</span>
+                    </span>
+                    {splitFromTotalPaid && (
+                      <span style={{ fontSize: '10px', background: 'rgba(16, 185, 129, 0.12)', color: 'var(--success)', padding: '1px 8px', borderRadius: '10px', fontWeight: 600 }}>
+                        Auto-Carves Bonus & Reimbursements
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--text-secondary)' }}>
+                    {splitFromTotalPaid 
+                      ? 'Total lump-sum paid to staff via bank transfer. Bonus & reimbursements below are carved out of this total.' 
+                      : 'Standard monthly baseline contract rate / salary'}
+                  </span>
                 </label>
                 <input 
                   type="number"
@@ -1816,6 +1899,65 @@ ${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}
                   disabled={isRecruiter}
                   style={{ width: '100%', padding: '10px', marginTop: '4px' }}
                 />
+
+                {/* Split Calculation Breakdown Helper */}
+                {splitFromTotalPaid && (
+                  <div style={{ 
+                    marginTop: '8px', 
+                    padding: '8px 12px', 
+                    borderRadius: '6px', 
+                    border: '1px solid var(--border-color)', 
+                    backgroundColor: 'var(--bg-secondary)', 
+                    fontSize: '11px' 
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', marginBottom: '3px' }}>
+                      <span>Total Remitted Amount:</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>£{(Number(basicSalaryOverride) || 0).toFixed(2)}</span>
+                    </div>
+                    {totalReimbursementsGBP > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', marginBottom: '3px' }}>
+                        <span>Less Reimbursements ({reimbursementItems.length} items):</span>
+                        <span style={{ color: 'var(--primary)', fontWeight: 600 }}>-£{totalReimbursementsGBP.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {Number(bonusOverride) > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', marginBottom: '3px' }}>
+                        <span>Less Bonus Component:</span>
+                        <span style={{ color: 'var(--primary)', fontWeight: 600 }}>-£{Number(bonusOverride).toFixed(2)}</span>
+                      </div>
+                    )}
+                    {Number(commissionOverride) > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', marginBottom: '3px' }}>
+                        <span>Less Commission Component:</span>
+                        <span style={{ color: 'var(--primary)', fontWeight: 600 }}>-£{Number(commissionOverride).toFixed(2)}</span>
+                      </div>
+                    )}
+                    {(Number(employeeTaxNic) > 0 || Number(employeePension) > 0) && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', marginBottom: '3px' }}>
+                        <span>Add Back Employee Deductions:</span>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>+£{(Number(employeeTaxNic) + Number(employeePension)).toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      borderTop: '1px dashed var(--border-color)', 
+                      paddingTop: '5px', 
+                      marginTop: '4px',
+                      fontWeight: 700 
+                    }}>
+                      <span>Derived Pure Basic Salary:</span>
+                      <span style={{ color: derivedPureBasicSalary <= 0 && (Number(basicSalaryOverride) || 0) > 0 ? 'var(--danger)' : 'var(--success)' }}>
+                        £{derivedPureBasicSalary.toFixed(2)}
+                      </span>
+                    </div>
+                    {derivedPureBasicSalary <= 0 && (Number(basicSalaryOverride) || 0) > 0 && (
+                      <div style={{ color: 'var(--danger)', fontSize: '10px', marginTop: '3px' }}>
+                        ⚠️ Warning: Bonus & reimbursements exceed or equal total payment!
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="form-group">
@@ -2174,18 +2316,18 @@ ${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
                   <span>Gross Earnings (Basic + Comm + Bonus):</span>
-                  <span>£{(Number(basicSalaryOverride) + Number(commissionOverride) + Number(bonusOverride)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  <span>£{((splitFromTotalPaid ? derivedPureBasicSalary : (Number(basicSalaryOverride) || 0)) + Number(commissionOverride) + Number(bonusOverride)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
                   <span>Net Take-Home Pay (to Recruiter):</span>
                   <span style={{ fontWeight: 600, color: 'var(--success)' }}>
-                    £{(Number(basicSalaryOverride) + Number(commissionOverride) + Number(bonusOverride) + totalReimbursementsGBP - Number(employeeTaxNic) - Number(employeePension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    £{((splitFromTotalPaid ? derivedPureBasicSalary : (Number(basicSalaryOverride) || 0)) + Number(commissionOverride) + Number(bonusOverride) + totalReimbursementsGBP - Number(employeeTaxNic) - Number(employeePension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', borderTop: '1px dashed var(--border-color)', paddingTop: '4px', marginTop: '4px' }}>
                   <span>Total Cost to Company (CoC):</span>
                   <span style={{ fontWeight: 600, color: 'var(--primary)' }}>
-                    £{(Number(basicSalaryOverride) + Number(commissionOverride) + Number(bonusOverride) + totalReimbursementsGBP + Number(employerNi) + Number(employerPension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    £{((splitFromTotalPaid ? derivedPureBasicSalary : (Number(basicSalaryOverride) || 0)) + Number(commissionOverride) + Number(bonusOverride) + totalReimbursementsGBP + Number(employerNi) + Number(employerPension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>

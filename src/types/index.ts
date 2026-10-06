@@ -105,6 +105,8 @@ export interface PayrollRecord {
   reimbursementAllocation?: 'company' | 'department' | 'staff';
   reimbursementDepartment?: string;
   reimbursementItems?: ReimbursementItem[];
+  splitFromTotalPaid?: boolean;
+  totalPaidAmount?: number;
 }
 
 export interface ReimbursementItem {

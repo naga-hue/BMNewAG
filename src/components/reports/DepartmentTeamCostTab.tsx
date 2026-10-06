@@ -126,6 +126,9 @@ export default function DepartmentTeamCostTab({
     id?: string;
     name: string;
     department: string;
+    departments: string[];
+    companyId: string;
+    companyIds: string[];
     licenseCostPerSeat: number;
     currency: string;
     billingFrequency: 'monthly' | 'annual';
@@ -136,7 +139,10 @@ export default function DepartmentTeamCostTab({
     notes: string;
   }>({
     name: '',
-    department: (!deptFilter.includes('all') && deptFilter.length === 1) ? deptFilter[0] : (managerDept || 'Civils'),
+    department: (!deptFilter.includes('all') && deptFilter.length > 0) ? deptFilter.join(', ') : 'all',
+    departments: (!deptFilter.includes('all') && deptFilter.length > 0) ? [...deptFilter] : ['all'],
+    companyId: (!companyFilter.includes('all') && companyFilter.length > 0) ? companyFilter[0] : 'all',
+    companyIds: (!companyFilter.includes('all') && companyFilter.length > 0) ? [...companyFilter] : ['all'],
     licenseCostPerSeat: 45,
     currency: 'GBP',
     billingFrequency: 'monthly',
@@ -219,19 +225,30 @@ export default function DepartmentTeamCostTab({
     return counts;
   }, [monthsList, filteredStaff, staffMonthlyData]);
 
-  // Filter tools applicable to current department selection
+  // Filter tools applicable to current department and company selection
   const relevantTools = useMemo(() => {
     return departmentTools.filter(t => {
-      if (deptFilter.includes('all')) return true;
-      return deptFilter.includes(t.department) || t.department === 'all';
-    });
-  }, [departmentTools, deptFilter]);
+      // 1. Department match: check if tool applies to any filtered department
+      const toolDepts = (t.departments && t.departments.length > 0) ? t.departments : [t.department || 'all'];
+      const matchesDept = deptFilter.includes('all') || toolDepts.includes('all') || deptFilter.some(d => toolDepts.includes(d));
+      if (!matchesDept) return false;
 
-  // High-Water Mark Ratchet Engine for Software Tools
+      // 2. Company match: check if tool applies to any filtered company
+      const toolComps = (t.companyIds && t.companyIds.length > 0) ? t.companyIds : [t.companyId || 'all'];
+      const matchesComp = companyFilter.includes('all') || toolComps.includes('all') || companyFilter.some(c => toolComps.includes(c));
+      if (!matchesComp) return false;
+
+      return true;
+    });
+  }, [departmentTools, deptFilter, companyFilter]);
+
+  // High-Water Mark Ratchet Engine for Software Tools (Supporting Multi-Dept & Multi-Company)
   const toolRatchetData = useMemo(() => {
     return relevantTools.map(tool => {
       const baseline = Number(tool.baselineCommittedSeats) || 0;
       const unitCostGBP = toGBP(tool.licenseCostPerSeat || 0, tool.currency || 'GBP');
+      const toolDepts = (tool.departments && tool.departments.length > 0) ? tool.departments : [tool.department || 'all'];
+      const toolComps = (tool.companyIds && tool.companyIds.length > 0) ? tool.companyIds : [tool.companyId || 'all'];
 
       const monthlyDetails: Record<string, {
         activeSeats: number;
@@ -246,16 +263,15 @@ export default function DepartmentTeamCostTab({
       let ytvCost = 0;
 
       monthsList.forEach((m) => {
-        // Headcount for this tool's scope
-        let activeHeadcountForTool = 0;
-        if (tool.department === 'all') {
-          activeHeadcountForTool = staff.filter(s => {
-            const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
-            return isStaffActiveInMonth(s, m, cell.total);
-          }).length;
-        } else {
-          activeHeadcountForTool = monthlyHeadcount[m] || 0;
-        }
+        // Headcount for this tool's scope across its assigned departments and companies
+        const activeHeadcountForTool = staff.filter(s => {
+          const compMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
+          const deptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
+          if (!compMatch || !deptMatch) return false;
+
+          const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
+          return isStaffActiveInMonth(s, m, cell.total);
+        }).length;
 
         // Ratchet up if active headcount exceeds prior peak
         if (activeHeadcountForTool > peakSoFar) {
@@ -287,13 +303,15 @@ export default function DepartmentTeamCostTab({
 
       return {
         tool,
+        toolDepts,
+        toolComps,
         unitCostGBP,
         monthlyDetails,
         periodTotalCost,
         ytvCost
       };
     });
-  }, [relevantTools, monthsList, staff, monthlyHeadcount, payrollRecords, payrollPolicies, leaveRequests, holidays, companies, placements, commissionPolicies, reconciledCutoffMonth]);
+  }, [relevantTools, monthsList, staff, payrollRecords, payrollPolicies, leaveRequests, holidays, companies, placements, commissionPolicies, reconciledCutoffMonth]);
 
   // Aggregate Remuneration Totals across Months
   const staffRemunerationTotals = useMemo(() => {
@@ -447,12 +465,85 @@ export default function DepartmentTeamCostTab({
     };
   }, [toolRatchetData, reconciledCutoffMonth, monthsList]);
 
+  // Multi-select toggle helpers for Tool Modal
+  const handleToggleCompany = (companyId: string) => {
+    setToolForm(prev => {
+      let current = [...prev.companyIds];
+      if (companyId === 'all') {
+        return { ...prev, companyIds: ['all'], companyId: 'all' };
+      }
+      current = current.filter(c => c !== 'all');
+      if (current.includes(companyId)) {
+        current = current.filter(c => c !== companyId);
+      } else {
+        current.push(companyId);
+      }
+      if (current.length === 0) {
+        current = ['all'];
+      }
+      return {
+        ...prev,
+        companyIds: current,
+        companyId: current.includes('all') ? 'all' : current[0]
+      };
+    });
+  };
+
+  const handleToggleDepartment = (dept: string) => {
+    setToolForm(prev => {
+      let current = [...prev.departments];
+      if (dept === 'all') {
+        return { ...prev, departments: ['all'], department: 'all' };
+      }
+      current = current.filter(d => d !== 'all');
+      if (current.includes(dept)) {
+        current = current.filter(d => d !== dept);
+      } else {
+        current.push(dept);
+      }
+      if (current.length === 0) {
+        current = ['all'];
+      }
+      return {
+        ...prev,
+        departments: current,
+        department: current.includes('all') ? 'all' : current.join(', ')
+      };
+    });
+  };
+
+  const handleSelectAllCompanies = () => {
+    setToolForm(prev => ({
+      ...prev,
+      companyIds: companies.map(c => c.id),
+      companyId: companies[0]?.id || 'all'
+    }));
+  };
+
+  const handleSelectAllDepartments = () => {
+    setToolForm(prev => ({
+      ...prev,
+      departments: [...allDepartments],
+      department: allDepartments.join(', ')
+    }));
+  };
+
   // Handle Open Tool Modal
   const handleOpenAddTool = () => {
     setEditingTool(null);
+    const initialDepts = (!deptFilter.includes('all') && deptFilter.length > 0)
+      ? [...deptFilter]
+      : (managerDept ? [managerDept] : ['all']);
+    const initialComps = (!companyFilter.includes('all') && companyFilter.length > 0)
+      ? [...companyFilter]
+      : ['all'];
+
     setToolForm({
       name: '',
-      department: (!deptFilter.includes('all') && deptFilter.length === 1) ? deptFilter[0] : (managerDept || 'Civils'),
+      department: initialDepts.includes('all') ? 'all' : initialDepts.join(', '),
+      departments: initialDepts,
+      companyId: initialComps.includes('all') ? 'all' : initialComps[0],
+      companyIds: initialComps,
       licenseCostPerSeat: 45,
       currency: 'GBP',
       billingFrequency: 'monthly',
@@ -467,10 +558,20 @@ export default function DepartmentTeamCostTab({
 
   const handleOpenEditTool = (tool: DepartmentTool) => {
     setEditingTool(tool);
+    const toolDepts = (tool.departments && tool.departments.length > 0)
+      ? tool.departments
+      : [tool.department || 'all'];
+    const toolComps = (tool.companyIds && tool.companyIds.length > 0)
+      ? tool.companyIds
+      : [tool.companyId || 'all'];
+
     setToolForm({
       id: tool.id,
       name: tool.name,
-      department: tool.department,
+      department: toolDepts.includes('all') ? 'all' : toolDepts.join(', '),
+      departments: toolDepts,
+      companyId: toolComps.includes('all') ? 'all' : toolComps[0],
+      companyIds: toolComps,
       licenseCostPerSeat: tool.licenseCostPerSeat,
       currency: tool.currency || 'GBP',
       billingFrequency: tool.billingFrequency || 'monthly',
@@ -491,10 +592,20 @@ export default function DepartmentTeamCostTab({
     }
 
     try {
+      const depts = (toolForm.departments && toolForm.departments.length > 0)
+        ? toolForm.departments
+        : ['all'];
+      const comps = (toolForm.companyIds && toolForm.companyIds.length > 0)
+        ? toolForm.companyIds
+        : ['all'];
+
       const toolToSave: DepartmentTool = {
         id: editingTool ? editingTool.id : `dept-tool-${Date.now()}`,
         name: toolForm.name.trim(),
-        department: toolForm.department,
+        department: depts.includes('all') ? 'all' : depts.join(', '),
+        departments: depts,
+        companyId: comps.includes('all') ? 'all' : comps[0],
+        companyIds: comps,
         licenseCostPerSeat: Number(toolForm.licenseCostPerSeat) || 0,
         currency: toolForm.currency || 'GBP',
         billingFrequency: toolForm.billingFrequency,
@@ -630,15 +741,21 @@ export default function DepartmentTeamCostTab({
         ['SOFTWARE & TOOL LICENSES (HIGH-WATER MARK CONTRACT RATIO)'],
         [`Department(s): ${deptLabel}`, `Period: ${startMonth} to ${endMonth}`],
         [],
-        ['Tool Name', 'Vendor', 'Department', 'Baseline Seats', 'Cost / Seat (£)', ...monthHeaders.map(m => `${m} Cost`), 'YTV Cost (£)', 'Period Total (£)']
+        ['Tool Name', 'Vendor', 'Companies', 'Departments', 'Baseline Seats', 'Cost / Seat (£)', ...monthHeaders.map(m => `${m} Cost`), 'YTV Cost (£)', 'Period Total (£)']
       ];
 
       toolRatchetData.forEach(t => {
         const monthCosts = monthsList.map(m => Math.round(t.monthlyDetails[m]?.costGBP || 0));
+        const deptStr = t.toolDepts.includes('all') ? 'All Departments' : t.toolDepts.join(', ');
+        const compStr = t.toolComps.includes('all')
+          ? 'All Companies'
+          : t.toolComps.map(cId => companies.find(c => c.id === cId)?.name || cId).join(', ');
+
         toolRows.push([
           t.tool.name,
           t.tool.vendorName || '-',
-          t.tool.department,
+          compStr,
+          deptStr,
           t.tool.baselineCommittedSeats,
           Number(t.unitCostGBP.toFixed(2)),
           ...monthCosts,
@@ -649,6 +766,7 @@ export default function DepartmentTeamCostTab({
 
       toolRows.push([
         'TOTAL SOFTWARE LICENSES',
+        '',
         '',
         '',
         '',
@@ -1235,7 +1353,7 @@ export default function DepartmentTeamCostTab({
                     </td>
                   </tr>
                 ) : (
-                  toolRatchetData.map(({ tool, unitCostGBP, monthlyDetails, periodTotalCost, ytvCost }) => (
+                  toolRatchetData.map(({ tool, toolDepts, toolComps, unitCostGBP, monthlyDetails, periodTotalCost, ytvCost }) => (
                     <tr 
                       key={tool.id} 
                       style={{ 
@@ -1252,10 +1370,41 @@ export default function DepartmentTeamCostTab({
                         zIndex: 1 
                       }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                             <span style={{ color: 'var(--text-muted)' }}>↳</span>
                             <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{tool.name}</span>
-                            <span style={{ color: 'var(--text-secondary)' }}>
+
+                            {/* Department Scope Badge */}
+                            <span style={{
+                              fontSize: '9px',
+                              backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                              color: 'var(--accent)',
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              fontWeight: 600
+                            }}>
+                              {toolDepts.includes('all')
+                                ? 'All Depts'
+                                : (toolDepts.length === 1 ? toolDepts[0] : `${toolDepts[0]} +${toolDepts.length - 1} depts`)}
+                            </span>
+
+                            {/* Company Scope Badge */}
+                            <span style={{
+                              fontSize: '9px',
+                              backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                              color: 'var(--success)',
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              fontWeight: 600
+                            }}>
+                              {toolComps.includes('all')
+                                ? 'All Companies'
+                                : (toolComps.length === 1
+                                    ? (companies.find(c => c.id === toolComps[0])?.name || toolComps[0])
+                                    : `${companies.find(c => c.id === toolComps[0])?.name || toolComps[0]} +${toolComps.length - 1}`)}
+                            </span>
+
+                            <span style={{ color: 'var(--text-secondary)', fontSize: '10px' }}>
                               ({tool.baselineCommittedSeats} seats baseline @ {formatGBPExact(unitCostGBP)}/seat)
                             </span>
                           </div>
@@ -1616,7 +1765,10 @@ export default function DepartmentTeamCostTab({
             border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-lg)',
             width: '100%',
-            maxWidth: '520px',
+            maxWidth: '640px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
             boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
             overflow: 'hidden'
           }}>
@@ -1627,7 +1779,8 @@ export default function DepartmentTeamCostTab({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              backgroundColor: 'var(--bg-secondary)'
+              backgroundColor: 'var(--bg-secondary)',
+              flexShrink: 0
             }}>
               <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
                 {editingTool ? 'Edit Department Software Tool' : 'Add Department Software Tool'}
@@ -1648,37 +1801,19 @@ export default function DepartmentTeamCostTab({
             </div>
 
             {/* Modal Body */}
-            <form onSubmit={handleSaveTool} style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-primary)' }}>
-                  Tool / Software Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Dialpad, Recruitly CRM, LinkedIn Recruiter"
-                  value={toolForm.name}
-                  onChange={(e) => setToolForm({ ...toolForm, name: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)',
-                    fontSize: '13px'
-                  }}
-                />
-              </div>
-
+            <form onSubmit={handleSaveTool} style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto' }}>
+              {/* Tool Name & Vendor */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-primary)' }}>
-                    Department *
+                    Tool / Software Name *
                   </label>
-                  <select
-                    value={toolForm.department}
-                    onChange={(e) => setToolForm({ ...toolForm, department: e.target.value })}
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Dialpad, Recruitly CRM, LinkedIn"
+                    value={toolForm.name}
+                    onChange={(e) => setToolForm({ ...toolForm, name: e.target.value })}
                     style={{
                       width: '100%',
                       padding: '8px 12px',
@@ -1688,12 +1823,7 @@ export default function DepartmentTeamCostTab({
                       color: 'var(--text-primary)',
                       fontSize: '13px'
                     }}
-                  >
-                    <option value="all">All / Shared across company</option>
-                    {allDepartments.map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
 
                 <div>
@@ -1702,7 +1832,7 @@ export default function DepartmentTeamCostTab({
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. Dialpad Inc."
+                    placeholder="e.g. Dialpad Inc., Cloudcall"
                     value={toolForm.vendorName}
                     onChange={(e) => setToolForm({ ...toolForm, vendorName: e.target.value })}
                     style={{
@@ -1716,6 +1846,200 @@ export default function DepartmentTeamCostTab({
                     }}
                   />
                 </div>
+              </div>
+
+              {/* Multi-Company Selector */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Company Scope *
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setToolForm(prev => ({ ...prev, companyIds: ['all'], companyId: 'all' }))}
+                      style={{
+                        fontSize: '11px',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: toolForm.companyIds.includes('all') ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                        color: toolForm.companyIds.includes('all') ? 'var(--accent)' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                    >
+                      All Companies
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllCompanies}
+                      style={{
+                        fontSize: '11px',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'transparent',
+                        color: 'var(--text-secondary)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Select All
+                    </button>
+                  </div>
+                </div>
+                <div style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '6px',
+                  padding: '8px',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: 'var(--bg-secondary)',
+                  maxHeight: '100px',
+                  overflowY: 'auto'
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleCompany('all')}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '16px',
+                      fontSize: '11px',
+                      fontWeight: toolForm.companyIds.includes('all') ? 700 : 500,
+                      backgroundColor: toolForm.companyIds.includes('all') ? 'var(--accent)' : 'var(--bg-card)',
+                      color: toolForm.companyIds.includes('all') ? '#fff' : 'var(--text-primary)',
+                      border: `1px solid ${toolForm.companyIds.includes('all') ? 'var(--accent)' : 'var(--border-color)'}`,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {toolForm.companyIds.includes('all') ? '✓ ' : ''}All Companies
+                  </button>
+                  {companies.map(c => {
+                    const isSelected = !toolForm.companyIds.includes('all') && toolForm.companyIds.includes(c.id);
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => handleToggleCompany(c.id)}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '16px',
+                          fontSize: '11px',
+                          fontWeight: isSelected ? 700 : 500,
+                          backgroundColor: isSelected ? 'var(--accent)' : 'var(--bg-card)',
+                          color: isSelected ? '#fff' : 'var(--text-primary)',
+                          border: `1px solid ${isSelected ? 'var(--accent)' : 'var(--border-color)'}`,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {isSelected ? '✓ ' : ''}{c.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '3px', display: 'block' }}>
+                  {toolForm.companyIds.includes('all')
+                    ? 'Shared across all registered companies'
+                    : `Applies to ${toolForm.companyIds.length} selected compan${toolForm.companyIds.length === 1 ? 'y' : 'ies'}`}
+                </span>
+              </div>
+
+              {/* Multi-Department Selector */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Department Scope *
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setToolForm(prev => ({ ...prev, departments: ['all'], department: 'all' }))}
+                      style={{
+                        fontSize: '11px',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: toolForm.departments.includes('all') ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                        color: toolForm.departments.includes('all') ? 'var(--accent)' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                    >
+                      All Departments
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllDepartments}
+                      style={{
+                        fontSize: '11px',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'transparent',
+                        color: 'var(--text-secondary)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Select All
+                    </button>
+                  </div>
+                </div>
+                <div style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '6px',
+                  padding: '8px',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: 'var(--bg-secondary)',
+                  maxHeight: '110px',
+                  overflowY: 'auto'
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleDepartment('all')}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '16px',
+                      fontSize: '11px',
+                      fontWeight: toolForm.departments.includes('all') ? 700 : 500,
+                      backgroundColor: toolForm.departments.includes('all') ? 'var(--accent)' : 'var(--bg-card)',
+                      color: toolForm.departments.includes('all') ? '#fff' : 'var(--text-primary)',
+                      border: `1px solid ${toolForm.departments.includes('all') ? 'var(--accent)' : 'var(--border-color)'}`,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {toolForm.departments.includes('all') ? '✓ ' : ''}All Departments
+                  </button>
+                  {allDepartments.map(d => {
+                    const isSelected = !toolForm.departments.includes('all') && toolForm.departments.includes(d);
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => handleToggleDepartment(d)}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '16px',
+                          fontSize: '11px',
+                          fontWeight: isSelected ? 700 : 500,
+                          backgroundColor: isSelected ? 'var(--accent)' : 'var(--bg-card)',
+                          color: isSelected ? '#fff' : 'var(--text-primary)',
+                          border: `1px solid ${isSelected ? 'var(--accent)' : 'var(--border-color)'}`,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {isSelected ? '✓ ' : ''}{d}
+                      </button>
+                    );
+                  })}
+                </div>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '3px', display: 'block' }}>
+                  {toolForm.departments.includes('all')
+                    ? 'Shared across all departments in the business'
+                    : `Applies to ${toolForm.departments.length} selected department${toolForm.departments.length === 1 ? '' : 's'}`}
+                </span>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>

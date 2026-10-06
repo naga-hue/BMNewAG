@@ -147,8 +147,10 @@ export interface CrmCandidate {
 export interface DepartmentTool {
   id: string;
   name: string; // e.g. "Dialpad", "Recruitly CRM", "LinkedIn Recruiter"
-  department: string; // e.g. "Civils", "Rail", or "all"
-  companyId?: string; // optional company ID or "all"
+  department: string; // primary department or "all"
+  departments?: string[]; // multiple selected departments, e.g. ["Civils", "Rail"] or ["all"]
+  companyId?: string; // primary company ID or "all"
+  companyIds?: string[]; // multiple selected company IDs or ["all"]
   licenseCostPerSeat: number; // cost per seat
   currency: string; // 'GBP', 'USD', 'ZAR', etc.
   billingFrequency: 'monthly' | 'annual';

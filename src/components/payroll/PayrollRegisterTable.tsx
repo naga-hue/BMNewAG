@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { CheckCircle2, Search, Building2, Layers } from 'lucide-react';
+import { CheckCircle2, Search, Building2, Layers, Plus, Trash2 } from 'lucide-react';
 // @ts-ignore
 import MultiSelectFilter from '../MultiSelectFilter';
-import { Company, Staff, Placement, Expense, NominalCode } from '../../types';
+import { Company, Staff, Placement, Expense, NominalCode, ReimbursementItem } from '../../types';
 import { symbolMap, MONTHS, getBusinessDaysInMonth, getCellData, calculateCommissionForRecruiter } from './utils';
 import { getUkStaffOverhead, formatOverheadTitle, WithOverheadTooltip } from './ukStaffOverheadData';
 import { FX_RATES } from '../../utils/currency';
@@ -81,6 +81,38 @@ export default function PayrollRegisterTable({
   const [reimbursementsAmountInput, setReimbursementsAmountInput] = useState('0.00');
   const [reimbursementNominalCode, setReimbursementNominalCode] = useState('');
   const [reimbursementAllocation, setReimbursementAllocation] = useState<'company' | 'staff'>('company');
+  const [reimbursementItems, setReimbursementItems] = useState<ReimbursementItem[]>([]);
+
+  const totalReimbursementsGBP = useMemo(() => {
+    return reimbursementItems.reduce((sum, item) => {
+      const amt = Number(item.amount) || 0;
+      const rate = FX_RATES[item.currency] || 1.0;
+      return sum + (amt * rate);
+    }, 0);
+  }, [reimbursementItems]);
+
+  const handleAddReimbursementItem = () => {
+    const defaultReimburseNominal = nominalCodes.find(c => c.code?.toLowerCase().includes('travel') || c.code?.toLowerCase().includes('expense') || c.code?.toLowerCase().includes('reimburse'))?.code || (nominalCodes[0]?.code || '7400 - Travel & Entertaining');
+    setReimbursementItems(prev => [
+      ...prev,
+      {
+        id: `reimb_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        description: '',
+        amount: '',
+        currency: 'GBP',
+        nominalCode: defaultReimburseNominal,
+        allocation: 'company'
+      }
+    ]);
+  };
+
+  const handleUpdateReimbursementItem = (id: string, updates: Partial<ReimbursementItem>) => {
+    setReimbursementItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+  };
+
+  const handleRemoveReimbursementItem = (id: string) => {
+    setReimbursementItems(prev => prev.filter(item => item.id !== id));
+  };
 
   const allAvailableDepts = useMemo(() => {
     const depts: string[] = [];
@@ -351,6 +383,37 @@ export default function PayrollRegisterTable({
     setReimbursementNominalCode(defaultReimburseNominal);
     setReimbursementAllocation((record?.reimbursementAllocation as 'company' | 'staff') || 'company');
 
+    let initialReimbItems: ReimbursementItem[] = [];
+    if (record?.reimbursementItems && Array.isArray(record.reimbursementItems) && record.reimbursementItems.length > 0) {
+      initialReimbItems = record.reimbursementItems.map((item: any, idx: number) => ({
+        id: item.id || `reimb_${Date.now()}_${idx}`,
+        description: item.description || '',
+        amount: item.amount !== undefined ? item.amount : '',
+        currency: item.currency || 'GBP',
+        nominalCode: item.nominalCode || defaultReimburseNominal,
+        allocation: item.allocation || 'company'
+      }));
+    } else if (record?.reimbursementsAmountEntered !== undefined && Number(record.reimbursementsAmountEntered) > 0) {
+      initialReimbItems = [{
+        id: `reimb_${Date.now()}`,
+        description: 'Staff expense reimbursement',
+        amount: record.reimbursementsAmountEntered.toString(),
+        currency: record.reimbursementsCurrency || 'GBP',
+        nominalCode: record.reimbursementNominalCode || defaultReimburseNominal,
+        allocation: (record.reimbursementAllocation as 'company' | 'staff') || 'company'
+      }];
+    } else if (cell.reimbursements && cell.reimbursements > 0) {
+      initialReimbItems = [{
+        id: `reimb_${Date.now()}`,
+        description: 'Staff expense reimbursement',
+        amount: cell.reimbursements.toString(),
+        currency: 'GBP',
+        nominalCode: defaultReimburseNominal,
+        allocation: 'company'
+      }];
+    }
+    setReimbursementItems(initialReimbItems);
+
     setLinkedExpenseId(autoExpenseId);
     setInitialLinkedExpenseId(record?.linkedExpenseId || '');
     
@@ -516,7 +579,7 @@ export default function PayrollRegisterTable({
     const empPensionVal = Number(employerPension) || 0;
     const taxNicVal = Number(employeeTaxNic) || 0;
     const pensionVal = Number(employeePension) || 0;
-    const reimbursementsVal = Number(reimbursementsInput) || 0;
+    const reimbursementsVal = totalReimbursementsGBP;
 
     const record = {
       id: `${staffMember.id}_${month}`,
@@ -526,6 +589,7 @@ export default function PayrollRegisterTable({
       basicSalary: baseVal,
       commission: commVal,
       reimbursements: reimbursementsVal,
+      reimbursementItems,
       bonus: bonusVal,
       employerNi: empNiVal,
       employerPension: empPensionVal,
@@ -535,10 +599,10 @@ export default function PayrollRegisterTable({
       linkedExpenseId: linkedExpenseId || '',
       bonusCurrency,
       bonusAmountEntered: Number(bonusAmountInput) || 0,
-      reimbursementsCurrency,
-      reimbursementsAmountEntered: Number(reimbursementsAmountInput) || 0,
-      reimbursementNominalCode,
-      reimbursementAllocation
+      reimbursementsCurrency: reimbursementItems.length === 1 ? reimbursementItems[0].currency : 'GBP',
+      reimbursementsAmountEntered: reimbursementItems.length === 1 ? (Number(reimbursementItems[0].amount) || 0) : reimbursementsVal,
+      reimbursementNominalCode: reimbursementItems.length === 1 ? reimbursementItems[0].nominalCode : (reimbursementNominalCode || ''),
+      reimbursementAllocation: reimbursementItems.length === 1 ? reimbursementItems[0].allocation : (reimbursementAllocation || 'company')
     };
 
     try {
@@ -565,12 +629,18 @@ export default function PayrollRegisterTable({
         }
       }
 
+      // Cleanup any previously booked reimbursement expenses for this staff member + month
+      const existingReimburseExpenses = expenses.filter(e => e.id.startsWith(`payroll-reimburse-${staffMember.id}-${month}`));
+      for (const exp of existingReimburseExpenses) {
+        await onDeleteExpense(exp.id);
+      }
+      await onDeleteExpense(`payroll-reimburse-${staffMember.id}-${month}`);
+
       if (!isReconciled || !bookExpense) {
         await onDeleteExpense(`payroll-salary-${staffMember.id}-${month}`);
         await onDeleteExpense(`payroll-tax-${staffMember.id}-${month}`);
         await onDeleteExpense(`payroll-pension-${staffMember.id}-${month}`);
         await onDeleteExpense(`payroll-exp-${staffMember.id}-${month}`);
-        await onDeleteExpense(`payroll-reimburse-${staffMember.id}-${month}`);
       } else {
         await onDeleteExpense(`payroll-exp-${staffMember.id}-${month}`);
 
@@ -594,25 +664,31 @@ export default function PayrollRegisterTable({
         };
         await onSaveExpense(netExp);
 
-        // 2. Separate Reimbursement Expense booked to chosen nominal code and allocated to Company
-        if (reimbursementsVal > 0) {
-          const targetReimburseNominal = reimbursementNominalCode || nominalCodes.find(c => c.code?.toLowerCase().includes('travel') || c.code?.toLowerCase().includes('expense') || c.code?.toLowerCase().includes('reimburse'))?.code || '7400 - Travel & Entertaining';
-          const isCompanyAbsorption = reimbursementAllocation === 'company';
-          const reimburseExp = {
-            id: `payroll-reimburse-${staffMember.id}-${month}`,
-            date: `${month}-28`,
-            payee: `Reimbursement: ${staffMember.fullName}`,
-            amount: reimbursementsVal,
-            currency: staffMember.currency || 'GBP',
-            nominalCode: targetReimburseNominal,
-            allocationType: (isCompanyAbsorption ? 'company' : 'staff') as const,
-            allocationTarget: isCompanyAbsorption ? [staffMember.companyId] : [staffMember.id],
-            plMonth: month,
-            notes: `Expense reimbursement for ${staffMember.fullName}. Reconciled via Group Payroll Module. Cost absorbed by: ${isCompanyAbsorption ? 'Company Overhead (Staff not burdened)' : 'Staff Member'}. ${reconcileNotes.trim()}`
-          };
-          await onSaveExpense(reimburseExp);
-        } else {
-          await onDeleteExpense(`payroll-reimburse-${staffMember.id}-${month}`);
+        // 2. Separate Reimbursement Expenses booked to individual nominal codes and allocation
+        if (reimbursementItems && reimbursementItems.length > 0) {
+          for (let idx = 0; idx < reimbursementItems.length; idx++) {
+            const item = reimbursementItems[idx];
+            const itemAmt = Number(item.amount) || 0;
+            if (itemAmt <= 0) continue;
+
+            const targetReimburseNominal = item.nominalCode || reimbursementNominalCode || nominalCodes.find(c => c.code?.toLowerCase().includes('travel') || c.code?.toLowerCase().includes('expense') || c.code?.toLowerCase().includes('reimburse'))?.code || '7400 - Travel & Entertaining';
+            const isCompanyAbsorption = item.allocation === 'company';
+            const itemDesc = item.description?.trim() ? `: ${item.description.trim()}` : '';
+
+            const reimburseExp = {
+              id: `payroll-reimburse-${staffMember.id}-${month}-${item.id || idx}`,
+              date: `${month}-28`,
+              payee: `Reimbursement${itemDesc} (${staffMember.fullName})`,
+              amount: itemAmt,
+              currency: item.currency || staffMember.currency || 'GBP',
+              nominalCode: targetReimburseNominal,
+              allocationType: (isCompanyAbsorption ? 'company' : 'staff') as const,
+              allocationTarget: isCompanyAbsorption ? [staffMember.companyId] : [staffMember.id],
+              plMonth: month,
+              notes: `Expense reimbursement for ${staffMember.fullName}${itemDesc ? ' - ' + item.description.trim() : ''}. Reconciled via Group Payroll Module. Cost absorbed by: ${isCompanyAbsorption ? 'Company Overhead (Staff not burdened)' : 'Staff Member'}. ${reconcileNotes.trim()}`
+            };
+            await onSaveExpense(reimburseExp);
+          }
         }
 
         const totalHmrcAmt = empNiVal + taxNicVal;
@@ -1806,84 +1882,172 @@ ${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}
                 )}
               </div>
 
-              <div className="form-group" style={{ marginTop: '12px' }}>
-                <label className="form-label" style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span>Reimbursements & Allowances Component</span>
-                  <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--text-secondary)' }}>Add approved expense reimbursements</span>
-                </label>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                  <input 
-                    type="number"
-                    className="form-input"
-                    value={reimbursementsAmountInput}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setReimbursementsAmountInput(val);
-                      const rate = FX_RATES[reimbursementsCurrency] || 1.0;
-                      setReimbursementsInput((Number(val) * rate).toFixed(2));
-                    }}
-                    placeholder="0.00"
-                    disabled={isRecruiter}
-                    style={{ flex: 1, padding: '10px' }}
-                  />
-                  <select
-                    className="select-filter"
-                    value={reimbursementsCurrency}
-                    onChange={(e) => {
-                      const newCur = e.target.value;
-                      setReimbursementsCurrency(newCur);
-                      const rate = FX_RATES[newCur] || 1.0;
-                      setReimbursementsInput((Number(reimbursementsAmountInput) * rate).toFixed(2));
-                    }}
-                    disabled={isRecruiter}
-                    style={{ width: '120px', padding: '10px' }}
-                  >
-                    <option value="GBP">GBP (£)</option>
-                    <option value="USD">USD ($)</option>
-                    <option value="AED">AED (AED)</option>
-                    <option value="INR">INR (₹)</option>
-                    <option value="ZAR">ZAR (R)</option>
-                  </select>
-                </div>
-                {reimbursementsCurrency !== 'GBP' && (
-                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                    Rate: 1 {reimbursementsCurrency} = £{(FX_RATES[reimbursementsCurrency] || 1.0).toFixed(4)} | <strong>GBP Equivalent: £{reimbursementsInput}</strong>
+              {/* Itemized Expense Reimbursements */}
+              <div className="form-group" style={{ marginTop: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div>
+                    <label className="form-label" style={{ marginBottom: 0, fontWeight: 700, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>Itemized Expense Reimbursements</span>
+                      {reimbursementItems.length > 0 && (
+                        <span style={{ fontSize: '11px', background: 'var(--primary-light, #e0e7ff)', color: 'var(--primary, #4f46e5)', padding: '1px 6px', borderRadius: '10px', fontWeight: 600 }}>
+                          {reimbursementItems.length} {reimbursementItems.length === 1 ? 'item' : 'items'} (Total: £{totalReimbursementsGBP.toFixed(2)})
+                        </span>
+                      )}
+                    </label>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                      Add itemized expense claims. Each claim can be assigned to its own nominal & cost absorption rule.
+                    </div>
                   </div>
-                )}
+                  {!isRecruiter && (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={handleAddReimbursementItem}
+                      style={{ fontSize: '11px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <Plus size={13} />
+                      Add Claim Item
+                    </button>
+                  )}
+                </div>
 
-                {(Number(reimbursementsAmountInput) > 0 || Number(reimbursementsInput) > 0) && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px', backgroundColor: 'var(--bg-secondary)', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                    <div>
-                      <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
-                        Nominal Code for Reimbursement:
-                      </label>
-                      <select
-                        className="select-filter"
-                        value={reimbursementNominalCode}
-                        onChange={(e) => setReimbursementNominalCode(e.target.value)}
-                        disabled={isRecruiter}
-                        style={{ width: '100%', padding: '8px', fontSize: '11px' }}
-                      >
-                        {nominalCodes.map(nc => (
-                          <option key={nc.id} value={nc.code}>{nc.code}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
-                        Cost Absorption (Who Pays?):
-                      </label>
-                      <select
-                        className="select-filter"
-                        value={reimbursementAllocation}
-                        onChange={(e) => setReimbursementAllocation(e.target.value as 'company' | 'staff')}
-                        disabled={isRecruiter}
-                        style={{ width: '100%', padding: '8px', fontSize: '11px' }}
-                      >
-                        <option value="company">🏢 Company Overhead (Staff does NOT absorb)</option>
-                        <option value="staff">👤 Staff Direct Cost (Staff absorbs in P&L)</option>
-                      </select>
-                    </div>
+                {reimbursementItems.length === 0 ? (
+                  <div style={{
+                    padding: '14px',
+                    border: '1px dashed var(--border-color)',
+                    borderRadius: '8px',
+                    textAlign: 'center',
+                    backgroundColor: 'var(--bg-secondary)',
+                    color: 'var(--text-secondary)',
+                    fontSize: '11px'
+                  }}>
+                    <span>No expense claims added for this period. Click "+ Add Claim Item" to allocate travel, client dinner, software, or office supplies.</span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {reimbursementItems.map((item, idx) => {
+                      const itemRate = FX_RATES[item.currency] || 1.0;
+                      const itemAmtNum = Number(item.amount) || 0;
+                      const itemGbpEquiv = itemAmtNum * itemRate;
+
+                      return (
+                        <div
+                          key={item.id || idx}
+                          style={{
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            padding: '10px 12px',
+                            backgroundColor: 'var(--bg-secondary)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px'
+                          }}
+                        >
+                          {/* Row 1: Description + Delete button */}
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', width: '18px' }}>
+                              #{idx + 1}
+                            </span>
+                            <input
+                              type="text"
+                              className="form-input"
+                              placeholder="Description (e.g. Client dinner, Train ticket, Office stationery)"
+                              value={item.description}
+                              onChange={(e) => handleUpdateReimbursementItem(item.id, { description: e.target.value })}
+                              disabled={isRecruiter}
+                              style={{ flex: 1, padding: '6px 10px', fontSize: '12px' }}
+                            />
+                            {!isRecruiter && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveReimbursementItem(item.id)}
+                                title="Remove claim item"
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  color: 'var(--danger, #ef4444)',
+                                  padding: '4px 6px',
+                                  display: 'flex',
+                                  alignItems: 'center'
+                                }}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Row 2: Amount + Currency */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: '8px' }}>
+                            <div>
+                              <input
+                                type="number"
+                                step="any"
+                                className="form-input"
+                                placeholder="Amount (e.g. 150.00)"
+                                value={item.amount}
+                                onChange={(e) => handleUpdateReimbursementItem(item.id, { amount: e.target.value })}
+                                disabled={isRecruiter}
+                                style={{ width: '100%', padding: '6px 10px', fontSize: '12px' }}
+                              />
+                              {item.currency !== 'GBP' && itemAmtNum > 0 && (
+                                <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                  Rate: 1 {item.currency} = £{itemRate.toFixed(4)} | <strong>£{itemGbpEquiv.toFixed(2)} GBP</strong>
+                                </div>
+                              )}
+                            </div>
+                            <select
+                              className="select-filter"
+                              value={item.currency}
+                              onChange={(e) => handleUpdateReimbursementItem(item.id, { currency: e.target.value })}
+                              disabled={isRecruiter}
+                              style={{ padding: '6px 8px', fontSize: '11px', height: '34px' }}
+                            >
+                              <option value="GBP">GBP (£)</option>
+                              <option value="USD">USD ($)</option>
+                              <option value="AED">AED (AED)</option>
+                              <option value="INR">INR (₹)</option>
+                              <option value="ZAR">ZAR (R)</option>
+                            </select>
+                          </div>
+
+                          {/* Row 3: Nominal Code + Cost Absorption */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px', paddingTop: '2px' }}>
+                            <div>
+                              <label style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>
+                                Nominal Code:
+                              </label>
+                              <select
+                                className="select-filter"
+                                value={item.nominalCode}
+                                onChange={(e) => handleUpdateReimbursementItem(item.id, { nominalCode: e.target.value })}
+                                disabled={isRecruiter}
+                                style={{ width: '100%', padding: '6px 8px', fontSize: '11px' }}
+                              >
+                                {nominalCodes.map(nc => (
+                                  <option key={nc.id} value={nc.code}>{nc.code}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>
+                                Cost Absorbed By:
+                              </label>
+                              <select
+                                className="select-filter"
+                                value={item.allocation}
+                                onChange={(e) => handleUpdateReimbursementItem(item.id, { allocation: e.target.value as 'company' | 'staff' })}
+                                disabled={isRecruiter}
+                                style={{ width: '100%', padding: '6px 8px', fontSize: '11px' }}
+                              >
+                                <option value="company">🏢 Company Overhead</option>
+                                <option value="staff">👤 Staff Direct Cost</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1962,13 +2126,13 @@ ${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)' }}>
                   <span>Net Take-Home Pay (to Recruiter):</span>
                   <span style={{ fontWeight: 600, color: 'var(--success)' }}>
-                    £{(Number(basicSalaryOverride) + Number(commissionOverride) + Number(bonusOverride) + Number(reimbursementsInput) - Number(employeeTaxNic) - Number(employeePension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    £{(Number(basicSalaryOverride) + Number(commissionOverride) + Number(bonusOverride) + totalReimbursementsGBP - Number(employeeTaxNic) - Number(employeePension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', borderTop: '1px dashed var(--border-color)', paddingTop: '4px', marginTop: '4px' }}>
                   <span>Total Cost to Company (CoC):</span>
                   <span style={{ fontWeight: 600, color: 'var(--primary)' }}>
-                    £{(Number(basicSalaryOverride) + Number(commissionOverride) + Number(bonusOverride) + Number(reimbursementsInput) + Number(employerNi) + Number(employerPension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    £{(Number(basicSalaryOverride) + Number(commissionOverride) + Number(bonusOverride) + totalReimbursementsGBP + Number(employerNi) + Number(employerPension)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>

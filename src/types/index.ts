@@ -103,6 +103,16 @@ export interface PayrollRecord {
   reimbursementsAmountEntered?: number;
   reimbursementNominalCode?: string;
   reimbursementAllocation?: 'company' | 'staff';
+  reimbursementItems?: ReimbursementItem[];
+}
+
+export interface ReimbursementItem {
+  id: string;
+  description: string;
+  amount: number | string;
+  currency: string;
+  nominalCode: string;
+  allocation: 'company' | 'staff';
 }
 
 export interface CrmClientCompany {

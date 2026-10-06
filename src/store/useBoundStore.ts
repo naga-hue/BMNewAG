@@ -40,6 +40,19 @@ interface StoreState {
   deleteCrmCandidate: (id: string) => Promise<void>;
   saveDepartmentTool: (tool: DepartmentTool) => Promise<void>;
   deleteDepartmentTool: (id: string) => Promise<void>;
+  mergeCompanyDepartments: (params: {
+    companyId: string;
+    sourceDept: string;
+    targetDept: string;
+    transferManager?: boolean;
+  }) => Promise<{
+    success: boolean;
+    updatedStaffCount: number;
+    updatedExpensesCount: number;
+    updatedToolsCount: number;
+    updatedPayrollCount: number;
+    updatedCompany: Company | null;
+  }>;
 }
 
 export const useBoundStore = create<StoreState>((set) => ({
@@ -301,5 +314,101 @@ export const useBoundStore = create<StoreState>((set) => ({
       departmentTools: state.departmentTools.filter(t => t.id !== id)
     }));
     await firebaseService.deleteDepartmentTool(id);
+  },
+  mergeCompanyDepartments: async (params) => {
+    const res = await firebaseService.mergeCompanyDepartments(params);
+    const sNorm = params.sourceDept.trim().toLowerCase();
+    const tNorm = params.targetDept.trim();
+
+    set(state => {
+      // 1. Companies
+      const nextCompanies = state.companies.map(c => {
+        if (c.id === params.companyId && res.updatedCompany) {
+          return res.updatedCompany;
+        }
+        return c;
+      });
+
+      // 2. Staff
+      const nextStaff = state.staff.map(s => {
+        if (s.companyId === params.companyId && s.department && s.department.trim().toLowerCase() === sNorm) {
+          return { ...s, department: tNorm };
+        }
+        return s;
+      });
+
+      // 3. Expenses
+      const nextExpenses = state.expenses.map(e => {
+        const isCompMatch = !e.bankCompanyId || e.bankCompanyId === params.companyId || e.recipientId === params.companyId || e.companyId === params.companyId;
+        if (!isCompMatch) return e;
+
+        let updated = false;
+        let nextTarget = e.allocationTarget;
+        if (e.allocationType === 'department') {
+          if (typeof e.allocationTarget === 'string' && e.allocationTarget.trim().toLowerCase() === sNorm) {
+            nextTarget = tNorm;
+            updated = true;
+          } else if (Array.isArray(e.allocationTarget) && e.allocationTarget.some((d: string) => d.trim().toLowerCase() === sNorm)) {
+            nextTarget = Array.from(new Set(e.allocationTarget.map((d: string) => d.trim().toLowerCase() === sNorm ? tNorm : d)));
+            updated = true;
+          }
+        }
+
+        let nextShares = e.manualAllocationShares;
+        if (e.manualAllocationShares) {
+          let sharesModified = false;
+          const shares = { ...e.manualAllocationShares };
+          let transferred = 0;
+          Object.keys(shares).forEach(k => {
+            if (k.trim().toLowerCase() === sNorm) {
+              transferred += Number(shares[k]) || 0;
+              delete shares[k];
+              sharesModified = true;
+            }
+          });
+          if (sharesModified) {
+            shares[tNorm] = (Number(shares[tNorm]) || 0) + transferred;
+            nextShares = shares;
+            updated = true;
+          }
+        }
+
+        if (updated) {
+          return { ...e, allocationTarget: nextTarget, manualAllocationShares: nextShares };
+        }
+        return e;
+      });
+
+      // 4. Department Tools
+      const nextTools = state.departmentTools.map(t => {
+        const tComps = t.companyIds || [t.companyId || 'all'];
+        if (tComps.includes('all') || tComps.includes(params.companyId)) {
+          let updated = false;
+          let nextDept = t.department;
+          let nextDepts = t.departments;
+          if (t.department && t.department.trim().toLowerCase() === sNorm) {
+            nextDept = tNorm;
+            updated = true;
+          }
+          if (Array.isArray(t.departments) && t.departments.some((d: string) => d.trim().toLowerCase() === sNorm)) {
+            nextDepts = Array.from(new Set(t.departments.map((d: string) => d.trim().toLowerCase() === sNorm ? tNorm : d)));
+            updated = true;
+          }
+          if (updated) {
+            return { ...t, department: nextDept, departments: nextDepts };
+          }
+        }
+        return t;
+      });
+
+      return {
+        companies: nextCompanies,
+        staff: nextStaff,
+        expenses: nextExpenses,
+        departmentTools: nextTools
+      };
+    });
+
+    return res;
   }
 }));

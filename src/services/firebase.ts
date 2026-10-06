@@ -25,6 +25,19 @@ export interface FirebaseServiceInterface {
   subscribeCompanies(onUpdate: (companies: Company[]) => void, fallbackData?: Company[]): () => void;
   saveCompany(company: Company): Promise<Company>;
   deleteCompany(companyId: string): Promise<boolean>;
+  mergeCompanyDepartments(params: {
+    companyId: string;
+    sourceDept: string;
+    targetDept: string;
+    transferManager?: boolean;
+  }): Promise<{
+    success: boolean;
+    updatedStaffCount: number;
+    updatedExpensesCount: number;
+    updatedToolsCount: number;
+    updatedPayrollCount: number;
+    updatedCompany: Company | null;
+  }>;
   uploadFile(companyId: string, file: File, docType: string): Promise<any>;
   deleteFile(companyId: string, docType: string, fileId: string, fileName: string): Promise<boolean>;
   subscribeStaff(onUpdate: (staff: Staff[]) => void, fallbackData?: Staff[]): () => void;
@@ -1936,5 +1949,305 @@ export const firebaseService: FirebaseServiceInterface = {
       localStorage.setItem('bm-department-tools', JSON.stringify(filtered));
       return id;
     }
+  },
+
+  async mergeCompanyDepartments({
+    companyId,
+    sourceDept,
+    targetDept,
+    transferManager = true
+  }: {
+    companyId: string;
+    sourceDept: string;
+    targetDept: string;
+    transferManager?: boolean;
+  }) {
+    const sNorm = sourceDept.trim().toLowerCase();
+    const tNorm = targetDept.trim();
+
+    let updatedStaffCount = 0;
+    let updatedExpensesCount = 0;
+    let updatedToolsCount = 0;
+    let updatedPayrollCount = 0;
+    let updatedCompany: any = null;
+
+    if (isConfigured && db) {
+      let batch = writeBatch(db);
+      let opCount = 0;
+
+      const queueOperation = async (op: () => void) => {
+        op();
+        opCount++;
+        if (opCount >= 400) {
+          await batch.commit();
+          batch = writeBatch(db);
+          opCount = 0;
+        }
+      };
+
+      // 1. Update Company Document
+      const compRef = doc(db, 'companies', companyId);
+      const compSnap = await getDocs(collection(db, 'companies'));
+      const compDoc = compSnap.docs.find(d => d.id === companyId);
+      if (compDoc) {
+        const cData = compDoc.data();
+        const currentDepts: any[] = cData.departments || [];
+        const sourceEntry = currentDepts.find((d: any) => (d.name || d).trim().toLowerCase() === sNorm);
+        let targetEntry = currentDepts.find((d: any) => (d.name || d).trim().toLowerCase() === tNorm.toLowerCase());
+
+        let targetManagerId = '';
+        if (targetEntry && typeof targetEntry === 'object' && targetEntry.managerId) {
+          targetManagerId = targetEntry.managerId;
+        } else if (transferManager && sourceEntry && typeof sourceEntry === 'object' && sourceEntry.managerId) {
+          targetManagerId = sourceEntry.managerId;
+        }
+
+        const remainingDepts = currentDepts.filter((d: any) => (d.name || d).trim().toLowerCase() !== sNorm);
+        const finalTargetObj = { name: tNorm, managerId: targetManagerId };
+        const hasTarget = remainingDepts.some((d: any) => (d.name || d).trim().toLowerCase() === tNorm.toLowerCase());
+
+        const newDepts = hasTarget
+          ? remainingDepts.map((d: any) => (d.name || d).trim().toLowerCase() === tNorm.toLowerCase() ? finalTargetObj : d)
+          : [...remainingDepts, finalTargetObj];
+
+        updatedCompany = { ...cData, id: companyId, departments: newDepts, updatedAt: new Date().toISOString() };
+        await queueOperation(() => batch.set(compRef, { departments: newDepts, updatedAt: new Date().toISOString() }, { merge: true }));
+      }
+
+      // 2. Update Staff
+      const staffSnap = await getDocs(collection(db, 'staff'));
+      for (const docSnap of staffSnap.docs) {
+        const s = docSnap.data();
+        if (s.companyId === companyId && s.department && s.department.trim().toLowerCase() === sNorm) {
+          updatedStaffCount++;
+          await queueOperation(() => batch.set(docSnap.ref, { department: tNorm, updatedAt: new Date().toISOString() }, { merge: true }));
+        }
+      }
+
+      // 3. Update Expenses
+      const expSnap = await getDocs(collection(db, 'expenses'));
+      for (const docSnap of expSnap.docs) {
+        const e = docSnap.data();
+        let expModified = false;
+        const updates: any = {};
+
+        const isCompMatch = !e.bankCompanyId || e.bankCompanyId === companyId || e.recipientId === companyId || e.companyId === companyId;
+
+        if (isCompMatch && e.allocationType === 'department') {
+          if (typeof e.allocationTarget === 'string' && e.allocationTarget.trim().toLowerCase() === sNorm) {
+            updates.allocationTarget = tNorm;
+            expModified = true;
+          } else if (Array.isArray(e.allocationTarget)) {
+            if (e.allocationTarget.some((d: string) => d.trim().toLowerCase() === sNorm)) {
+              updates.allocationTarget = Array.from(new Set(
+                e.allocationTarget.map((d: string) => d.trim().toLowerCase() === sNorm ? tNorm : d)
+              ));
+              expModified = true;
+            }
+          }
+        }
+
+        if (isCompMatch && e.manualAllocationShares) {
+          const shares = { ...e.manualAllocationShares };
+          let sharesModified = false;
+          let transferredShare = 0;
+
+          Object.keys(shares).forEach(k => {
+            if (k.trim().toLowerCase() === sNorm) {
+              transferredShare += Number(shares[k]) || 0;
+              delete shares[k];
+              sharesModified = true;
+            }
+          });
+
+          if (sharesModified) {
+            shares[tNorm] = (Number(shares[tNorm]) || 0) + transferredShare;
+            updates.manualAllocationShares = shares;
+            expModified = true;
+          }
+        }
+
+        if (expModified) {
+          updatedExpensesCount++;
+          await queueOperation(() => batch.set(docSnap.ref, updates, { merge: true }));
+        }
+      }
+
+      // 4. Update Department Tools
+      const toolsSnap = await getDocs(collection(db, 'departmentTools'));
+      for (const docSnap of toolsSnap.docs) {
+        const t = docSnap.data();
+        const tComps = t.companyIds || [t.companyId || 'all'];
+        if (tComps.includes('all') || tComps.includes(companyId)) {
+          let toolModified = false;
+          const updates: any = {};
+
+          if (t.department && t.department.trim().toLowerCase() === sNorm) {
+            updates.department = tNorm;
+            toolModified = true;
+          }
+
+          if (Array.isArray(t.departments) && t.departments.some((d: string) => d.trim().toLowerCase() === sNorm)) {
+            updates.departments = Array.from(new Set(
+              t.departments.map((d: string) => d.trim().toLowerCase() === sNorm ? tNorm : d)
+            ));
+            toolModified = true;
+          }
+
+          if (toolModified) {
+            updatedToolsCount++;
+            updates.updatedAt = new Date().toISOString();
+            await queueOperation(() => batch.set(docSnap.ref, updates, { merge: true }));
+          }
+        }
+      }
+
+      // 5. Update Payroll records
+      const payrollSnap = await getDocs(collection(db, 'payroll'));
+      for (const docSnap of payrollSnap.docs) {
+        const r = docSnap.data();
+        let payrollModified = false;
+        const updates: any = {};
+
+        if (r.reimbursementDepartment && r.reimbursementDepartment.trim().toLowerCase() === sNorm) {
+          updates.reimbursementDepartment = tNorm;
+          payrollModified = true;
+        }
+
+        if (Array.isArray(r.reimbursementItems)) {
+          let itemsModified = false;
+          const newItems = r.reimbursementItems.map((item: any) => {
+            if (item.department && item.department.trim().toLowerCase() === sNorm) {
+              itemsModified = true;
+              return { ...item, department: tNorm };
+            }
+            return item;
+          });
+
+          if (itemsModified) {
+            updates.reimbursementItems = newItems;
+            payrollModified = true;
+          }
+        }
+
+        if (payrollModified) {
+          updatedPayrollCount++;
+          await queueOperation(() => batch.set(docSnap.ref, updates, { merge: true }));
+        }
+      }
+
+      // 6. Update Placements
+      const placementsSnap = await getDocs(collection(db, 'placements'));
+      for (const docSnap of placementsSnap.docs) {
+        const p = docSnap.data();
+        if (p.department && p.department.trim().toLowerCase() === sNorm) {
+          await queueOperation(() => batch.set(docSnap.ref, { department: tNorm, updatedAt: new Date().toISOString() }, { merge: true }));
+        }
+      }
+
+      if (opCount > 0) {
+        await batch.commit();
+      }
+    }
+
+    // Always synchronize localStorage caches
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const cLocal = localStorage.getItem('bm-companies');
+        if (cLocal) {
+          const list = JSON.parse(cLocal);
+          const idx = list.findIndex((c: any) => c.id === companyId);
+          if (idx > -1) {
+            const currentDepts: any[] = list[idx].departments || [];
+            const remainingDepts = currentDepts.filter((d: any) => (d.name || d).trim().toLowerCase() !== sNorm);
+            const sourceEntry = currentDepts.find((d: any) => (d.name || d).trim().toLowerCase() === sNorm);
+            let targetEntry = currentDepts.find((d: any) => (d.name || d).trim().toLowerCase() === tNorm.toLowerCase());
+
+            let targetManagerId = (targetEntry && typeof targetEntry === 'object' && targetEntry.managerId)
+              ? targetEntry.managerId
+              : ((transferManager && sourceEntry && typeof sourceEntry === 'object' && sourceEntry.managerId) ? sourceEntry.managerId : '');
+
+            const finalTargetObj = { name: tNorm, managerId: targetManagerId };
+            const hasTarget = remainingDepts.some((d: any) => (d.name || d).trim().toLowerCase() === tNorm.toLowerCase());
+            const newDepts = hasTarget
+              ? remainingDepts.map((d: any) => (d.name || d).trim().toLowerCase() === tNorm.toLowerCase() ? finalTargetObj : d)
+              : [...remainingDepts, finalTargetObj];
+
+            list[idx].departments = newDepts;
+            list[idx].updatedAt = new Date().toISOString();
+            if (!updatedCompany) updatedCompany = list[idx];
+            localStorage.setItem('bm-companies', JSON.stringify(list));
+          }
+        }
+
+        const sLocal = localStorage.getItem('bm-staff');
+        if (sLocal) {
+          const sList = JSON.parse(sLocal);
+          let modified = false;
+          sList.forEach((s: any) => {
+            if (s.companyId === companyId && s.department && s.department.trim().toLowerCase() === sNorm) {
+              s.department = tNorm;
+              modified = true;
+              if (!isConfigured || !db) updatedStaffCount++;
+            }
+          });
+          if (modified) localStorage.setItem('bm-staff', JSON.stringify(sList));
+        }
+
+        const eLocal = localStorage.getItem('bm-expenses');
+        if (eLocal) {
+          const eList = JSON.parse(eLocal);
+          let modified = false;
+          eList.forEach((e: any) => {
+            const isCompMatch = !e.bankCompanyId || e.bankCompanyId === companyId || e.recipientId === companyId || e.companyId === companyId;
+            if (isCompMatch && e.allocationType === 'department') {
+              if (typeof e.allocationTarget === 'string' && e.allocationTarget.trim().toLowerCase() === sNorm) {
+                e.allocationTarget = tNorm;
+                modified = true;
+                if (!isConfigured || !db) updatedExpensesCount++;
+              } else if (Array.isArray(e.allocationTarget) && e.allocationTarget.some((d: string) => d.trim().toLowerCase() === sNorm)) {
+                e.allocationTarget = Array.from(new Set(e.allocationTarget.map((d: string) => d.trim().toLowerCase() === sNorm ? tNorm : d)));
+                modified = true;
+                if (!isConfigured || !db) updatedExpensesCount++;
+              }
+            }
+          });
+          if (modified) localStorage.setItem('bm-expenses', JSON.stringify(eList));
+        }
+
+        const tLocal = localStorage.getItem('bm-department-tools');
+        if (tLocal) {
+          const tList = JSON.parse(tLocal);
+          let modified = false;
+          tList.forEach((t: any) => {
+            const tComps = t.companyIds || [t.companyId || 'all'];
+            if (tComps.includes('all') || tComps.includes(companyId)) {
+              if (t.department && t.department.trim().toLowerCase() === sNorm) {
+                t.department = tNorm;
+                modified = true;
+                if (!isConfigured || !db) updatedToolsCount++;
+              }
+              if (Array.isArray(t.departments) && t.departments.some((d: string) => d.trim().toLowerCase() === sNorm)) {
+                t.departments = Array.from(new Set(t.departments.map((d: string) => d.trim().toLowerCase() === sNorm ? tNorm : d)));
+                modified = true;
+                if (!isConfigured || !db) updatedToolsCount++;
+              }
+            }
+          });
+          if (modified) localStorage.setItem('bm-department-tools', JSON.stringify(tList));
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to sync localStorage during mergeCompanyDepartments:", e);
+    }
+
+    return {
+      success: true,
+      updatedStaffCount,
+      updatedExpensesCount,
+      updatedToolsCount,
+      updatedPayrollCount,
+      updatedCompany
+    };
   }
 };

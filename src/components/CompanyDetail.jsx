@@ -18,15 +18,18 @@ import {
   Square,
   PlusCircle,
   Clock,
-  Wallet
+  Wallet,
+  GitMerge
 } from 'lucide-react';
 import { firebaseService } from '../services/firebase';
+import MergeDepartmentsModal from './MergeDepartmentsModal';
 
 export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompany, onShowToast, staff = [], placements = [], expenses = [] }) {
   const [activeTab, setActiveTab] = useState('profile'); // profile or compliance
   const [uploadDocType, setUploadDocType] = useState('registration');
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [showMergeDeptModal, setShowMergeDeptModal] = useState(false);
 
   // New compliance task form state
   const [taskName, setTaskName] = useState('');
@@ -947,8 +950,33 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
 
               {/* Departments Management */}
               <div className="detail-section">
-                <div className="section-title">
-                  <ClipboardList size={16} /> Business Units (Departments)
+                <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ClipboardList size={16} /> Business Units (Departments)
+                  </div>
+                  {(company.departments || []).length >= 2 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowMergeDeptModal(true)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        padding: '3px 10px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        borderRadius: '6px',
+                        backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                        color: 'var(--primary)',
+                        border: '1px solid rgba(99, 102, 241, 0.3)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                      title="Merge two departments and reallocate all staff, expenses, tools, and records"
+                    >
+                      <GitMerge size={12} /> Merge Departments
+                    </button>
+                  )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1883,6 +1911,17 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
         </div>
 
       </div>
+
+      {/* Merge Departments Modal */}
+      {showMergeDeptModal && (
+        <MergeDepartmentsModal
+          isOpen={showMergeDeptModal}
+          onClose={() => setShowMergeDeptModal(false)}
+          company={company}
+          onShowToast={onShowToast}
+          onCompanyUpdated={onUpdateCompany}
+        />
+      )}
     </div>
   );
 }

@@ -1821,6 +1821,93 @@ export default function ReportsDashboard({
         ))}
       </div>
 
+      {/* Dynamic Global Filters Toolbar (Visible across all reports tabs) */}
+      <div style={{ padding: '16px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'visible', position: 'relative', zIndex: 100 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Entity / Department:</span>
+            {isManager ? (
+              <div style={{ padding: '6px 12px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: '12px', fontWeight: 600, color: 'var(--accent)' }}>
+                🏢 Department: {userDept} (Locked)
+              </div>
+            ) : (() => {
+              const selectableCompanies = currentUser?.permissions?.role === 'admin'
+                ? companies
+                : companies.filter(c => c.id === currentUser?.companyId);
+              return (
+                <CompanyDeptTreeFilter
+                  companies={selectableCompanies}
+                  staff={staff}
+                  selectedCompanyIds={companyFilter}
+                  selectedDepartments={deptFilter}
+                  onChange={({ companyIds, departments }) => {
+                    setCompanyFilter(companyIds);
+                    setDeptFilter(departments);
+                  }}
+                />
+              );
+            })()}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Start Period:</span>
+            <input 
+              type="month"
+              className="select-filter"
+              value={startMonth}
+              onChange={(e) => setStartMonth(e.target.value)}
+              style={{ padding: '5px' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>End Period:</span>
+            <input 
+              type="month"
+              className="select-filter"
+              value={endMonth}
+              onChange={(e) => setEndMonth(e.target.value)}
+              style={{ padding: '5px' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Overhead Nominals:</span>
+              {excludedNominalCodes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleIncludeAllNominals}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--primary)',
+                    fontSize: '10px',
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    padding: 0
+                  }}
+                >
+                  Reset All
+                </button>
+              )}
+            </div>
+            <MultiSelectFilter
+              options={[
+                { value: 'all', label: 'All Nominals Included' },
+                ...allAvailableNominals.map(n => ({ value: n, label: n }))
+              ]}
+              selectedValues={selectedNominalValues}
+              onChange={handleNominalFilterChange}
+              placeholder="All Nominals Included"
+              style={{ minWidth: '190px' }}
+            />
+          </div>
+
+        </div>
+      </div>
+
       {/* ==============================================================
           TAB: DEPARTMENT TEAM & TOOL COSTS
           ============================================================== */}
@@ -1834,98 +1921,21 @@ export default function ReportsDashboard({
           holidays={holidays}
           placements={placements}
           commissionPolicies={commissionPolicies}
+          nominalCodes={nominalCodes}
+          companyFilter={companyFilter}
+          deptFilter={deptFilter}
+          startMonth={startMonth}
+          endMonth={endMonth}
+          monthsList={monthsList}
+          excludedNominalCodes={excludedNominalCodes}
+          isNominalExcluded={isNominalExcluded}
+          onToggleNominalInclusion={handleToggleNominalInclusion}
+          getFilteredMonthlyData={getFilteredMonthlyData}
+          reconciledCutoffMonth={reconciledCutoffMonth}
+          reconciledCutoffDate={reconciledCutoffDate}
           currentUser={currentUser}
           onShowToast={onShowToast}
         />
-      )}
-
-      {/* Dynamic Global Filters Toolbar (Hidden on Team & Tool Costs tab) */}
-      {activeTab !== 'team_cost' && (
-        <div style={{ padding: '16px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'visible', position: 'relative', zIndex: 100 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Entity / Department:</span>
-              {isManager ? (
-                <div style={{ padding: '6px 12px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontSize: '12px', fontWeight: 600, color: 'var(--accent)' }}>
-                  🏢 Department: {userDept} (Locked)
-                </div>
-              ) : (() => {
-                const selectableCompanies = currentUser?.permissions?.role === 'admin'
-                  ? companies
-                  : companies.filter(c => c.id === currentUser?.companyId);
-                return (
-                  <CompanyDeptTreeFilter
-                    companies={selectableCompanies}
-                    staff={staff}
-                    selectedCompanyIds={companyFilter}
-                    selectedDepartments={deptFilter}
-                    onChange={({ companyIds, departments }) => {
-                      setCompanyFilter(companyIds);
-                      setDeptFilter(departments);
-                    }}
-                  />
-                );
-              })()}
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Start Period:</span>
-              <input 
-                type="month"
-                className="select-filter"
-                value={startMonth}
-                onChange={(e) => setStartMonth(e.target.value)}
-                style={{ padding: '5px' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>End Period:</span>
-              <input 
-                type="month"
-                className="select-filter"
-                value={endMonth}
-                onChange={(e) => setEndMonth(e.target.value)}
-                style={{ padding: '5px' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Overhead Nominals:</span>
-                {excludedNominalCodes.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleIncludeAllNominals}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--primary)',
-                      fontSize: '10px',
-                      cursor: 'pointer',
-                      textDecoration: 'underline',
-                      padding: 0
-                    }}
-                  >
-                    Reset All
-                  </button>
-                )}
-              </div>
-              <MultiSelectFilter
-                options={[
-                  { value: 'all', label: 'All Nominals Included' },
-                  ...allAvailableNominals.map(n => ({ value: n, label: n }))
-                ]}
-                selectedValues={selectedNominalValues}
-                onChange={handleNominalFilterChange}
-                placeholder="All Nominals Included"
-                style={{ minWidth: '190px' }}
-              />
-            </div>
-
-          </div>
-        </div>
       )}
 
       {/* ==============================================================

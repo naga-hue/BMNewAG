@@ -7,19 +7,19 @@ import {
   Plus, 
   Edit2, 
   Trash2, 
-  Download, 
+  FileSpreadsheet, 
+  Printer, 
   HelpCircle, 
   ChevronDown, 
-  ChevronUp, 
-  CheckCircle2, 
-  Layers, 
+  ChevronRight, 
   Building2, 
   DollarSign, 
-  ShieldAlert, 
-  Calendar 
+  Calendar,
+  Layers,
+  Filter
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Company, Staff, Placement, PayrollRecord, DepartmentTool } from '../../types';
+import { Company, Staff, Placement, PayrollRecord, DepartmentTool, NominalCode } from '../../types';
 import { useBoundStore } from '../../store/useBoundStore';
 import { getCellData } from '../payroll/utils';
 import { toGBP } from '../../utils/currency';
@@ -33,20 +33,21 @@ interface DepartmentTeamCostTabProps {
   holidays: any[];
   placements: Placement[];
   commissionPolicies: any[];
+  nominalCodes?: NominalCode[];
+  companyFilter?: string[];
+  deptFilter?: string[];
+  startMonth?: string;
+  endMonth?: string;
+  monthsList?: string[];
+  excludedNominalCodes?: string[];
+  isNominalExcluded?: (code: string) => boolean;
+  onToggleNominalInclusion?: (code: string) => void;
+  getFilteredMonthlyData?: (monthKey: string) => any;
+  reconciledCutoffMonth?: string;
+  reconciledCutoffDate?: string;
   currentUser?: any;
   onShowToast?: (msg: string, type?: string) => void;
 }
-
-const MONTH_KEYS_2026 = [
-  '2026-01', '2026-02', '2026-03', '2026-04',
-  '2026-05', '2026-06', '2026-07', '2026-08',
-  '2026-09', '2026-10', '2026-11', '2026-12'
-];
-
-const MONTH_NAMES = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-];
 
 const formatGBP = (val: number): string => {
   return '£' + Math.round(val || 0).toLocaleString();
@@ -54,6 +55,14 @@ const formatGBP = (val: number): string => {
 
 const formatGBPExact = (val: number): string => {
   return '£' + (Number(val) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+const formatMonthLabel = (mKey: string): string => {
+  try {
+    return new Date(mKey + '-02').toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+  } catch {
+    return mKey;
+  }
 };
 
 // Helper to determine if a staff member was active during a given month
@@ -70,14 +79,30 @@ const isStaffActiveInMonth = (s: Staff, monthKey: string, cellTotal: number): bo
 };
 
 export default function DepartmentTeamCostTab({
-  companies,
-  staff,
-  payrollRecords,
-  payrollPolicies,
-  leaveRequests,
-  holidays,
-  placements,
-  commissionPolicies,
+  companies = [],
+  staff = [],
+  payrollRecords = [],
+  payrollPolicies = [],
+  leaveRequests = [],
+  holidays = [],
+  placements = [],
+  commissionPolicies = [],
+  nominalCodes = [],
+  companyFilter = ['all'],
+  deptFilter = ['all'],
+  startMonth = '2026-01',
+  endMonth = '2026-12',
+  monthsList = [
+    '2026-01', '2026-02', '2026-03', '2026-04',
+    '2026-05', '2026-06', '2026-07', '2026-08',
+    '2026-09', '2026-10', '2026-11', '2026-12'
+  ],
+  excludedNominalCodes = [],
+  isNominalExcluded = () => false,
+  onToggleNominalInclusion,
+  getFilteredMonthlyData,
+  reconciledCutoffMonth = '2026-08',
+  reconciledCutoffDate = '2026-08-31',
   currentUser,
   onShowToast
 }: DepartmentTeamCostTabProps) {
@@ -86,31 +111,17 @@ export default function DepartmentTeamCostTab({
   const isManager = currentUser?.permissions?.role === 'manager';
   const managerDept = currentUser?.department || staff.find(s => s.id === currentUser?.id)?.department;
 
-  // Extract distinct departments from staff roster
-  const allDepartments = useMemo(() => {
-    const depts = new Set<string>();
-    staff.forEach(s => {
-      if (s.department && s.department.trim()) {
-        depts.add(s.department.trim());
-      }
-    });
-    return Array.from(depts).sort();
-  }, [staff]);
-
-  // Selected Department Filter
-  const [selectedDept, setSelectedDept] = useState<string>(() => {
-    if (isManager && managerDept) {
-      return managerDept;
-    }
-    return allDepartments[0] || 'Civils';
-  });
-
-  const [selectedYear, setSelectedYear] = useState<string>('2026');
+  // View state toggles (matching P&L UI)
+  const [expandedTeam, setExpandedTeam] = useState<boolean>(true);
+  const [expandedTools, setExpandedTools] = useState<boolean>(true);
+  const [expandedNominals, setExpandedNominals] = useState<boolean>(true);
+  const [hideZeroNominals, setHideZeroNominals] = useState<boolean>(true);
+  const [showDashboard, setShowDashboard] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
+
+  // Tool Modal state
   const [showToolModal, setShowToolModal] = useState<boolean>(false);
   const [editingTool, setEditingTool] = useState<DepartmentTool | null>(null);
-
-  // Form State for Add / Edit Tool
   const [toolForm, setToolForm] = useState<{
     id?: string;
     name: string;
@@ -125,25 +136,33 @@ export default function DepartmentTeamCostTab({
     notes: string;
   }>({
     name: '',
-    department: selectedDept,
-    licenseCostPerSeat: 0,
+    department: (!deptFilter.includes('all') && deptFilter.length === 1) ? deptFilter[0] : (managerDept || 'Civils'),
+    licenseCostPerSeat: 45,
     currency: 'GBP',
     billingFrequency: 'monthly',
-    baselineCommittedSeats: 1,
-    contractStartDate: '2026-01-01',
-    renewalDate: '2026-12-31',
+    baselineCommittedSeats: 5,
+    contractStartDate: `${startMonth}-01`,
+    renewalDate: `${endMonth}-31`,
     vendorName: '',
     notes: ''
   });
 
-  const monthsList = useMemo(() => {
-    return MONTH_KEYS_2026.map(m => m.replace('2026', selectedYear));
-  }, [selectedYear]);
+  // Extract distinct departments from staff roster for tool assignments
+  const allDepartments = useMemo(() => {
+    const depts = new Set<string>();
+    staff.forEach(s => {
+      if (s.department && s.department.trim()) {
+        depts.add(s.department.trim());
+      }
+    });
+    return Array.from(depts).sort();
+  }, [staff]);
 
-  // Filter staff by department
+  // Filter staff by company and department filters
   const filteredStaff = useMemo(() => {
     return staff.filter(s => {
-      if (selectedDept !== 'all' && s.department !== selectedDept) return false;
+      if (!companyFilter.includes('all') && !companyFilter.includes(s.companyId)) return false;
+      if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) return false;
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
         const matchesName = (s.fullName || '').toLowerCase().includes(q);
@@ -152,7 +171,7 @@ export default function DepartmentTeamCostTab({
       }
       return true;
     });
-  }, [staff, selectedDept, searchTerm]);
+  }, [staff, companyFilter, deptFilter, searchTerm]);
 
   // Calculate monthly staff remuneration cells (ex-reimbursements)
   // Maps staffId -> monthKey -> cellData
@@ -181,7 +200,7 @@ export default function DepartmentTeamCostTab({
     return matrix;
   }, [filteredStaff, monthsList, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies]);
 
-  // Monthly active headcount for the department
+  // Monthly active headcount for the department / filtered team
   const monthlyHeadcount = useMemo(() => {
     const counts: Record<string, number> = {};
 
@@ -200,17 +219,15 @@ export default function DepartmentTeamCostTab({
     return counts;
   }, [monthsList, filteredStaff, staffMonthlyData]);
 
-  // Filter tools applicable to this department
+  // Filter tools applicable to current department selection
   const relevantTools = useMemo(() => {
     return departmentTools.filter(t => {
-      if (selectedDept === 'all') return true;
-      return t.department === selectedDept || t.department === 'all';
+      if (deptFilter.includes('all')) return true;
+      return deptFilter.includes(t.department) || t.department === 'all';
     });
-  }, [departmentTools, selectedDept]);
+  }, [departmentTools, deptFilter]);
 
   // High-Water Mark Ratchet Engine for Software Tools
-  // For each tool and month:
-  // committedSeats = Math.max(baselineCommittedSeats, peakHeadcountUpToMonth)
   const toolRatchetData = useMemo(() => {
     return relevantTools.map(tool => {
       const baseline = Number(tool.baselineCommittedSeats) || 0;
@@ -225,13 +242,13 @@ export default function DepartmentTeamCostTab({
       }> = {};
 
       let peakSoFar = baseline;
-      let annualTotalCost = 0;
+      let periodTotalCost = 0;
+      let ytvCost = 0;
 
-      monthsList.forEach((m, idx) => {
+      monthsList.forEach((m) => {
         // Headcount for this tool's scope
         let activeHeadcountForTool = 0;
         if (tool.department === 'all') {
-          // If tool is company-wide/shared, calculate across all active staff
           activeHeadcountForTool = staff.filter(s => {
             const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
             return isStaffActiveInMonth(s, m, cell.total);
@@ -253,7 +270,11 @@ export default function DepartmentTeamCostTab({
 
         const unutilized = Math.max(0, committed - activeHeadcountForTool);
         const cost = committed * unitCostGBP;
-        annualTotalCost += cost;
+        periodTotalCost += cost;
+
+        if (m <= reconciledCutoffMonth) {
+          ytvCost += cost;
+        }
 
         monthlyDetails[m] = {
           activeSeats: activeHeadcountForTool,
@@ -268,15 +289,17 @@ export default function DepartmentTeamCostTab({
         tool,
         unitCostGBP,
         monthlyDetails,
-        annualTotalCost
+        periodTotalCost,
+        ytvCost
       };
     });
-  }, [relevantTools, monthsList, staff, monthlyHeadcount, payrollRecords, payrollPolicies, leaveRequests, holidays, companies, placements, commissionPolicies]);
+  }, [relevantTools, monthsList, staff, monthlyHeadcount, payrollRecords, payrollPolicies, leaveRequests, holidays, companies, placements, commissionPolicies, reconciledCutoffMonth]);
 
   // Aggregate Remuneration Totals across Months
   const staffRemunerationTotals = useMemo(() => {
     const monthlySum: Record<string, number> = {};
     let grandTotal = 0;
+    let ytvTotal = 0;
 
     monthsList.forEach(m => {
       let mSum = 0;
@@ -287,15 +310,19 @@ export default function DepartmentTeamCostTab({
       });
       monthlySum[m] = mSum;
       grandTotal += mSum;
+      if (m <= reconciledCutoffMonth) {
+        ytvTotal += mSum;
+      }
     });
 
-    return { monthlySum, grandTotal };
-  }, [monthsList, filteredStaff, staffMonthlyData]);
+    return { monthlySum, grandTotal, ytvTotal };
+  }, [monthsList, filteredStaff, staffMonthlyData, reconciledCutoffMonth]);
 
   // Aggregate Software Tools Totals across Months
   const toolTotals = useMemo(() => {
     const monthlySum: Record<string, number> = {};
     let grandTotal = 0;
+    let ytvTotal = 0;
 
     monthsList.forEach(m => {
       let mSum = 0;
@@ -304,23 +331,80 @@ export default function DepartmentTeamCostTab({
       });
       monthlySum[m] = mSum;
       grandTotal += mSum;
+      if (m <= reconciledCutoffMonth) {
+        ytvTotal += mSum;
+      }
     });
 
-    return { monthlySum, grandTotal };
-  }, [monthsList, toolRatchetData]);
+    return { monthlySum, grandTotal, ytvTotal };
+  }, [monthsList, toolRatchetData, reconciledCutoffMonth]);
 
-  // Combined Department Costs (Staff Remuneration + Tools)
+  // Fetch P&L monthly nominal data using getFilteredMonthlyData
+  const pnlMonthlyData = useMemo(() => {
+    if (!getFilteredMonthlyData) return [];
+    return monthsList.map(m => getFilteredMonthlyData(m));
+  }, [monthsList, getFilteredMonthlyData]);
+
+  // Extract all distinct nominal codes matching filters
+  const nominalCodeKeys = useMemo(() => {
+    const allCodes = Array.from(new Set(
+      pnlMonthlyData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
+    )).filter(c => !c.startsWith('__'));
+
+    if (hideZeroNominals) {
+      return allCodes.filter(c => {
+        const total = pnlMonthlyData.reduce((acc, r) => acc + (r.nominalBreakdown?.[c] || 0), 0);
+        return total !== 0;
+      }).sort();
+    }
+
+    return allCodes.sort();
+  }, [pnlMonthlyData, hideZeroNominals]);
+
+  // Aggregate Department Overheads & Operational Nominals
+  const nominalTotals = useMemo(() => {
+    const monthlySum: Record<string, number> = {};
+    let grandTotal = 0;
+    let ytvTotal = 0;
+
+    monthsList.forEach((m, idx) => {
+      const row = pnlMonthlyData[idx];
+      let mSum = 0;
+
+      nominalCodeKeys.forEach(code => {
+        if (!isNominalExcluded(code)) {
+          mSum += row?.nominalBreakdown?.[code] || 0;
+        }
+      });
+
+      monthlySum[m] = mSum;
+      grandTotal += mSum;
+      if (m <= reconciledCutoffMonth) {
+        ytvTotal += mSum;
+      }
+    });
+
+    return { monthlySum, grandTotal, ytvTotal };
+  }, [monthsList, pnlMonthlyData, nominalCodeKeys, isNominalExcluded, reconciledCutoffMonth]);
+
+  // Combined Department Operating Costs (Staff Remuneration + Tools + Nominals)
   const combinedDepartmentTotals = useMemo(() => {
     const monthlySum: Record<string, number> = {};
     const avgCostPerHead: Record<string, number> = {};
     let grandTotal = 0;
+    let ytvTotal = 0;
 
     monthsList.forEach(m => {
       const staffCost = staffRemunerationTotals.monthlySum[m] || 0;
       const toolCost = toolTotals.monthlySum[m] || 0;
-      const total = staffCost + toolCost;
+      const nominalCost = nominalTotals.monthlySum[m] || 0;
+      const total = staffCost + toolCost + nominalCost;
+
       monthlySum[m] = total;
       grandTotal += total;
+      if (m <= reconciledCutoffMonth) {
+        ytvTotal += total;
+      }
 
       const hc = monthlyHeadcount[m] || 0;
       avgCostPerHead[m] = hc > 0 ? total / hc : 0;
@@ -333,20 +417,21 @@ export default function DepartmentTeamCostTab({
       monthlySum,
       avgCostPerHead,
       grandTotal,
+      ytvTotal,
       avgHeadcount,
       overallAvgCostPerHead
     };
-  }, [monthsList, staffRemunerationTotals, toolTotals, monthlyHeadcount]);
+  }, [monthsList, staffRemunerationTotals, toolTotals, nominalTotals, monthlyHeadcount, reconciledCutoffMonth]);
 
-  // Total unutilized seats across all department tools right now (latest active month)
+  // Total unutilized seats across all department tools (latest cutoff month)
   const unutilizedStats = useMemo(() => {
-    const latestMonth = '2026-09';
+    const targetMonth = reconciledCutoffMonth || monthsList[0];
     let totalCommitted = 0;
     let totalActive = 0;
     let totalWastedCost = 0;
 
     toolRatchetData.forEach(t => {
-      const d = t.monthlyDetails[latestMonth];
+      const d = t.monthlyDetails[targetMonth];
       if (d) {
         totalCommitted += d.committedSeats;
         totalActive += d.activeSeats;
@@ -360,20 +445,20 @@ export default function DepartmentTeamCostTab({
       spareSeats: Math.max(0, totalCommitted - totalActive),
       totalWastedCost
     };
-  }, [toolRatchetData]);
+  }, [toolRatchetData, reconciledCutoffMonth, monthsList]);
 
   // Handle Open Tool Modal
   const handleOpenAddTool = () => {
     setEditingTool(null);
     setToolForm({
       name: '',
-      department: selectedDept === 'all' ? (allDepartments[0] || 'Civils') : selectedDept,
+      department: (!deptFilter.includes('all') && deptFilter.length === 1) ? deptFilter[0] : (managerDept || 'Civils'),
       licenseCostPerSeat: 45,
       currency: 'GBP',
       billingFrequency: 'monthly',
-      baselineCommittedSeats: monthlyHeadcount['2026-01'] || 5,
-      contractStartDate: `${selectedYear}-01-01`,
-      renewalDate: `${selectedYear}-12-31`,
+      baselineCommittedSeats: monthlyHeadcount[monthsList[0]] || 5,
+      contractStartDate: `${startMonth}-01`,
+      renewalDate: `${endMonth}-31`,
       vendorName: '',
       notes: ''
     });
@@ -390,8 +475,8 @@ export default function DepartmentTeamCostTab({
       currency: tool.currency || 'GBP',
       billingFrequency: tool.billingFrequency || 'monthly',
       baselineCommittedSeats: tool.baselineCommittedSeats || 1,
-      contractStartDate: tool.contractStartDate || `${selectedYear}-01-01`,
-      renewalDate: tool.renewalDate || `${selectedYear}-12-31`,
+      contractStartDate: tool.contractStartDate || `${startMonth}-01`,
+      renewalDate: tool.renewalDate || `${endMonth}-31`,
       vendorName: tool.vendorName || '',
       notes: tool.notes || ''
     });
@@ -450,35 +535,49 @@ export default function DepartmentTeamCostTab({
     try {
       const wb = XLSX.utils.book_new();
 
+      const deptLabel = deptFilter.includes('all') ? 'All Departments' : deptFilter.join(', ');
+      const monthHeaders = monthsList.map(m => formatMonthLabel(m));
+
       // 1. Department Consolidated Summary Sheet
       const summaryRows = [
-        ['HUMRES BUSINESS MANAGEMENT - DEPARTMENT TEAM & TOOL COSTS'],
-        [`Department: ${selectedDept.toUpperCase()}`, `Year: ${selectedYear}`, `Exported on: ${new Date().toLocaleDateString()}`],
+        ['HUMRES BUSINESS MANAGEMENT - DEPARTMENT TEAM & TOOL COSTS STATEMENT'],
+        [`Department(s): ${deptLabel}`, `Period Range: ${startMonth} to ${endMonth}`, `Exported on: ${new Date().toLocaleDateString('en-GB')}`],
         [],
-        ['Metric', ...MONTH_NAMES, 'Full Year Total'],
+        ['Metric / Account Line Item (GBP)', ...monthHeaders, 'YTV (Reconciled)', 'Period Total'],
         [
           'Active Team Headcount',
           ...monthsList.map(m => monthlyHeadcount[m] || 0),
+          '—',
           Math.round(combinedDepartmentTotals.avgHeadcount) + ' (Avg)'
         ],
         [
-          'Staff Remuneration Paid (£)',
-          ...monthsList.map(m => staffRemunerationTotals.monthlySum[m] || 0),
-          staffRemunerationTotals.grandTotal
+          '1. Staff Remuneration Paid (Ex-Reimbursements)',
+          ...monthsList.map(m => Math.round(staffRemunerationTotals.monthlySum[m] || 0)),
+          Math.round(staffRemunerationTotals.ytvTotal),
+          Math.round(staffRemunerationTotals.grandTotal)
         ],
         [
-          'Software & Tool Licenses (£)',
-          ...monthsList.map(m => toolTotals.monthlySum[m] || 0),
-          toolTotals.grandTotal
+          '2. Software & Tool Licenses (Contract Ratchet)',
+          ...monthsList.map(m => Math.round(toolTotals.monthlySum[m] || 0)),
+          Math.round(toolTotals.ytvTotal),
+          Math.round(toolTotals.grandTotal)
         ],
         [
-          'Total Department Operating Cost (£)',
-          ...monthsList.map(m => combinedDepartmentTotals.monthlySum[m] || 0),
-          combinedDepartmentTotals.grandTotal
+          '3. Department Overheads & Operational SaaS (Nominals)',
+          ...monthsList.map(m => Math.round(nominalTotals.monthlySum[m] || 0)),
+          Math.round(nominalTotals.ytvTotal),
+          Math.round(nominalTotals.grandTotal)
         ],
         [
-          'Average Cost per Recruiter (£)',
+          'GRAND TOTAL DEPARTMENT OPERATING COST',
+          ...monthsList.map(m => Math.round(combinedDepartmentTotals.monthlySum[m] || 0)),
+          Math.round(combinedDepartmentTotals.ytvTotal),
+          Math.round(combinedDepartmentTotals.grandTotal)
+        ],
+        [
+          'Average Cost per Recruiter / Team Member',
           ...monthsList.map(m => Math.round(combinedDepartmentTotals.avgCostPerHead[m] || 0)),
+          '—',
           Math.round(combinedDepartmentTotals.overallAvgCostPerHead)
         ]
       ];
@@ -489,16 +588,18 @@ export default function DepartmentTeamCostTab({
       // 2. Staff Remuneration Sheet
       const staffRows = [
         ['TEAM REMUNERATION MATRIX (ACTUAL STAFF REMUNERATION - EX-REIMBURSEMENTS)'],
-        [`Department: ${selectedDept.toUpperCase()}`, `Year: ${selectedYear}`],
+        [`Department(s): ${deptLabel}`, `Period: ${startMonth} to ${endMonth}`],
         [],
-        ['Staff Member', 'Job Title', 'Type', ...MONTH_NAMES, 'Total Paid (£)']
+        ['Staff Member', 'Job Title', 'Type', ...monthHeaders, 'YTV Paid (£)', 'Period Total (£)']
       ];
 
       filteredStaff.forEach(s => {
         let staffAnnualTotal = 0;
+        let staffYtvTotal = 0;
         const monthCols = monthsList.map(m => {
           const val = staffMonthlyData[s.id]?.[m]?.total || 0;
           staffAnnualTotal += val;
+          if (m <= reconciledCutoffMonth) staffYtvTotal += val;
           return Math.round(val);
         });
 
@@ -507,16 +608,17 @@ export default function DepartmentTeamCostTab({
           s.jobTitle || 'Recruiter',
           s.employmentType || 'Staff',
           ...monthCols,
+          Math.round(staffYtvTotal),
           Math.round(staffAnnualTotal)
         ]);
       });
 
-      // Remuneration subtotal row
       staffRows.push([
-        'TOTAL REMUNERATION',
+        'TOTAL TEAM REMUNERATION',
         '',
         '',
         ...monthsList.map(m => Math.round(staffRemunerationTotals.monthlySum[m] || 0)),
+        Math.round(staffRemunerationTotals.ytvTotal),
         Math.round(staffRemunerationTotals.grandTotal)
       ]);
 
@@ -526,9 +628,9 @@ export default function DepartmentTeamCostTab({
       // 3. Software Licenses Sheet
       const toolRows = [
         ['SOFTWARE & TOOL LICENSES (HIGH-WATER MARK CONTRACT RATIO)'],
-        [`Department: ${selectedDept.toUpperCase()}`, `Year: ${selectedYear}`],
+        [`Department(s): ${deptLabel}`, `Period: ${startMonth} to ${endMonth}`],
         [],
-        ['Tool Name', 'Vendor', 'Department', 'Baseline Seats', 'Cost / Seat (£)', ...MONTH_NAMES.map(m => `${m} Cost (£)`), 'Annual Cost (£)']
+        ['Tool Name', 'Vendor', 'Department', 'Baseline Seats', 'Cost / Seat (£)', ...monthHeaders.map(m => `${m} Cost`), 'YTV Cost (£)', 'Period Total (£)']
       ];
 
       toolRatchetData.forEach(t => {
@@ -540,7 +642,8 @@ export default function DepartmentTeamCostTab({
           t.tool.baselineCommittedSeats,
           Number(t.unitCostGBP.toFixed(2)),
           ...monthCosts,
-          Math.round(t.annualTotalCost)
+          Math.round(t.ytvCost),
+          Math.round(t.periodTotalCost)
         ]);
       });
 
@@ -551,14 +654,48 @@ export default function DepartmentTeamCostTab({
         '',
         '',
         ...monthsList.map(m => Math.round(toolTotals.monthlySum[m] || 0)),
+        Math.round(toolTotals.ytvTotal),
         Math.round(toolTotals.grandTotal)
       ]);
 
       const wsTools = XLSX.utils.aoa_to_sheet(toolRows);
       XLSX.utils.book_append_sheet(wb, wsTools, 'Software Licenses');
 
+      // 4. All Nominals Sheet
+      const nominalRows = [
+        ['DEPARTMENT OVERHEADS & OPERATIONAL EXPENSES (ALL NOMINALS)'],
+        [`Department(s): ${deptLabel}`, `Period: ${startMonth} to ${endMonth}`],
+        [],
+        ['Nominal Code / Line Item', 'Status', ...monthHeaders, 'YTV (£)', 'Period Total (£)']
+      ];
+
+      nominalCodeKeys.forEach(code => {
+        const isExcluded = isNominalExcluded(code);
+        const vals = monthsList.map((m, idx) => Math.round(pnlMonthlyData[idx]?.nominalBreakdown?.[code] || 0));
+        const ytvNominal = Math.round(pnlMonthlyData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r?.nominalBreakdown?.[code] || 0), 0));
+        const totalNominal = Math.round(pnlMonthlyData.reduce((acc, r) => acc + (r?.nominalBreakdown?.[code] || 0), 0));
+        nominalRows.push([
+          code,
+          isExcluded ? 'Excluded' : 'Included',
+          ...vals,
+          ytvNominal,
+          totalNominal
+        ]);
+      });
+
+      nominalRows.push([
+        'TOTAL DEPARTMENT OVERHEAD NOMINALS',
+        '',
+        ...monthsList.map(m => Math.round(nominalTotals.monthlySum[m] || 0)),
+        Math.round(nominalTotals.ytvTotal),
+        Math.round(nominalTotals.grandTotal)
+      ]);
+
+      const wsNominals = XLSX.utils.aoa_to_sheet(nominalRows);
+      XLSX.utils.book_append_sheet(wb, wsNominals, 'All Nominals');
+
       // Write and download
-      const filename = `Team_and_Tool_Costs_${selectedDept}_${selectedYear}.xlsx`;
+      const filename = `Department_Cost_Statement_${deptFilter.join('_')}_${startMonth}_to_${endMonth}.xlsx`;
       XLSX.writeFile(wb, filename);
 
       if (onShowToast) onShowToast(`Excel report exported: ${filename}`, 'success');
@@ -571,693 +708,889 @@ export default function DepartmentTeamCostTab({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', paddingBottom: '40px' }}>
       
-      {/* Top Header & Filter Controls Bar */}
+      {/* Top Header & P&L Performance Summary Panel */}
       <div style={{ 
         display: 'flex', 
         justifyContent: 'space-between', 
         alignItems: 'center', 
-        flexWrap: 'wrap', 
-        gap: '16px',
-        backgroundColor: 'var(--bg-secondary)',
-        padding: '16px 20px',
-        borderRadius: 'var(--radius-lg)',
-        border: '1px solid var(--border-color)'
+        backgroundColor: 'var(--bg-secondary)', 
+        padding: '12px 18px', 
+        borderRadius: 'var(--radius-md)', 
+        border: '1px solid var(--border-color)',
+        boxShadow: 'var(--shadow-sm)',
+        flexWrap: 'wrap',
+        gap: '12px'
       }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <h2 style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-              Team & Tool Costs
-            </h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '18px' }}>📊</span>
+          <div>
+            <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>
+              Department Operating Cost & Team Statement
+            </span>
             <span style={{ 
               backgroundColor: 'rgba(59, 130, 246, 0.15)', 
               color: 'var(--accent)', 
               padding: '2px 8px', 
               borderRadius: '12px', 
-              fontSize: '11px', 
-              fontWeight: 700 
+              fontSize: '10px', 
+              fontWeight: 700,
+              marginLeft: '8px'
             }}>
-              Manager & MD View
+              P&L Nominal Structure
             </span>
           </div>
-          <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-            Real-time departmental cost report tracking actual team remuneration and software license commitments with automatic contract seat ratchets.
-          </p>
         </div>
 
         {/* Action Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          
-          {/* Department Dropdown */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Building2 size={15} style={{ color: 'var(--text-secondary)' }} />
-            <select
-              value={selectedDept}
-              onChange={(e) => setSelectedDept(e.target.value)}
-              disabled={isManager && !!managerDept}
-              style={{
-                backgroundColor: 'var(--bg-primary)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 'var(--radius-md)',
-                padding: '6px 12px',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: isManager && !!managerDept ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {!isManager && <option value="all">All Departments</option>}
-              {allDepartments.map(dept => (
-                <option key={dept} value={dept}>{dept}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Year Picker */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Calendar size={15} style={{ color: 'var(--text-secondary)' }} />
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              style={{
-                backgroundColor: 'var(--bg-primary)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 'var(--radius-md)',
-                padding: '6px 10px',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              <option value="2025">2025</option>
-              <option value="2026">2026</option>
-              <option value="2027">2027</option>
-            </select>
-          </div>
-
-          {/* Add Tool Button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
           <button
+            type="button"
             onClick={handleOpenAddTool}
             style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--accent)',
+              fontWeight: 700,
+              fontSize: '12px',
+              cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
-              backgroundColor: 'var(--accent)',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 'var(--radius-md)',
-              padding: '7px 14px',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer'
+              gap: '6px'
             }}
           >
-            <Plus size={15} />
-            Add Software Tool
+            <Plus size={14} /> Add Software Tool
           </button>
 
-          {/* Excel Export Button */}
           <button
+            type="button"
+            onClick={() => setHideZeroNominals(!hideZeroNominals)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: hideZeroNominals ? '#10b981' : 'var(--text-secondary)',
+              fontWeight: 600,
+              fontSize: '12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+            title={hideZeroNominals ? "Nominals with £0 are hidden. Click to show all." : "Showing all nominals. Click to hide £0 nominals."}
+          >
+            {hideZeroNominals ? '🚫 £0 Hidden' : '👁️ Show All £0'}
+          </button>
+
+          <button
+            type="button"
             onClick={handleExportExcel}
             style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--primary)',
+              fontWeight: 700,
+              fontSize: '12px',
+              cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
-              backgroundColor: 'var(--bg-primary)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-md)',
-              padding: '7px 14px',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer'
+              gap: '6px'
+            }}
+            title="Export complete department statement, team roster, tools, and nominal breakdown to Excel (.xlsx)"
+          >
+            <FileSpreadsheet size={14} /> Export to Excel
+          </button>
+
+          <button
+            type="button"
+            onClick={() => window.print()}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--success)',
+              fontWeight: 700,
+              fontSize: '12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
             }}
           >
-            <Download size={15} />
-            Export Excel
+            <Printer size={14} /> Print PDF
+          </button>
+
+          <button 
+            type="button"
+            onClick={() => setShowDashboard(!showDashboard)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-secondary)',
+              fontWeight: 600,
+              fontSize: '12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            {showDashboard ? '🙈 Hide KPI Cards' : '👁️ Show KPI Cards'}
           </button>
         </div>
       </div>
 
-      {/* KPI Highlight Cards */}
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', 
-        gap: '14px' 
-      }}>
-        {/* Card 1: Total Department Operating Cost */}
-        <div style={{
-          backgroundColor: 'var(--bg-secondary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-md)',
-          padding: '16px'
+      {/* KPI Highlight Summary Cards */}
+      {showDashboard && (
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', 
+          gap: '14px' 
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>TOTAL DEPARTMENT COST</span>
-            <DollarSign size={16} style={{ color: 'var(--accent)' }} />
+          {/* Card 1: Total Department Operating Cost */}
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>TOTAL DEPARTMENT COST</span>
+              <DollarSign size={16} style={{ color: 'var(--accent)' }} />
+            </div>
+            <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+              {formatGBP(combinedDepartmentTotals.grandTotal)}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+              Remuneration + Tools + Nominals ({startMonth} - {endMonth})
+            </div>
           </div>
-          <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-            {formatGBP(combinedDepartmentTotals.grandTotal)}
+
+          {/* Card 2: Staff Remuneration Paid */}
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>TEAM REMUNERATION PAID</span>
+              <Users size={16} style={{ color: 'var(--success)' }} />
+            </div>
+            <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--success)', fontFamily: 'monospace' }}>
+              {formatGBP(staffRemunerationTotals.grandTotal)}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+              Actual pay disbursed (Excl. reimbursements)
+            </div>
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            Combined Remuneration + Tools ({selectedYear})
+
+          {/* Card 3: Software & Tool Licenses */}
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>SOFTWARE & TOOLS</span>
+              <Wrench size={16} style={{ color: '#8b5cf6' }} />
+            </div>
+            <div style={{ fontSize: '24px', fontWeight: 700, color: '#8b5cf6', fontFamily: 'monospace' }}>
+              {formatGBP(toolTotals.grandTotal)}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+              {relevantTools.length} contracted tools with ratchet
+            </div>
+          </div>
+
+          {/* Card 4: Department Overheads (Nominals) */}
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>DEPARTMENT OVERHEAD NOMINALS</span>
+              <Layers size={16} style={{ color: 'var(--warning)' }} />
+            </div>
+            <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--warning)', fontFamily: 'monospace' }}>
+              {formatGBP(nominalTotals.grandTotal)}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+              {nominalCodeKeys.length} nominal expense accounts
+            </div>
+          </div>
+
+          {/* Card 5: Contract Commitment & Spare Seats */}
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>SEAT COMMITMENT RATIO</span>
+              <AlertCircle size={16} style={{ color: unutilizedStats.spareSeats > 0 ? '#f59e0b' : 'var(--text-secondary)' }} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+              <span style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                {unutilizedStats.totalActive} / {unutilizedStats.totalCommitted}
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>seats</span>
+            </div>
+            <div style={{ fontSize: '11px', color: unutilizedStats.spareSeats > 0 ? '#f59e0b' : 'var(--success)' }}>
+              {unutilizedStats.spareSeats > 0 
+                ? `${unutilizedStats.spareSeats} unutilized seats (${formatGBP(unutilizedStats.totalWastedCost)}/mo)`
+                : '100% seat utilization'}
+            </div>
           </div>
         </div>
+      )}
 
-        {/* Card 2: Staff Remuneration Paid */}
-        <div style={{
-          backgroundColor: 'var(--bg-secondary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-md)',
-          padding: '16px'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>STAFF REMUNERATION PAID</span>
-            <Users size={16} style={{ color: 'var(--success)' }} />
-          </div>
-          <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--success)', fontFamily: 'monospace' }}>
-            {formatGBP(staffRemunerationTotals.grandTotal)}
-          </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            Actual pay disbursed (Excl. reimbursements)
-          </div>
-        </div>
-
-        {/* Card 3: Software & Tool Licenses */}
-        <div style={{
-          backgroundColor: 'var(--bg-secondary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-md)',
-          padding: '16px'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>SOFTWARE & TOOLS</span>
-            <Wrench size={16} style={{ color: '#8b5cf6' }} />
-          </div>
-          <div style={{ fontSize: '24px', fontWeight: 700, color: '#8b5cf6', fontFamily: 'monospace' }}>
-            {formatGBP(toolTotals.grandTotal)}
-          </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            {relevantTools.length} contracted vendor tools
-          </div>
-        </div>
-
-        {/* Card 4: Contract Commitment & Spare Seats */}
-        <div style={{
-          backgroundColor: 'var(--bg-secondary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-md)',
-          padding: '16px'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>SEAT COMMITMENT RATIO</span>
-            <AlertCircle size={16} style={{ color: unutilizedStats.spareSeats > 0 ? '#f59e0b' : 'var(--text-secondary)' }} />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-            <span style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-              {unutilizedStats.totalActive} / {unutilizedStats.totalCommitted}
-            </span>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>seats</span>
-          </div>
-          <div style={{ fontSize: '12px', color: unutilizedStats.spareSeats > 0 ? '#f59e0b' : 'var(--success)', marginTop: '4px' }}>
-            {unutilizedStats.spareSeats > 0 
-              ? `${unutilizedStats.spareSeats} unutilized seats (${formatGBP(unutilizedStats.totalWastedCost)}/mo)`
-              : '100% seat utilization'}
-          </div>
-        </div>
-      </div>
-
-      {/* Contract Ratchet Explanation Banner */}
+      {/* Contract Ratchet Explanation Callout */}
       <div style={{
         display: 'flex',
         alignItems: 'flex-start',
         gap: '12px',
-        backgroundColor: 'rgba(59, 130, 246, 0.08)',
-        border: '1px solid rgba(59, 130, 246, 0.25)',
+        backgroundColor: 'rgba(59, 130, 246, 0.06)',
+        border: '1px solid rgba(59, 130, 246, 0.2)',
         borderRadius: 'var(--radius-md)',
-        padding: '12px 16px'
+        padding: '10px 16px'
       }}>
-        <HelpCircle size={18} style={{ color: 'var(--accent)', marginTop: '2px', flexShrink: 0 }} />
+        <HelpCircle size={16} style={{ color: 'var(--accent)', marginTop: '2px', flexShrink: 0 }} />
         <div style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.5 }}>
-          <strong>Contract Seat Commitment Rule:</strong> Software licenses honor baseline contract commitments. 
-          When your team expands (e.g. from 7 to 10 recruiters), the seat count automatically ratchets up to 10. 
-          If team headcount later decreases (e.g. from 10 to 7), the contract commitment remains locked at 10 seats carrying forward until renewal, 
-          with unutilized seats highlighted in orange so managers have full cost transparency.
+          <strong>Department P&L Alignment:</strong> This statement combines <em>Actual Team Remuneration</em> (strictly excluding reimbursable overheads), 
+          <em>Software Tool Licenses</em> with automatic upward seat ratchets, and <em>All Department Nominal Codes</em> matching your entity, department, period, and nominal filters.
         </div>
       </div>
 
       {/* ==============================================================
-          SECTION 1: TEAM REMUNERATION TABLE (ACTUAL STAFF REMUNERATION)
+          MAIN P&L MATRIX TABLE
           ============================================================== */}
-      <div className="table-container" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-              1. Department Team Remuneration (Actual Staff Cost)
-            </h3>
-            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-              Basic Salary + Commission + Bonuses + Taxes. Expense reimbursements are strictly excluded.
-            </span>
-          </div>
-          <input
-            type="text"
-            placeholder="Search team member..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              backgroundColor: 'var(--bg-secondary)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-md)',
-              padding: '6px 12px',
-              fontSize: '12px',
-              width: '200px'
-            }}
-          />
-        </div>
+      <div className="table-container" style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
+        <table className="entity-table dense" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+          <thead>
+            <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+              <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '12px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 3, minWidth: '320px' }}>
+                Department Account Line Item (GBP)
+              </th>
+              {monthsList.map(m => (
+                <th key={m} style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, fontSize: '12px', minWidth: '95px' }}>
+                  {formatMonthLabel(m)}
+                </th>
+              ))}
+              <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, fontSize: '12px', backgroundColor: 'rgba(99, 102, 241, 0.08)', minWidth: '110px' }}>
+                YTV (Reconciled)
+              </th>
+              <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, fontSize: '12px', backgroundColor: 'var(--bg-secondary)', minWidth: '110px' }}>
+                Period Total
+              </th>
+            </tr>
+          </thead>
+          <tbody>
 
-        <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
-          <table className="entity-table dense" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
-                <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '12px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 2 }}>
-                  Staff Member
-                </th>
-                <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '12px' }}>Role</th>
-                {MONTH_NAMES.map(m => (
-                  <th key={m} style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, fontSize: '12px' }}>
-                    {m}
-                  </th>
-                ))}
-                <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, fontSize: '12px', backgroundColor: 'var(--bg-secondary)' }}>
-                  Total Paid
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredStaff.length === 0 ? (
-                <tr>
-                  <td colSpan={15} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
-                    No staff members found matching criteria in {selectedDept}.
+            {/* ==========================================================
+                SECTION 1: APPORTIONED TEAM REMUNERATION
+                ========================================================== */}
+            <tr className="section-header" style={{ backgroundColor: 'var(--bg-card)', borderTop: '2px solid var(--border-color)' }}>
+              <td 
+                colSpan={monthsList.length + 3} 
+                style={{ 
+                  padding: '8px 14px', 
+                  fontWeight: 800, 
+                  fontSize: '12px', 
+                  color: 'var(--text-secondary)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}
+              >
+                1. Team Remuneration (Salaries, Freelance & Commissions)
+              </td>
+            </tr>
+
+            {/* Main Collapsible Remuneration Row */}
+            <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-primary)' }}>
+              <td 
+                style={{ 
+                  padding: '10px 14px', 
+                  position: 'sticky', 
+                  left: 0, 
+                  backgroundColor: 'var(--bg-primary)', 
+                  zIndex: 2, 
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+                onClick={() => setExpandedTeam(!expandedTeam)}
+              >
+                <span style={{ fontSize: '11px', color: 'var(--accent)' }}>
+                  {expandedTeam ? '▼' : '▶'}
+                </span>
+                <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
+                  Apportioned Team Remuneration
+                </span>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                  ({filteredStaff.length} team members • Ex-Reimbursements)
+                </span>
+              </td>
+              {monthsList.map(m => (
+                <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: 'var(--success)' }}>
+                  {formatGBP(staffRemunerationTotals.monthlySum[m] || 0)}
+                </td>
+              ))}
+              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, backgroundColor: 'rgba(99, 102, 241, 0.04)', color: 'var(--success)' }}>
+                {formatGBP(staffRemunerationTotals.ytvTotal)}
+              </td>
+              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--success)', fontSize: '13px' }}>
+                {formatGBP(staffRemunerationTotals.grandTotal)}
+              </td>
+            </tr>
+
+            {/* Expanded Staff Members Sub-rows */}
+            {expandedTeam && (
+              <>
+                {filteredStaff.length === 0 ? (
+                  <tr>
+                    <td colSpan={monthsList.length + 3} style={{ padding: '12px 32px', color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '11px' }}>
+                      No team members found matching current filters.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredStaff.map(s => {
+                    let staffRowTotal = 0;
+                    let staffYtvTotal = 0;
+
+                    return (
+                      <tr 
+                        key={s.id} 
+                        style={{ 
+                          fontSize: '11px', 
+                          borderBottom: '1px solid var(--border-color)',
+                          backgroundColor: 'rgba(255, 255, 255, 0.01)'
+                        }}
+                      >
+                        <td style={{ 
+                          paddingLeft: '36px', 
+                          position: 'sticky', 
+                          left: 0, 
+                          backgroundColor: 'var(--bg-primary)', 
+                          zIndex: 1 
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>↳</span>
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.fullName}</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>— {s.jobTitle || 'Recruiter'}</span>
+                            {s.status === 'exited' && (
+                              <span style={{ 
+                                fontSize: '9px', 
+                                backgroundColor: 'rgba(239, 68, 68, 0.15)', 
+                                color: 'var(--danger)', 
+                                padding: '1px 4px', 
+                                borderRadius: '3px',
+                                fontWeight: 700
+                              }}>
+                                Exited
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        {monthsList.map(m => {
+                          const cell = staffMonthlyData[s.id]?.[m];
+                          const val = cell?.total || 0;
+                          staffRowTotal += val;
+                          if (m <= reconciledCutoffMonth) staffYtvTotal += val;
+
+                          return (
+                            <td 
+                              key={m} 
+                              style={{ 
+                                textAlign: 'right', 
+                                fontFamily: 'monospace', 
+                                opacity: val > 0 ? 1 : 0.4 
+                              }}
+                              title={`Staff: ${s.fullName}\nMonth: ${m}\n• Basic: ${formatGBPExact(cell?.basic || 0)}\n• Commission: ${formatGBPExact(cell?.commission || 0)}\n• Bonus: ${formatGBPExact(cell?.bonus || 0)}\n• NI/Pension: ${formatGBPExact((cell?.employerNi || 0) + (cell?.employerPension || 0))}\n• Excluded Expenses Reimbursed: ${formatGBPExact(cell?.reimbursements || 0)}`}
+                            >
+                              {val > 0 ? formatGBP(val) : '—'}
+                            </td>
+                          );
+                        })}
+                        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, backgroundColor: 'rgba(99, 102, 241, 0.04)' }}>
+                          {staffYtvTotal > 0 ? formatGBP(staffYtvTotal) : '—'}
+                        </td>
+                        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {formatGBP(staffRowTotal)}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+
+                {/* Active Headcount row */}
+                <tr style={{ backgroundColor: 'var(--bg-secondary)', fontSize: '11px', borderBottom: '1px solid var(--border-color)' }}>
+                  <td style={{ paddingLeft: '36px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1, color: 'var(--text-secondary)' }}>
+                    Active Team Headcount
+                  </td>
+                  {monthsList.map(m => (
+                    <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+                      {monthlyHeadcount[m] || 0} active
+                    </td>
+                  ))}
+                  <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', color: 'var(--text-muted)' }}>
+                    —
+                  </td>
+                  <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>
+                    {Math.round(combinedDepartmentTotals.avgHeadcount)} (Avg)
                   </td>
                 </tr>
-              ) : (
-                filteredStaff.map(s => {
-                  let staffRowSum = 0;
-                  return (
-                    <tr key={s.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+              </>
+            )}
+
+            {/* ==========================================================
+                SECTION 2: CONTRACTED SOFTWARE & TOOLS (RATCHET)
+                ========================================================== */}
+            <tr className="section-header" style={{ backgroundColor: 'var(--bg-card)', borderTop: '2px solid var(--border-color)' }}>
+              <td 
+                colSpan={monthsList.length + 3} 
+                style={{ 
+                  padding: '8px 14px', 
+                  fontWeight: 800, 
+                  fontSize: '12px', 
+                  color: 'var(--text-secondary)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}
+              >
+                2. Software Licenses & CRM Systems (Contract Ratchet Engine)
+              </td>
+            </tr>
+
+            {/* Main Collapsible Software Row */}
+            <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-primary)' }}>
+              <td 
+                style={{ 
+                  padding: '10px 14px', 
+                  position: 'sticky', 
+                  left: 0, 
+                  backgroundColor: 'var(--bg-primary)', 
+                  zIndex: 2, 
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+                onClick={() => setExpandedTools(!expandedTools)}
+              >
+                <span style={{ fontSize: '11px', color: 'var(--accent)' }}>
+                  {expandedTools ? '▼' : '▶'}
+                </span>
+                <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
+                  Contracted Software & Tool Licenses
+                </span>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                  ({relevantTools.length} tools • Ratchet rules active)
+                </span>
+              </td>
+              {monthsList.map(m => (
+                <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#8b5cf6' }}>
+                  {formatGBP(toolTotals.monthlySum[m] || 0)}
+                </td>
+              ))}
+              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, backgroundColor: 'rgba(99, 102, 241, 0.04)', color: '#8b5cf6' }}>
+                {formatGBP(toolTotals.ytvTotal)}
+              </td>
+              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#8b5cf6', fontSize: '13px' }}>
+                {formatGBP(toolTotals.grandTotal)}
+              </td>
+            </tr>
+
+            {/* Expanded Tools Sub-rows */}
+            {expandedTools && (
+              <>
+                {toolRatchetData.length === 0 ? (
+                  <tr>
+                    <td colSpan={monthsList.length + 3} style={{ padding: '12px 32px', color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '11px' }}>
+                      No software tools configured. Click "+ Add Software Tool" above to add Dialpad, CRM, or LinkedIn Recruiter.
+                    </td>
+                  </tr>
+                ) : (
+                  toolRatchetData.map(({ tool, unitCostGBP, monthlyDetails, periodTotalCost, ytvCost }) => (
+                    <tr 
+                      key={tool.id} 
+                      style={{ 
+                        fontSize: '11px', 
+                        borderBottom: '1px solid var(--border-color)',
+                        backgroundColor: 'rgba(255, 255, 255, 0.01)'
+                      }}
+                    >
                       <td style={{ 
-                        padding: '10px 14px', 
-                        fontWeight: 600, 
-                        fontSize: '13px', 
+                        paddingLeft: '36px', 
                         position: 'sticky', 
                         left: 0, 
                         backgroundColor: 'var(--bg-primary)', 
                         zIndex: 1 
                       }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span>{s.fullName}</span>
-                          {s.status === 'exited' && (
-                            <span style={{ 
-                              fontSize: '10px', 
-                              backgroundColor: 'rgba(239, 68, 68, 0.15)', 
-                              color: 'var(--danger)', 
-                              padding: '1px 5px', 
-                              borderRadius: '4px' 
-                            }}>
-                              Exited
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>↳</span>
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{tool.name}</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>
+                              ({tool.baselineCommittedSeats} seats baseline @ {formatGBPExact(unitCostGBP)}/seat)
                             </span>
-                          )}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <button
+                              onClick={() => handleOpenEditTool(tool)}
+                              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '2px' }}
+                              title="Edit Tool"
+                            >
+                              <Edit2 size={12} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTool(tool.id, tool.name)}
+                              style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '2px' }}
+                              title="Delete Tool"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
                         </div>
                       </td>
-                      <td style={{ padding: '10px 14px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                        {s.jobTitle || 'Recruiter'}
-                      </td>
                       {monthsList.map(m => {
-                        const cell = staffMonthlyData[s.id]?.[m];
-                        const val = cell?.total || 0;
-                        staffRowSum += val;
+                        const d = monthlyDetails[m];
+                        if (!d) return <td key={m} style={{ textAlign: 'right' }}>—</td>;
 
                         return (
                           <td 
                             key={m} 
                             style={{ 
-                              padding: '10px 8px', 
                               textAlign: 'right', 
-                              fontFamily: 'monospace', 
-                              fontSize: '12px',
-                              color: val > 0 ? 'var(--text-primary)' : 'var(--text-secondary)',
-                              fontWeight: val > 0 ? 500 : 400
+                              fontFamily: 'monospace',
+                              padding: '8px 8px'
                             }}
-                            title={`Basic: ${formatGBPExact(cell?.basic || 0)}\nCommission: ${formatGBPExact(cell?.commission || 0)}\nBonus: ${formatGBPExact(cell?.bonus || 0)}\nNI/Pension: ${formatGBPExact((cell?.employerNi || 0) + (cell?.employerPension || 0))}\nReimbursements (Excluded): ${formatGBPExact(cell?.reimbursements || 0)}`}
+                            title={`Tool: ${tool.name}\nMonth: ${m}\n• Committed: ${d.committedSeats} seats\n• Active: ${d.activeSeats}\n• Unutilized: ${d.unutilizedSeats} spare seats\n• Monthly Cost: ${formatGBPExact(d.costGBP)}`}
                           >
-                            {val > 0 ? formatGBP(val) : '-'}
+                            <div>{formatGBP(d.costGBP)}</div>
+                            <div style={{ 
+                              fontSize: '9px', 
+                              color: d.unutilizedSeats > 0 ? '#f59e0b' : 'var(--text-muted)',
+                              fontWeight: d.unutilizedSeats > 0 ? 600 : 400 
+                            }}>
+                              {d.committedSeats} seats {d.unutilizedSeats > 0 ? `(${d.unutilizedSeats} spare)` : ''}
+                            </div>
                           </td>
                         );
                       })}
-                      <td style={{ 
-                        padding: '10px 14px', 
-                        textAlign: 'right', 
-                        fontFamily: 'monospace', 
-                        fontWeight: 700, 
-                        fontSize: '13px',
-                        color: 'var(--accent)'
-                      }}>
-                        {formatGBP(staffRowSum)}
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, backgroundColor: 'rgba(99, 102, 241, 0.04)' }}>
+                        {formatGBP(ytvCost)}
+                      </td>
+                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#8b5cf6' }}>
+                        {formatGBP(periodTotalCost)}
                       </td>
                     </tr>
-                  );
-                })
-              )}
+                  ))
+                )}
+              </>
+            )}
 
-              {/* Subtotal: Department Staff Remuneration */}
-              <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--border-color)' }}>
-                <td style={{ padding: '10px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1 }}>
-                  Subtotal: Team Remuneration
-                </td>
-                <td style={{ padding: '10px 14px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  {filteredStaff.length} team members
-                </td>
-                {monthsList.map(m => (
-                  <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)' }}>
-                    {formatGBP(staffRemunerationTotals.monthlySum[m] || 0)}
-                  </td>
-                ))}
-                <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--success)', fontSize: '14px' }}>
-                  {formatGBP(staffRemunerationTotals.grandTotal)}
-                </td>
-              </tr>
+            {/* ==========================================================
+                SECTION 3: DEPARTMENT OVERHEADS & EXPENSES (ALL NOMINALS)
+                ========================================================== */}
+            <tr className="section-header" style={{ backgroundColor: 'var(--bg-card)', borderTop: '2px solid var(--border-color)' }}>
+              <td 
+                colSpan={monthsList.length + 3} 
+                style={{ 
+                  padding: '8px 14px', 
+                  fontWeight: 800, 
+                  fontSize: '12px', 
+                  color: 'var(--text-secondary)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}
+              >
+                3. Department Overheads & Operational Expenses (All Nominals)
+              </td>
+            </tr>
 
-              {/* Active Headcount Row */}
-              <tr style={{ backgroundColor: 'var(--bg-secondary)', borderTop: '1px solid var(--border-color)', fontSize: '12px' }}>
-                <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1, color: 'var(--text-secondary)' }}>
-                  Active Team Headcount
+            {/* Main Collapsible Nominals Row */}
+            <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-primary)' }}>
+              <td 
+                style={{ 
+                  padding: '10px 14px', 
+                  position: 'sticky', 
+                  left: 0, 
+                  backgroundColor: 'var(--bg-primary)', 
+                  zIndex: 2, 
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+                onClick={() => setExpandedNominals(!expandedNominals)}
+              >
+                <span style={{ fontSize: '11px', color: 'var(--accent)' }}>
+                  {expandedNominals ? '▼' : '▶'}
+                </span>
+                <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
+                  Apportioned Overheads & Operational SaaS
+                </span>
+                {excludedNominalCodes.length > 0 ? (
+                  <span style={{ 
+                    fontSize: '10px', 
+                    padding: '2px 8px', 
+                    borderRadius: '12px', 
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)', 
+                    color: '#ef4444', 
+                    fontWeight: 600 
+                  }}>
+                    ⚠️ {excludedNominalCodes.length} Excluded
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                    ({nominalCodeKeys.length} nominal codes included)
+                  </span>
+                )}
+              </td>
+              {monthsList.map(m => (
+                <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: 'var(--warning)' }}>
+                  {formatGBP(nominalTotals.monthlySum[m] || 0)}
                 </td>
-                <td style={{ padding: '8px 14px', color: 'var(--text-secondary)' }}>
-                  Active recruiters
-                </td>
-                {monthsList.map(m => (
-                  <td key={m} style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
-                    {monthlyHeadcount[m] || 0}
-                  </td>
-                ))}
-                <td style={{ padding: '8px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
-                  {Math.round(combinedDepartmentTotals.avgHeadcount)} (Avg)
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+              ))}
+              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, backgroundColor: 'rgba(99, 102, 241, 0.04)', color: 'var(--warning)' }}>
+                {formatGBP(nominalTotals.ytvTotal)}
+              </td>
+              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--warning)', fontSize: '13px' }}>
+                {formatGBP(nominalTotals.grandTotal)}
+              </td>
+            </tr>
 
-      {/* ==============================================================
-          SECTION 2: SOFTWARE & TOOLS TABLE (WITH HIGH-WATER MARK RATCHET)
-          ============================================================== */}
-      <div className="table-container" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-              2. Department Software & Tool Licenses (Contract Ratchet)
-            </h3>
-            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-              Software tools automatically scale up with peak headcount and hold minimum commitment until contract renewal.
-            </span>
-          </div>
-
-          <button
-            onClick={handleOpenAddTool}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              backgroundColor: 'var(--bg-secondary)',
-              color: 'var(--accent)',
-              border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-md)',
-              padding: '6px 12px',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer'
-            }}
-          >
-            <Plus size={14} />
-            Add Tool
-          </button>
-        </div>
-
-        <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
-          <table className="entity-table dense" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
-                <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '12px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 2 }}>
-                  Tool & Vendor
-                </th>
-                <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '12px' }}>Scope</th>
-                <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '12px' }}>Cost / Seat</th>
-                <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '12px' }}>Baseline</th>
-                {MONTH_NAMES.map(m => (
-                  <th key={m} style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, fontSize: '12px' }}>
-                    {m}
-                  </th>
-                ))}
-                <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, fontSize: '12px', backgroundColor: 'var(--bg-secondary)' }}>
-                  Annual Cost
-                </th>
-                <th style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, fontSize: '12px' }}>
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {toolRatchetData.length === 0 ? (
-                <tr>
-                  <td colSpan={18} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
-                    No software tools configured for {selectedDept}. Click "+ Add Software Tool" above to add tools like Dialpad, CRM, or LinkedIn Recruiter.
-                  </td>
-                </tr>
-              ) : (
-                toolRatchetData.map(({ tool, unitCostGBP, monthlyDetails, annualTotalCost }) => (
-                  <tr key={tool.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ 
-                      padding: '10px 14px', 
-                      fontWeight: 600, 
-                      fontSize: '13px', 
-                      position: 'sticky', 
-                      left: 0, 
-                      backgroundColor: 'var(--bg-primary)', 
-                      zIndex: 1 
-                    }}>
-                      <div>
-                        <div>{tool.name}</div>
-                        {tool.vendorName && (
-                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 400 }}>
-                            {tool.vendorName}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ padding: '10px 14px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      <span style={{ 
-                        backgroundColor: tool.department === 'all' ? 'rgba(139, 92, 246, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                        color: tool.department === 'all' ? '#8b5cf6' : 'var(--accent)',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        fontSize: '11px',
-                        fontWeight: 600
-                      }}>
-                        {tool.department === 'all' ? 'Company' : tool.department}
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px 14px', fontSize: '12px', fontFamily: 'monospace' }}>
-                      {formatGBPExact(unitCostGBP)}/mo
-                      {tool.currency && tool.currency !== 'GBP' && (
-                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)', marginLeft: '4px' }}>
-                          ({tool.licenseCostPerSeat} {tool.currency})
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ padding: '10px 14px', fontSize: '12px', fontFamily: 'monospace' }}>
-                      {tool.baselineCommittedSeats} seats
-                    </td>
-                    {monthsList.map(m => {
-                      const d = monthlyDetails[m];
-                      if (!d) return <td key={m}>-</td>;
-
-                      return (
-                        <td 
-                          key={m} 
-                          style={{ 
-                            padding: '10px 8px', 
-                            textAlign: 'right', 
-                            fontFamily: 'monospace', 
-                            fontSize: '12px' 
-                          }}
-                          title={`Committed: ${d.committedSeats} seats\nActive Staff: ${d.activeSeats}\nUnutilized: ${d.unutilizedSeats} seats\nMonthly Cost: ${formatGBPExact(d.costGBP)}`}
-                        >
-                          <div>{formatGBP(d.costGBP)}</div>
-                          <div style={{ 
-                            fontSize: '10px', 
-                            color: d.unutilizedSeats > 0 ? '#f59e0b' : 'var(--text-secondary)',
-                            fontWeight: d.unutilizedSeats > 0 ? 600 : 400 
-                          }}>
-                            {d.committedSeats} seats {d.unutilizedSeats > 0 ? `(${d.unutilizedSeats} spare)` : ''}
-                          </div>
-                        </td>
-                      );
-                    })}
-                    <td style={{ 
-                      padding: '10px 14px', 
-                      textAlign: 'right', 
-                      fontFamily: 'monospace', 
-                      fontWeight: 700, 
-                      fontSize: '13px',
-                      color: '#8b5cf6'
-                    }}>
-                      {formatGBP(annualTotalCost)}
-                    </td>
-                    <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                        <button
-                          onClick={() => handleOpenEditTool(tool)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--text-secondary)',
-                            cursor: 'pointer',
-                            padding: '4px'
-                          }}
-                          title="Edit Tool"
-                        >
-                          <Edit2 size={13} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTool(tool.id, tool.name)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--danger)',
-                            cursor: 'pointer',
-                            padding: '4px'
-                          }}
-                          title="Delete Tool"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
+            {/* Expanded Nominals Sub-rows */}
+            {expandedNominals && (
+              <>
+                {nominalCodeKeys.length === 0 ? (
+                  <tr>
+                    <td colSpan={monthsList.length + 3} style={{ padding: '12px 32px', color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '11px' }}>
+                      No nominal expense items found matching current filters.
                     </td>
                   </tr>
-                ))
-              )}
+                ) : (
+                  nominalCodeKeys.map(code => {
+                    const isExcluded = isNominalExcluded(code);
+                    const totalNominal = pnlMonthlyData.reduce((acc, r) => acc + (r?.nominalBreakdown?.[code] || 0), 0);
+                    const ytvNominal = pnlMonthlyData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r?.nominalBreakdown?.[code] || 0), 0);
 
-              {/* Subtotal: Software Tools */}
-              <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--border-color)' }}>
-                <td style={{ padding: '10px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1 }}>
-                  Subtotal: Software Licenses
-                </td>
-                <td colSpan={3} style={{ padding: '10px 14px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  {relevantTools.length} tools contracted
-                </td>
-                {monthsList.map(m => (
-                  <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', color: '#8b5cf6' }}>
-                    {formatGBP(toolTotals.monthlySum[m] || 0)}
-                  </td>
-                ))}
-                <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: 'monospace', color: '#8b5cf6', fontSize: '14px' }}>
-                  {formatGBP(toolTotals.grandTotal)}
-                </td>
-                <td></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+                    return (
+                      <tr 
+                        key={code} 
+                        style={{ 
+                          fontSize: '11px', 
+                          borderBottom: '1px solid var(--border-color)',
+                          color: isExcluded ? 'var(--text-muted)' : 'var(--text-secondary)',
+                          backgroundColor: isExcluded ? 'rgba(239, 68, 68, 0.02)' : 'transparent',
+                          opacity: isExcluded ? 0.5 : 1
+                        }}
+                      >
+                        <td style={{ 
+                          paddingLeft: '36px', 
+                          position: 'sticky', 
+                          left: 0, 
+                          backgroundColor: 'var(--bg-primary)', 
+                          zIndex: 1 
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ color: 'var(--text-muted)' }}>↳</span>
+                              <span style={{ 
+                                fontWeight: isExcluded ? 400 : 500,
+                                textDecoration: isExcluded ? 'line-through' : 'none',
+                                color: isExcluded ? 'var(--text-muted)' : 'var(--text-primary)'
+                              }}>
+                                {code}
+                              </span>
+                            </div>
 
-      {/* ==============================================================
-          SECTION 3: COMBINED DEPARTMENT TOTAL MATRIX
-          ============================================================== */}
-      <div className="table-container" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-          3. Consolidated Department Cost Summary
-        </h3>
+                            {onToggleNominalInclusion && (
+                              <button
+                                type="button"
+                                onClick={() => onToggleNominalInclusion(code)}
+                                style={{
+                                  fontSize: '9px',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  border: isExcluded ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(239, 68, 68, 0.2)',
+                                  backgroundColor: isExcluded ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.06)',
+                                  color: isExcluded ? '#22c55e' : '#ef4444',
+                                  cursor: 'pointer',
+                                  fontWeight: 600
+                                }}
+                              >
+                                {isExcluded ? '+ Include' : '✕ Exclude'}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        {monthsList.map((m, idx) => {
+                          const val = pnlMonthlyData[idx]?.nominalBreakdown?.[code] || 0;
+                          return (
+                            <td 
+                              key={m} 
+                              style={{ 
+                                textAlign: 'right', 
+                                fontFamily: 'monospace', 
+                                opacity: val > 0 ? 1 : 0.3,
+                                textDecoration: isExcluded ? 'line-through' : 'none'
+                              }}
+                            >
+                              {val > 0 ? formatGBP(val) : '—'}
+                            </td>
+                          );
+                        })}
+                        <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', fontWeight: 600 }}>
+                          {ytvNominal > 0 ? formatGBP(ytvNominal) : '—'}
+                        </td>
+                        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: isExcluded ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                          {formatGBP(totalNominal)}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </>
+            )}
 
-        <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
-          <table className="entity-table dense" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
-                <th style={{ padding: '10px 14px', fontWeight: 700, fontSize: '12px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 2 }}>
-                  Department Line Item
-                </th>
-                {MONTH_NAMES.map(m => (
-                  <th key={m} style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, fontSize: '12px' }}>
-                    {m}
-                  </th>
-                ))}
-                <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, fontSize: '12px', backgroundColor: 'var(--bg-secondary)' }}>
-                  Full Year
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style={{ padding: '10px 14px', fontWeight: 600, position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1 }}>
-                  Staff Remuneration (Salaries & Commissions)
-                </td>
-                {monthsList.map(m => (
-                  <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                    {formatGBP(staffRemunerationTotals.monthlySum[m] || 0)}
-                  </td>
-                ))}
-                <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
-                  {formatGBP(staffRemunerationTotals.grandTotal)}
-                </td>
-              </tr>
+            {/* ==========================================================
+                SECTION 4: CONSOLIDATED DEPARTMENT OPERATING SUMMARY
+                ========================================================== */}
+            <tr className="section-header" style={{ backgroundColor: 'var(--bg-card)', borderTop: '3px solid var(--border-color)' }}>
+              <td 
+                colSpan={monthsList.length + 3} 
+                style={{ 
+                  padding: '8px 14px', 
+                  fontWeight: 800, 
+                  fontSize: '12px', 
+                  color: 'var(--text-secondary)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}
+              >
+                4. Consolidated Department Summary & P&L Totals
+              </td>
+            </tr>
 
-              <tr>
-                <td style={{ padding: '10px 14px', fontWeight: 600, position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1 }}>
-                  Software & Vendor Licenses
+            {/* Row: Team Remuneration Summary */}
+            <tr style={{ fontSize: '12px', borderBottom: '1px solid var(--border-color)' }}>
+              <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1, fontWeight: 600 }}>
+                1. Team Remuneration (Salaries, Freelance & Commissions)
+              </td>
+              {monthsList.map(m => (
+                <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                  {formatGBP(staffRemunerationTotals.monthlySum[m] || 0)}
                 </td>
-                {monthsList.map(m => (
-                  <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace' }}>
-                    {formatGBP(toolTotals.monthlySum[m] || 0)}
-                  </td>
-                ))}
-                <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
-                  {formatGBP(toolTotals.grandTotal)}
-                </td>
-              </tr>
+              ))}
+              <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', fontWeight: 600 }}>
+                {formatGBP(staffRemunerationTotals.ytvTotal)}
+              </td>
+              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+                {formatGBP(staffRemunerationTotals.grandTotal)}
+              </td>
+            </tr>
 
-              {/* Grand Total Row */}
-              <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--border-color)' }}>
-                <td style={{ padding: '12px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1, fontSize: '13px' }}>
-                  GRAND TOTAL DEPARTMENT COST
+            {/* Row: Software Tools Summary */}
+            <tr style={{ fontSize: '12px', borderBottom: '1px solid var(--border-color)' }}>
+              <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1, fontWeight: 600 }}>
+                2. Contracted Software & Tool Licenses
+              </td>
+              {monthsList.map(m => (
+                <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                  {formatGBP(toolTotals.monthlySum[m] || 0)}
                 </td>
-                {monthsList.map(m => (
-                  <td key={m} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--accent)', fontSize: '13px' }}>
-                    {formatGBP(combinedDepartmentTotals.monthlySum[m] || 0)}
-                  </td>
-                ))}
-                <td style={{ padding: '12px 14px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--accent)', fontSize: '15px' }}>
-                  {formatGBP(combinedDepartmentTotals.grandTotal)}
-                </td>
-              </tr>
+              ))}
+              <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', fontWeight: 600 }}>
+                {formatGBP(toolTotals.ytvTotal)}
+              </td>
+              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+                {formatGBP(toolTotals.grandTotal)}
+              </td>
+            </tr>
 
-              {/* Average Cost Per Head */}
-              <tr style={{ backgroundColor: 'rgba(59, 130, 246, 0.04)', fontSize: '12px' }}>
-                <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1, color: 'var(--text-secondary)' }}>
-                  Average Cost per Recruiter
+            {/* Row: Operational Nominals Summary */}
+            <tr style={{ fontSize: '12px', borderBottom: '1px solid var(--border-color)' }}>
+              <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1, fontWeight: 600 }}>
+                3. Department Overhead & Expense Nominals
+              </td>
+              {monthsList.map(m => (
+                <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                  {formatGBP(nominalTotals.monthlySum[m] || 0)}
                 </td>
-                {monthsList.map(m => (
-                  <td key={m} style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
-                    {formatGBP(combinedDepartmentTotals.avgCostPerHead[m] || 0)}
-                  </td>
-                ))}
-                <td style={{ padding: '8px 14px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                  {formatGBP(combinedDepartmentTotals.overallAvgCostPerHead)}
+              ))}
+              <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', fontWeight: 600 }}>
+                {formatGBP(nominalTotals.ytvTotal)}
+              </td>
+              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+                {formatGBP(nominalTotals.grandTotal)}
+              </td>
+            </tr>
+
+            {/* Grand Total Row */}
+            <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 800, borderTop: '2px solid var(--border-color)', borderBottom: '2px solid var(--border-color)', fontSize: '13px' }}>
+              <td style={{ padding: '12px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 2, color: 'var(--accent)' }}>
+                GRAND TOTAL DEPARTMENT OPERATING COST
+              </td>
+              {monthsList.map(m => (
+                <td key={m} style={{ padding: '12px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--accent)' }}>
+                  {formatGBP(combinedDepartmentTotals.monthlySum[m] || 0)}
                 </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+              ))}
+              <td style={{ padding: '12px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--accent)', backgroundColor: 'rgba(99, 102, 241, 0.1)' }}>
+                {formatGBP(combinedDepartmentTotals.ytvTotal)}
+              </td>
+              <td style={{ padding: '12px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--accent)', fontSize: '14px' }}>
+                {formatGBP(combinedDepartmentTotals.grandTotal)}
+              </td>
+            </tr>
+
+            {/* Average Cost Per Head Row */}
+            <tr style={{ backgroundColor: 'rgba(59, 130, 246, 0.04)', fontSize: '11px' }}>
+              <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1, color: 'var(--text-secondary)' }}>
+                Average Operating Cost per Recruiter / Head
+              </td>
+              {monthsList.map(m => (
+                <td key={m} style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                  {formatGBP(combinedDepartmentTotals.avgCostPerHead[m] || 0)}
+                </td>
+              ))}
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
+                —
+              </td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-secondary)', fontWeight: 700 }}>
+                {formatGBP(combinedDepartmentTotals.overallAvgCostPerHead)}
+              </td>
+            </tr>
+
+          </tbody>
+        </table>
       </div>
 
       {/* ==============================================================

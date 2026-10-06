@@ -7,7 +7,9 @@ export default function CompanyDeptTreeFilter({
   selectedCompanyIds = ['all'],
   selectedDepartments = ['all'],
   onChange,
-  placeholder = "Select Entity / Department"
+  placeholder = "Select Entity / Department",
+  style = {},
+  dropdownWidth = '380px'
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -216,7 +218,7 @@ export default function CompanyDeptTreeFilter({
   };
 
   return (
-    <div ref={dropdownRef} style={{ position: 'relative', width: '320px' }}>
+    <div ref={dropdownRef} style={{ position: 'relative', width: '320px', ...style }}>
       {/* Filter Trigger Button */}
       <button
         type="button"
@@ -252,13 +254,14 @@ export default function CompanyDeptTreeFilter({
             position: 'absolute',
             top: 'calc(100% + 4px)',
             left: 0,
-            width: '380px',
+            width: dropdownWidth,
+            maxWidth: '95vw',
             maxHeight: '440px',
             backgroundColor: 'var(--bg-primary)',
             border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-md)',
             boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)',
-            zIndex: 9999,
+            zIndex: 100000,
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden'

@@ -23,6 +23,7 @@ import { Company, Staff, Placement, PayrollRecord, DepartmentTool, NominalCode }
 import { useBoundStore } from '../../store/useBoundStore';
 import { getCellData } from '../payroll/utils';
 import { toGBP } from '../../utils/currency';
+import CompanyDeptTreeFilter from '../CompanyDeptTreeFilter';
 
 interface DepartmentTeamCostTabProps {
   companies: Company[];
@@ -183,6 +184,40 @@ export default function DepartmentTeamCostTab({
   const staffCountAtStartDate = useMemo(() => {
     return calculateStaffCountAtDate(toolForm.contractStartDate, toolForm.companyIds, toolForm.departments);
   }, [calculateStaffCountAtDate, toolForm.contractStartDate, toolForm.companyIds, toolForm.departments]);
+
+  // State for filtering department pills by company in the tool modal
+  const [deptScopeCompanyFilter, setDeptScopeCompanyFilter] = useState<string>('all');
+
+  // Mapping of companyId to unique departments found in staff and company records
+  const companyDepartmentsMap = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    companies.forEach(c => {
+      const deptSet = new Set<string>();
+      if (Array.isArray((c as any).departments)) {
+        (c as any).departments.forEach((d: any) => {
+          if (!d) return;
+          const name = typeof d === 'object' ? d.name : d;
+          if (name && typeof name === 'string') deptSet.add(name.trim());
+        });
+      }
+      staff.forEach(s => {
+        if (s.companyId === c.id && s.department && s.department.trim()) {
+          deptSet.add(s.department.trim());
+        }
+      });
+      map[c.id] = Array.from(deptSet).sort();
+    });
+    return map;
+  }, [companies, staff]);
+
+  // Departments to display in the department pills section (supports company filter)
+  const displayedDepartments = useMemo(() => {
+    if (deptScopeCompanyFilter === 'all') {
+      return allDepartments;
+    }
+    const companyDepts = companyDepartmentsMap[deptScopeCompanyFilter] || [];
+    return companyDepts.length > 0 ? companyDepts : allDepartments;
+  }, [deptScopeCompanyFilter, allDepartments, companyDepartmentsMap]);
 
   // Filter staff by company and department filters
   const filteredStaff = useMemo(() => {
@@ -1893,11 +1928,49 @@ export default function DepartmentTeamCostTab({
                 </div>
               </div>
 
-              {/* Multi-Company Selector */}
+              {/* Hierarchical Company & Department Tree Dropdown */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Building2 size={13} style={{ color: 'var(--accent)' }} />
+                    <span>Company &amp; Department Scope Dropdown *</span>
+                  </label>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    (Dropdown with companies &amp; departments under each company)
+                  </span>
+                </div>
+                <CompanyDeptTreeFilter
+                  companies={companies}
+                  staff={staff}
+                  selectedCompanyIds={toolForm.companyIds}
+                  selectedDepartments={toolForm.departments}
+                  onChange={({ companyIds, departments }: { companyIds: string[]; departments: string[] }) => {
+                    setToolForm(prev => {
+                      const count = calculateStaffCountAtDate(prev.contractStartDate, companyIds, departments);
+                      return {
+                        ...prev,
+                        companyIds,
+                        departments,
+                        companyId: companyIds.includes('all') ? 'all' : (companyIds[0] || 'all'),
+                        department: departments.includes('all') ? 'all' : departments.join(', '),
+                        baselineCommittedSeats: prev.isBaselineOverridden ? prev.baselineCommittedSeats : count
+                      };
+                    });
+                  }}
+                  style={{ width: '100%' }}
+                  dropdownWidth="100%"
+                  placeholder="Select Companies & Departments from Dropdown"
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', display: 'block' }}>
+                  Click the dropdown above to expand any company with the arrow and select the exact departments under that company.
+                </span>
+              </div>
+
+              {/* Multi-Company Selector Pills */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                   <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Company Scope *
+                    Company Scope Pills
                   </label>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button
@@ -1990,44 +2063,74 @@ export default function DepartmentTeamCostTab({
                 </span>
               </div>
 
-              {/* Multi-Department Selector */}
+              {/* Multi-Department Selector with Company Dropdown Filter */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', flexWrap: 'wrap', gap: '8px' }}>
                   <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Department Scope *
+                    Department Scope Pills
                   </label>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button
-                      type="button"
-                      onClick={() => setToolForm(prev => ({ ...prev, departments: ['all'], department: 'all' }))}
-                      style={{
-                        fontSize: '11px',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: toolForm.departments.includes('all') ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                        color: toolForm.departments.includes('all') ? 'var(--accent)' : 'var(--text-secondary)',
-                        cursor: 'pointer',
-                        fontWeight: 600
-                      }}
-                    >
-                      All Departments
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSelectAllDepartments}
-                      style={{
-                        fontSize: '11px',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: 'transparent',
-                        color: 'var(--text-secondary)',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Select All
-                    </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {/* Dropdown to filter departments under a specific company */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Under Company:</span>
+                      <select
+                        value={deptScopeCompanyFilter}
+                        onChange={(e) => setDeptScopeCompanyFilter(e.target.value)}
+                        style={{
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          border: '1px solid var(--border-color)',
+                          backgroundColor: 'var(--bg-primary)',
+                          color: 'var(--text-primary)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="all">All Companies</option>
+                        {companies.map(c => {
+                          const cDepts = companyDepartmentsMap[c.id] || [];
+                          return (
+                            <option key={c.id} value={c.id}>
+                              {c.name} ({cDepts.length} depts)
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setToolForm(prev => ({ ...prev, departments: ['all'], department: 'all' }))}
+                        style={{
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          border: '1px solid var(--border-color)',
+                          backgroundColor: toolForm.departments.includes('all') ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                          color: toolForm.departments.includes('all') ? 'var(--accent)' : 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          fontWeight: 600
+                        }}
+                      >
+                        All Departments
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSelectAllDepartments}
+                        style={{
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          border: '1px solid var(--border-color)',
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-secondary)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Select All
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <div style={{
@@ -2057,7 +2160,7 @@ export default function DepartmentTeamCostTab({
                   >
                     {toolForm.departments.includes('all') ? '✓ ' : ''}All Departments
                   </button>
-                  {allDepartments.map(d => {
+                  {displayedDepartments.map(d => {
                     const isSelected = !toolForm.departments.includes('all') && toolForm.departments.includes(d);
                     return (
                       <button
@@ -2084,6 +2187,11 @@ export default function DepartmentTeamCostTab({
                   {toolForm.departments.includes('all')
                     ? 'Shared across all departments in the business'
                     : `Applies to ${toolForm.departments.length} selected department${toolForm.departments.length === 1 ? '' : 's'}`}
+                  {deptScopeCompanyFilter !== 'all' && (
+                    <span style={{ marginLeft: '6px', color: 'var(--accent)', fontWeight: 600 }}>
+                      (Filtered to {companies.find(c => c.id === deptScopeCompanyFilter)?.name})
+                    </span>
+                  )}
                 </span>
               </div>
 

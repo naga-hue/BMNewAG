@@ -476,7 +476,6 @@ export default function DepartmentTeamCostTab({
         subtext: string;
       }> = {};
 
-      let peakSoFar = baseline;
       let periodTotalCost = 0;
       let ytvCost = 0;
 
@@ -486,6 +485,35 @@ export default function DepartmentTeamCostTab({
 
       const effectiveDepts = toolDepts.includes('all') ? allDepartments : toolDepts;
       const matchingDepts = deptFilter.includes('all') ? effectiveDepts : effectiveDepts.filter(d => deptFilter.includes(d));
+
+      const isFullScope = companyFilter.includes('all') && deptFilter.includes('all');
+
+      // Check if tool is dedicated strictly to the filtered view
+      const isToolDedicatedToView = 
+        (toolDepts.includes('all') ? deptFilter.includes('all') : toolDepts.every(d => deptFilter.includes(d))) &&
+        (toolComps.includes('all') ? companyFilter.includes('all') : toolComps.every(c => companyFilter.includes(c)));
+
+      // Calculate initial active headcount in the viewed scope at the start of the period
+      const initialMonth = monthsList[0] || '2026-01';
+      const initialScopeActive = staff.filter(s => {
+        const inViewComp = companyFilter.includes('all') || companyFilter.includes(s.companyId);
+        const inViewDept = deptFilter.includes('all') || deptFilter.includes(s.department);
+        const toolCompMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
+        const toolDeptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
+        if (!inViewComp || !inViewDept || !toolCompMatch || !toolDeptMatch) return false;
+
+        const cell = getCellData(s, initialMonth, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
+        return isStaffActiveInMonth(s, initialMonth, cell.total);
+      }).length;
+
+      // If viewing full scope or tool is dedicated to this view, use configured baseline;
+      // otherwise, for a shared tool, department baseline starts at the department's initial active headcount
+      const scopeBaseline = (isFullScope || isToolDedicatedToView)
+        ? (Number(tool.baselineCommittedSeats) || initialScopeActive)
+        : initialScopeActive;
+
+      let scopePeakSoFar = scopeBaseline;
+      let contractPeakSoFar = baseline;
 
       monthsList.forEach((m) => {
         let cost = 0;
@@ -620,40 +648,33 @@ export default function DepartmentTeamCostTab({
           }
         } else {
           // Standard Per Seat Ratchet Engine
-          // 1. Calculate contract-level total active headcount across all assigned companies and departments for this tool
-          const totalActiveStaffForTool = staff.filter(s => {
-            const compMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
-            const deptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
-            if (!compMatch || !deptMatch) return false;
-
-            const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
-            return isStaffActiveInMonth(s, m, cell.total);
-          }).length;
-
-          // Track contract-level high-water mark ratchet
-          if (totalActiveStaffForTool > peakSoFar) {
-            peakSoFar = totalActiveStaffForTool;
-          }
-
-          let contractCommitted = peakSoFar;
-          if (tool.manualCommittedSeatsOverride && tool.manualCommittedSeatsOverride[m] !== undefined) {
-            contractCommitted = Number(tool.manualCommittedSeatsOverride[m]);
-          }
-
-          const isContractRatcheted = contractCommitted > baseline;
-
-          // 2. Check if current view is full scope or filtered by department/company
-          const isFullScope = companyFilter.includes('all') && deptFilter.includes('all');
-
           if (isFullScope) {
+            // Full group scope: track company-wide active headcount and contract baseline
+            const totalActiveStaffForTool = staff.filter(s => {
+              const compMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
+              const deptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
+              if (!compMatch || !deptMatch) return false;
+
+              const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
+              return isStaffActiveInMonth(s, m, cell.total);
+            }).length;
+
+            if (totalActiveStaffForTool > contractPeakSoFar) {
+              contractPeakSoFar = totalActiveStaffForTool;
+            }
+
+            committed = contractPeakSoFar;
+            if (tool.manualCommittedSeatsOverride && tool.manualCommittedSeatsOverride[m] !== undefined) {
+              committed = Number(tool.manualCommittedSeatsOverride[m]);
+            }
+
             activeHeadcountForTool = totalActiveStaffForTool;
-            committed = contractCommitted;
             unutilized = Math.max(0, committed - activeHeadcountForTool);
             cost = committed * unitCostGBP;
-            isRatcheted = isContractRatcheted;
+            isRatcheted = committed > baseline;
             subtext = unutilized > 0 ? `${committed} seats (${unutilized} spare)` : `${committed} seats`;
           } else {
-            // View filter is active (e.g. Civils department selected)
+            // Filtered department / company scope (e.g. Civils department selected)
             const viewActiveStaffForTool = staff.filter(s => {
               const inViewComp = companyFilter.includes('all') || companyFilter.includes(s.companyId);
               const inViewDept = deptFilter.includes('all') || deptFilter.includes(s.department);
@@ -667,28 +688,22 @@ export default function DepartmentTeamCostTab({
 
             activeHeadcountForTool = viewActiveStaffForTool;
 
-            // Apportion contracted committed seats based on active headcount share:
-            // If totalActiveStaffForTool > 0, ratio is viewActive / totalActive
-            // If totalActiveStaffForTool === 0, split committed seats equally across assigned departments
-            const ratio = totalActiveStaffForTool > 0
-              ? (viewActiveStaffForTool / totalActiveStaffForTool)
-              : (matchingDepts.length / Math.max(1, effectiveDepts.length));
-
-            committed = contractCommitted * ratio;
-            cost = committed * unitCostGBP;
-            unutilized = Math.max(0, committed - activeHeadcountForTool);
-            isRatcheted = isContractRatcheted && committed > 0;
-
-            const formatSeats = (num: number) => {
-              const rounded = Math.round(num * 10) / 10;
-              return rounded % 1 === 0 ? rounded.toString() : rounded.toFixed(1);
-            };
-
-            if (unutilized > 0.05) {
-              subtext = `${formatSeats(committed)} seats (${formatSeats(unutilized)} spare)`;
-            } else {
-              subtext = `${formatSeats(committed)} seats`;
+            // Department High-Water Mark Ratchet Engine:
+            // When headcount expands in a month (e.g. 6 -> 7 in March), the peak ratchets up
+            // and PERMANENTLY carries forward to all subsequent months (e.g. holds at 7 in April, May...)
+            if (activeHeadcountForTool > scopePeakSoFar) {
+              scopePeakSoFar = activeHeadcountForTool;
             }
+
+            committed = scopePeakSoFar;
+            if (isToolDedicatedToView && tool.manualCommittedSeatsOverride && tool.manualCommittedSeatsOverride[m] !== undefined) {
+              committed = Number(tool.manualCommittedSeatsOverride[m]);
+            }
+
+            unutilized = Math.max(0, committed - activeHeadcountForTool);
+            cost = committed * unitCostGBP;
+            isRatcheted = committed > scopeBaseline;
+            subtext = unutilized > 0 ? `${committed} seats (${unutilized} spare)` : `${committed} seats`;
           }
         }
 

@@ -127,22 +127,43 @@ describe('Department Team & Tool Costs - Contract Ratchet Engine', () => {
     expect(committed * tool.licenseCostPerSeat).toBe(400);
   });
 
-  it('apportions per_seat contract committed seats and cost proportionally when viewing a filtered department', () => {
-    // 26 baseline seats contract shared across 7 departments @ £75/seat (total £1,950/mo)
+  it('tracks department-level high-water mark ratchet holding committed seats forward when headcount drops', () => {
+    // Civils department has 6 active consultants in Jan/Feb, expands to 7 in March, drops to 6 in April
     const unitCost = 75;
-    const contractCommitted = 26;
-    const totalActiveAcrossAllDepts = 24;
+    const monthlyActive = {
+      '2026-01': 6,
+      '2026-02': 6,
+      '2026-03': 7,
+      '2026-04': 6,
+      '2026-05': 6
+    };
+    const months = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
+    const initialBaseline = monthlyActive['2026-01']; // 6 seats
+    let peakSoFar = initialBaseline;
+    const results: Record<string, { committed: number; active: number; unutilized: number; cost: number }> = {};
 
-    // In Civils department, 6 active consultants
-    const civilsActive = 6;
-    const civilsRatio = civilsActive / totalActiveAcrossAllDepts; // 6/24 = 0.25 (25%)
-    const civilsCommitted = contractCommitted * civilsRatio; // 26 * 0.25 = 6.5 seats
-    const civilsCost = civilsCommitted * unitCost; // 6.5 * 75 = £487.50
+    months.forEach(m => {
+      const active = monthlyActive[m as keyof typeof monthlyActive];
+      if (active > peakSoFar) {
+        peakSoFar = active;
+      }
+      const committed = peakSoFar;
+      const unutilized = Math.max(0, committed - active);
+      const cost = committed * unitCost;
+      results[m] = { committed, active, unutilized, cost };
+    });
 
-    expect(civilsCommitted).toBe(6.5);
-    expect(civilsCost).toBe(487.5);
-    // Unutilized spare seats allocated to Civils:
-    const civilsSpare = civilsCommitted - civilsActive;
-    expect(civilsSpare).toBe(0.5);
+    // Jan & Feb: 6 committed, 6 active, 0 spare, £450
+    expect(results['2026-01']).toEqual({ committed: 6, active: 6, unutilized: 0, cost: 450 });
+    expect(results['2026-02']).toEqual({ committed: 6, active: 6, unutilized: 0, cost: 450 });
+
+    // Mar: ratchets up to 7 committed, 7 active, 0 spare, £525
+    expect(results['2026-03']).toEqual({ committed: 7, active: 7, unutilized: 0, cost: 525 });
+
+    // Apr: active drops back to 6, committed HOLDS at 7 (1 spare seat!), cost remains £525
+    expect(results['2026-04']).toEqual({ committed: 7, active: 6, unutilized: 1, cost: 525 });
+
+    // May: holds at 7 committed (1 spare seat!), cost remains £525
+    expect(results['2026-05']).toEqual({ committed: 7, active: 6, unutilized: 1, cost: 525 });
   });
 });

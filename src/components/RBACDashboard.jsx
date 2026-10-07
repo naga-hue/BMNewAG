@@ -16,7 +16,7 @@ const MODULES_LIST = [
   { key: 'credit_control', label: 'Credit Control Invoices' },
   { key: 'cashflow', label: 'Cashflow Projections' },
   { key: 'logs', label: 'Audit Trail Logs' },
-  { key: 'reports', label: 'Profit & Loss / Reports' }
+  { key: 'reports', label: 'Reports / P&L (Team & Tool Costs for Managers)' }
 ];
 
 export default function RBACDashboard({
@@ -480,7 +480,7 @@ Yours sincerely,
                             setEditScope('department');
                             setEditModules([
                               'directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'payroll:view', 'placements:view', 
-                              'expenses:view', 'vendors:view', 'crm:view'
+                              'expenses:view', 'vendors:view', 'crm:view', 'reports:view'
                             ]);
                           } else if (customRoles[val]) {
                             setEditScope('department');
@@ -626,10 +626,21 @@ Yours sincerely,
                             type="button"
                             onClick={() => {
                               setEditRole('manager');
+                              setEditScope('department');
+                              setEditModules(['directory:view', 'staff:view', 'leaves:view', 'commissions:view', 'payroll:view', 'placements:view', 'expenses:view', 'vendors:view', 'crm:view', 'reports:view']);
+                            }}
+                            style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--warning)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
+                          >
+                            👔 Manager Blueprint
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditRole('finance_admin');
                               setEditScope('all');
                               setEditModules(['directory:write', 'staff:write', 'leaves:write', 'commissions:write', 'payroll:write', 'placements:write', 'expenses:write', 'vendors:write', 'crm:write', 'kpis:view', 'credit_control:write', 'cashflow:write', 'reports:write']);
                             }}
-                            style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--warning)', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
+                            style={{ padding: '4px 8px', fontSize: '10px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: '#10b981', cursor: 'pointer', borderRadius: '4px', fontWeight: 600 }}
                           >
                             📊 Finance Blueprint
                           </button>

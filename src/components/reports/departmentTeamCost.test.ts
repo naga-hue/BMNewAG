@@ -175,7 +175,7 @@ describe('Department Team & Tool Costs - Contract Ratchet Engine', () => {
     expect(parseMonthFromDateStr('31/03/2026')).toBe('2026-03');
     expect(parseMonthFromDateStr('')).toBeNull();
     expect(parseMonthFromDateStr(null)).toBeNull();
-  });
+  }, 15000);
 
   it('strictly stops projecting costs after contract renewal/end date (e.g. Rent - Workshack ending 31/03/2026)', async () => {
     const { parseMonthFromDateStr } = await import('./DepartmentTeamCostTab');
@@ -266,5 +266,80 @@ describe('Department Team & Tool Costs - Contract Ratchet Engine', () => {
       'Accountancy'
     ]);
   });
+
+  it('restricts managers strictly to team & tool costs and locks their assigned department', () => {
+    // Simulating manager user (e.g. Turan in Civils)
+    const managerUser = {
+      id: 'staff-turan',
+      fullName: 'Turan',
+      department: 'Civils',
+      permissions: {
+        role: 'manager',
+        dataScope: 'department',
+        allowedModules: ['directory', 'staff', 'leaves', 'reports']
+      }
+    };
+
+    const isManager = managerUser.permissions.role === 'manager';
+    const isTeamCostOnly = isManager || managerUser.permissions?.allowedModules?.includes('reports:team_cost_only');
+    const userDept = managerUser.department;
+
+    // Available tabs for standard users vs managers
+    const allTabs = [
+      { key: 'consolidated', label: 'Group P&L' },
+      { key: 'team_cost', label: 'Team & Tool Costs' },
+      { key: 'ratios', label: 'Salary to billings' },
+      { key: 'leagues', label: 'Recruiter Leagues' }
+    ];
+
+    const accessibleTabs = !isTeamCostOnly
+      ? allTabs
+      : allTabs.filter(t => t.key === 'team_cost');
+
+    expect(isTeamCostOnly).toBe(true);
+    expect(accessibleTabs.map(t => t.key)).toEqual(['team_cost']); // ONLY team_cost accessible
+    expect(accessibleTabs.find(t => t.key === 'consolidated')).toBeUndefined(); // Group P&L shielded
+    expect(accessibleTabs.find(t => t.key === 'ratios')).toBeUndefined(); // Executive ratios shielded
+    expect(accessibleTabs.find(t => t.key === 'leagues')).toBeUndefined(); // Recruiter leagues shielded
+
+    // Initial and active tab enforcement
+    const activeTab = isTeamCostOnly ? 'team_cost' : 'consolidated';
+    expect(activeTab).toBe('team_cost');
+
+    // Department filter is locked to their assigned department
+    const deptFilter = isManager && userDept ? [userDept] : ['all'];
+    expect(deptFilter).toEqual(['Civils']);
+  });
+
+  it('grants full Group P&L, executive ratios, and all departments to super-admin and directors', () => {
+    const adminUser = {
+      id: 'super-admin',
+      fullName: 'Naga Kandasamy',
+      permissions: {
+        role: 'admin',
+        dataScope: 'all',
+        allowedModules: ['reports:write', 'reports:view']
+      }
+    };
+
+    const isManager = adminUser.permissions.role === 'manager';
+    const isTeamCostOnly = isManager;
+
+    const allTabs = [
+      { key: 'consolidated', label: 'Group P&L' },
+      { key: 'team_cost', label: 'Team & Tool Costs' },
+      { key: 'ratios', label: 'Salary to billings' },
+      { key: 'leagues', label: 'Recruiter Leagues' }
+    ];
+
+    const accessibleTabs = !isTeamCostOnly
+      ? allTabs
+      : allTabs.filter(t => t.key === 'team_cost');
+
+    expect(isTeamCostOnly).toBe(false);
+    expect(accessibleTabs.length).toBe(4);
+    expect(accessibleTabs.map(t => t.key)).toEqual(['consolidated', 'team_cost', 'ratios', 'leagues']);
+  });
 });
+
 

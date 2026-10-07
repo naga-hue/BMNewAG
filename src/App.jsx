@@ -2116,7 +2116,7 @@ export default function App() {
                   )}
                   {hasViewPermission(currentUser, 'reports') && (
                     <li>
-                      <div className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')} title="Profit & Loss / Reports">
+                      <div className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')} title={currentUser?.permissions?.role === 'manager' ? "Team & Tool Costs" : "Profit & Loss / Reports"}>
                         <PieChart size={18} />
                       </div>
                     </li>
@@ -2403,7 +2403,7 @@ export default function App() {
                         <li>
                           <div className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')}>
                             <PieChart size={18} />
-                            <span>Profit & Loss / Reports</span>
+                            <span>{currentUser?.permissions?.role === 'manager' ? 'Team & Tool Costs' : 'Profit & Loss / Reports'}</span>
                           </div>
                         </li>
                       )}
@@ -2659,7 +2659,7 @@ export default function App() {
                activeTab === 'payroll' ? 'Group Payroll & Projections' : 
                activeTab === 'expenses' ? 'Expenses & Bank Statement Categorizer' :
                activeTab === 'logs' ? 'System Audit Trail Logs' :
-               activeTab === 'reports' ? 'Profit & Loss / Group Reports' :
+               activeTab === 'reports' ? (currentUser?.permissions?.role === 'manager' ? 'Department Team & Tool Costs' : 'Profit & Loss / Group Reports') :
                activeTab === 'rbac' ? 'User Access & Roles Control' :
                activeTab === 'placements' ? 'Sales & Placements Dashboard' :
                activeTab === 'crm' ? 'CRM Recruiting Desk' :

@@ -38,7 +38,7 @@ const MODULES_LIST = [
   { key: 'credit_control', label: 'Credit Control Invoices' },
   { key: 'cashflow', label: 'Cashflow Projections' },
   { key: 'logs', label: 'Audit Trail Logs' },
-  { key: 'reports', label: 'Profit & Loss / Reports' }
+  { key: 'reports', label: 'Reports / P&L (Team & Tool Costs for Managers)' }
 ];
 
 const doesPolicyMatchCompany = (policyCompanyId, employeeCompanyId) => {

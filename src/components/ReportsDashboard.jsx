@@ -84,11 +84,12 @@ export default function ReportsDashboard({
   onShowToast,
   currentUser
 }) {
-  const [activeTab, setActiveTab] = useState('consolidated'); // consolidated, divisional, departmental, forecast, ratios, leagues
-  
   const isManager = currentUser?.permissions?.role === 'manager';
-  const userDept = currentUser?.department;
+  const userDept = currentUser?.department || staff.find(s => s.id === currentUser?.id)?.department;
+  const isTeamCostOnly = isManager || currentUser?.permissions?.reportsScope === 'team_cost_only';
 
+  const [activeTab, setActiveTab] = useState(isTeamCostOnly ? 'team_cost' : 'consolidated'); // consolidated, divisional, departmental, forecast, ratios, leagues
+  
   // Global Filters
   const [companyFilter, setCompanyFilter] = useState(['all']);
   const [deptFilter, setDeptFilter] = useState(isManager && userDept ? [userDept] : ['all']);
@@ -96,11 +97,17 @@ export default function ReportsDashboard({
   const [endMonth, setEndMonth] = useState('2026-12');
 
   useEffect(() => {
-    if (isManager && userDept) {
+    if (isTeamCostOnly) {
+      setActiveTab('team_cost');
+      if (userDept) {
+        setDeptFilter([userDept]);
+        setCompanyFilter(['all']);
+      }
+    } else if (isManager && userDept) {
       setDeptFilter([userDept]);
       setCompanyFilter(['all']);
     }
-  }, [currentUser, isManager, userDept]);
+  }, [currentUser, isManager, isTeamCostOnly, userDept]);
   const [expandedExpenses, setExpandedExpenses] = useState(false);
   const [expandedBalanceSheet, setExpandedBalanceSheet] = useState(false);
   const [hideZeroNominals, setHideZeroNominals] = useState(() => {
@@ -1782,44 +1789,65 @@ export default function ReportsDashboard({
       </div>
       
       {/* Reports Sub-tab Navigation */}
-      <div style={{ 
-        display: 'flex', 
-        backgroundColor: 'var(--bg-secondary)', 
-        border: '1px solid var(--border-color)',
-        borderRadius: 'var(--radius-md)',
-        padding: '4px',
-        width: 'fit-content',
-        gap: '4px'
-      }}>
-        {[
-          { key: 'consolidated', label: 'Group P&L', icon: <BarChart3 size={14} /> },
-          { key: 'team_cost', label: 'Team & Tool Costs', icon: <Users size={14} /> },
-          { key: 'ratios', label: 'Salary to billings', icon: <Percent size={14} /> },
-          { key: 'leagues', label: 'Recruiter Leagues', icon: <Award size={14} /> }
-        ].map(t => (
-          <button
-            key={t.key}
-            onClick={() => setActiveTab(t.key)}
-            style={{
-              background: activeTab === t.key ? 'var(--bg-sidebar)' : 'none',
-              border: 'none',
-              color: activeTab === t.key ? 'var(--accent)' : 'var(--text-secondary)',
-              padding: '8px 16px',
-              borderRadius: 'var(--radius-sm)',
-              fontWeight: 600,
-              fontSize: '13px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              transition: 'all var(--transition-fast)'
-            }}
-          >
-            {t.icon}
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {!isTeamCostOnly ? (
+        <div style={{ 
+          display: 'flex', 
+          backgroundColor: 'var(--bg-secondary)', 
+          border: '1px solid var(--border-color)',
+          borderRadius: 'var(--radius-md)',
+          padding: '4px',
+          width: 'fit-content',
+          gap: '4px'
+        }}>
+          {[
+            { key: 'consolidated', label: 'Group P&L', icon: <BarChart3 size={14} /> },
+            { key: 'team_cost', label: 'Team & Tool Costs', icon: <Users size={14} /> },
+            { key: 'ratios', label: 'Salary to billings', icon: <Percent size={14} /> },
+            { key: 'leagues', label: 'Recruiter Leagues', icon: <Award size={14} /> }
+          ].map(t => (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              style={{
+                background: activeTab === t.key ? 'var(--bg-sidebar)' : 'none',
+                border: 'none',
+                color: activeTab === t.key ? 'var(--accent)' : 'var(--text-secondary)',
+                padding: '8px 16px',
+                borderRadius: 'var(--radius-sm)',
+                fontWeight: 600,
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all var(--transition-fast)'
+              }}
+            >
+              {t.icon}
+              {t.label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '10px',
+          backgroundColor: 'rgba(139, 92, 246, 0.08)',
+          border: '1px solid rgba(139, 92, 246, 0.3)',
+          borderRadius: 'var(--radius-md)',
+          padding: '8px 16px',
+          width: 'fit-content'
+        }}>
+          <Users size={16} color="#8b5cf6" />
+          <span style={{ fontSize: '13px', fontWeight: 700, color: '#8b5cf6' }}>
+            Team & Tool Costs
+          </span>
+          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', paddingLeft: '8px', borderLeft: '1px solid rgba(139, 92, 246, 0.2)' }}>
+            🔒 Manager Scope: <strong>{userDept || 'Assigned Department'}</strong> (Corporate P&L Restricted)
+          </span>
+        </div>
+      )}
 
       {/* Dynamic Global Filters Toolbar (Visible across all reports tabs) */}
       <div style={{ padding: '16px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'visible', position: 'relative', zIndex: 100 }}>
@@ -1872,38 +1900,40 @@ export default function ReportsDashboard({
             />
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Overhead Nominals:</span>
-              {excludedNominalCodes.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleIncludeAllNominals}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--primary)',
-                    fontSize: '10px',
-                    cursor: 'pointer',
-                    textDecoration: 'underline',
-                    padding: 0
-                  }}
-                >
-                  Reset All
-                </button>
-              )}
+          {!isTeamCostOnly && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>Overhead Nominals:</span>
+                {excludedNominalCodes.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleIncludeAllNominals}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--primary)',
+                      fontSize: '10px',
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                      padding: 0
+                    }}
+                  >
+                    Reset All
+                  </button>
+                )}
+              </div>
+              <MultiSelectFilter
+                options={[
+                  { value: 'all', label: 'All Nominals Included' },
+                  ...allAvailableNominals.map(n => ({ value: n, label: n }))
+                ]}
+                selectedValues={selectedNominalValues}
+                onChange={handleNominalFilterChange}
+                placeholder="All Nominals Included"
+                style={{ minWidth: '190px' }}
+              />
             </div>
-            <MultiSelectFilter
-              options={[
-                { value: 'all', label: 'All Nominals Included' },
-                ...allAvailableNominals.map(n => ({ value: n, label: n }))
-              ]}
-              selectedValues={selectedNominalValues}
-              onChange={handleNominalFilterChange}
-              placeholder="All Nominals Included"
-              style={{ minWidth: '190px' }}
-            />
-          </div>
+          )}
 
         </div>
       </div>
@@ -1941,7 +1971,7 @@ export default function ReportsDashboard({
       {/* ==============================================================
           TAB 1: DYNAMIC COMPANY-WIDE P&L MATRIX
           ============================================================== */}
-      {activeTab === 'consolidated' && (() => {
+      {activeTab === 'consolidated' && !isTeamCostOnly && (() => {
         let rowData = monthsList.map(m => getFilteredMonthlyData(m));
 
         if (pnlVersion === 'v2') {
@@ -4467,7 +4497,7 @@ export default function ReportsDashboard({
       {/* ==============================================================
           TAB 5: SALARY-TO-BILLINGS RATIO
           ============================================================== */}
-      {activeTab === 'ratios' && (
+      {activeTab === 'ratios' && !isTeamCostOnly && (
         <div className="table-container">
           <table className="entity-table dense">
             <thead>
@@ -4788,7 +4818,7 @@ export default function ReportsDashboard({
       {/* ==============================================================
           TAB 6: RECRUITER LEAGUES
           ============================================================== */}
-      {activeTab === 'leagues' && (
+      {activeTab === 'leagues' && !isTeamCostOnly && (
         <div className="table-container" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Recruiter Leagues Leaderboard</h3>
           <table className="entity-table dense">

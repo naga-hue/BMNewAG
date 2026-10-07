@@ -1999,7 +1999,7 @@ export default function DepartmentTeamCostTab({
 
               <!-- Section 2: Software Tools -->
               <tr class="section-hdr">
-                <td colspan="${monthsList.length + 3}">2. Software Licenses & CRM Systems (Ratchet Engine)</td>
+                <td colspan="${monthsList.length + 3}">2. Software Licenses & CRM Systems (Contract Ratchet Engine) Overheads</td>
               </tr>
               <tr class="row-summary">
                 <td>Contracted Software & Tool Licenses</td>
@@ -2857,7 +2857,7 @@ export default function DepartmentTeamCostTab({
                   letterSpacing: '0.05em'
                 }}
               >
-                2. Software Licenses & CRM Systems (Contract Ratchet Engine)
+                2. Software Licenses & CRM Systems (Contract Ratchet Engine) Overheads
               </td>
             </tr>
 

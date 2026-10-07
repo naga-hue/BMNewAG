@@ -293,6 +293,10 @@ export default function DepartmentTeamCostTab({
   // Filter staff by company and department filters
   const filteredStaff = useMemo(() => {
     return staff.filter(s => {
+      // Exclude central corporate owner / Managing Director (Paul Seth) from departmental team costs
+      const fn = (s.fullName || '').toLowerCase().trim();
+      if (fn === 'paul seth' || fn.includes('paul seth')) return false;
+
       if (!companyFilter.includes('all') && !companyFilter.includes(s.companyId)) return false;
       if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) return false;
       if (searchTerm) {
@@ -335,6 +339,10 @@ export default function DepartmentTeamCostTab({
             // Exclude synthetic system-generated mirror expenses to prevent duplication
             if (e.id && (e.id.startsWith('payroll-') || e.id.startsWith('exp-overhead-'))) return false;
 
+            const nom = (e.nominalCode || '').toLowerCase();
+            // Strictly exclude 1003.1 (Director) and 1003.2 (House) from Team & Tool costs
+            if (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house')) return false;
+
             const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
             if (eMonth !== m) return false;
 
@@ -344,8 +352,11 @@ export default function DepartmentTeamCostTab({
             const fn = (s.fullName || '').toLowerCase().trim();
             const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
 
-            const nom = (e.nominalCode || '').toLowerCase();
-            const isRemunNominal = nom.includes('1003') || nom.includes('consulting') || nom.includes('1001') || nom.includes('freelanc') || nom.includes('salary');
+            const isRemunNominal = (nom.includes('1003') && !nom.includes('1003.1') && !nom.includes('1003.2')) ||
+                                   nom.includes('consulting') ||
+                                   nom.includes('1001') ||
+                                   nom.includes('freelanc') ||
+                                   nom.includes('salary');
 
             return (isTargetStaff || isPayeeMatch) && isRemunNominal;
           });
@@ -400,6 +411,10 @@ export default function DepartmentTeamCostTab({
   // Their costs are direct team remuneration in their own department, NOT apportioned to other departments like Civils.
   const sharedStaffList = useMemo(() => {
     return staff.filter(s => {
+      // Exclude Paul Seth (Managing Director / Corporate Owner)
+      const fn = (s.fullName || '').toLowerCase().trim();
+      if (fn === 'paul seth' || fn.includes('paul seth')) return false;
+
       // Exclude if already in filteredStaff (already shown as a direct team member)
       if (filteredStaff.some(fs => fs.id === s.id)) return false;
 
@@ -463,6 +478,10 @@ export default function DepartmentTeamCostTab({
           const staffDirectExpenses = (expenses || []).filter(e => {
             if (e.status === 'dns' || e.status === 'cancelled') return false;
             if (e.id && (e.id.startsWith('payroll-') || e.id.startsWith('exp-overhead-'))) return false;
+            const nom = (e.nominalCode || '').toLowerCase();
+            // Strictly exclude 1003.1 (Director) and 1003.2 (House) from Team & Tool costs
+            if (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house')) return false;
+
             const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
             if (eMonth !== m) return false;
 
@@ -472,8 +491,11 @@ export default function DepartmentTeamCostTab({
             const fn = (s.fullName || '').toLowerCase().trim();
             const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
 
-            const nom = (e.nominalCode || '').toLowerCase();
-            const isRemunNominal = nom.includes('1003') || nom.includes('consulting') || nom.includes('1001') || nom.includes('freelanc') || nom.includes('salary');
+            const isRemunNominal = (nom.includes('1003') && !nom.includes('1003.1') && !nom.includes('1003.2')) ||
+                                   nom.includes('consulting') ||
+                                   nom.includes('1001') ||
+                                   nom.includes('freelanc') ||
+                                   nom.includes('salary');
 
             return (isTargetStaff || isPayeeMatch) && isRemunNominal;
           });

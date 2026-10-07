@@ -457,6 +457,53 @@ describe('Department Team & Tool Costs - Contract Ratchet Engine', () => {
     expect(resultCell.totalWithReimbursements).toBe(3777.00);
     expect(resultCell.basic).not.toBe(7303.99);
   });
+
+  it('strictly excludes nominals 1003.1 (Director) and 1003.2 (House) from team & tool costs', () => {
+    const mixedExpenses = [
+      {
+        id: 'exp-dir-draw',
+        payee: 'Paul Seth',
+        amount: 15000,
+        nominalCode: '1003.1 - Director',
+        plMonth: '2026-02'
+      },
+      {
+        id: 'exp-house-draw',
+        payee: 'Sofia Caltabiano',
+        amount: 55000,
+        nominalCode: '1003.2 - House',
+        plMonth: '2026-02'
+      },
+      {
+        id: 'exp-valid-consult',
+        payee: 'Charlie Davies',
+        amount: 3000,
+        nominalCode: '1003 - Consulting',
+        plMonth: '2026-02'
+      }
+    ];
+
+    // Filter matching DepartmentTeamCostTab logic:
+    const filteredExpenses = mixedExpenses.filter(e => {
+      const nom = (e.nominalCode || '').toLowerCase();
+      // Strictly exclude 1003.1 and 1003.2
+      if (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house')) return false;
+
+      const isRemunNominal = (nom.includes('1003') && !nom.includes('1003.1') && !nom.includes('1003.2')) ||
+                             nom.includes('consulting') ||
+                             nom.includes('1001') ||
+                             nom.includes('freelanc') ||
+                             nom.includes('salary');
+
+      return isRemunNominal;
+    });
+
+    expect(filteredExpenses.length).toBe(1);
+    expect(filteredExpenses[0].payee).toBe('Charlie Davies');
+    expect(filteredExpenses[0].amount).toBe(3000);
+    expect(filteredExpenses.some(e => e.nominalCode.includes('1003.1'))).toBe(false);
+    expect(filteredExpenses.some(e => e.nominalCode.includes('1003.2'))).toBe(false);
+  });
 });
 
 

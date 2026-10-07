@@ -166,4 +166,74 @@ describe('Department Team & Tool Costs - Contract Ratchet Engine', () => {
     // May: holds at 7 committed (1 spare seat!), cost remains £525
     expect(results['2026-05']).toEqual({ committed: 7, active: 6, unutilized: 1, cost: 525 });
   });
+
+  it('correctly parses dates across ISO (YYYY-MM-DD) and UK (DD/MM/YYYY) formats', async () => {
+    const { parseMonthFromDateStr } = await import('./DepartmentTeamCostTab');
+    expect(parseMonthFromDateStr('2026-01-01')).toBe('2026-01');
+    expect(parseMonthFromDateStr('01/01/2026')).toBe('2026-01');
+    expect(parseMonthFromDateStr('2026-03-31')).toBe('2026-03');
+    expect(parseMonthFromDateStr('31/03/2026')).toBe('2026-03');
+    expect(parseMonthFromDateStr('')).toBeNull();
+    expect(parseMonthFromDateStr(null)).toBeNull();
+  });
+
+  it('strictly stops projecting costs after contract renewal/end date (e.g. Rent - Workshack ending 31/03/2026)', async () => {
+    const { parseMonthFromDateStr } = await import('./DepartmentTeamCostTab');
+    const tool: DepartmentTool = {
+      id: 'tool-rent-workshack',
+      name: 'Rent - Workshack',
+      department: 'Civils',
+      departments: ['Civils', 'Interiors'],
+      costBasis: 'per_department',
+      licenseCostPerSeat: 461,
+      currency: 'GBP',
+      billingFrequency: 'monthly',
+      baselineCommittedSeats: 0,
+      contractStartDate: '01/01/2026',
+      renewalDate: '31/03/2026'
+    };
+
+    const months = [
+      '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06',
+      '2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12'
+    ];
+
+    const toolStartMonth = parseMonthFromDateStr(tool.contractStartDate);
+    const toolEndMonth = parseMonthFromDateStr(tool.renewalDate);
+
+    expect(toolStartMonth).toBe('2026-01');
+    expect(toolEndMonth).toBe('2026-03');
+
+    const monthlyCosts: Record<string, number> = {};
+    let periodTotal = 0;
+
+    months.forEach(m => {
+      const isBeforeStart = toolStartMonth ? (m < toolStartMonth) : false;
+      const isAfterEnd = toolEndMonth ? (m > toolEndMonth) : false;
+      const isContractActiveInMonth = !isBeforeStart && !isAfterEnd;
+
+      const cost = isContractActiveInMonth ? tool.licenseCostPerSeat : 0;
+      monthlyCosts[m] = cost;
+      periodTotal += cost;
+    });
+
+    // Q1: Active 3 months @ £461 = £1,383
+    expect(monthlyCosts['2026-01']).toBe(461);
+    expect(monthlyCosts['2026-02']).toBe(461);
+    expect(monthlyCosts['2026-03']).toBe(461);
+
+    // Q2-Q4: Contract ended on 31 March 2026 -> Strictly £0, NOT projected to end of year!
+    expect(monthlyCosts['2026-04']).toBe(0);
+    expect(monthlyCosts['2026-05']).toBe(0);
+    expect(monthlyCosts['2026-06']).toBe(0);
+    expect(monthlyCosts['2026-07']).toBe(0);
+    expect(monthlyCosts['2026-08']).toBe(0);
+    expect(monthlyCosts['2026-09']).toBe(0);
+    expect(monthlyCosts['2026-10']).toBe(0);
+    expect(monthlyCosts['2026-11']).toBe(0);
+    expect(monthlyCosts['2026-12']).toBe(0);
+
+    expect(periodTotal).toBe(1383); // Exactly 3 months of rent, NOT 12 months (£5,532)
+  });
 });
+

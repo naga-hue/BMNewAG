@@ -66,6 +66,35 @@ const formatMonthLabel = (mKey: string): string => {
   }
 };
 
+// Helper to parse a YYYY-MM month string from various date formats (YYYY-MM-DD, DD/MM/YYYY, etc.)
+export const parseMonthFromDateStr = (dateStr?: string | null): string | null => {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const trimmed = dateStr.trim();
+  if (!trimmed) return null;
+
+  // YYYY-MM or YYYY-MM-DD
+  if (/^\d{4}-\d{2}/.test(trimmed)) {
+    return trimmed.substring(0, 7);
+  }
+
+  // DD/MM/YYYY or DD-MM-YYYY
+  const ukMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (ukMatch) {
+    const [, , mm, yyyy] = ukMatch;
+    return `${yyyy}-${mm.padStart(2, '0')}`;
+  }
+
+  // Fallback to Date parse
+  const parsed = new Date(trimmed);
+  if (!isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
+  }
+
+  return null;
+};
+
 // Helper to determine if a staff member was active during a given month
 const isStaffActiveInMonth = (s: Staff, monthKey: string, cellTotal: number): boolean => {
   // 1. If staff member has exited, they cannot be active in months after their exit/cutoff date
@@ -142,7 +171,8 @@ export default function DepartmentTeamCostTab({
 
   // Helper to compute active staff count for a set of companies and departments at a given date/month
   const calculateStaffCountAtDate = useCallback((dateStr: string, compIds: string[], deptNames: string[]) => {
-    const monthKey = dateStr ? dateStr.substring(0, 7) : (startMonth || '2026-01');
+    const parsedM = parseMonthFromDateStr(dateStr);
+    const monthKey = parsedM || (startMonth || '2026-01');
     return staff.filter(s => {
       const compMatch = compIds.includes('all') || compIds.includes(s.companyId);
       const deptMatch = deptNames.includes('all') || deptNames.includes(s.department);
@@ -515,7 +545,27 @@ export default function DepartmentTeamCostTab({
       let scopePeakSoFar = scopeBaseline;
       let contractPeakSoFar = baseline;
 
+      const toolStartMonth = parseMonthFromDateStr(tool.contractStartDate);
+      const toolEndMonth = parseMonthFromDateStr(tool.renewalDate);
+
       monthsList.forEach((m) => {
+        // Contract Term / Active Period Check
+        const isBeforeStart = toolStartMonth ? (m < toolStartMonth) : false;
+        const isAfterEnd = toolEndMonth ? (m > toolEndMonth) : false;
+        const isContractActiveInMonth = !isBeforeStart && !isAfterEnd;
+
+        if (!isContractActiveInMonth) {
+          monthlyDetails[m] = {
+            activeSeats: 0,
+            committedSeats: 0,
+            unutilizedSeats: 0,
+            costGBP: 0,
+            isRatcheted: false,
+            subtext: isBeforeStart ? 'Not started' : 'Contract ended'
+          };
+          return;
+        }
+
         let cost = 0;
         let activeHeadcountForTool = 0;
         let committed = 0;
@@ -1081,7 +1131,7 @@ export default function DepartmentTeamCostTab({
       baselineCommittedSeats: initialStaffCount,
       isBaselineOverridden: false,
       contractStartDate: startDate,
-      renewalDate: `${endMonth}-31`,
+      renewalDate: '',
       vendorName: '',
       notes: ''
     });
@@ -1117,7 +1167,7 @@ export default function DepartmentTeamCostTab({
       baselineCommittedSeats: tool.baselineCommittedSeats !== undefined ? tool.baselineCommittedSeats : staffAtStart,
       isBaselineOverridden: isOverridden,
       contractStartDate: startDate,
-      renewalDate: tool.renewalDate || `${endMonth}-31`,
+      renewalDate: tool.renewalDate || '',
       vendorName: tool.vendorName || '',
       notes: tool.notes || ''
     });
@@ -3684,7 +3734,7 @@ export default function DepartmentTeamCostTab({
 
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-primary)' }}>
-                    Contract Renewal Date (Optional)
+                    Contract End / Renewal Date (Optional)
                   </label>
                   <input
                     type="date"
@@ -3701,7 +3751,7 @@ export default function DepartmentTeamCostTab({
                     }}
                   />
                   <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                    End of current annual/contract commitment period
+                    Contract end or renewal date. Cost projections automatically cease after this date.
                   </span>
                 </div>
               </div>

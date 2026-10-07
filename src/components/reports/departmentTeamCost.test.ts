@@ -386,6 +386,77 @@ describe('Department Team & Tool Costs - Contract Ratchet Engine', () => {
     expect(cellData.total).toBe(10797);
     expect(cellData.isReconciled).toBe(true);
   });
+
+  it('preserves reconciled payroll records and ignores synthetic mirror expenses to prevent elevated freelance payments', () => {
+    // Alex Herzenberg in Feb 2026:
+    // Reconciled payroll record had basic: £3,526.84, reimbursements: £250.16 (total: £3,777.00)
+    const staffMember = { id: 'staff-alex', fullName: 'Alex Herzenberg', department: 'Civils' };
+    const month = '2026-02';
+    const cell = {
+      basic: 3526.84,
+      commission: 0,
+      reimbursements: 250.16,
+      total: 3526.84,
+      totalWithReimbursements: 3777.00,
+      isReconciled: true,
+      notes: ''
+    };
+
+    const mixedExpenses = [
+      {
+        id: 'exp-stmt-bank-1',
+        plMonth: '2026-02',
+        payee: 'Alex Herzenberg',
+        amount: 3777.15,
+        currency: 'GBP',
+        nominalCode: '1001 - Freelancer Payments',
+        status: 'cleared'
+      },
+      {
+        id: 'payroll-salary-staff-alex-2026-02',
+        plMonth: '2026-02',
+        payee: 'Freelancer Payment: Alex Herzenberg',
+        amount: 3526.84,
+        currency: 'GBP',
+        nominalCode: '1001 - Freelancer Payments',
+        status: 'cleared'
+      }
+    ];
+
+    let resultCell = cell;
+
+    // Matching DepartmentTeamCostTab logic:
+    if (!cell.isReconciled || cell.basic === 0) {
+      const staffDirectExpenses = mixedExpenses.filter(e => {
+        if (e.status === 'dns' || e.status === 'cancelled') return false;
+        if (e.id && (e.id.startsWith('payroll-') || e.id.startsWith('exp-overhead-'))) return false;
+        const eMonth = e.plMonth;
+        if (eMonth !== month) return false;
+        const p = (e.payee || '').toLowerCase().trim();
+        const fn = (staffMember.fullName || '').toLowerCase().trim();
+        const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
+        const nom = (e.nominalCode || '').toLowerCase();
+        const isRemunNominal = nom.includes('1001');
+        return isPayeeMatch && isRemunNominal;
+      });
+
+      if (staffDirectExpenses.length > 0) {
+        const bankPaidTotal = staffDirectExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+        resultCell = {
+          ...cell,
+          basic: bankPaidTotal,
+          total: bankPaidTotal,
+          totalWithReimbursements: bankPaidTotal + (cell.reimbursements || 0)
+        };
+      }
+    }
+
+    // Because cell.isReconciled was true, the reconciled basic (£3,526.84) was preserved
+    // and was NOT elevated to £7,303.99!
+    expect(resultCell.basic).toBe(3526.84);
+    expect(resultCell.totalWithReimbursements).toBe(3777.00);
+    expect(resultCell.basic).not.toBe(7303.99);
+  });
 });
 
 

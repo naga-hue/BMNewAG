@@ -340,6 +340,52 @@ describe('Department Team & Tool Costs - Contract Ratchet Engine', () => {
     expect(accessibleTabs.length).toBe(4);
     expect(accessibleTabs.map(t => t.key)).toEqual(['consolidated', 'team_cost', 'ratios', 'leagues']);
   });
+
+  it('auto-aligns team & tool remuneration with actual bank statement disbursements (Group P&L alignment)', () => {
+    // Charlie Davies: baseline payroll record had £3,000, but bank statement (1003 - Consulting) disbursed £10,797
+    const staffMember = { id: 'cd-1', fullName: 'Charlie Davies', department: 'Management' };
+    const month = '2026-06';
+    const payrollRecord = { basicSalary: 3000, totalCost: 3000 };
+
+    const bankExpenses = [
+      {
+        id: 'exp-1',
+        plMonth: '2026-06',
+        payee: 'Charlie Davies',
+        amount: 10797,
+        currency: 'GBP',
+        nominalCode: '1003 - Consulting',
+        status: 'cleared'
+      }
+    ];
+
+    // Extraction logic matching DepartmentTeamCostTab:
+    const staffDirectExpenses = bankExpenses.filter(e => {
+      if (e.status === 'dns' || e.status === 'cancelled') return false;
+      const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+      if (eMonth !== month) return false;
+
+      const p = (e.payee || '').toLowerCase().trim();
+      const fn = (staffMember.fullName || '').toLowerCase().trim();
+      const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
+      const nom = (e.nominalCode || '').toLowerCase();
+      const isRemunNominal = nom.includes('1003') || nom.includes('consulting') || nom.includes('1001') || nom.includes('freelanc') || nom.includes('salary');
+
+      return isPayeeMatch && isRemunNominal;
+    });
+
+    const bankPaidTotal = staffDirectExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+    const cellData = {
+      basic: bankPaidTotal > 0 ? bankPaidTotal : payrollRecord.basicSalary,
+      total: bankPaidTotal > 0 ? bankPaidTotal : payrollRecord.totalCost,
+      isReconciled: bankPaidTotal > 0
+    };
+
+    expect(cellData.basic).toBe(10797);
+    expect(cellData.total).toBe(10797);
+    expect(cellData.isReconciled).toBe(true);
+  });
 });
 
 

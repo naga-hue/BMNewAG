@@ -1947,6 +1947,7 @@ export default function ReportsDashboard({
           staff={staff}
           payrollRecords={payrollRecords}
           payrollPolicies={payrollPolicies}
+          expenses={expenses}
           leaveRequests={leaveRequests}
           holidays={holidays}
           placements={placements}

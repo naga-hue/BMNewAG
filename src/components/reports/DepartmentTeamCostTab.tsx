@@ -30,6 +30,7 @@ interface DepartmentTeamCostTabProps {
   staff: Staff[];
   payrollRecords: PayrollRecord[];
   payrollPolicies: any[];
+  expenses?: any[];
   leaveRequests: any[];
   holidays: any[];
   placements: Placement[];
@@ -123,6 +124,7 @@ export default function DepartmentTeamCostTab({
   staff = [],
   payrollRecords = [],
   payrollPolicies = [],
+  expenses = [],
   leaveRequests = [],
   holidays = [],
   placements = [],
@@ -323,12 +325,47 @@ export default function DepartmentTeamCostTab({
           placements,
           commissionPolicies
         );
+
+        // Auto-align with actual bank disbursements from expenses (matching Group P&L 100%)
+        // for staff/directors receiving direct consulting, freelance, or contractor payments
+        const staffDirectExpenses = (expenses || []).filter(e => {
+          if (e.status === 'dns' || e.status === 'cancelled') return false;
+          const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+          if (eMonth !== m) return false;
+
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget].filter(Boolean);
+          const isTargetStaff = targets.includes(s.id);
+          const p = (e.payee || '').toLowerCase().trim();
+          const fn = (s.fullName || '').toLowerCase().trim();
+          const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
+
+          const nom = (e.nominalCode || '').toLowerCase();
+          const isRemunNominal = nom.includes('1003') || nom.includes('consulting') || nom.includes('1001') || nom.includes('freelanc') || nom.includes('salary');
+
+          return (isTargetStaff || isPayeeMatch) && isRemunNominal;
+        });
+
+        if (staffDirectExpenses.length > 0) {
+          const bankPaidTotal = staffDirectExpenses.reduce((sum, e) => sum + toGBP(Number(e.amount || 0), e.currency || 'GBP'), 0);
+          if (bankPaidTotal > 0) {
+            matrix[s.id][m] = {
+              ...cell,
+              basic: bankPaidTotal,
+              total: bankPaidTotal + (cell.commission || 0),
+              totalWithReimbursements: bankPaidTotal + (cell.commission || 0) + (cell.reimbursements || 0),
+              isReconciled: true,
+              notes: `Bank Statement Paid (Group P&L Aligned): £${bankPaidTotal.toLocaleString()} across ${staffDirectExpenses.length} transactions`
+            };
+            return;
+          }
+        }
+
         matrix[s.id][m] = cell;
       });
     });
 
     return matrix;
-  }, [filteredStaff, monthsList, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies]);
+  }, [filteredStaff, monthsList, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies, expenses]);
 
   // Monthly active headcount for the department / filtered team
   const monthlyHeadcount = useMemo(() => {
@@ -403,7 +440,7 @@ export default function DepartmentTeamCostTab({
 
       monthsList.forEach(m => {
         // Calculate full monthly remuneration of the shared staff/director
-        const cell = getCellData(
+        let cell = getCellData(
           s,
           m,
           payrollRecords,
@@ -415,6 +452,38 @@ export default function DepartmentTeamCostTab({
           placements,
           commissionPolicies
         );
+
+        const staffDirectExpenses = (expenses || []).filter(e => {
+          if (e.status === 'dns' || e.status === 'cancelled') return false;
+          const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+          if (eMonth !== m) return false;
+
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget].filter(Boolean);
+          const isTargetStaff = targets.includes(s.id);
+          const p = (e.payee || '').toLowerCase().trim();
+          const fn = (s.fullName || '').toLowerCase().trim();
+          const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
+
+          const nom = (e.nominalCode || '').toLowerCase();
+          const isRemunNominal = nom.includes('1003') || nom.includes('consulting') || nom.includes('1001') || nom.includes('freelanc') || nom.includes('salary');
+
+          return (isTargetStaff || isPayeeMatch) && isRemunNominal;
+        });
+
+        if (staffDirectExpenses.length > 0) {
+          const bankPaidTotal = staffDirectExpenses.reduce((sum, e) => sum + toGBP(Number(e.amount || 0), e.currency || 'GBP'), 0);
+          if (bankPaidTotal > 0) {
+            cell = {
+              ...cell,
+              basic: bankPaidTotal,
+              total: bankPaidTotal + (cell.commission || 0),
+              totalWithReimbursements: bankPaidTotal + (cell.commission || 0) + (cell.reimbursements || 0),
+              isReconciled: true,
+              notes: `Bank Statement Paid (Group P&L Aligned): £${bankPaidTotal.toLocaleString()}`
+            };
+          }
+        }
+
         const fullCost = cell.total;
 
         // Group active staff across target companies
@@ -460,7 +529,7 @@ export default function DepartmentTeamCostTab({
     });
 
     return matrix;
-  }, [sharedStaffList, monthsList, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies, companyFilter, deptFilter]);
+  }, [sharedStaffList, monthsList, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies, companyFilter, deptFilter, expenses]);
 
   // Relevant shared staff who have apportioned cost > 0 in the period
   const relevantSharedStaff = useMemo(() => {

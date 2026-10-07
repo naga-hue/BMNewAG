@@ -2054,340 +2054,508 @@ export default function ReportsDashboard({
         const totalProfit = rowData.reduce((acc, row) => acc + (row.netProfit || 0), 0);
         const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
-        const handlePrintPnl = () => {
-          const printWindow = window.open('', '_blank');
-          if (!printWindow) {
-            alert("Please allow popups to print/save the P&L report.");
-            return;
+        const ytvRevenue = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.revenue || 0), 0);
+        const ytvOverheads = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.overheadsExpenses || 0), 0);
+        const ytvProfit = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.netProfit || 0), 0);
+        const ytvMargin = ytvRevenue > 0 ? (ytvProfit / ytvRevenue) * 100 : 0;
+        const ytvBsTotal = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.balanceSheetTotal || 0), 0);
+        const totalBsTotal = rowData.reduce((acc, r) => acc + (r.balanceSheetTotal || 0), 0);
+        const avgHeadcount = rowData.length > 0 ? (rowData.reduce((acc, r) => acc + (r.headcount || 0), 0) / rowData.length) : 0;
+
+        const formatMonthLabel = (m) => {
+          const parts = m.split('-');
+          const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, 1);
+          return d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+        };
+        const monthHeaders = monthsList.map(m => formatMonthLabel(m));
+        const activeCompanyNames = activeCompaniesForPL && activeCompaniesForPL.length > 0 
+          ? activeCompaniesForPL.map(c => c.name).join(', ') 
+          : 'All Consolidated Entities';
+        const deptLabel = deptFilter.includes('all') ? 'All Departments' : deptFilter.join(', ');
+
+        const codeKeys = Array.from(new Set(
+          rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
+        )).filter(c => {
+          if (c.startsWith('__')) return false;
+          if (hideZeroNominals) {
+            const total = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[c] || 0), 0);
+            if (total === 0) return false;
           }
+          return true;
+        }).sort();
 
-          const title = `Consolidated Profit & Loss (P&L) Report`;
-          const sub = `Model: ${pnlVersion === 'v1' ? 'v1 - Standard Projections' : 'v2 - 3-Month Running Average'}`;
-          const range = `Period: ${new Date(startMonth + '-02').toLocaleDateString(undefined, { month: 'long', year: 'numeric' })} - ${new Date(endMonth + '-02').toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}`;
-          const bankCutoffNote = `Bank Statement Cutoff: ${reconciledCutoffDate} (${reconciledCutoffDate <= '2026-08-31' ? 'Reconciled through end of August' : `Reconciled through ${reconciledCutoffDate}`})`;
+        const bsCodeKeys = Array.from(new Set(
+          rowData.flatMap(r => Object.keys(r.balanceSheetBreakdown || {}))
+        )).filter(c => {
+          if (hideZeroNominals) {
+            const total = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[c] || 0), 0);
+            if (total === 0) return false;
+          }
+          return true;
+        }).sort();
 
-          let tableHeadersHtml = `<th>P&L Account Line Items (GBP)</th>`;
-          monthsList.forEach(m => {
-            const label = new Date(m + '-02').toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
-            tableHeadersHtml += `<th style="text-align: right;">${label}</th>`;
-          });
-          tableHeadersHtml += `<th style="text-align: right; background-color: #e0e7ff; color: #3730a3;">YTV</th>`;
-          tableHeadersHtml += `<th style="text-align: right; background-color: #f1f5f9;">Period Total</th>`;
-
-          // Row helper inside print
-          const makeRowHtml = (label, dataKey, isBold = false, indent = 0) => {
-            let html = `<tr style="${isBold ? 'font-weight: bold; background-color: #f8fafc;' : ''}">`;
-            html += `<td style="padding-left: ${indent}px;">${label}</td>`;
-            let total = 0;
-            rowData.forEach(row => {
-              const val = row[dataKey] || 0;
-              total += val;
-              html += `<td style="text-align: right;">${formatGBP(val)}</td>`;
-            });
-            const ytvVal = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, row) => acc + (row[dataKey] || 0), 0);
-            html += `<td style="text-align: right; font-weight: 600; background-color: #f5f3ff;">${formatGBP(ytvVal)}</td>`;
-            html += `<td style="text-align: right; font-weight: bold; background-color: #f1f5f9;">${formatGBP(total)}</td>`;
-            html += `</tr>`;
-            return html;
-          };
-
-          // Construct nominal code breakdowns
-          let overheadsDetailHtml = '';
-          const codeKeys = Array.from(new Set(
-            rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
-          )).filter(c => {
-            if (c.startsWith('__')) return false;
-            if (hideZeroNominals) {
-              const total = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[c] || 0), 0);
-              if (total === 0) return false;
+        const handlePrintPnl = () => {
+          try {
+            const printWindow = window.open('', '_blank');
+            if (!printWindow) {
+              if (onShowToast) onShowToast('Please allow popups to open the PDF print preview', 'warning');
+              else alert("Please allow popups to print/save the P&L report.");
+              return;
             }
-            return true;
-          }).sort();
 
-          codeKeys.forEach(code => {
-            const total = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
-            const ytvNominal = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
-            overheadsDetailHtml += `<tr style="font-size: 11px; color: #475569;">`;
-            overheadsDetailHtml += `<td style="padding-left: 32px; font-style: italic;">↳ ${code}</td>`;
-            rowData.forEach(row => {
-              const val = row.nominalBreakdown?.[code] || 0;
-              overheadsDetailHtml += `<td style="text-align: right; opacity: ${val > 0 ? 1 : 0.4};">${formatGBP(val)}</td>`;
+            // Build overheads itemized rows
+            let overheadsDetailHtml = '';
+            codeKeys.forEach(code => {
+              const total = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
+              const ytvNominal = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0);
+              const isExcluded = isNominalExcluded(code);
+              const cols = rowData.map(row => {
+                const val = row.nominalBreakdown?.[code] || 0;
+                return `<td style="opacity: ${val > 0 ? 1 : 0.4};">${formatGBP(val)}</td>`;
+              }).join('');
+
+              overheadsDetailHtml += `
+                <tr class="sub-row">
+                  <td>↳ ${code}${isExcluded ? ' <span style="color:#ef4444; font-size:6.5pt; font-weight:700;">(Excluded)</span>' : ''}</td>
+                  ${cols}
+                  <td style="font-weight:600; background:#f8fafc;">${formatGBP(ytvNominal)}</td>
+                  <td style="font-weight:700;">${formatGBP(total)}</td>
+                </tr>
+              `;
             });
-            overheadsDetailHtml += `<td style="text-align: right; font-weight: 600; background-color: #f5f3ff;">${formatGBP(ytvNominal)}</td>`;
-            overheadsDetailHtml += `<td style="text-align: right; font-weight: bold; background-color: #f1f5f9;">${formatGBP(total)}</td>`;
-            overheadsDetailHtml += `</tr>`;
-          });
 
-          // Construct balance sheet breakdowns
-          let balanceSheetDetailHtml = '';
-          const bsCodeKeys = Array.from(new Set(
-            rowData.flatMap(r => Object.keys(r.balanceSheetBreakdown || {}))
-          )).filter(c => {
-            if (hideZeroNominals) {
-              const total = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[c] || 0), 0);
-              if (total === 0) return false;
-            }
-            return true;
-          }).sort();
+            // Build balance sheet itemized rows
+            let balanceSheetDetailHtml = '';
+            bsCodeKeys.forEach(code => {
+              const total = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0);
+              const ytvBs = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0);
+              const cols = rowData.map(row => {
+                const val = row.balanceSheetBreakdown?.[code] || 0;
+                return `<td style="opacity: ${val > 0 ? 1 : 0.4};">${val > 0 ? formatGBP(val) : '—'}</td>`;
+              }).join('');
 
-          bsCodeKeys.forEach(code => {
-            const total = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0);
-            const ytvBs = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0);
-            balanceSheetDetailHtml += `<tr style="font-size: 11px; color: #475569;">`;
-            balanceSheetDetailHtml += `<td style="padding-left: 32px; font-style: italic;">↳ ${code}</td>`;
-            rowData.forEach(row => {
-              const val = row.balanceSheetBreakdown?.[code] || 0;
-              balanceSheetDetailHtml += `<td style="text-align: right; opacity: ${val > 0 ? 1 : 0.4};">${val > 0 ? formatGBP(val) : '—'}</td>`;
+              balanceSheetDetailHtml += `
+                <tr class="sub-row">
+                  <td>↳ ${code}</td>
+                  ${cols}
+                  <td style="font-weight:600; background:#f8fafc;">${ytvBs > 0 ? formatGBP(ytvBs) : '—'}</td>
+                  <td style="font-weight:700;">${formatGBP(total)}</td>
+                </tr>
+              `;
             });
-            balanceSheetDetailHtml += `<td style="text-align: right; font-weight: 600; background-color: #f5f3ff;">${ytvBs > 0 ? formatGBP(ytvBs) : '—'}</td>`;
-            balanceSheetDetailHtml += `<td style="text-align: right; font-weight: bold; background-color: #f1f5f9;">${formatGBP(total)}</td>`;
-            balanceSheetDetailHtml += `</tr>`;
-          });
 
-          // Calculate EBITDA row
-          let ebitdaHtml = `<tr style="font-weight: bold; background-color: #f0fdf4; font-size: 13px;">`;
-          ebitdaHtml += `<td style="color: #15803d;">EBITDA Net Profit Margin</td>`;
-          let ebitdaTotal = 0;
-          rowData.forEach(row => {
-            ebitdaTotal += row.netProfit;
-            ebitdaHtml += `<td style="text-align: right; color: ${row.netProfit >= 0 ? '#15803d' : '#b91c1c'};">${formatGBP(row.netProfit)}</td>`;
-          });
-          const ytvEbitda = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + r.netProfit, 0);
-          ebitdaHtml += `<td style="text-align: right; font-weight: bold; color: ${ytvEbitda >= 0 ? '#15803d' : '#b91c1c'}; background-color: #e0e7ff;">${formatGBP(ytvEbitda)}</td>`;
-          ebitdaHtml += `<td style="text-align: right; color: ${ebitdaTotal >= 0 ? '#15803d' : '#b91c1c'}; background-color: #e2e8f0;">${formatGBP(ebitdaTotal)}</td>`;
-          ebitdaHtml += `</tr>`;
+            // Cumulative running balance
+            let cumRunning = 0;
+            const cumulativeColsHtml = rowData.map(row => {
+              cumRunning += (row.netProfit || 0);
+              const colColor = cumRunning >= 0 ? '#059669' : '#dc2626';
+              return `<td style="color:${colColor}; font-weight:700;">${formatGBP(cumRunning)}</td>`;
+            }).join('');
 
-          // Carry forward row
-          let carryForwardHtml = `<tr style="font-weight: bold; background-color: #eff6ff; font-size: 13px; border-top: 1px dashed #3b82f6;">`;
-          carryForwardHtml += `<td style="color: #1d4ed8;">📈 Cumulative Carry-Forward P&L</td>`;
-          let cumulativePnl = 0;
-          rowData.forEach(row => {
-            cumulativePnl += row.netProfit;
-            carryForwardHtml += `<td style="text-align: right; color: ${cumulativePnl >= 0 ? '#15803d' : '#b91c1c'};">${formatGBP(cumulativePnl)}</td>`;
-          });
-          const ytvCumulative = rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + r.netProfit, 0);
-          carryForwardHtml += `<td style="text-align: right; font-weight: bold; color: ${ytvCumulative >= 0 ? '#15803d' : '#b91c1c'}; background-color: #e0e7ff;">${formatGBP(ytvCumulative)}</td>`;
-          carryForwardHtml += `<td style="text-align: right; color: ${cumulativePnl >= 0 ? '#15803d' : '#b91c1c'}; background-color: #e2e8f0;">${formatGBP(cumulativePnl)}</td>`;
-          carryForwardHtml += `</tr>`;
-
-          // Staff headcount row
-          let staffCountHtml = `<tr style="color: #64748b; font-size: 11px;">`;
-          staffCountHtml += `<td>Staff Count in Apportionment</td>`;
-          rowData.forEach(row => {
-            staffCountHtml += `<td style="text-align: right;">${row.headcount} active</td>`;
-          });
-          staffCountHtml += `<td style="text-align: right; background-color: #f5f3ff;">—</td>`;
-          staffCountHtml += `<td style="text-align: right; background-color: #f1f5f9;">—</td>`;
-          staffCountHtml += `</tr>`;
-
-          const htmlContent = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-              <title>${title}</title>
-              <style>
-                body {
-                  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-                  color: #1e293b;
-                  padding: 30px;
-                  margin: 0;
-                }
-                .header {
-                  margin-bottom: 25px;
-                  border-bottom: 2px solid #e2e8f0;
-                  padding-bottom: 15px;
-                }
-                .header h1 {
-                  margin: 0 0 5px 0;
-                  font-size: 22px;
-                  font-weight: 800;
-                  color: #0f172a;
-                }
-                .header .meta {
-                  font-size: 12px;
-                  color: #64748b;
-                  display: flex;
-                  justify-content: space-between;
-                  flex-wrap: wrap;
-                  gap: 8px;
-                }
-                table {
-                  width: 100%;
-                  border-collapse: collapse;
-                  font-size: 12px;
-                  margin-bottom: 20px;
-                }
-                th {
-                  background-color: #f8fafc;
-                  color: #475569;
-                  font-weight: 700;
-                  padding: 8px 10px;
-                  border-bottom: 2px solid #e2e8f0;
-                }
-                td {
-                  padding: 8px 10px;
-                  border-bottom: 1px solid #f1f5f9;
-                }
-                .section-header {
-                  font-weight: bold;
-                  background-color: #f8fafc;
-                }
-                .print-btn {
-                  background-color: #4f46e5;
-                  color: white;
-                  border: none;
-                  padding: 8px 16px;
-                  font-size: 12px;
-                  font-weight: 600;
-                  border-radius: 6px;
-                  cursor: pointer;
-                  margin-bottom: 20px;
-                }
-                @media print {
-                  .print-btn { display: none; }
-                  body { padding: 0; }
-                }
-              </style>
-            </head>
-            <body>
-              <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
-              <div class="header">
-                <h1>${title}</h1>
-                <div class="meta">
-                  <span>${sub}</span>
-                  <span>${range}</span>
-                  <span style="color: #4f46e5; font-weight: 600;">${bankCutoffNote}</span>
-                  <span>Generated on: ${new Date().toLocaleDateString()}</span>
+            const htmlContent = `
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <meta charset="utf-8">
+                <title>Consolidated Group P&L Statement - ${activeCompanyNames}</title>
+                <style>
+                  @page {
+                    size: A4 landscape;
+                    margin: 6mm 6mm;
+                  }
+                  * { box-sizing: border-box; }
+                  body {
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+                    color: #0f172a;
+                    background-color: #ffffff;
+                    padding: 10px;
+                    margin: 0;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                  }
+                  .no-print {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 10px;
+                    background: #f8fafc;
+                    padding: 8px 12px;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 6px;
+                  }
+                  .print-btn {
+                    background-color: #059669;
+                    color: white;
+                    border: none;
+                    padding: 8px 18px;
+                    font-size: 13px;
+                    font-weight: 700;
+                    border-radius: 6px;
+                    cursor: pointer;
+                  }
+                  @media print {
+                    .no-print { display: none !important; }
+                    body { padding: 0 !important; margin: 0 !important; }
+                  }
+                  .pnl-header {
+                    border-bottom: 2px solid #0f172a;
+                    padding-bottom: 8px;
+                    margin-bottom: 8px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-end;
+                  }
+                  .pnl-title h1 {
+                    margin: 0 0 4px 0;
+                    font-size: 16px;
+                    font-weight: 800;
+                    color: #0f172a;
+                  }
+                  .pnl-title .meta {
+                    font-size: 9.5px;
+                    color: #475569;
+                    display: flex;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                  }
+                  .pnl-kpi-ribbon {
+                    display: grid;
+                    grid-template-columns: repeat(5, 1fr);
+                    gap: 6px;
+                    margin-bottom: 8px;
+                  }
+                  .kpi-box {
+                    border: 1px solid #cbd5e1;
+                    border-radius: 4px;
+                    padding: 5px 8px;
+                    background-color: #f8fafc;
+                  }
+                  .kpi-box .lbl {
+                    font-size: 7.5pt;
+                    font-weight: 700;
+                    color: #64748b;
+                    text-transform: uppercase;
+                  }
+                  .kpi-box .val {
+                    font-size: 11pt;
+                    font-weight: 800;
+                    font-family: monospace;
+                    color: #0f172a;
+                    margin-top: 1px;
+                  }
+                  table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 7.5pt;
+                    table-layout: fixed;
+                  }
+                  th {
+                    background-color: #f1f5f9;
+                    color: #1e293b;
+                    font-weight: 700;
+                    padding: 4px 2px;
+                    border: 1px solid #cbd5e1;
+                    text-align: right;
+                    font-size: 7.5pt;
+                  }
+                  th:first-child {
+                    text-align: left;
+                    width: 25%;
+                    padding-left: 6px;
+                  }
+                  td {
+                    padding: 3px 2px;
+                    border: 1px solid #e2e8f0;
+                    font-size: 7.5pt;
+                    text-align: right;
+                    font-family: monospace;
+                  }
+                  td:first-child {
+                    text-align: left;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                    padding-left: 6px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                  }
+                  .section-hdr {
+                    background-color: #f8fafc;
+                    font-weight: 800;
+                    text-transform: uppercase;
+                    letter-spacing: 0.04em;
+                    font-size: 7pt;
+                    border-top: 1.5px solid #0f172a;
+                  }
+                  .row-summary {
+                    font-weight: 700;
+                    background-color: #f8fafc;
+                  }
+                  .row-pnl {
+                    background-color: ${totalProfit >= 0 ? '#ecfdf5' : '#fef2f2'};
+                    font-weight: 800;
+                    font-size: 8.5pt;
+                    border-top: 2px solid #0f172a;
+                    border-bottom: 2px solid #0f172a;
+                  }
+                  .sub-row {
+                    font-size: 7pt;
+                    color: #334155;
+                  }
+                  .sub-row td:first-child {
+                    padding-left: 14px;
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="no-print">
+                  <span style="font-size:12px; font-weight:600; color:#334155;">
+                    🖨️ PDF Print Preview: Consolidated Group P&L Statement (${activeCompanyNames})
+                  </span>
+                  <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
                 </div>
-              </div>
-              <table>
-                <thead>
-                  <tr>${tableHeadersHtml}</tr>
-                </thead>
-                <tbody>
-                  <tr class="section-header">
-                    <td colspan="${monthsList.length + 3}">Revenue stream credits</td>
-                  </tr>
-                  ${makeRowHtml('Net Placements Fee Billings', 'revenue', false, 16)}
 
-                  <tr class="section-header">
-                    <td colspan="${monthsList.length + 3}">Overheads & Staff Expenses</td>
-                  </tr>
-                  ${makeRowHtml('Apportioned Overheads & SaaS', 'overheadsExpenses', false, 16)}
-                  ${overheadsDetailHtml}
-                  ${makeRowHtml('Total Indirect Overheads', 'totalOverheads', true)}
+                <div class="pnl-header">
+                  <div class="pnl-title">
+                    <h1>${activeCompanyNames} • Consolidated Group P&L Statement</h1>
+                    <div class="meta">
+                      <span><strong>Period:</strong> ${startMonth} to ${endMonth}</span>
+                      <span><strong>Reconciled Cutoff:</strong> ${reconciledCutoffDate}</span>
+                      <span><strong>Forecasting Model:</strong> ${pnlVersion === 'v1' ? 'v1 - Standard Projections' : 'v2 - 3-Month Running Average'}</span>
+                      <span><strong>Department Filter:</strong> ${deptLabel}</span>
+                      <span><strong>Exported:</strong> ${new Date().toLocaleDateString('en-GB')}</span>
+                    </div>
+                  </div>
+                </div>
 
-                  ${ebitdaHtml}
-                  ${carryForwardHtml}
+                <div class="pnl-kpi-ribbon">
+                  <div class="kpi-box">
+                    <div class="lbl">Active Headcount</div>
+                    <div class="val">${Math.round(avgHeadcount)} avg</div>
+                  </div>
+                  <div class="kpi-box" style="border-color:#10b981; background:#f0fdf4;">
+                    <div class="lbl" style="color:#059669;">Total Revenue (Billings)</div>
+                    <div class="val" style="color:#059669;">${formatGBP(totalRevenue)}</div>
+                  </div>
+                  <div class="kpi-box">
+                    <div class="lbl">Total Operating Overheads</div>
+                    <div class="val">${formatGBP(totalOverheads)}</div>
+                  </div>
+                  <div class="kpi-box" style="border-color:${totalProfit >= 0 ? '#10b981' : '#ef4444'}; background:${totalProfit >= 0 ? '#f0fdf4' : '#fef2f2'};">
+                    <div class="lbl" style="color:${totalProfit >= 0 ? '#059669' : '#dc2626'};">EBITDA Net Profit</div>
+                    <div class="val" style="color:${totalProfit >= 0 ? '#059669' : '#dc2626'};">
+                      ${totalProfit >= 0 ? '+' : ''}${formatGBP(totalProfit)}
+                    </div>
+                  </div>
+                  <div class="kpi-box">
+                    <div class="lbl">Net Margin %</div>
+                    <div class="val" style="color:${profitMargin >= 0 ? '#059669' : '#dc2626'};">
+                      ${profitMargin.toFixed(1)}%
+                    </div>
+                  </div>
+                </div>
 
-                  <tr class="section-header">
-                    <td colspan="${monthsList.length + 3}">Non-P&L Balance Sheet Items (Cash Flow Only)</td>
-                  </tr>
-                  ${makeRowHtml('Refundable Deposits & Prepayments', 'balanceSheetTotal', false, 16)}
-                  ${balanceSheetDetailHtml}
+                <table>
+                  <thead>
+                    <tr>
+                      <th>P&L Account Line Item (GBP)</th>
+                      ${monthHeaders.map(mh => `<th>${mh}</th>`).join('')}
+                      <th style="background:#e0e7ff; color:#3730a3;">YTV</th>
+                      <th style="background:#f1f5f9;">Period Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <!-- Headcount row -->
+                    <tr class="sub-row">
+                      <td>Active Staff Headcount</td>
+                      ${rowData.map(r => `<td>${r.headcount || 0}</td>`).join('')}
+                      <td style="background:#f8fafc;">—</td>
+                      <td style="font-weight:700;">${Math.round(avgHeadcount)} avg</td>
+                    </tr>
 
-                  ${staffCountHtml}
-                </tbody>
-              </table>
-            </body>
-            </html>
-          `;
+                    <!-- Section 1: Revenue -->
+                    <tr class="section-hdr" style="color:#059669; background:#f0fdf4;">
+                      <td colspan="${monthsList.length + 3}">1. Revenue Stream Credits (Net Placements Billings)</td>
+                    </tr>
+                    <tr class="row-summary" style="color:#059669; background:#f0fdf4;">
+                      <td>Net Placements Fee Billings</td>
+                      ${rowData.map(r => `<td>${formatGBP(r.revenue || 0)}</td>`).join('')}
+                      <td style="font-weight:700;">${formatGBP(ytvRevenue)}</td>
+                      <td style="font-weight:800;">${formatGBP(totalRevenue)}</td>
+                    </tr>
 
-          printWindow.document.write(htmlContent);
-          printWindow.document.close();
+                    <!-- Section 2: Overheads -->
+                    <tr class="section-hdr">
+                      <td colspan="${monthsList.length + 3}">2. Operating Overheads & Staff Remuneration</td>
+                    </tr>
+                    <tr class="row-summary">
+                      <td>Apportioned Overheads & SaaS</td>
+                      ${rowData.map(r => `<td>${formatGBP(r.overheadsExpenses || 0)}</td>`).join('')}
+                      <td style="font-weight:700;">${formatGBP(ytvOverheads)}</td>
+                      <td style="font-weight:800;">${formatGBP(totalOverheads)}</td>
+                    </tr>
+                    ${overheadsDetailHtml}
+                    <tr class="row-summary" style="border-top:1.5px solid #cbd5e1;">
+                      <td>Total Indirect Overheads</td>
+                      ${rowData.map(r => `<td>${formatGBP(r.totalOverheads || r.overheadsExpenses || 0)}</td>`).join('')}
+                      <td style="font-weight:700;">${formatGBP(ytvOverheads)}</td>
+                      <td style="font-weight:800;">${formatGBP(totalOverheads)}</td>
+                    </tr>
+
+                    <!-- Section 3: EBITDA Net Profit -->
+                    <tr class="row-pnl" style="color:${totalProfit >= 0 ? '#059669' : '#dc2626'};">
+                      <td>🏆 EBITDA Net Profit Margin</td>
+                      ${rowData.map(r => `<td>${formatGBP(r.netProfit || 0)}</td>`).join('')}
+                      <td style="font-weight:800; background:#e0e7ff; color:${ytvProfit >= 0 ? '#059669' : '#dc2626'};">${formatGBP(ytvProfit)}</td>
+                      <td style="font-weight:800; background:#e2e8f0; color:${totalProfit >= 0 ? '#059669' : '#dc2626'};">${formatGBP(totalProfit)}</td>
+                    </tr>
+                    <tr class="sub-row" style="font-weight:600;">
+                      <td>Net Margin % (Profit ÷ Sales)</td>
+                      ${rowData.map(r => `<td>${r.revenue > 0 ? ((r.netProfit / r.revenue) * 100).toFixed(1) + '%' : '0.0%'}</td>`).join('')}
+                      <td style="background:#f8fafc;">${ytvRevenue > 0 ? ((ytvProfit / ytvRevenue) * 100).toFixed(1) + '%' : '0.0%'}</td>
+                      <td style="font-weight:700;">${profitMargin.toFixed(1)}%</td>
+                    </tr>
+
+                    <!-- Section 4: Cumulative Running Balance -->
+                    <tr class="row-summary" style="background:#eff6ff; color:#1d4ed8; border-top: 1px dashed #3b82f6;">
+                      <td>📈 Cumulative Carry-Forward P&L</td>
+                      ${cumulativeColsHtml}
+                      <td style="font-weight:700; background:#e0e7ff; color:${ytvProfit >= 0 ? '#15803d' : '#b91c1c'};">${formatGBP(ytvProfit)}</td>
+                      <td style="font-weight:800; background:#e2e8f0; color:${totalProfit >= 0 ? '#15803d' : '#b91c1c'};">${formatGBP(totalProfit)}</td>
+                    </tr>
+
+                    <!-- Section 5: Non-P&L Balance Sheet Items -->
+                    <tr class="section-hdr">
+                      <td colspan="${monthsList.length + 3}">3. Non-P&L Balance Sheet Items (Cash Flow Only)</td>
+                    </tr>
+                    <tr class="row-summary">
+                      <td>Refundable Deposits & Prepayments</td>
+                      ${rowData.map(r => `<td>${formatGBP(r.balanceSheetTotal || 0)}</td>`).join('')}
+                      <td style="font-weight:700;">${formatGBP(ytvBsTotal)}</td>
+                      <td style="font-weight:800;">${formatGBP(totalBsTotal)}</td>
+                    </tr>
+                    ${balanceSheetDetailHtml}
+                  </tbody>
+                </table>
+              </body>
+              </html>
+            `;
+
+            printWindow.document.open();
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
+            setTimeout(() => {
+              try {
+                printWindow.focus();
+                printWindow.print();
+              } catch (e) {
+                console.error("Print auto-trigger error:", e);
+              }
+            }, 300);
+          } catch (err) {
+            console.error('Error generating Group P&L PDF preview:', err);
+            if (onShowToast) onShowToast('Failed to generate PDF: ' + err.message, 'error');
+          }
         };
 
         const handleExportPnlExcel = () => {
           try {
             const wb = XLSX.utils.book_new();
 
-            // 1. P&L Summary Sheet
-            const summaryAoa = [];
-            
-            // Header metadata
-            summaryAoa.push(["Humres Technical Recruitment - Consolidated Profit & Loss (P&L) Report"]);
-            summaryAoa.push(["Forecasting Model:", pnlVersion === 'v1' ? 'v1 - Standard Projections' : 'v2 - 3-Month Running Average (April-June 2026 Baseline)']);
-            summaryAoa.push(["Period Range:", `${startMonth} to ${endMonth}`]);
-            summaryAoa.push(["Bank Reconciliation Cutoff:", `${reconciledCutoffDate} (Actuals through cutoff, forecast thereafter)`]);
-            summaryAoa.push(["Entities Included:", activeCompaniesForPL.map(c => c.name).join(', ') || 'All Consolidated Entities']);
-            summaryAoa.push(["Department Filter:", deptFilter.includes('all') ? 'All Departments' : deptFilter.join(', ')]);
-            summaryAoa.push(["Export Date:", new Date().toLocaleDateString('en-GB')]);
-            summaryAoa.push([]); // blank spacer row
+            // 1. Group P&L Statement (Mirroring PDF Statement Layout)
+            const summaryAoa = [
+              ['HUMRES BUSINESS MANAGEMENT - CONSOLIDATED GROUP P&L STATEMENT'],
+              [`Entities: ${activeCompanyNames}`, `Department(s): ${deptLabel}`, `Period Range: ${startMonth} to ${endMonth}`, `Exported on: ${new Date().toLocaleDateString('en-GB')}`],
+              [`Forecasting Model: ${pnlVersion === 'v1' ? 'v1 - Standard Projections' : 'v2 - 3-Month Running Average (Apr-Jun Baseline)'}`, `Bank Reconciliation Cutoff: ${reconciledCutoffDate}`],
+              [],
+              ['EXECUTIVE KPI SUMMARY'],
+              ['Active Headcount (Avg)', 'Total Billings / Revenue (£)', 'Total Operating Overheads (£)', 'EBITDA Net Profit (£)', 'Net Margin %'],
+              [
+                Math.round(avgHeadcount),
+                Math.round(totalRevenue),
+                Math.round(totalOverheads),
+                Math.round(totalProfit),
+                profitMargin.toFixed(1) + '%'
+              ],
+              [],
+              ['Metric / Account Line Item (GBP)', ...monthHeaders, 'YTV (Reconciled)', 'Period Total'],
+              [
+                'Active Team Headcount',
+                ...rowData.map(r => r.headcount || 0),
+                '—',
+                Math.round(avgHeadcount) + ' (Avg)'
+              ],
+              [],
+              ['➕ 1. REVENUE STREAM CREDITS (PLACEMENTS BILLINGS)'],
+              [
+                '  Net Placements Fee Billings',
+                ...rowData.map(r => Math.round(r.revenue || 0)),
+                Math.round(ytvRevenue),
+                Math.round(totalRevenue)
+              ],
+              [],
+              ['➖ 2. OPERATING OVERHEADS & STAFF REMUNERATION'],
+              [
+                '  Apportioned Overheads & SaaS',
+                ...rowData.map(r => Math.round(r.overheadsExpenses || 0)),
+                Math.round(ytvOverheads),
+                Math.round(totalOverheads)
+              ]
+            ];
 
-            // Column Headers
-            const monthHeaders = monthsList.map(m => new Date(m + '-02').toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }));
-            summaryAoa.push(["P&L Account Line Items (GBP)", ...monthHeaders, "YTV (Reconciled)", "Period Total"]);
-
-            // Helper to add data rows
-            const addDataRow = (label, dataKey) => {
-              const vals = rowData.map(r => Math.round(r[dataKey] || 0));
-              const ytvVal = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r[dataKey] || 0), 0));
-              const totalVal = Math.round(rowData.reduce((acc, r) => acc + (r[dataKey] || 0), 0));
-              summaryAoa.push([label, ...vals, ytvVal, totalVal]);
-            };
-
-            // Section 1: Revenue stream credits
-            summaryAoa.push(["Revenue stream credits"]);
-            addDataRow("  Net Placements Fee Billings", "revenue");
-            summaryAoa.push([]);
-
-            // Section 2: Overheads & Staff Expenses
-            summaryAoa.push(["Overheads & Staff Expenses"]);
-            addDataRow("  Apportioned Overheads & SaaS", "overheadsExpenses");
-
-            // Nominal breakdowns
-            const codeKeys = Array.from(new Set(
-              rowData.flatMap(r => Object.keys(r.nominalBreakdown || {}))
-            )).filter(c => {
-              if (c.startsWith('__')) return false;
-              if (hideZeroNominals) {
-                const total = rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[c] || 0), 0);
-                if (total === 0) return false;
-              }
-              return true;
-            }).sort();
-
+            // Nominal code breakdown sub-rows
             codeKeys.forEach(code => {
               const isExcluded = isNominalExcluded(code);
               const vals = rowData.map(r => Math.round(r.nominalBreakdown?.[code] || 0));
               const ytvNominal = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0));
               const totalNominal = Math.round(rowData.reduce((acc, r) => acc + (r.nominalBreakdown?.[code] || 0), 0));
-              summaryAoa.push([`    ↳ ${code}${isExcluded ? ' (Excluded from overheads)' : ''}`, ...vals, ytvNominal, totalNominal]);
+              summaryAoa.push([`    ↳ ${code}${isExcluded ? ' (Excluded)' : ''}`, ...vals, ytvNominal, totalNominal]);
             });
 
-            addDataRow("Total Indirect Overheads", "totalOverheads");
+            summaryAoa.push([
+              'TOTAL INDIRECT OVERHEADS',
+              ...rowData.map(r => Math.round(r.totalOverheads || r.overheadsExpenses || 0)),
+              Math.round(ytvOverheads),
+              Math.round(totalOverheads)
+            ]);
             summaryAoa.push([]);
 
             // Section 3: EBITDA Net Profit
-            const ebitdaVals = rowData.map(r => Math.round(r.netProfit || 0));
-            const ytvEbitda = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.netProfit || 0), 0));
-            const totalEbitda = Math.round(rowData.reduce((acc, r) => acc + (r.netProfit || 0), 0));
-            summaryAoa.push(["EBITDA Net Profit Margin", ...ebitdaVals, ytvEbitda, totalEbitda]);
+            summaryAoa.push([
+              '🏆 EBITDA NET PROFIT / CONTRIBUTION (P&L)',
+              ...rowData.map(r => Math.round(r.netProfit || 0)),
+              Math.round(ytvProfit),
+              Math.round(totalProfit)
+            ]);
+            summaryAoa.push([
+              'Net Margin % (Profit ÷ Sales)',
+              ...rowData.map(r => ((r.revenue > 0 ? (r.netProfit / r.revenue) * 100 : 0).toFixed(1) + '%')),
+              (ytvRevenue > 0 ? (ytvProfit / ytvRevenue) * 100 : 0).toFixed(1) + '%',
+              profitMargin.toFixed(1) + '%'
+            ]);
+            summaryAoa.push([]);
 
-            // Section 4: Cumulative Carry-Forward P&L
+            // Section 4: Cumulative Running Balance
             let cum = 0;
             const cumVals = rowData.map(r => {
               cum += Math.round(r.netProfit || 0);
               return cum;
             });
-            const ytvCum = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.netProfit || 0), 0));
-            summaryAoa.push(["Cumulative Carry-Forward P&L", ...cumVals, ytvCum, cum]);
+            summaryAoa.push([
+              '📈 CUMULATIVE CARRY-FORWARD P&L (RUNNING BALANCE)',
+              ...cumVals,
+              Math.round(ytvProfit),
+              Math.round(totalProfit)
+            ]);
             summaryAoa.push([]);
 
             // Section 5: Non-P&L Balance Sheet Items
-            summaryAoa.push(["Non-P&L Balance Sheet Items (Cash Flow Only)"]);
-            addDataRow("  Refundable Deposits & Prepayments", "balanceSheetTotal");
-
-            // Balance sheet nominal breakdowns
-            const bsCodeKeys = Array.from(new Set(
-              rowData.flatMap(r => Object.keys(r.balanceSheetBreakdown || {}))
-            )).filter(c => {
-              if (hideZeroNominals) {
-                const total = rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[c] || 0), 0);
-                if (total === 0) return false;
-              }
-              return true;
-            }).sort();
+            summaryAoa.push(['3. NON-P&L BALANCE SHEET ITEMS (CASH FLOW ONLY)']);
+            summaryAoa.push([
+              '  Refundable Deposits & Prepayments',
+              ...rowData.map(r => Math.round(r.balanceSheetTotal || 0)),
+              Math.round(ytvBsTotal),
+              Math.round(totalBsTotal)
+            ]);
 
             bsCodeKeys.forEach(code => {
               const vals = rowData.map(r => Math.round(r.balanceSheetBreakdown?.[code] || 0));
@@ -2395,20 +2563,15 @@ export default function ReportsDashboard({
               const totalBs = Math.round(rowData.reduce((acc, r) => acc + (r.balanceSheetBreakdown?.[code] || 0), 0));
               summaryAoa.push([`    ↳ ${code}`, ...vals, ytvBs, totalBs]);
             });
-            summaryAoa.push([]);
-
-            // Section 6: Staff Headcount
-            const headcounts = rowData.map(r => r.headcount || 0);
-            summaryAoa.push(["Staff Count in Apportionment", ...headcounts, "—", "—"]);
 
             const wsSummary = XLSX.utils.aoa_to_sheet(summaryAoa);
             wsSummary['!cols'] = [
-              { wch: 42 },
+              { wch: 45 },
               ...monthsList.map(() => ({ wch: 14 })),
-              { wch: 16 },
-              { wch: 16 }
+              { wch: 18 },
+              { wch: 18 }
             ];
-            XLSX.utils.book_append_sheet(wb, wsSummary, "P&L Summary");
+            XLSX.utils.book_append_sheet(wb, wsSummary, "Group P&L Summary");
 
             // 2. Paid vs Projected Comparison Sheet
             const compAoa = [];
@@ -2419,16 +2582,9 @@ export default function ReportsDashboard({
             compAoa.push(["Nominal Code / Line Item", "Type", ...monthHeaders, "YTV", "Period Total"]);
 
             // Total Apportioned
-            const ytvOverheads = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.overheadsExpenses || 0), 0));
-            const ytvPaid = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.overheadsPaid || 0), 0));
-            const ytvProj = Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.overheadsProjected || 0), 0));
-            const totOverheads = Math.round(rowData.reduce((acc, r) => acc + (r.overheadsExpenses || 0), 0));
-            const totPaid = Math.round(rowData.reduce((acc, r) => acc + (r.overheadsPaid || 0), 0));
-            const totProj = Math.round(rowData.reduce((acc, r) => acc + (r.overheadsProjected || 0), 0));
-
-            compAoa.push(["Total Apportioned Overheads", "P&L Recognized", ...rowData.map(r => Math.round(r.overheadsExpenses || 0)), ytvOverheads, totOverheads]);
-            compAoa.push(["", "Bank Paid (Actuals)", ...rowData.map(r => Math.round(r.overheadsPaid || 0)), ytvPaid, totPaid]);
-            compAoa.push(["", "Projected Forecast", ...rowData.map(r => Math.round(r.overheadsProjected || 0)), ytvProj, totProj]);
+            compAoa.push(["Total Apportioned Overheads", "P&L Recognized", ...rowData.map(r => Math.round(r.overheadsExpenses || 0)), Math.round(ytvOverheads), Math.round(totalOverheads)]);
+            compAoa.push(["", "Bank Paid (Actuals)", ...rowData.map(r => Math.round(r.overheadsPaid || 0)), Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.overheadsPaid || 0), 0)), Math.round(rowData.reduce((acc, r) => acc + (r.overheadsPaid || 0), 0))]);
+            compAoa.push(["", "Projected Forecast", ...rowData.map(r => Math.round(r.overheadsProjected || 0)), Math.round(rowData.filter((r, idx) => monthsList[idx] <= reconciledCutoffMonth).reduce((acc, r) => acc + (r.overheadsProjected || 0), 0)), Math.round(rowData.reduce((acc, r) => acc + (r.overheadsProjected || 0), 0))]);
             compAoa.push([]);
 
             // Each nominal code
@@ -2461,16 +2617,16 @@ export default function ReportsDashboard({
             XLSX.utils.book_append_sheet(wb, wsComp, "Paid vs Projected");
 
             // Write File
-            const filename = `Consolidated_PnL_${startMonth}_to_${endMonth}.xlsx`;
+            const filename = `Consolidated_Group_PnL_${startMonth}_to_${endMonth}.xlsx`;
             XLSX.writeFile(wb, filename);
 
             if (onShowToast) {
-              onShowToast(`P&L report exported successfully to ${filename}`, 'success');
+              onShowToast(`Group P&L report exported successfully to ${filename}`, 'success');
             }
           } catch (err) {
-            console.error("Failed to export P&L to Excel:", err);
+            console.error("Failed to export Group P&L to Excel:", err);
             if (onShowToast) {
-              onShowToast("Failed to generate Excel export. Please check console for details.", "error");
+              onShowToast("Failed to generate Excel export: " + err.message, "error");
             }
           }
         };

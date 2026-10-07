@@ -298,7 +298,10 @@ export default function DepartmentTeamCostTab({
       if (fn === 'paul seth' || fn.includes('paul seth')) return false;
 
       if (!companyFilter.includes('all') && !companyFilter.includes(s.companyId)) return false;
-      if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) return false;
+      if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) {
+        const hasDeptAlloc = Array.isArray(s.departmentAllocations) && s.departmentAllocations.some(a => deptFilter.includes(a.department));
+        if (!hasDeptAlloc) return false;
+      }
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
         const matchesName = (s.fullName || '').toLowerCase().includes(q);
@@ -359,12 +362,47 @@ export default function DepartmentTeamCostTab({
           return (isTargetStaff || isPayeeMatch) && isRemunNominal;
         });
 
+        const isAllocOnly = !deptFilter.includes('all') && !deptFilter.includes(s.department || '');
+        const hasAllocAway = !deptFilter.includes('all') && deptFilter.includes(s.department || '') && Array.isArray(s.departmentAllocations) && s.departmentAllocations.length > 0;
+
         if (staffDirectExpenses.length > 0) {
           const bankPaidTotal = staffDirectExpenses.reduce((sum, e) => sum + toGBP(Number(e.amount || 0), e.currency || 'GBP'), 0);
           if (bankPaidTotal > 0) {
             const basicAmount = (cell.reimbursements && cell.reimbursements > 0)
               ? Math.max(0, bankPaidTotal - cell.reimbursements)
               : bankPaidTotal;
+
+            if (isAllocOnly) {
+              const alloc = (s.departmentAllocations || []).find(a => deptFilter.includes(a.department));
+              if (alloc) {
+                const fixedAmt = Number(alloc.amount || 0);
+                matrix[s.id][m] = {
+                  ...cell,
+                  basic: fixedAmt,
+                  commission: 0,
+                  reimbursements: 0,
+                  total: fixedAmt,
+                  totalWithReimbursements: fixedAmt,
+                  isReconciled: true,
+                  notes: `🔀 Fixed Split: £${fixedAmt.toLocaleString()}/mo allocated to ${alloc.department} (Home: ${s.department})`
+                };
+                return;
+              }
+            }
+
+            if (hasAllocAway) {
+              const totalAllocAway = (s.departmentAllocations || []).reduce((acc, a) => acc + Number(a.amount || 0), 0);
+              const retainedBasic = Math.max(0, basicAmount - totalAllocAway);
+              matrix[s.id][m] = {
+                ...cell,
+                basic: retainedBasic,
+                total: retainedBasic + (cell.commission || 0),
+                totalWithReimbursements: retainedBasic + (cell.reimbursements || 0) + (cell.commission || 0),
+                isReconciled: true,
+                notes: `Home Dept Balance: £${retainedBasic.toLocaleString()} (after £${totalAllocAway.toLocaleString()} split to ${(s.departmentAllocations || []).map(a => a.department).join(', ')})`
+              };
+              return;
+            }
 
             matrix[s.id][m] = {
               ...cell,
@@ -376,6 +414,37 @@ export default function DepartmentTeamCostTab({
             };
             return;
           }
+        }
+
+        // For forecast / non-expense months:
+        if (isAllocOnly) {
+          const alloc = (s.departmentAllocations || []).find(a => deptFilter.includes(a.department));
+          if (alloc) {
+            const fixedAmt = Number(alloc.amount || 0);
+            matrix[s.id][m] = {
+              ...cell,
+              basic: fixedAmt,
+              commission: 0,
+              reimbursements: 0,
+              total: fixedAmt,
+              totalWithReimbursements: fixedAmt,
+              notes: `🔀 Fixed Split Forecast: £${fixedAmt.toLocaleString()}/mo allocated to ${alloc.department}`
+            };
+            return;
+          }
+        }
+
+        if (hasAllocAway) {
+          const totalAllocAway = (s.departmentAllocations || []).reduce((acc, a) => acc + Number(a.amount || 0), 0);
+          const retainedBasic = Math.max(0, (cell.basic || 0) - totalAllocAway);
+          matrix[s.id][m] = {
+            ...cell,
+            basic: retainedBasic,
+            total: retainedBasic + (cell.commission || 0),
+            totalWithReimbursements: retainedBasic + (cell.reimbursements || 0) + (cell.commission || 0),
+            notes: `Home Dept Balance Forecast: £${retainedBasic.toLocaleString()} (after £${totalAllocAway.toLocaleString()} split to ${(s.departmentAllocations || []).map(a => a.department).join(', ')})`
+          };
+          return;
         }
 
         matrix[s.id][m] = cell;
@@ -392,6 +461,10 @@ export default function DepartmentTeamCostTab({
     monthsList.forEach(m => {
       let count = 0;
       filteredStaff.forEach(s => {
+        // Apportioned consultant is not counted towards physical desk overhead headcount of target department
+        const isAllocOnly = !deptFilter.includes('all') && !deptFilter.includes(s.department || '');
+        if (isAllocOnly) return;
+
         const cell = staffMonthlyData[s.id]?.[m];
         const total = cell?.total || 0;
         if (isStaffActiveInMonth(s, m, total)) {
@@ -402,7 +475,7 @@ export default function DepartmentTeamCostTab({
     });
 
     return counts;
-  }, [monthsList, filteredStaff, staffMonthlyData]);
+  }, [monthsList, filteredStaff, staffMonthlyData, deptFilter]);
 
   // 1. Identify shared staff members:
   // - SA Shared staff (Global Recruiters SA comp-1782789370085 with nominal 1004 / SA-Shared costs, e.g. Danielle)
@@ -2484,6 +2557,11 @@ export default function DepartmentTeamCostTab({
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.fullName}</span>
                             <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>({s.jobTitle || 'Recruiter'})</span>
+                            {!deptFilter.includes('all') && !deptFilter.includes(s.department || '') && (
+                              <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(99, 102, 241, 0.15)', color: '#6366f1', fontWeight: 600 }}>
+                                🔀 Apportioned ({s.department})
+                              </span>
+                            )}
                             {sSales.placementCount > 0 && (
                               <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--success)', fontWeight: 600 }}>
                                 {sSales.placementCount} deals
@@ -2602,6 +2680,18 @@ export default function DepartmentTeamCostTab({
                             <span style={{ color: 'var(--text-muted)' }}>↳</span>
                             <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.fullName}</span>
                             <span style={{ color: 'var(--text-secondary)' }}>— {s.jobTitle || 'Recruiter'}</span>
+                            {!deptFilter.includes('all') && !deptFilter.includes(s.department || '') && (
+                              <span style={{ 
+                                fontSize: '9px', 
+                                backgroundColor: 'rgba(99, 102, 241, 0.15)', 
+                                color: '#6366f1', 
+                                padding: '1px 6px', 
+                                borderRadius: '4px',
+                                fontWeight: 600
+                              }}>
+                                🔀 Apportioned ({s.department})
+                              </span>
+                            )}
                             {s.status === 'exited' && (
                               <span style={{ 
                                 fontSize: '9px', 

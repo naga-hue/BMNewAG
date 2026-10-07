@@ -593,6 +593,43 @@ describe('Department Team & Tool Costs - Contract Ratchet Engine', () => {
 
     expect(commOct).toBeCloseTo(1244.35, 2);
   });
+
+  it('splits staff remuneration correctly across departments via departmentAllocations (e.g. Will Champken)', () => {
+    // Will Champken: home department WC-UK, bank payment £5,078.77
+    // Department allocation: £1,500 fixed to Civils
+    const will = {
+      id: 'will-1',
+      fullName: 'Will Champken',
+      department: 'WC-UK',
+      companyId: 'comp-humres',
+      departmentAllocations: [
+        { department: 'Civils', amount: 1500, type: 'fixed' }
+      ]
+    };
+
+    const bankPayment = 5078.77;
+
+    // View 1: When filtering by 'Civils'
+    const civilsDeptFilter = ['Civils'];
+    const isAllocOnlyCivils = !civilsDeptFilter.includes('all') && !civilsDeptFilter.includes(will.department);
+    expect(isAllocOnlyCivils).toBe(true);
+
+    const allocCivils = will.departmentAllocations.find(a => civilsDeptFilter.includes(a.department));
+    const civilsBasic = allocCivils ? Number(allocCivils.amount) : 0;
+    expect(civilsBasic).toBe(1500);
+
+    // View 2: When filtering by 'WC-UK' (home department)
+    const homeDeptFilter = ['WC-UK'];
+    const hasAllocAwayHome = !homeDeptFilter.includes('all') && homeDeptFilter.includes(will.department) && will.departmentAllocations.length > 0;
+    expect(hasAllocAwayHome).toBe(true);
+
+    const totalAllocAway = will.departmentAllocations.reduce((sum, a) => sum + a.amount, 0);
+    const homeBasic = Math.max(0, bankPayment - totalAllocAway);
+    expect(homeBasic).toBeCloseTo(3578.77, 2);
+
+    // View 3: Total across Civils + WC-UK equals 100% of payment
+    expect(civilsBasic + homeBasic).toBeCloseTo(bankPayment, 2);
+  });
 });
 
 

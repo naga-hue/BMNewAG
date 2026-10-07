@@ -85,6 +85,9 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
   const [noticePayoutCustomDate, setNoticePayoutCustomDate] = useState('');
   const [payrollPolicyId, setPayrollPolicyId] = useState('');
   const [allocatedCompanyIds, setAllocatedCompanyIds] = useState([]);
+  const [departmentAllocations, setDepartmentAllocations] = useState([]);
+  const [newAllocDept, setNewAllocDept] = useState('');
+  const [newAllocAmount, setNewAllocAmount] = useState('');
 
   // Step 3: Compensation details state
   const [salary, setSalary] = useState('');
@@ -112,6 +115,16 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
   // Dynamically load departments of selected company
   const selectedCompanyObj = companies.find(c => c.id === companyId);
   const companyDepts = selectedCompanyObj ? (selectedCompanyObj.departments || []).map(d => d.name || d) : [];
+  const allAvailableDepts = useMemo(() => {
+    const set = new Set();
+    companies.forEach(c => {
+      (c.departments || []).forEach(d => {
+        const name = typeof d === 'object' ? d?.name : d;
+        if (name && typeof name === 'string') set.add(name.trim());
+      });
+    });
+    return Array.from(set).sort();
+  }, [companies]);
 
   const normalizeDateForInput = (dateStr) => {
     if (!dateStr) return '';
@@ -172,6 +185,9 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setNoticePayoutCustomDate(normalizeDateForInput(staffMember.noticePayoutCustomDate || ''));
       setPayrollPolicyId(staffMember.payrollPolicyId || '');
       setAllocatedCompanyIds(staffMember.allocatedCompanyIds || []);
+      setDepartmentAllocations(staffMember.departmentAllocations || []);
+      setNewAllocDept('');
+      setNewAllocAmount('');
       setVisaExpiryDate(normalizeDateForInput(staffMember.visaExpiryDate || ''));
       setContractRenewalDate(normalizeDateForInput(staffMember.contractRenewalDate || ''));
       
@@ -221,6 +237,9 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       setNoticePayoutCustomDate('');
       setPayrollPolicyId('');
       setAllocatedCompanyIds([]);
+      setDepartmentAllocations([]);
+      setNewAllocDept('');
+      setNewAllocAmount('');
       setVisaExpiryDate('');
       setContractRenewalDate('');
       
@@ -433,6 +452,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
       commissionPolicyId,
       payrollPolicyId,
       allocatedCompanyIds,
+      departmentAllocations,
       status,
       visaExpiryDate,
       contractRenewalDate,
@@ -993,6 +1013,88 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                       </button>
                     </div>
                   )}
+                </div>
+
+                <div className="form-group" style={{ marginTop: '14px', padding: '14px', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontWeight: 600 }}>Department Cost Splits / Allocations</span>
+                    <span style={{ fontSize: '11px', color: departmentAllocations.length > 0 ? 'var(--primary)' : 'var(--text-muted)', fontWeight: 600 }}>
+                      {departmentAllocations.length === 0 ? 'None (100% Home Dept)' : `${departmentAllocations.length} Active Split${departmentAllocations.length > 1 ? 's' : ''}`}
+                    </span>
+                  </label>
+                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                    Split a fixed monthly fee or salary to other departments (e.g. £1,500/mo to Civils). The remainder automatically remains in their home cost center ({department || 'WC-UK'}).
+                  </p>
+
+                  {departmentAllocations.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+                      {departmentAllocations.map((alloc, idx) => (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(59, 130, 246, 0.08)', border: '1px solid var(--primary)', borderRadius: '6px' }}>
+                          <div>
+                            <strong style={{ color: 'var(--text-primary)' }}>{alloc.department}</strong>: <span style={{ color: 'var(--accent)', fontWeight: 600 }}>£{Number(alloc.amount).toLocaleString()}/month</span>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '8px' }}>({alloc.type || 'fixed'})</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setDepartmentAllocations(prev => prev.filter((_, i) => i !== idx))}
+                            style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}
+                            title="Remove split"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <select
+                      value={newAllocDept}
+                      onChange={e => setNewAllocDept(e.target.value)}
+                      className="form-control"
+                      style={{ flex: 1, minWidth: '160px', fontSize: '12px', padding: '6px 10px' }}
+                    >
+                      <option value="">Select Target Department...</option>
+                      {allAvailableDepts
+                        .filter(d => d !== department && !departmentAllocations.some(a => a.department === d))
+                        .map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                    </select>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>£</span>
+                      <input
+                        type="number"
+                        placeholder="1500"
+                        value={newAllocAmount}
+                        onChange={e => setNewAllocAmount(e.target.value)}
+                        className="form-control"
+                        style={{ width: '100px', fontSize: '12px', padding: '6px 10px' }}
+                      />
+                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>/mo</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ fontSize: '12px', padding: '6px 12px' }}
+                      onClick={() => {
+                        if (!newAllocDept) {
+                          alert('Please select a target department');
+                          return;
+                        }
+                        const amt = Number(newAllocAmount);
+                        if (!amt || amt <= 0) {
+                          alert('Please enter a valid monthly allocation amount');
+                          return;
+                        }
+                        setDepartmentAllocations(prev => [...prev, { department: newAllocDept, amount: amt, type: 'fixed' }]);
+                        setNewAllocDept('');
+                        setNewAllocAmount('');
+                      }}
+                    >
+                      + Add Split
+                    </button>
+                  </div>
                 </div>
 
 

@@ -1120,8 +1120,21 @@ export default function ReportsDashboard({
             const perStaffShare = gbpAmt / targets.length;
             targets.forEach(staffId => {
               if (groupActiveStaffIds.includes(staffId)) {
-                if (activeStaffIds.includes(staffId)) {
-                  allocatedGbp += perStaffShare;
+                const targetStaff = groupActiveStaff.find(s => s.id === staffId);
+                const hasDeptAllocs = targetStaff && Array.isArray(targetStaff.departmentAllocations) && targetStaff.departmentAllocations.length > 0;
+
+                if (hasDeptAllocs && !deptFilter.includes('all')) {
+                  const allocForView = targetStaff.departmentAllocations.find(a => deptFilter.includes(a.department));
+                  if (allocForView) {
+                    allocatedGbp += Number(allocForView.amount || 0);
+                  } else if (deptFilter.includes(targetStaff.department)) {
+                    const totalAllocAway = targetStaff.departmentAllocations.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+                    allocatedGbp += Math.max(0, perStaffShare - totalAllocAway);
+                  }
+                } else {
+                  if (activeStaffIds.includes(staffId)) {
+                    allocatedGbp += perStaffShare;
+                  }
                 }
               }
             });
@@ -1352,19 +1365,37 @@ export default function ReportsDashboard({
         const staffProjId = `proj-staff-${s.id}-${monthKey}`;
         const isSuppressed = (suppressedProjections || []).includes(staffProjId);
 
+        // Check department allocations
+        const hasDeptAllocs = Array.isArray(s.departmentAllocations) && s.departmentAllocations.length > 0;
+        let staffCostForDept = staffCost;
+        let isMatchingDept = deptFilter.includes('all') || deptFilter.includes(s.department);
+
+        if (hasDeptAllocs && !deptFilter.includes('all')) {
+          const allocForView = s.departmentAllocations.find(a => deptFilter.includes(a.department));
+          if (allocForView) {
+            staffCostForDept = Number(allocForView.amount || 0);
+            isMatchingDept = true;
+          } else if (deptFilter.includes(s.department)) {
+            const totalAllocAway = s.departmentAllocations.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+            staffCostForDept = Math.max(0, staffCost - totalAllocAway);
+            isMatchingDept = true;
+          } else {
+            isMatchingDept = false;
+          }
+        }
+
         // Always accumulate into projectedBreakdown for comparison visibility
         const isTargetComp = activeCompanyIds.includes(s.companyId);
-        const isTargetDept = deptFilter.includes('all') || deptFilter.includes(s.department);
-        if (isTargetComp && isTargetDept) {
-          projectedBreakdown[matchedKey] = (projectedBreakdown[matchedKey] || 0) + staffCost;
+        if (isTargetComp && isMatchingDept) {
+          projectedBreakdown[matchedKey] = (projectedBreakdown[matchedKey] || 0) + staffCostForDept;
         }
 
         // Apportionment check for 1004 - SA-Shared costs vs direct routing for active P&L
         if (!isReconciledMonth && !hasActualPayment && !isSuppressed) {
           if (targetNominal.includes('1004')) {
             if (s.companyId && s.companyId !== 'comp-1782789370085') {
-              if (isTargetComp && isTargetDept) {
-                breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCost;
+              if (isTargetComp && isMatchingDept) {
+                breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCostForDept;
               }
             } else {
               const targetCompanyIds = (s.allocatedCompanyIds && s.allocatedCompanyIds.length > 0) ? s.allocatedCompanyIds : null;
@@ -1374,7 +1405,7 @@ export default function ReportsDashboard({
                 return comp && comp.includeInConsolidation !== false && compMatch;
               });
               if (otherStaff.length > 0) {
-                const perStaffShare = staffCost / otherStaff.length;
+                const perStaffShare = staffCostForDept / otherStaff.length;
                 otherStaff.forEach(os => {
                   const isComp = activeCompanyIds.includes(os.companyId);
                   const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
@@ -1383,15 +1414,15 @@ export default function ReportsDashboard({
                   }
                 });
               } else {
-                if (isTargetComp && isTargetDept) {
-                  breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCost;
+                if (isTargetComp && isMatchingDept) {
+                  breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCostForDept;
                 }
               }
             }
           } else {
             // Standard direct routing
-            if (isTargetComp && isTargetDept) {
-              breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCost;
+            if (isTargetComp && isMatchingDept) {
+              breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCostForDept;
             }
           }
         }
@@ -4316,9 +4347,25 @@ export default function ReportsDashboard({
                           }
                         }
                       } else {
-                        if (deptDataMap[s.department]) {
-                          deptDataMap[s.department].salaries += pay.salaries;
-                          deptDataMap[s.department].commissions += pay.commissions;
+                        const hasDeptAllocs = Array.isArray(s.departmentAllocations) && s.departmentAllocations.length > 0;
+                        if (hasDeptAllocs) {
+                          let totalAlloc = 0;
+                          s.departmentAllocations.forEach(alloc => {
+                            const allocAmt = Number(alloc.amount || 0);
+                            if (allocAmt > 0 && deptDataMap[alloc.department]) {
+                              deptDataMap[alloc.department].salaries += allocAmt;
+                              totalAlloc += allocAmt;
+                            }
+                          });
+                          if (deptDataMap[s.department]) {
+                            deptDataMap[s.department].salaries += Math.max(0, pay.salaries - totalAlloc);
+                            deptDataMap[s.department].commissions += pay.commissions;
+                          }
+                        } else {
+                          if (deptDataMap[s.department]) {
+                            deptDataMap[s.department].salaries += pay.salaries;
+                            deptDataMap[s.department].commissions += pay.commissions;
+                          }
                         }
                       }
                     }
@@ -4408,8 +4455,25 @@ export default function ReportsDashboard({
                           targets.forEach(staffId => {
                             if (activeStaffInMonthIds.includes(staffId)) {
                               const st = activeStaffInMonth.find(item => item.id === staffId);
-                              if (st && deptDataMap[st.department] && (activeCompanyIds.includes(st.companyId))) {
-                                deptDataMap[st.department].overheads += perStaffShare;
+                              if (st && activeCompanyIds.includes(st.companyId)) {
+                                const hasDeptAllocs = Array.isArray(st.departmentAllocations) && st.departmentAllocations.length > 0;
+                                if (hasDeptAllocs) {
+                                  let totalAlloc = 0;
+                                  st.departmentAllocations.forEach(alloc => {
+                                    const allocAmt = Number(alloc.amount || 0);
+                                    if (allocAmt > 0 && deptDataMap[alloc.department]) {
+                                      deptDataMap[alloc.department].overheads += allocAmt;
+                                      totalAlloc += allocAmt;
+                                    }
+                                  });
+                                  if (deptDataMap[st.department]) {
+                                    deptDataMap[st.department].overheads += Math.max(0, perStaffShare - totalAlloc);
+                                  }
+                                } else {
+                                  if (deptDataMap[st.department]) {
+                                    deptDataMap[st.department].overheads += perStaffShare;
+                                  }
+                                }
                               }
                             }
                           });

@@ -16,6 +16,13 @@ export interface Company {
   dialpadApiKey?: string;
 }
 
+export interface DepartmentAllocation {
+  department: string;
+  amount: number;
+  type?: 'fixed' | 'percentage';
+  companyId?: string;
+}
+
 export interface Staff {
   id: string;
   name?: string;
@@ -26,6 +33,7 @@ export interface Staff {
   role?: string;
   payrollPolicyId?: string;
   allocatedCompanyIds?: string[];
+  departmentAllocations?: DepartmentAllocation[];
   allocationMode?: string;
   qandleEmail?: string;
   dialpadEmail?: string;

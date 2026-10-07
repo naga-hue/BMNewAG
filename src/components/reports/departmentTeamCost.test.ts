@@ -425,36 +425,37 @@ describe('Department Team & Tool Costs - Contract Ratchet Engine', () => {
 
     let resultCell = cell;
 
-    // Matching DepartmentTeamCostTab logic:
-    if (!cell.isReconciled || cell.basic === 0) {
-      const staffDirectExpenses = mixedExpenses.filter(e => {
-        if (e.status === 'dns' || e.status === 'cancelled') return false;
-        if (e.id && (e.id.startsWith('payroll-') || e.id.startsWith('exp-overhead-'))) return false;
-        const eMonth = e.plMonth;
-        if (eMonth !== month) return false;
-        const p = (e.payee || '').toLowerCase().trim();
-        const fn = (staffMember.fullName || '').toLowerCase().trim();
-        const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
-        const nom = (e.nominalCode || '').toLowerCase();
-        const isRemunNominal = nom.includes('1001');
-        return isPayeeMatch && isRemunNominal;
-      });
+    // Matching DepartmentTeamCostTab updated logic:
+    const staffDirectExpenses = mixedExpenses.filter(e => {
+      if (e.status === 'dns' || e.status === 'cancelled') return false;
+      if (e.id && (e.id.startsWith('payroll-') || e.id.startsWith('exp-overhead-'))) return false;
+      const eMonth = e.plMonth;
+      if (eMonth !== month) return false;
+      const p = (e.payee || '').toLowerCase().trim();
+      const fn = (staffMember.fullName || '').toLowerCase().trim();
+      const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
+      const nom = (e.nominalCode || '').toLowerCase();
+      const isRemunNominal = nom.includes('1001');
+      return isPayeeMatch && isRemunNominal;
+    });
 
-      if (staffDirectExpenses.length > 0) {
-        const bankPaidTotal = staffDirectExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
-        resultCell = {
-          ...cell,
-          basic: bankPaidTotal,
-          total: bankPaidTotal,
-          totalWithReimbursements: bankPaidTotal + (cell.reimbursements || 0)
-        };
-      }
+    if (staffDirectExpenses.length > 0) {
+      const bankPaidTotal = staffDirectExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+      const basicAmount = (cell.reimbursements && cell.reimbursements > 0)
+        ? Math.max(0, bankPaidTotal - cell.reimbursements)
+        : bankPaidTotal;
+      resultCell = {
+        ...cell,
+        basic: basicAmount,
+        total: basicAmount,
+        totalWithReimbursements: bankPaidTotal
+      };
     }
 
-    // Because cell.isReconciled was true, the reconciled basic (£3,526.84) was preserved
+    // Basic is correctly ~£3,526.99 and total with reimbursements is £3,777.15
     // and was NOT elevated to £7,303.99!
-    expect(resultCell.basic).toBe(3526.84);
-    expect(resultCell.totalWithReimbursements).toBe(3777.00);
+    expect(resultCell.basic).toBeCloseTo(3526.99, 1);
+    expect(resultCell.totalWithReimbursements).toBe(3777.15);
     expect(resultCell.basic).not.toBe(7303.99);
   });
 

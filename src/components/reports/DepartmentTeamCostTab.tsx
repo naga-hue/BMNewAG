@@ -330,50 +330,51 @@ export default function DepartmentTeamCostTab({
           commissionPolicies
         );
 
-        // If the cell already has a verified reconciled payroll record, use it directly!
-        // Otherwise, auto-align with actual bank disbursements from expenses (matching Group P&L 100%)
+        // Prioritize actual bank disbursements from expenses (matching Group P&L 100%)
         // for staff/directors receiving direct consulting, freelance, or contractor payments
-        if (!cell.isReconciled || cell.basic === 0) {
-          const staffDirectExpenses = (expenses || []).filter(e => {
-            if (e.status === 'dns' || e.status === 'cancelled') return false;
-            // Exclude synthetic system-generated mirror expenses to prevent duplication
-            if (e.id && (e.id.startsWith('payroll-') || e.id.startsWith('exp-overhead-'))) return false;
+        const staffDirectExpenses = (expenses || []).filter(e => {
+          if (e.status === 'dns' || e.status === 'cancelled') return false;
+          // Exclude synthetic system-generated mirror expenses to prevent duplication
+          if (e.id && (e.id.startsWith('payroll-') || e.id.startsWith('exp-overhead-'))) return false;
 
-            const nom = (e.nominalCode || '').toLowerCase();
-            // Strictly exclude 1003.1 (Director) and 1003.2 (House) from Team & Tool costs
-            if (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house')) return false;
+          const nom = (e.nominalCode || '').toLowerCase();
+          // Strictly exclude 1003.1 (Director) and 1003.2 (House) from Team & Tool costs
+          if (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house')) return false;
 
-            const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
-            if (eMonth !== m) return false;
+          const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+          if (eMonth !== m) return false;
 
-            const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget].filter(Boolean);
-            const isTargetStaff = targets.includes(s.id);
-            const p = (e.payee || '').toLowerCase().trim();
-            const fn = (s.fullName || '').toLowerCase().trim();
-            const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget].filter(Boolean);
+          const isTargetStaff = targets.includes(s.id);
+          const p = (e.payee || '').toLowerCase().trim();
+          const fn = (s.fullName || '').toLowerCase().trim();
+          const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
 
-            const isRemunNominal = (nom.includes('1003') && !nom.includes('1003.1') && !nom.includes('1003.2')) ||
-                                   nom.includes('consulting') ||
-                                   nom.includes('1001') ||
-                                   nom.includes('freelanc') ||
-                                   nom.includes('salary');
+          const isRemunNominal = (nom.includes('1003') && !nom.includes('1003.1') && !nom.includes('1003.2')) ||
+                                 nom.includes('consulting') ||
+                                 nom.includes('1001') ||
+                                 nom.includes('freelanc') ||
+                                 nom.includes('salary');
 
-            return (isTargetStaff || isPayeeMatch) && isRemunNominal;
-          });
+          return (isTargetStaff || isPayeeMatch) && isRemunNominal;
+        });
 
-          if (staffDirectExpenses.length > 0) {
-            const bankPaidTotal = staffDirectExpenses.reduce((sum, e) => sum + toGBP(Number(e.amount || 0), e.currency || 'GBP'), 0);
-            if (bankPaidTotal > 0) {
-              matrix[s.id][m] = {
-                ...cell,
-                basic: bankPaidTotal,
-                total: bankPaidTotal + (cell.commission || 0),
-                totalWithReimbursements: bankPaidTotal + (cell.commission || 0) + (cell.reimbursements || 0),
-                isReconciled: true,
-                notes: `Bank Statement Paid (Group P&L Aligned): £${bankPaidTotal.toLocaleString()} across ${staffDirectExpenses.length} transactions`
-              };
-              return;
-            }
+        if (staffDirectExpenses.length > 0) {
+          const bankPaidTotal = staffDirectExpenses.reduce((sum, e) => sum + toGBP(Number(e.amount || 0), e.currency || 'GBP'), 0);
+          if (bankPaidTotal > 0) {
+            const basicAmount = (cell.reimbursements && cell.reimbursements > 0)
+              ? Math.max(0, bankPaidTotal - cell.reimbursements)
+              : bankPaidTotal;
+
+            matrix[s.id][m] = {
+              ...cell,
+              basic: basicAmount,
+              total: basicAmount + (cell.commission || 0),
+              totalWithReimbursements: bankPaidTotal + (cell.commission || 0),
+              isReconciled: true,
+              notes: `Bank Statement Paid (Group P&L Aligned): £${bankPaidTotal.toLocaleString()} across ${staffDirectExpenses.length} transactions`
+            };
+            return;
           }
         }
 
@@ -474,44 +475,47 @@ export default function DepartmentTeamCostTab({
           commissionPolicies
         );
 
-        if (!cell.isReconciled || cell.basic === 0) {
-          const staffDirectExpenses = (expenses || []).filter(e => {
-            if (e.status === 'dns' || e.status === 'cancelled') return false;
-            if (e.id && (e.id.startsWith('payroll-') || e.id.startsWith('exp-overhead-'))) return false;
-            const nom = (e.nominalCode || '').toLowerCase();
-            // Strictly exclude 1003.1 (Director) and 1003.2 (House) from Team & Tool costs
-            if (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house')) return false;
+        // Prioritize actual bank disbursements from expenses (matching Group P&L 100%)
+        const staffDirectExpenses = (expenses || []).filter(e => {
+          if (e.status === 'dns' || e.status === 'cancelled') return false;
+          if (e.id && (e.id.startsWith('payroll-') || e.id.startsWith('exp-overhead-'))) return false;
+          const nom = (e.nominalCode || '').toLowerCase();
+          // Strictly exclude 1003.1 (Director) and 1003.2 (House) from Team & Tool costs
+          if (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house')) return false;
 
-            const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
-            if (eMonth !== m) return false;
+          const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
+          if (eMonth !== m) return false;
 
-            const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget].filter(Boolean);
-            const isTargetStaff = targets.includes(s.id);
-            const p = (e.payee || '').toLowerCase().trim();
-            const fn = (s.fullName || '').toLowerCase().trim();
-            const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
+          const targets = Array.isArray(e.allocationTarget) ? e.allocationTarget : [e.allocationTarget].filter(Boolean);
+          const isTargetStaff = targets.includes(s.id);
+          const p = (e.payee || '').toLowerCase().trim();
+          const fn = (s.fullName || '').toLowerCase().trim();
+          const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
 
-            const isRemunNominal = (nom.includes('1003') && !nom.includes('1003.1') && !nom.includes('1003.2')) ||
-                                   nom.includes('consulting') ||
-                                   nom.includes('1001') ||
-                                   nom.includes('freelanc') ||
-                                   nom.includes('salary');
+          const isRemunNominal = (nom.includes('1003') && !nom.includes('1003.1') && !nom.includes('1003.2')) ||
+                                 nom.includes('consulting') ||
+                                 nom.includes('1001') ||
+                                 nom.includes('freelanc') ||
+                                 nom.includes('salary');
 
-            return (isTargetStaff || isPayeeMatch) && isRemunNominal;
-          });
+          return (isTargetStaff || isPayeeMatch) && isRemunNominal;
+        });
 
-          if (staffDirectExpenses.length > 0) {
-            const bankPaidTotal = staffDirectExpenses.reduce((sum, e) => sum + toGBP(Number(e.amount || 0), e.currency || 'GBP'), 0);
-            if (bankPaidTotal > 0) {
-              cell = {
-                ...cell,
-                basic: bankPaidTotal,
-                total: bankPaidTotal + (cell.commission || 0),
-                totalWithReimbursements: bankPaidTotal + (cell.commission || 0) + (cell.reimbursements || 0),
-                isReconciled: true,
-                notes: `Bank Statement Paid (Group P&L Aligned): £${bankPaidTotal.toLocaleString()}`
-              };
-            }
+        if (staffDirectExpenses.length > 0) {
+          const bankPaidTotal = staffDirectExpenses.reduce((sum, e) => sum + toGBP(Number(e.amount || 0), e.currency || 'GBP'), 0);
+          if (bankPaidTotal > 0) {
+            const basicAmount = (cell.reimbursements && cell.reimbursements > 0)
+              ? Math.max(0, bankPaidTotal - cell.reimbursements)
+              : bankPaidTotal;
+
+            cell = {
+              ...cell,
+              basic: basicAmount,
+              total: basicAmount + (cell.commission || 0),
+              totalWithReimbursements: bankPaidTotal + (cell.commission || 0),
+              isReconciled: true,
+              notes: `Bank Statement Paid (Group P&L Aligned): £${bankPaidTotal.toLocaleString()}`
+            };
           }
         }
 

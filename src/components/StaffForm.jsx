@@ -88,6 +88,7 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
   const [departmentAllocations, setDepartmentAllocations] = useState([]);
   const [newAllocDept, setNewAllocDept] = useState('');
   const [newAllocAmount, setNewAllocAmount] = useState('');
+  const [newAllocIncludeSales, setNewAllocIncludeSales] = useState(false);
 
   // Step 3: Compensation details state
   const [salary, setSalary] = useState('');
@@ -1030,9 +1031,22 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
                       {departmentAllocations.map((alloc, idx) => (
                         <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(59, 130, 246, 0.08)', border: '1px solid var(--primary)', borderRadius: '6px' }}>
-                          <div>
-                            <strong style={{ color: 'var(--text-primary)' }}>{alloc.department}</strong>: <span style={{ color: 'var(--accent)', fontWeight: 600 }}>£{Number(alloc.amount).toLocaleString()}/month</span>
-                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '8px' }}>({alloc.type || 'fixed'})</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <div>
+                              <strong style={{ color: 'var(--text-primary)' }}>{alloc.department}</strong>: <span style={{ color: 'var(--accent)', fontWeight: 600 }}>£{Number(alloc.amount).toLocaleString()}/month</span>
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '8px' }}>({alloc.type || 'fixed'})</span>
+                            </div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: alloc.includeSales ? 'var(--success)' : 'var(--text-secondary)', cursor: 'pointer', background: 'rgba(255, 255, 255, 0.05)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--border-color)', userSelect: 'none' }}>
+                              <input
+                                type="checkbox"
+                                checked={!!alloc.includeSales}
+                                onChange={e => {
+                                  const checked = e.target.checked;
+                                  setDepartmentAllocations(prev => prev.map((item, i) => i === idx ? { ...item, includeSales: checked } : item));
+                                }}
+                              />
+                              Include Sales in {alloc.department}
+                            </label>
                           </div>
                           <button
                             type="button"
@@ -1073,6 +1087,14 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                       />
                       <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>/mo</span>
                     </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={newAllocIncludeSales}
+                        onChange={e => setNewAllocIncludeSales(e.target.checked)}
+                      />
+                      Include Sales in Target Dept
+                    </label>
                     <button
                       type="button"
                       className="btn btn-secondary"
@@ -1087,9 +1109,10 @@ export default function StaffForm({ staffMember, companies, isOpen, onClose, onS
                           alert('Please enter a valid monthly allocation amount');
                           return;
                         }
-                        setDepartmentAllocations(prev => [...prev, { department: newAllocDept, amount: amt, type: 'fixed' }]);
+                        setDepartmentAllocations(prev => [...prev, { department: newAllocDept, amount: amt, type: 'fixed', includeSales: newAllocIncludeSales }]);
                         setNewAllocDept('');
                         setNewAllocAmount('');
+                        setNewAllocIncludeSales(false);
                       }}
                     >
                       + Add Split

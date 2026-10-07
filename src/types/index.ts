@@ -21,6 +21,7 @@ export interface DepartmentAllocation {
   amount: number;
   type?: 'fixed' | 'percentage';
   companyId?: string;
+  includeSales?: boolean;
 }
 
 export interface Staff {

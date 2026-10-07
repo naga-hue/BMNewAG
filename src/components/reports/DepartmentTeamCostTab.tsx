@@ -1025,6 +1025,16 @@ export default function DepartmentTeamCostTab({
 
 
   // Consultant-level and monthly Sales / Placements billings
+  // Staff eligible to be displayed in Section 0: Team Sales
+  const salesStaff = useMemo(() => {
+    return filteredStaff.filter(s => {
+      const isAllocOnly = !deptFilter.includes('all') && !deptFilter.includes(s.department || '');
+      const alloc = isAllocOnly ? (s.departmentAllocations || []).find(a => deptFilter.includes(a.department)) : null;
+      return !isAllocOnly || (alloc && alloc.includeSales === true);
+    });
+  }, [filteredStaff, deptFilter]);
+
+  // Consultant-level and monthly Sales / Placements billings
   const consultantSalesData = useMemo(() => {
     const matrix: Record<string, {
       consultant: Staff;
@@ -1034,7 +1044,7 @@ export default function DepartmentTeamCostTab({
       placementCount: number;
     }> = {};
 
-    filteredStaff.forEach(s => {
+    salesStaff.forEach(s => {
       matrix[s.id] = {
         consultant: s,
         monthlySales: {},
@@ -1079,7 +1089,7 @@ export default function DepartmentTeamCostTab({
     });
 
     return matrix;
-  }, [filteredStaff, placements, monthsList, reconciledCutoffMonth]);
+  }, [salesStaff, placements, monthsList, reconciledCutoffMonth]);
 
   // Aggregate Team Sales Totals
   const teamSalesTotals = useMemo(() => {
@@ -1089,7 +1099,7 @@ export default function DepartmentTeamCostTab({
 
     monthsList.forEach(m => {
       let sum = 0;
-      filteredStaff.forEach(s => {
+      salesStaff.forEach(s => {
         sum += consultantSalesData[s.id]?.monthlySales[m] || 0;
       });
       monthlySum[m] = sum;
@@ -1100,7 +1110,7 @@ export default function DepartmentTeamCostTab({
     });
 
     return { monthlySum, grandTotal, ytvTotal };
-  }, [monthsList, filteredStaff, consultantSalesData, reconciledCutoffMonth]);
+  }, [monthsList, salesStaff, consultantSalesData, reconciledCutoffMonth]);
 
   // Combined Department Operating Costs (Staff Remuneration + Software Tools)
   const combinedDepartmentTotals = useMemo(() => {
@@ -1508,7 +1518,7 @@ export default function DepartmentTeamCostTab({
         ['Consultant / Recruiter', 'Job Title', 'Deals', ...monthHeaders, 'YTV Sales (£)', 'Total Sales (£)']
       ];
 
-      filteredStaff.forEach(s => {
+      salesStaff.forEach(s => {
         const sSales = consultantSalesData[s.id] || { monthlySales: {}, grandTotal: 0, ytvTotal: 0, placementCount: 0 };
         const monthCols = monthsList.map(m => Math.round(sSales.monthlySales[m] || 0));
         salesRows.push([
@@ -2523,7 +2533,7 @@ export default function DepartmentTeamCostTab({
                   Team Placements Billings (Sales Revenue)
                 </span>
                 <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                  ({filteredStaff.length} consultants • Click to {expandedSales ? 'collapse' : 'expand'})
+                  ({salesStaff.length} consultants • Click to {expandedSales ? 'collapse' : 'expand'})
                 </span>
               </td>
               {monthsList.map(m => (
@@ -2542,14 +2552,14 @@ export default function DepartmentTeamCostTab({
             {/* Consultant Sales Breakdown Rows */}
             {expandedSales && (
               <>
-                {filteredStaff.length === 0 ? (
+                {salesStaff.length === 0 ? (
                   <tr>
                     <td colSpan={monthsList.length + 3} style={{ padding: '12px 24px', fontStyle: 'italic', color: 'var(--text-secondary)' }}>
                       No consultants found for the selected department filter.
                     </td>
                   </tr>
                 ) : (
-                  filteredStaff.map(s => {
+                  salesStaff.map(s => {
                     const sSales = consultantSalesData[s.id] || { monthlySales: {}, grandTotal: 0, ytvTotal: 0, placementCount: 0 };
                     return (
                       <tr key={`sales-${s.id}`} style={{ fontSize: '12px', borderBottom: '1px solid var(--border-color)', opacity: sSales.grandTotal === 0 ? 0.6 : 1 }}>

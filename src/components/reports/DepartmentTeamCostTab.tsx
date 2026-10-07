@@ -1430,41 +1430,166 @@ export default function DepartmentTeamCostTab({
     }
   };
 
-  // Export Complete Report to Excel
+  // Export Complete Report to Excel (Single Unified Statement Mirroring PDF Layout)
   const handleExportExcel = () => {
     try {
       const wb = XLSX.utils.book_new();
 
       const deptLabel = deptFilter.includes('all') ? 'All Departments' : deptFilter.join(', ');
+      const activeCompanyNames = companyFilter.includes('all') 
+        ? 'All Companies' 
+        : companyFilter.map(id => companies.find(c => c.id === id)?.name || id).join(', ');
       const monthHeaders = monthsList.map(m => formatMonthLabel(m));
 
-      // 1. Department Consolidated Summary & P&L Sheet
-      const summaryRows = [
+      // Build Consultant Sales sub-rows
+      const salesSubRows: any[] = [];
+      salesStaff.forEach(s => {
+        const sSales = consultantSalesData[s.id] || { monthlySales: {}, grandTotal: 0, ytvTotal: 0, placementCount: 0 };
+        const monthCols = monthsList.map(m => Math.round(sSales.monthlySales[m] || 0));
+        const dealsSuffix = sSales.placementCount > 0 ? ` (${s.jobTitle || 'Recruiter'} • ${sSales.placementCount} deals)` : ` (${s.jobTitle || 'Recruiter'})`;
+        salesSubRows.push([
+          `  ↳ ${s.fullName}${dealsSuffix}`,
+          ...monthCols,
+          Math.round(sSales.ytvTotal),
+          Math.round(sSales.grandTotal)
+        ]);
+      });
+
+      // Build Team Remuneration sub-rows
+      const teamSubRows: any[] = [];
+      filteredStaff.forEach(s => {
+        const staffCost = staffMonthlyData[s.id] || {};
+        let sTotal = 0;
+        let sYtv = 0;
+        const monthCols = monthsList.map(m => {
+          const val = staffCost[m]?.total || 0;
+          sTotal += val;
+          if (m <= reconciledCutoffMonth) sYtv += val;
+          return Math.round(val);
+        });
+        teamSubRows.push([
+          `  ↳ ${s.fullName} (${s.jobTitle || 'Recruiter'})`,
+          ...monthCols,
+          Math.round(sYtv),
+          Math.round(sTotal)
+        ]);
+      });
+
+      // Build Shared Staff sub-rows
+      const sharedSubRows: any[] = [];
+      if (relevantSharedStaff.length > 0) {
+        sharedSubRows.push(['  ↳ Apportioned SA Shared Roles & Shared Direction (Headcount Pro-Rata)']);
+        relevantSharedStaff.forEach(s => {
+          const sData = sharedStaffMonthlyData[s.id] || {};
+          let sTotal = 0;
+          let sYtv = 0;
+          const monthCols = monthsList.map(m => {
+            const val = sData[m]?.apportionedCost || 0;
+            sTotal += val;
+            if (m <= reconciledCutoffMonth) sYtv += val;
+            return Math.round(val);
+          });
+          const badge = sData[reconciledCutoffMonth || monthsList[0]]?.roleBadge || 'Shared';
+          sharedSubRows.push([
+            `    ↳ ${s.fullName} (${badge})`,
+            ...monthCols,
+            Math.round(sYtv),
+            Math.round(sTotal)
+          ]);
+        });
+      }
+
+      // Build Tool sub-rows
+      const toolSubRows: any[] = [];
+      toolRatchetData.forEach(({ tool: t, costBasis, monthlyDetails, ytvCost, periodTotalCost }) => {
+        const monthCols = monthsList.map(m => Math.round(monthlyDetails[m]?.costGBP || 0));
+        const basisLabel = costBasis === 'per_seat' ? 'Per-Seat'
+          : costBasis === 'per_company' ? 'Per Company'
+          : costBasis === 'per_department' ? 'Per Dept'
+          : 'Fixed';
+        toolSubRows.push([
+          `  ↳ ${t.name} (${basisLabel})`,
+          ...monthCols,
+          Math.round(ytvCost),
+          Math.round(periodTotalCost)
+        ]);
+      });
+
+      // Assemble Single Unified Statement Sheet (Exact Mirror of PDF Report)
+      const statementRows = [
         ['HUMRES BUSINESS MANAGEMENT - DEPARTMENT TEAM & TOOL COSTS STATEMENT (P&L)'],
-        [`Department(s): ${deptLabel}`, `Period Range: ${startMonth} to ${endMonth}`, `Exported on: ${new Date().toLocaleDateString('en-GB')}`],
-        ['Direct Sales, Team Remuneration & Software Tools P&L Statement'],
+        [`Company / Entity: ${activeCompanyNames}`, `Department(s): ${deptLabel}`, `Period Range: ${startMonth} to ${endMonth}`, `Exported on: ${new Date().toLocaleDateString('en-GB')}`],
+        [`Statement Type: Direct Team & Tools P&L Statement`, `Reconciled Bank Cutoff: ${reconciledCutoffMonth}`],
         [],
-        ['Metric / Account Line Item (GBP)', ...monthHeaders, 'YTV (Reconciled)', 'Period Total'],
+        ['EXECUTIVE KPI SUMMARY'],
+        ['Active Team Headcount (Avg)', 'Team Sales (Billings) (£)', 'Total Operating Costs (£)', 'Net Profit / Contribution (£)', 'Net Margin %'],
+        [
+          Math.round(combinedDepartmentTotals.avgHeadcount),
+          Math.round(teamSalesTotals.grandTotal),
+          Math.round(combinedDepartmentTotals.grandTotal),
+          Math.round(departmentPnlTotals.grandNetProfit),
+          departmentPnlTotals.overallMarginPct.toFixed(1) + '%'
+        ],
+        [],
+        ['Account Line Item (GBP)', ...monthHeaders, 'YTV', 'Period Total'],
         [
           'Active Team Headcount',
           ...monthsList.map(m => monthlyHeadcount[m] || 0),
           '—',
           Math.round(combinedDepartmentTotals.avgHeadcount) + ' (Avg)'
         ],
+        [],
+
+        // Section 0: Team Sales & Billings
+        ['0. TEAM SALES & PLACEMENTS BILLINGS (REVENUE)'],
         [
-          '➕ Team Sales & Placements Billings (Revenue)',
+          'Team Placements Billings',
+          ...monthsList.map(m => Math.round(teamSalesTotals.monthlySum[m] || 0)),
+          Math.round(teamSalesTotals.ytvTotal),
+          Math.round(teamSalesTotals.grandTotal)
+        ],
+        ...salesSubRows,
+        [],
+
+        // Section 1: Team Remuneration
+        ['1. TEAM REMUNERATION (SALARIES, FREELANCE & COMMISSIONS)'],
+        [
+          'Apportioned Team Remuneration',
+          ...monthsList.map(m => Math.round(staffRemunerationTotals.monthlySum[m] || 0)),
+          Math.round(staffRemunerationTotals.ytvTotal),
+          Math.round(staffRemunerationTotals.grandTotal)
+        ],
+        ...teamSubRows,
+        ...sharedSubRows,
+        [],
+
+        // Section 2: Software Licenses & CRM Systems
+        ['2. SOFTWARE LICENSES & CRM SYSTEMS (CONTRACT RATCHET ENGINE) OVERHEADS'],
+        [
+          'Contracted Software & Tool Licenses',
+          ...monthsList.map(m => Math.round(toolTotals.monthlySum[m] || 0)),
+          Math.round(toolTotals.ytvTotal),
+          Math.round(toolTotals.grandTotal)
+        ],
+        ...toolSubRows,
+        [],
+
+        // Section 3: Consolidated Department Summary & Team P&L Statement
+        ['3. CONSOLIDATED DEPARTMENT SUMMARY & TEAM P&L STATEMENT'],
+        [
+          '➕ Team Sales & Placements Billings',
           ...monthsList.map(m => Math.round(teamSalesTotals.monthlySum[m] || 0)),
           Math.round(teamSalesTotals.ytvTotal),
           Math.round(teamSalesTotals.grandTotal)
         ],
         [
-          '➖ 1. Staff Remuneration Paid (Ex-Reimbursements)',
+          '➖ 1. Team Remuneration (Salaries & Commissions)',
           ...monthsList.map(m => Math.round(staffRemunerationTotals.monthlySum[m] || 0)),
           Math.round(staffRemunerationTotals.ytvTotal),
           Math.round(staffRemunerationTotals.grandTotal)
         ],
         [
-          '➖ 2. Software & Tool Licenses (Contract Ratchet)',
+          '➖ 2. Contracted Software & Tool Licenses',
           ...monthsList.map(m => Math.round(toolTotals.monthlySum[m] || 0)),
           Math.round(toolTotals.ytvTotal),
           Math.round(toolTotals.grandTotal)
@@ -1494,7 +1619,7 @@ export default function DepartmentTeamCostTab({
           Math.round(departmentPnlTotals.overallContributionPerHead)
         ],
         [
-          'Average Operating Cost per Recruiter / Team Member',
+          'Average Operating Cost per Recruiter / Head',
           ...monthsList.map(m => Math.round(combinedDepartmentTotals.avgCostPerHead[m] || 0)),
           '—',
           Math.round(combinedDepartmentTotals.overallAvgCostPerHead)
@@ -1507,151 +1632,14 @@ export default function DepartmentTeamCostTab({
         ]
       ];
 
-      const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
-      XLSX.utils.book_append_sheet(wb, wsSummary, 'Department P&L Summary');
-
-      // 1B. Team Sales & Placements Billings Sheet
-      const salesRows = [
-        ['TEAM SALES & PLACEMENTS BILLINGS (CONSULTANT BREAKDOWN)'],
-        [`Department(s): ${deptLabel}`, `Period: ${startMonth} to ${endMonth}`],
-        [],
-        ['Consultant / Recruiter', 'Job Title', 'Deals', ...monthHeaders, 'YTV Sales (£)', 'Total Sales (£)']
+      const wsStatement = XLSX.utils.aoa_to_sheet(statementRows);
+      wsStatement['!cols'] = [
+        { wch: 45 },
+        ...monthsList.map(() => ({ wch: 14 })),
+        { wch: 18 },
+        { wch: 18 }
       ];
-
-      salesStaff.forEach(s => {
-        const sSales = consultantSalesData[s.id] || { monthlySales: {}, grandTotal: 0, ytvTotal: 0, placementCount: 0 };
-        const monthCols = monthsList.map(m => Math.round(sSales.monthlySales[m] || 0));
-        salesRows.push([
-          s.fullName || '',
-          s.jobTitle || 'Recruiter',
-          sSales.placementCount,
-          ...monthCols,
-          Math.round(sSales.ytvTotal),
-          Math.round(sSales.grandTotal)
-        ]);
-      });
-
-      const wsSales = XLSX.utils.aoa_to_sheet(salesRows);
-      XLSX.utils.book_append_sheet(wb, wsSales, 'Team Sales');
-
-      // 2. Staff Remuneration Sheet
-      const staffRows = [
-        ['TEAM REMUNERATION MATRIX (ACTUAL STAFF REMUNERATION - EX-REIMBURSEMENTS)'],
-        [`Department(s): ${deptLabel}`, `Period: ${startMonth} to ${endMonth}`],
-        [],
-        ['Staff Member', 'Job Title', 'Type', ...monthHeaders, 'YTV Paid (£)', 'Period Total (£)']
-      ];
-
-      filteredStaff.forEach(s => {
-        let staffAnnualTotal = 0;
-        let staffYtvTotal = 0;
-        const monthCols = monthsList.map(m => {
-          const val = staffMonthlyData[s.id]?.[m]?.total || 0;
-          staffAnnualTotal += val;
-          if (m <= reconciledCutoffMonth) staffYtvTotal += val;
-          return Math.round(val);
-        });
-
-        staffRows.push([
-          s.fullName || '',
-          s.jobTitle || 'Recruiter',
-          s.employmentType || 'Staff',
-          ...monthCols,
-          Math.round(staffYtvTotal),
-          Math.round(staffAnnualTotal)
-        ]);
-      });
-
-      if (relevantSharedStaff.length > 0) {
-        staffRows.push([]);
-        staffRows.push(['APPORTIONED SA SHARED COSTS & SHARED ROLES (HEADCOUNT PRO-RATA)']);
-        relevantSharedStaff.forEach(s => {
-          let sharedAnnualTotal = 0;
-          let sharedYtvTotal = 0;
-          const monthData = sharedStaffMonthlyData[s.id] || {};
-          const monthCols = monthsList.map(m => {
-            const val = monthData[m]?.apportionedCost || 0;
-            sharedAnnualTotal += val;
-            if (m <= reconciledCutoffMonth) sharedYtvTotal += val;
-            return Math.round(val);
-          });
-
-          staffRows.push([
-            s.fullName || '',
-            s.jobTitle || 'Shared Cost',
-            s.companyId === 'comp-1782789370085' ? 'SA Shared (Apportioned)' : 'Shared / Director (Apportioned)',
-            ...monthCols,
-            Math.round(sharedYtvTotal),
-            Math.round(sharedAnnualTotal)
-          ]);
-        });
-      }
-
-      staffRows.push([
-        'TOTAL TEAM REMUNERATION',
-        '',
-        '',
-        ...monthsList.map(m => Math.round(staffRemunerationTotals.monthlySum[m] || 0)),
-        Math.round(staffRemunerationTotals.ytvTotal),
-        Math.round(staffRemunerationTotals.grandTotal)
-      ]);
-
-      const wsStaff = XLSX.utils.aoa_to_sheet(staffRows);
-      XLSX.utils.book_append_sheet(wb, wsStaff, 'Team Remuneration');
-
-      // 3. Software Licenses Sheet
-      const toolRows = [
-        ['SOFTWARE & TOOL LICENSES (MULTI-TIER COST BASIS & RATCHET MATRIX)'],
-        [`Department(s): ${deptLabel}`, `Period: ${startMonth} to ${endMonth}`],
-        [],
-        ['Tool Name', 'Vendor', 'Cost Basis', 'Split Method', 'Companies', 'Departments', 'Baseline Seats', 'Unit Cost (£)', ...monthHeaders.map(m => `${m} Cost`), 'YTV Cost (£)', 'Period Total (£)']
-      ];
-
-      toolRatchetData.forEach(t => {
-        const monthCosts = monthsList.map(m => Math.round(t.monthlyDetails[m]?.costGBP || 0));
-        const deptStr = t.toolDepts.includes('all') ? 'All Departments' : t.toolDepts.join(', ');
-        const compStr = t.toolComps.includes('all')
-          ? 'All Companies'
-          : t.toolComps.map(cId => companies.find(c => c.id === cId)?.name || cId).join(', ');
-
-        const costBasisLabel = t.costBasis === 'per_company' ? 'Per Company'
-          : t.costBasis === 'per_department' ? 'Per Department'
-          : t.costBasis === 'fixed_total' ? 'Fixed Total'
-          : 'Per Seat';
-
-        const splitMethodLabel = t.costBasis === 'fixed_total'
-          ? (t.splitMethod === 'pro_rata_headcount' ? 'Pro-Rata Headcount' : 'Equal Split')
-          : '—';
-
-        toolRows.push([
-          t.tool.name,
-          t.tool.vendorName || '-',
-          costBasisLabel,
-          splitMethodLabel,
-          compStr,
-          deptStr,
-          t.costBasis === 'per_seat' ? (t.tool.baselineCommittedSeats || 0) : '—',
-          Number(t.unitCostGBP.toFixed(2)),
-          ...monthCosts,
-          Math.round(t.ytvCost),
-          Math.round(t.periodTotalCost)
-        ]);
-      });
-
-      toolRows.push([
-        'TOTAL SOFTWARE LICENSES',
-        '',
-        '',
-        '',
-        '',
-        '',
-        ...monthsList.map(m => Math.round(toolTotals.monthlySum[m] || 0)),
-        Math.round(toolTotals.ytvTotal),
-        Math.round(toolTotals.grandTotal)
-      ]);
-
-      const wsTools = XLSX.utils.aoa_to_sheet(toolRows);
-      XLSX.utils.book_append_sheet(wb, wsTools, 'Software Licenses');
+      XLSX.utils.book_append_sheet(wb, wsStatement, 'Department P&L Statement');
 
       // Write and download
       const filename = `Department_Cost_Statement_${deptFilter.join('_')}_${startMonth}_to_${endMonth}.xlsx`;

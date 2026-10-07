@@ -157,6 +157,7 @@ export default function DepartmentTeamCostTab({
   const [expandedTools, setExpandedTools] = useState<boolean>(true);
   const [showDashboard, setShowDashboard] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [toolSortOrder, setToolSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // Extract distinct departments from staff roster for tool assignments
   const allDepartments = useMemo(() => {
@@ -470,22 +471,30 @@ export default function DepartmentTeamCostTab({
     });
   }, [sharedStaffList, sharedStaffMonthlyData, monthsList]);
 
-  // Filter tools applicable to current department and company selection
+  // Filter and sort tools applicable to current department and company selection (Alphabetical A-Z / Z-A)
   const relevantTools = useMemo(() => {
-    return departmentTools.filter(t => {
-      // 1. Department match: check if tool applies to any filtered department
-      const toolDepts = (t.departments && t.departments.length > 0) ? t.departments : [t.department || 'all'];
-      const matchesDept = deptFilter.includes('all') || toolDepts.includes('all') || deptFilter.some(d => toolDepts.includes(d));
-      if (!matchesDept) return false;
+    return departmentTools
+      .filter(t => {
+        // 1. Department match: check if tool applies to any filtered department
+        const toolDepts = (t.departments && t.departments.length > 0) ? t.departments : [t.department || 'all'];
+        const matchesDept = deptFilter.includes('all') || toolDepts.includes('all') || deptFilter.some(d => toolDepts.includes(d));
+        if (!matchesDept) return false;
 
-      // 2. Company match: check if tool applies to any filtered company
-      const toolComps = (t.companyIds && t.companyIds.length > 0) ? t.companyIds : [t.companyId || 'all'];
-      const matchesComp = companyFilter.includes('all') || toolComps.includes('all') || companyFilter.some(c => toolComps.includes(c));
-      if (!matchesComp) return false;
+        // 2. Company match: check if tool applies to any filtered company
+        const toolComps = (t.companyIds && t.companyIds.length > 0) ? t.companyIds : [t.companyId || 'all'];
+        const matchesComp = companyFilter.includes('all') || toolComps.includes('all') || companyFilter.some(c => toolComps.includes(c));
+        if (!matchesComp) return false;
 
-      return true;
-    });
-  }, [departmentTools, deptFilter, companyFilter]);
+        return true;
+      })
+      .sort((a, b) => {
+        const nameA = (a.name || '').trim();
+        const nameB = (b.name || '').trim();
+        return toolSortOrder === 'asc'
+          ? nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true })
+          : nameB.localeCompare(nameA, undefined, { sensitivity: 'base', numeric: true });
+      });
+  }, [departmentTools, deptFilter, companyFilter, toolSortOrder]);
 
   // High-Water Mark Ratchet Engine for Software Tools (Supporting Multi-Dept, Multi-Company & Multiple Cost Bases)
   const toolRatchetData = useMemo(() => {
@@ -2684,6 +2693,30 @@ export default function DepartmentTeamCostTab({
                 <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 500 }}>
                   ({relevantTools.length} tools • Ratchet rules active)
                 </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setToolSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                  }}
+                  style={{
+                    marginLeft: 'auto',
+                    fontSize: '10px',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-secondary)',
+                    color: 'var(--accent)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontWeight: 600
+                  }}
+                  title="Click to toggle alphabetical sort order (A-Z / Z-A)"
+                >
+                  🔤 {toolSortOrder === 'asc' ? 'Sort: A → Z' : 'Sort: Z → A'}
+                </button>
               </td>
               {monthsList.map(m => (
                 <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#8b5cf6' }}>

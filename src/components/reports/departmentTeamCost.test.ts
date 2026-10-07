@@ -235,5 +235,36 @@ describe('Department Team & Tool Costs - Contract Ratchet Engine', () => {
 
     expect(periodTotal).toBe(1383); // Exactly 3 months of rent, NOT 12 months (£5,532)
   });
+
+  it('sorts tools alphabetically based on first letter (A-Z and Z-A)', () => {
+    const rawTools = [
+      { id: '1', name: 'Recruitly' },
+      { id: '2', name: 'Dialpad' },
+      { id: '3', name: 'Accountancy' },
+      { id: '4', name: 'Microsoft' },
+      { id: '5', name: 'Back Office Support' },
+      { id: '6', name: 'Rent - Workshack' }
+    ];
+
+    const sortAsc = [...rawTools].sort((a, b) => a.name.localeCompare(b.name));
+    expect(sortAsc.map(t => t.name)).toEqual([
+      'Accountancy',
+      'Back Office Support',
+      'Dialpad',
+      'Microsoft',
+      'Recruitly',
+      'Rent - Workshack'
+    ]);
+
+    const sortDesc = [...rawTools].sort((a, b) => b.name.localeCompare(a.name));
+    expect(sortDesc.map(t => t.name)).toEqual([
+      'Rent - Workshack',
+      'Recruitly',
+      'Microsoft',
+      'Dialpad',
+      'Back Office Support',
+      'Accountancy'
+    ]);
+  });
 });
 

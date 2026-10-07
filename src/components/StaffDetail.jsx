@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { firebaseService } from '../services/firebase';
 import { toGBP } from '../utils/currency';
+import { findCommissionPolicy } from './payroll/utils';
 
 const CURRENCIES = [
   { code: 'GBP', symbol: '£' },
@@ -367,7 +368,7 @@ Yours sincerely,
   const allowedAnnualDays = resolveAnnualAllowance(staffMember, policy);
 
   // Resolve commission policy details
-  const commPolicy = commissionPolicies.find(p => p.id === staffMember.commissionPolicyId);
+  const commPolicy = findCommissionPolicy(staffMember.commissionPolicyId, commissionPolicies);
 
   // Filter leave requests for this staff member
   const staffLeaves = leaveRequests.filter(r => r.staffId === staffMember.id);

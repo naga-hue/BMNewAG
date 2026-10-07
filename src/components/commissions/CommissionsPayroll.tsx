@@ -3,7 +3,7 @@ import { Info } from 'lucide-react';
 // @ts-ignore
 import MultiSelectFilter from '../MultiSelectFilter';
 import { Company, Staff, Placement } from '../../types';
-import { symbolMap, calculateCashReceivedCommission } from './utils';
+import { symbolMap, calculateCashReceivedCommission, findCommissionPolicy } from './utils';
 
 interface CommissionsPayrollProps {
   companies: Company[];
@@ -131,7 +131,7 @@ export default function CommissionsPayroll({
     const list = staff
       .filter(s => s.commissionPolicyId)
       .map(member => {
-        const policy = commissionPolicies.find(p => p.id === member.commissionPolicyId);
+        const policy = findCommissionPolicy(member.commissionPolicyId, commissionPolicies);
         const calc = calculateCashReceivedCommission(member, policy, payrollMonth, staff, companies, placements);
         const isPaid = (member as any).paidCommissions?.includes(payrollMonth) || false;
 

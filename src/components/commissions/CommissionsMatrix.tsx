@@ -2,8 +2,7 @@ import React, { useState, useMemo } from 'react';
 // @ts-ignore
 import MultiSelectFilter from '../MultiSelectFilter';
 import { Company, Staff, Placement } from '../../types';
-import { formatGBP } from '../../utils/currency';
-import { calculateCashReceivedCommission } from './utils';
+import { calculateCashReceivedCommission, findCommissionPolicy } from './utils';
 
 interface CommissionsMatrixProps {
   companies: Company[];
@@ -98,7 +97,7 @@ export default function CommissionsMatrix({
     });
 
     const rows = filtered.map(member => {
-      const policy = commissionPolicies.find(p => p.id === member.commissionPolicyId);
+      const policy = findCommissionPolicy(member.commissionPolicyId, commissionPolicies);
       
       // Determine target staff IDs for this row member's commission scheme
       let targetStaffIds = [member.id];

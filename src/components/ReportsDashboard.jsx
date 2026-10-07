@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import DepartmentTeamCostTab from './reports/DepartmentTeamCostTab';
+import { calculateCommissionForRecruiter as calcCommForRecruiter, findCommissionPolicy } from './payroll/utils';
 
 const formatGBP = (val) => {
   return '£' + Math.round(val).toLocaleString();
@@ -749,10 +750,7 @@ export default function ReportsDashboard({
 
   // Recruiter Commission calculator helper
   const calculateCommissionForRecruiter = (recruiterId, monthKey, basis = 'written') => {
-    const member = staff.find(s => s.id === recruiterId);
-    if (!member) return 0;
-    const policy = commissionPolicies.find(p => p.id === member.commissionPolicyId);
-    return calculateCashReceivedCommission(member, policy, monthKey, staff, companies, placements, basis);
+    return calcCommForRecruiter(recruiterId, monthKey, staff, companies, placements, commissionPolicies, basis);
   };
 
   const getBusinessDaysInMonth = (monthKey, staffMember) => {
@@ -5699,7 +5697,7 @@ export default function ReportsDashboard({
                     department: s.department,
                     monthKey: m,
                     commVal,
-                    policy: commissionPolicies.find(p => p.id === s.commissionPolicyId)?.name || 'Standard Plan'
+                    policy: findCommissionPolicy(s.commissionPolicyId, commissionPolicies)?.name || 'Standard Plan'
                   });
                 }
               });

@@ -504,6 +504,94 @@ describe('Department Team & Tool Costs - Contract Ratchet Engine', () => {
     expect(filteredExpenses.some(e => e.nominalCode.includes('1003.1'))).toBe(false);
     expect(filteredExpenses.some(e => e.nominalCode.includes('1003.2'))).toBe(false);
   });
+
+  it('correctly resolves commission policy with suffix/name matching and calculates recruiter commission for future forecast months', async () => {
+    const { findCommissionPolicy, calculateCommissionForRecruiter } = await import('../payroll/utils');
+
+    const commissionPolicies = [
+      {
+        id: 'comm-ah-comissn',
+        name: 'AH comissn',
+        type: 'manager',
+        monthlyThreshold: 3000,
+        slabs: [
+          { minAmount: 0, maxAmount: 10000, rate: 10 },
+          { minAmount: 10000, maxAmount: 15000, rate: 15 },
+          { minAmount: 15000, maxAmount: 999999, rate: 20 }
+        ]
+      },
+      {
+        id: 'comm-standard',
+        name: 'Standard Recruiter Plan',
+        type: 'recruiter',
+        monthlyThreshold: 5000,
+        slabs: [{ minAmount: 0, maxAmount: 999999, rate: 10 }]
+      }
+    ];
+
+    // Policy resolution with exact ID, exact Name, and suffix (e.g. "AH comissn (Manager Override 0%)")
+    expect(findCommissionPolicy('comm-ah-comissn', commissionPolicies)?.id).toBe('comm-ah-comissn');
+    expect(findCommissionPolicy('AH comissn', commissionPolicies)?.id).toBe('comm-ah-comissn');
+    expect(findCommissionPolicy('AH comissn (Manager Override 0%)', commissionPolicies)?.id).toBe('comm-ah-comissn');
+
+    // Recruiter Alex with September placements (£14,629) paying in October 2026
+    const staff = [
+      {
+        id: 'staff-alex',
+        fullName: 'Alex Herzenberg',
+        department: 'Civils',
+        commissionPolicyId: 'AH comissn (Manager Override 0%)',
+        companyId: 'comp-humres',
+        status: 'active'
+      }
+    ] as any[];
+
+    const companies = [
+      { id: 'comp-humres', name: 'Humres Limited', currency: 'GBP' }
+    ] as any[];
+
+    const placements = [
+      {
+        id: 'p-1',
+        candidateName: 'Sandev Golhar',
+        startDate: '2026-09-09',
+        netScoreValue: 6250,
+        splits: [{ staffId: 'staff-alex', percentage: 50 }] // 3125
+      },
+      {
+        id: 'p-2',
+        candidateName: 'Aksar Mahmood',
+        startDate: '2026-09-15',
+        netScoreValue: 12750,
+        splits: [{ staffId: 'staff-alex', percentage: 50 }] // 6375
+      },
+      {
+        id: 'p-3',
+        candidateName: 'Madalin Adam',
+        startDate: '2026-09-28',
+        netScoreValue: 10258,
+        splits: [{ staffId: 'staff-alex', percentage: 50 }] // 5129
+      }
+    ] as any[];
+
+    // Commission for October 2026 (Sept placements in arrears)
+    // Total billing = 3125 + 6375 + 5129 = 14629
+    // Threshold = 3000 -> Commissionable = 11629
+    // Slab 1: 0 - 10000 @ 10% = 1000
+    // Slab 2: 10000 - 15000 (1629) @ 15% = 244.35
+    // Total individual = 1244.35
+    const commOct = calculateCommissionForRecruiter(
+      'staff-alex',
+      '2026-10',
+      staff,
+      companies,
+      placements,
+      commissionPolicies,
+      'written'
+    );
+
+    expect(commOct).toBeCloseTo(1244.35, 2);
+  });
 });
 
 

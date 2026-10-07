@@ -1,5 +1,8 @@
 import { toGBP } from '../../utils/currency';
 import { Company, Staff, Placement } from '../../types';
+import { findCommissionPolicy } from '../payroll/utils';
+
+export { findCommissionPolicy };
 
 export const symbolMap: Record<string, string> = { 
   GBP: '£', 
@@ -161,8 +164,8 @@ export const calculateCashReceivedCommission = (
   };
 
   // 1. Current Cycle calculations (starts in previous month)
-  const isAHComissn = policy.name === 'AH comissn';
-  const isTeamLeadCommission = policy.name === 'AH Manager commission Team Lead Commission' || policy.name === 'Team Lead Commission';
+  const isAHComissn = policy.name === 'AH comissn' || policy.id === 'comm-ah-comissn' || policy.name?.toLowerCase().includes('ah comissn');
+  const isTeamLeadCommission = policy.name === 'AH Manager commission Team Lead Commission' || policy.name === 'Team Lead Commission' || policy.name?.toLowerCase().includes('team lead commission');
   
   const teamMembers = staff.filter(s => {
     const mgrIds = s.reportingManagerIds || (s.reportingManagerId ? [s.reportingManagerId] : []);

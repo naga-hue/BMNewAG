@@ -275,8 +275,8 @@ export function calculateCashReceivedCommission(
   };
 
   // 1. Current Cycle calculations (payout scheduled in target monthStr)
-  const isAHComissn = policy.name === 'AH comissn';
-  const isTeamLeadCommission = policy.name === 'AH Manager commission Team Lead Commission' || policy.name === 'Team Lead Commission';
+  const isAHComissn = policy.name === 'AH comissn' || policy.id === 'comm-ah-comissn' || policy.name?.toLowerCase().includes('ah comissn');
+  const isTeamLeadCommission = policy.name === 'AH Manager commission Team Lead Commission' || policy.name === 'Team Lead Commission' || policy.name?.toLowerCase().includes('team lead commission');
   
   const teamMembers = staffList.filter(s => {
     const mgrIds = s.reportingManagerIds || (s.reportingManagerId ? [s.reportingManagerId] : []);
@@ -486,6 +486,25 @@ export function calculateCashReceivedCommission(
   return totalPaidNow + totalReleased;
 }
 
+export function findCommissionPolicy(policyIdOrName: string | undefined, commissionPolicies: any[]) {
+  if (!policyIdOrName || !Array.isArray(commissionPolicies) || commissionPolicies.length === 0) return undefined;
+  // 1. Direct id match
+  let policy = commissionPolicies.find(p => p.id === policyIdOrName);
+  if (policy) return policy;
+  // 2. Direct name match
+  policy = commissionPolicies.find(p => p.name === policyIdOrName);
+  if (policy) return policy;
+  // 3. Prefix / normalized match (e.g. "AH comissn (Manager Override 0%)" -> matches "AH comissn" or "comm-ah-comissn")
+  const cleanTarget = policyIdOrName.toLowerCase().trim();
+  policy = commissionPolicies.find(p => {
+    const pName = (p.name || '').toLowerCase().trim();
+    const pId = (p.id || '').toLowerCase().trim();
+    return (pName && (cleanTarget.startsWith(pName) || pName.startsWith(cleanTarget))) ||
+           (pId && (cleanTarget.startsWith(pId) || pId.startsWith(cleanTarget)));
+  });
+  return policy;
+}
+
 export function calculateCommissionForRecruiter(
   recruiterId: string,
   monthKey: string,
@@ -497,7 +516,7 @@ export function calculateCommissionForRecruiter(
 ): number {
   const member = staff.find(s => s.id === recruiterId);
   if (!member) return 0;
-  const policy = commissionPolicies.find(p => p.id === member.commissionPolicyId);
+  const policy = findCommissionPolicy(member.commissionPolicyId, commissionPolicies);
   return calculateCashReceivedCommission(member, policy, monthKey, staff, companies, placements, basis);
 }
 

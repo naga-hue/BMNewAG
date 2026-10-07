@@ -3,7 +3,7 @@ import { CheckCircle2, Search, Building2, Layers, Plus, Trash2 } from 'lucide-re
 // @ts-ignore
 import MultiSelectFilter from '../MultiSelectFilter';
 import { Company, Staff, Placement, Expense, NominalCode, ReimbursementItem } from '../../types';
-import { symbolMap, MONTHS, getBusinessDaysInMonth, getCellData, calculateCommissionForRecruiter } from './utils';
+import { symbolMap, MONTHS, getBusinessDaysInMonth, getCellData, calculateCommissionForRecruiter, findCommissionPolicy } from './utils';
 import { getUkStaffOverhead, formatOverheadTitle, WithOverheadTooltip } from './ukStaffOverheadData';
 import { FX_RATES } from '../../utils/currency';
 import { jsPDF } from 'jspdf';
@@ -1147,7 +1147,7 @@ ${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}
                 const salaryBase64 = createPdfBase64("BASIC SALARY INVOICE", salaryItems, currencySymbol, salaryVal);
 
                 // 2. Generate Commissions Invoice PDF
-                const commissionPolicy = commissionPolicies.find(p => p.id === recruiterStaff.commissionPolicyId);
+                const commissionPolicy = findCommissionPolicy(recruiterStaff.commissionPolicyId, commissionPolicies);
                 let targetStaffIds = [recruiterStaff.id];
                 if (commissionPolicy?.type === 'manager') {
                   if (commissionPolicy.assignedDepartments && commissionPolicy.assignedDepartments.length > 0) {
@@ -2671,7 +2671,7 @@ ${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}
                 }
 
                 if (detailBreakdownType === 'commission') {
-                  const policy = commissionPolicies.find(p => p.id === recruiterStaff.commissionPolicyId);
+                  const policy = findCommissionPolicy(recruiterStaff.commissionPolicyId, commissionPolicies);
                   
                   let targetStaffIds = [recruiterStaff.id];
                   if (policy?.type === 'manager') {

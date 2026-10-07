@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Send, Mail, ShieldAlert, Users, Laptop, FileText, ClipboardList } from 'lucide-react';
 import { toGBP, FX_RATES } from '../utils/currency';
+import { findCommissionPolicy } from './payroll/utils';
 
 export default function ExitEmailTriggerModal({ 
   isOpen, 
@@ -406,7 +407,7 @@ export default function ExitEmailTriggerModal({
       }).join('\n') || '• No upcoming placements scheduled to start.';
 
       // 7. Resolve Commission Plan & Estimate for "This Month" (July 2026)
-      const commPolicy = commissionPolicies.find(p => p.id === staffMember.commissionPolicyId);
+      const commPolicy = findCommissionPolicy(staffMember.commissionPolicyId, commissionPolicies);
       const commSchemeName = commPolicy ? commPolicy.name : 'None';
       
       // Calculate monthly commission due this month (July 2026) in policy currency

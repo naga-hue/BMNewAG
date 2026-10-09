@@ -333,6 +333,51 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
+    if (req.query.testId) {
+      const firestore = initFirestore();
+      const tokens = await getDialpadTokens(firestore);
+      const callDoc = await firestore.collection('dialpad_calls').doc(req.query.testId).get();
+      if (!callDoc.exists) return res.status(404).json({ error: 'Call not found' });
+      const callData = callDoc.data();
+      const candIds = Array.from(new Set([
+        callData.primaryCallId,
+        callData.dialpadCallId,
+        callData.callId,
+        callData.masterCallId,
+        callData.entryPointCallId,
+        callData.conversationId,
+        callData.transcriptionId,
+        ...(Array.isArray(callData.callRecordingIds) ? callData.callRecordingIds : []),
+        ...(Array.isArray(callData.relatedCallIds) ? callData.relatedCallIds : []),
+        callDoc.id
+      ])).filter(Boolean).map(String);
+
+      const attempts = [];
+      for (const cid of candIds) {
+        for (let idx = 0; idx < tokens.length; idx++) {
+          const tok = tokens[idx];
+          try {
+            const url1 = `https://dialpad.com/api/v2/transcripts/${cid}`;
+            const r1 = await fetch(url1, { headers: { 'Authorization': `Bearer ${tok}`, 'Accept': 'application/json' } });
+            const b1 = await r1.text();
+            attempts.push({ cid, tokenIdx: idx, endpoint: '/transcripts', status: r1.status, body: b1.substring(0, 150) });
+          } catch (e) {
+            attempts.push({ cid, tokenIdx: idx, endpoint: '/transcripts', error: e.message });
+          }
+
+          try {
+            const url2 = `https://dialpad.com/api/v2/call/${cid}`;
+            const r2 = await fetch(url2, { headers: { 'Authorization': `Bearer ${tok}`, 'Accept': 'application/json' } });
+            const b2 = await r2.text();
+            attempts.push({ cid, tokenIdx: idx, endpoint: '/call', status: r2.status, body: b2.substring(0, 150) });
+          } catch (e) {
+            attempts.push({ cid, tokenIdx: idx, endpoint: '/call', error: e.message });
+          }
+        }
+      }
+      return res.status(200).json({ callDocId: callDoc.id, callData, candIds, tokensCount: tokens.length, attempts });
+    }
+
     if (req.query.inspect === 'true') {
       const firestore = initFirestore();
       const days = Number(req.query.days || 10);

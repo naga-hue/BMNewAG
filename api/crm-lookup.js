@@ -187,6 +187,9 @@ async function searchRecruitlyByPhone(phone, apiKey) {
       if (candRes && Array.isArray(candRes.data) && candRes.data.length > 0) {
         const cand = candRes.data[0];
         const candId = cand.id || `ca-${cand._id || 'unknown'}`;
+        const candCompany = typeof cand.company === 'object'
+          ? (cand.company?.label || cand.company?.name || cand.companyName || '')
+          : (cand.companyName || cand.company || '');
         return {
           matched: true,
           type: 'CANDIDATE',
@@ -194,7 +197,7 @@ async function searchRecruitlyByPhone(phone, apiKey) {
           classificationSource: 'crm_ca',
           id: candId,
           name: cand.fullName || cand.name || 'Candidate',
-          company: cand.companyName || cand.company || '',
+          company: candCompany,
           matchedQuery: queryPhone
         };
       }
@@ -209,6 +212,9 @@ async function searchRecruitlyByPhone(phone, apiKey) {
       if (contactRes && Array.isArray(contactRes.data) && contactRes.data.length > 0) {
         const contact = contactRes.data[0];
         const contactId = contact.id || `ct-${contact._id || 'unknown'}`;
+        const contactCompany = typeof contact.company === 'object'
+          ? (contact.company?.label || contact.company?.name || contact.companyName || '')
+          : (contact.companyName || contact.company || '');
         return {
           matched: true,
           type: 'CONTACT',
@@ -216,7 +222,7 @@ async function searchRecruitlyByPhone(phone, apiKey) {
           classificationSource: 'crm_ct',
           id: contactId,
           name: contact.fullName || contact.name || 'Client Contact',
-          company: contact.companyName || contact.company || '',
+          company: contactCompany,
           matchedQuery: queryPhone
         };
       }
@@ -231,14 +237,15 @@ async function searchRecruitlyByPhone(phone, apiKey) {
       if (compRes && Array.isArray(compRes.data) && compRes.data.length > 0) {
         const comp = compRes.data[0];
         const compId = comp.id || `cy-${comp._id || 'unknown'}`;
+        const compName = comp.name || comp.label || 'Client Company';
         return {
           matched: true,
           type: 'COMPANY',
           targetType: 'Client',
           classificationSource: 'crm_cy',
           id: compId,
-          name: comp.name || 'Client Company',
-          company: comp.name || '',
+          name: compName,
+          company: compName,
           matchedQuery: queryPhone
         };
       }

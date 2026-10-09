@@ -253,14 +253,19 @@ async function runExport(days = 10, limit = 30, offset = 0, force = false) {
 
     // 1. Check or fetch transcript
     let transcript = (call.transcript || '').trim();
-    const isMissing = force || 
-      !transcript || 
-      transcript === 'No transcript generated yet.' || 
-      transcript === 'Transcript is empty' ||
-      transcript.startsWith('No transcript available');
+    const hasValidTranscript = transcript && 
+      transcript !== 'No transcript generated yet.' && 
+      transcript !== 'Transcript is empty' && 
+      !transcript.startsWith('No transcript available');
 
-    if (isMissing) {
-      console.log(`  -> Transcript missing in database. Fetching from Dialpad API...`);
+    const recap = (call.recapSummary || '').trim();
+    const hasValidRecap = recap && 
+      recap.length > 70 && 
+      !recap.startsWith('Summaries are currently not generated');
+
+    const isSubstantiveCall = Number(call.durationSeconds || 0) >= 60 && (call.wasRecorded || call.hasRecording);
+
+    if (!hasValidTranscript) {
       const fetched = await fetchTranscriptFromDialpad(call, tokens);
       if (fetched) {
         transcript = fetched;
@@ -272,13 +277,15 @@ async function runExport(days = 10, limit = 30, offset = 0, force = false) {
           transcriptStatus: 'completed',
           transcriptFetchedAt: new Date().toISOString()
         });
-        console.log(`  -> Successfully retrieved transcript from Dialpad API (${fetched.length} chars)!`);
-      } else {
-        console.log(`  -> No transcript available from Dialpad AI (unrecorded or short call).`);
-        noTranscriptCount++;
-        processedResults.push({ id: call.id, contact, date: callDate, status: 'no_transcript' });
-        continue;
+        console.log(`  -> Retrieved verbatim transcript from Dialpad API (${fetched.length} chars)`);
       }
+    }
+
+    const canUpload = (call.transcript && !call.transcript.startsWith('No transcript') && call.transcript !== 'Transcript is empty') || hasValidRecap || isSubstantiveCall;
+    if (!canUpload) {
+      noTranscriptCount++;
+      processedResults.push({ id: call.id, contact, date: callDate, status: 'no_transcript' });
+      continue;
     }
 
     // 2. Upload to OneDrive

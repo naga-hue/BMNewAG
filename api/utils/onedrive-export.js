@@ -274,7 +274,8 @@ export function buildCallTranscriptDocx(callData) {
     </w:p>
   `);
 
-  const transcriptLines = (callData.transcript || 'No transcript generated.').split('\n');
+  const fallbackText = callData.recapSummary ? 'Verbatim dialogue was processed by Dialpad AI into the structured summary above.' : 'Verbatim dialogue not available from this call recording.';
+  const transcriptLines = (callData.transcript || fallbackText).split('\n');
   for (const line of transcriptLines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -357,8 +358,15 @@ export async function autoUploadTranscriptToOneDrive(callData, customWebhookUrl 
     transcript !== 'Transcript is empty' && 
     !transcript.startsWith('No transcript available');
 
-  if (!hasValidTranscript) {
-    return { success: false, skipped: true, reason: 'No transcript available for this call leg' };
+  const recap = (callData.recapSummary || '').trim();
+  const hasValidRecap = recap && 
+    recap.length > 70 && 
+    !recap.startsWith('Summaries are currently not generated');
+
+  const isSubstantiveCall = Number(callData.durationSeconds || 0) >= 60 && (callData.wasRecorded || callData.hasRecording);
+
+  if (!hasValidTranscript && !hasValidRecap && !isSubstantiveCall) {
+    return { success: false, skipped: true, reason: 'No substantive transcript or AI recap available for this call leg' };
   }
 
   const webhookUrl = customWebhookUrl || process.env.PAUL_SETH_ONEDRIVE_WEBHOOK_URL || DEFAULT_PAUL_SETH_WEBHOOK_URL;

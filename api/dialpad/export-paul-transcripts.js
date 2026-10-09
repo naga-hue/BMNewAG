@@ -333,6 +333,47 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
+    if (req.query.inspect === 'true') {
+      const firestore = initFirestore();
+      const days = Number(req.query.days || 10);
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      const cutoffDateStr = cutoff.toISOString().substring(0, 10);
+      const callsSnap = await firestore.collection('dialpad_calls')
+        .where('dateStarted', '>=', cutoffDateStr)
+        .get();
+      const paulCalls = [];
+      callsSnap.forEach(d => {
+        const c = { id: d.id, ...d.data() };
+        if (isPaulSethCall(c)) paulCalls.push(c);
+      });
+      paulCalls.sort((a, b) => (b.dateStarted || '').localeCompare(a.dateStarted || ''));
+      const summary = paulCalls.map(c => ({
+        id: c.id,
+        date: c.dateStarted,
+        contact: c.crmName || c.externalName || c.externalNumber,
+        duration: c.durationSeconds,
+        talkTime: c.talkTime,
+        direction: c.direction,
+        state: c.state || c.webhookState,
+        wasRecorded: !!(c.wasRecorded || c.hasRecording || c.recordingUrl),
+        hasTranscript: !!(c.transcript && !c.transcript.startsWith('No transcript') && c.transcript !== 'Transcript is empty'),
+        transcriptLen: c.transcript ? c.transcript.length : 0,
+        recapSummaryLen: c.recapSummary ? c.recapSummary.length : 0,
+        disposition: c.disposition || '',
+        relatedCallIds: c.relatedCallIds || []
+      }));
+      const stats = {
+        total: paulCalls.length,
+        withDurationOver10s: paulCalls.filter(c => (c.durationSeconds || 0) > 10).length,
+        withDurationOver60s: paulCalls.filter(c => (c.durationSeconds || 0) > 60).length,
+        withRecording: paulCalls.filter(c => c.wasRecorded || c.hasRecording || c.recordingUrl).length,
+        withTranscriptInDb: paulCalls.filter(c => c.transcript && !c.transcript.startsWith('No transcript') && c.transcript !== 'Transcript is empty').length,
+        withRecapInDb: paulCalls.filter(c => c.recapSummary && c.recapSummary.trim().length > 0).length
+      };
+      return res.status(200).json({ stats, sample: summary.slice(0, 30) });
+    }
+
     const days = Number(req.query.days || 10);
     const limit = Number(req.query.limit || 30);
     const offset = Number(req.query.offset || 0);

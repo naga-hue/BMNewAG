@@ -435,10 +435,9 @@ export default async function handler(req, res) {
 
       callsSnap.forEach(doc => {
         const data = doc.data();
-        const hasHighConfidence = data.classificationSource && 
-          (data.classificationSource.startsWith('crm_') || data.classificationSource === 'ai_transcript');
+        const isProcessed = Boolean(data.classificationSource && data.classifiedAt);
 
-        if (!hasHighConfidence || forceAll) {
+        if (!isProcessed || forceAll) {
           if (toProcess.length < limit) {
             toProcess.push({ id: doc.id, ...data });
           }

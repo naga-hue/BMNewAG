@@ -415,25 +415,40 @@ export default async function handler(req, res) {
     // ==========================================
     if (action === 'batch_classify') {
       const limit = Math.min(Number(queryLimit || 30), 100);
-      console.log(`[CRM Lookup] Running batch classification for up to ${limit} calls...`);
+      const days = Number(query.days || 10);
+      const forceAll = query.force === 'true' || query.force === true;
+
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      const cutoffStr = cutoffDate.toISOString().substring(0, 10);
+
+      console.log(`[CRM Lookup] Running batch classification for last ${days} days (cutoff: ${cutoffStr}), limit ${limit}...`);
 
       const callsSnap = await firestoreDb.collection('dialpad_calls')
+        .where('dateStarted', '>=', cutoffStr)
         .orderBy('dateStarted', 'desc')
-        .limit(limit * 2)
         .get();
 
       const toProcess = [];
+      let totalInWindow = callsSnap.size;
+      let alreadyClassified = 0;
+
       callsSnap.forEach(doc => {
         const data = doc.data();
-        // Process calls that haven't been classified yet or only have default heuristic
-        if (!data.classificationSource || data.classificationSource === 'default_heuristic' || !data.targetType) {
+        const hasHighConfidence = data.classificationSource && 
+          (data.classificationSource.startsWith('crm_') || data.classificationSource === 'ai_transcript');
+
+        if (!hasHighConfidence || forceAll) {
           if (toProcess.length < limit) {
             toProcess.push({ id: doc.id, ...data });
           }
+        } else {
+          alreadyClassified++;
         }
       });
 
-      console.log(`[CRM Lookup] Found ${toProcess.length} unclassified calls.`);
+      const remainingUnclassified = totalInWindow - alreadyClassified - toProcess.length;
+      console.log(`[CRM Lookup] Total in window: ${totalInWindow}, already classified: ${alreadyClassified}, processing: ${toProcess.length}, remaining: ${remainingUnclassified}`);
 
       let crmCount = 0;
       let aiCount = 0;
@@ -472,6 +487,9 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         processed: results.length,
+        totalInWindow,
+        alreadyClassified,
+        remainingUnclassified: Math.max(0, remainingUnclassified),
         crmMatches: crmCount,
         aiClassified: aiCount,
         defaultFallback: defaultCount,

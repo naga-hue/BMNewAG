@@ -388,7 +388,7 @@ export async function classifyCallRecord(callData, apiKey, firestoreDb) {
   return {
     matched: false,
     targetType: defaultTargetType,
-    classificationSource: 'default_heuristic'
+    classificationSource: 'unmatched_default'
   };
 }
 
@@ -414,7 +414,7 @@ export default async function handler(req, res) {
     // ACTION: BATCH CLASSIFY CALLS
     // ==========================================
     if (action === 'batch_classify') {
-      const limit = Math.min(Number(queryLimit || 30), 100);
+      const limit = Math.min(Number(queryLimit || 15), 50);
       const days = Number(query.days || 10);
       const forceAll = query.force === 'true' || query.force === true;
 
@@ -427,6 +427,7 @@ export default async function handler(req, res) {
       const callsSnap = await firestoreDb.collection('dialpad_calls')
         .where('dateStarted', '>=', cutoffStr)
         .orderBy('dateStarted', 'desc')
+        .limit(100)
         .get();
 
       const toProcess = [];

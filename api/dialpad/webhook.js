@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { isPaulSethCall, autoUploadTranscriptToOneDrive } from '../utils/onedrive-export.js';
 
 // Disable default Vercel body-parser so we can retrieve the raw string body for JWT validation
 export const config = {
@@ -698,6 +699,29 @@ export default async function handler(req, res) {
     const terminalStates = ['hangup', 'disconnected', 'ended', 'closed', 'missed', 'rejected', 'abandoned', 'transcription'];
     if (resolvedKPI && resolvedKPI.handlerId && terminalStates.includes(state)) {
       await updateKpiDaily(firestore, resolvedKPI.handlerId, resolvedKPI.dateStarted);
+    }
+
+    // Auto-archive transcript to Paul Seth's OneDrive folder if completed
+    if (['transcription', 'call_transcription', 'concluded', 'hangup', 'ended'].includes(state)) {
+      try {
+        const savedCallDoc = await firestore.collection('dialpad_calls').doc(callId).get();
+        if (savedCallDoc.exists) {
+          const cData = savedCallDoc.data();
+          if (isPaulSethCall(cData) && cData.transcript && !cData.onedriveSynced) {
+            const oneDriveRes = await autoUploadTranscriptToOneDrive(cData);
+            if (oneDriveRes.success) {
+              await firestore.collection('dialpad_calls').doc(callId).update({
+                onedriveSynced: true,
+                onedriveFileName: oneDriveRes.fileName,
+                onedriveSyncedAt: oneDriveRes.deliveredAt
+              });
+              console.log(`[Webhook] Auto-archived call ${callId} to Paul Seth's OneDrive: ${oneDriveRes.fileName}`);
+            }
+          }
+        }
+      } catch (oneDriveErr) {
+        console.error('[Webhook] Error auto-archiving to OneDrive:', oneDriveErr);
+      }
     }
 
     return res.status(200).json({ success: true, conversationId: finalConversationId, callId: callId });

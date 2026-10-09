@@ -1,5 +1,6 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { isPaulSethCall, autoUploadTranscriptToOneDrive } from '../utils/onedrive-export.js';
 
 // Robust PEM private key formatter
 function formatPrivateKey(rawKey) {
@@ -85,27 +86,61 @@ function initFirestore() {
   return db;
 }
 
-// Helper to resolve the correct Dialpad token based on company ID
-async function getDialpadToken(firestore, companyId) {
+// Helper to resolve all candidate Dialpad tokens with company preferred token first
+async function getDialpadTokens(firestore, companyId) {
+  const tokens = [];
+  let preferredToken = '';
+
   if (companyId) {
     try {
       const compDoc = await firestore.collection('companies').doc(companyId).get();
       if (compDoc.exists) {
         const data = compDoc.data();
-        if (data.dialpadApiKey) {
-          return data.dialpadApiKey.trim();
+        if (data.dialpadApiKey && data.dialpadApiKey.trim()) {
+          preferredToken = data.dialpadApiKey.trim();
+          tokens.push(preferredToken);
         }
       }
     } catch (e) {
-      console.error('[getDialpadToken] Error fetching company:', e);
+      console.error('[getDialpadTokens] Error fetching company:', e);
     }
   }
-  // comp-1782806159650 is Totaco Ltd
-  if (companyId === 'comp-1782806159650') {
-    return process.env.DIALPAD_TOKEN_2 || process.env.DIALPAD_TOKEN || '';
+
+  // Check companyId for Totaco Ltd slot mapping
+  if (!preferredToken) {
+    if (companyId === 'comp-1782806159650') {
+      preferredToken = (process.env.DIALPAD_TOKEN_2 || process.env.DIALPAD_TOKEN || '').trim();
+    } else {
+      preferredToken = (process.env.DIALPAD_TOKEN_1 || process.env.DIALPAD_TOKEN || '').trim();
+    }
+    if (preferredToken) tokens.push(preferredToken);
   }
-  // Default to Slot 1 (Humres / Huntek)
-  return process.env.DIALPAD_TOKEN_1 || process.env.DIALPAD_TOKEN || '';
+
+  // Add all other tokens from environment variables as fallbacks
+  const envTokens = [
+    process.env.DIALPAD_TOKEN_1,
+    process.env.DIALPAD_TOKEN_2,
+    process.env.DIALPAD_TOKEN
+  ].filter(Boolean).map(t => t.trim());
+  envTokens.forEach(t => {
+    if (t && !tokens.includes(t)) tokens.push(t);
+  });
+
+  // Also read all companies that have dialpadApiKey configured in Firestore
+  try {
+    const compSnap = await firestore.collection('companies').get();
+    compSnap.forEach(d => {
+      const k = d.data()?.dialpadApiKey?.trim();
+      if (k && !tokens.includes(k)) tokens.push(k);
+    });
+  } catch (e) {
+    console.error('[getDialpadTokens] Error fetching all company keys:', e);
+  }
+
+  return {
+    preferredToken: preferredToken || tokens[0] || '',
+    allTokens: tokens
+  };
 }
 
 export default async function handler(req, res) {
@@ -123,26 +158,56 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const callId = req.query.callId || req.query.conversationId;
-  if (!callId) {
+  const inputCallId = req.query.callId || req.query.conversationId;
+  if (!inputCallId) {
     return res.status(400).json({ error: 'Missing callId or conversationId parameter' });
   }
 
   try {
     const firestore = initFirestore();
-    const callRef = firestore.collection('dialpad_calls').doc(String(callId));
-    const callSnap = await callRef.get();
+    let callRef = firestore.collection('dialpad_calls').doc(String(inputCallId));
+    let callSnap = await callRef.get();
+    let callData = null;
 
-    if (!callSnap.exists) {
-      return res.status(404).json({ error: `Call with ID ${callId} not found` });
+    if (callSnap.exists) {
+      callData = callSnap.data();
+    } else {
+      console.log(`[Enrich] Doc ${inputCallId} not found directly in dialpad_calls. Searching secondary indices...`);
+      // Try finding by conversationId
+      let qSnap = await firestore.collection('dialpad_calls').where('conversationId', '==', String(inputCallId)).limit(1).get();
+      if (qSnap.empty) {
+        qSnap = await firestore.collection('dialpad_calls').where('primaryCallId', '==', String(inputCallId)).limit(1).get();
+      }
+      if (qSnap.empty) {
+        qSnap = await firestore.collection('dialpad_calls').where('masterCallId', '==', String(inputCallId)).limit(1).get();
+      }
+      if (qSnap.empty) {
+        // Try looking up leg in dialpad_call_legs
+        const legSnap = await firestore.collection('dialpad_call_legs').doc(String(inputCallId)).get();
+        if (legSnap.exists) {
+          const legData = legSnap.data();
+          const targetConv = legData.conversationId || legData.masterCallId;
+          if (targetConv) {
+            qSnap = await firestore.collection('dialpad_calls').where('conversationId', '==', String(targetConv)).limit(1).get();
+          }
+        }
+      }
+
+      if (!qSnap || qSnap.empty) {
+        return res.status(404).json({ error: `Call with ID ${inputCallId} not found in database` });
+      }
+
+      const foundDoc = qSnap.docs[0];
+      callRef = foundDoc.ref;
+      callData = foundDoc.data();
+      console.log(`[Enrich] Found call record under document ID: ${foundDoc.id}`);
     }
 
-    const callData = callSnap.data();
-    const conversationId = req.query.conversationId || callData.conversationId || callId;
+    const conversationId = req.query.conversationId || callData.conversationId || callRef.id;
     const updates = {};
     let needsUpdate = false;
 
-    // 1. Resolve Recruiter company to find the correct token
+    // 1. Resolve Recruiter company to find the correct Dialpad token
     let companyId = '';
     if (callData.handlerId) {
       const staffSnap = await firestore.collection('staff').doc(callData.handlerId).get();
@@ -151,54 +216,141 @@ export default async function handler(req, res) {
       }
     }
 
-    const token = await getDialpadToken(firestore, companyId);
-    if (!token) {
-      console.warn(`[Enrich] No Dialpad Token configured for company ${companyId || 'default'}. Returning cached data.`);
+    const { preferredToken, allTokens } = await getDialpadTokens(firestore, companyId);
+    if (!preferredToken && allTokens.length === 0) {
+      console.warn(`[Enrich] No Dialpad Token configured. Returning cached data.`);
       return res.status(200).json({ ...callData, enriched: false, message: 'No Dialpad API token configured' });
     }
 
-    const primaryCallId = callData.primaryCallId || conversationId || callId;
+    // Candidate call IDs to query on Dialpad API (master call leg, individual call leg, routing leg)
+    const candidateCallIds = Array.from(new Set([
+      callData.primaryCallId,
+      callData.dialpadCallId,
+      callData.callId,
+      inputCallId,
+      req.query.callId,
+      req.query.primaryCallId,
+      req.query.masterCallId,
+      req.query.conversationId,
+      callData.masterCallId,
+      callData.entryPointCallId,
+      callData.conversationId,
+      ...(Array.isArray(callData.relatedCallIds) ? callData.relatedCallIds : []),
+      callRef.id
+    ])).filter(Boolean).map(String);
 
-    // 2. Fetch Transcript if empty/pending
-    const isTranscriptEmpty = !callData.transcript || callData.transcriptStatus === 'pending' || callData.transcript === 'PENDING';
+    console.log(`[Enrich] Candidate call IDs for call ${callRef.id}: [${candidateCallIds.join(', ')}]`);
+
+    // 2. Fetch Transcript if empty, pending, or force-refreshed
+    const forceRefresh = req.query.force === 'true';
+    const isTranscriptEmpty = forceRefresh || 
+      !callData.transcript || 
+      callData.transcriptStatus === 'pending' || 
+      callData.transcript === 'PENDING' || 
+      callData.transcript === 'No transcript generated yet.' ||
+      callData.transcript === 'Transcript is empty';
+
     if (isTranscriptEmpty) {
-      console.log(`[Enrich] Fetching transcript for callId ${primaryCallId}...`);
-      try {
-        const transRes = await fetch(`https://dialpad.com/api/v2/transcripts/${primaryCallId}`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-          }
-        });
+      console.log(`[Enrich] Fetching transcript across candidate IDs [${candidateCallIds.join(', ')}]...`);
+      let foundTranscript = '';
 
-        if (transRes.status === 200) {
-          const transData = await transRes.json();
-          if (transData && transData.lines) {
-            const lines = transData.lines || [];
-            const transcriptText = lines
-              .filter(line => line.type === 'transcript' && line.content)
-              .map(line => `${line.name || 'Unknown'}: ${line.content}`)
-              .join('\n');
+      // A. Try Dialpad Transcripts API: GET /api/v2/transcripts/{candId}
+      for (const candId of candidateCallIds) {
+        for (const token of allTokens) {
+          try {
+            const transRes = await fetch(`https://dialpad.com/api/v2/transcripts/${candId}`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+              }
+            });
 
-            updates.transcript = transcriptText || 'Transcript is empty';
-            updates.transcriptStatus = 'completed';
-            updates.transcriptFetchedAt = new Date().toISOString();
-            needsUpdate = true;
-            console.log(`[Enrich] Successfully retrieved and formatted transcript (${updates.transcript.length} chars)`);
+            if (transRes.status === 200) {
+              const transData = await transRes.json();
+              const rawLines = Array.isArray(transData) ? transData : (transData?.lines || transData?.items || transData?.utterances || []);
+              if (rawLines.length > 0) {
+                const formattedLines = rawLines
+                  .map(line => {
+                    const speaker = line.name || line.speaker || line.speaker_name || (line.contact_id ? 'Contact' : 'Recruiter');
+                    const text = (line.content || line.text || line.message || '').trim();
+                    return text ? `${speaker}: ${text}` : '';
+                  })
+                  .filter(Boolean);
+
+                if (formattedLines.length > 0) {
+                  foundTranscript = formattedLines.join('\n');
+                  console.log(`[Enrich] Retrieved transcript via /transcripts/${candId} (${foundTranscript.length} chars)`);
+                  break;
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`[Enrich] Error fetching /transcripts/${candId}:`, err.message);
           }
-        } else if (transRes.status === 404 || transRes.status === 400) {
-          console.log(`[Enrich] Dialpad transcript API returned ${transRes.status}. Still pending.`);
-        } else {
-          console.error(`[Enrich] Dialpad transcript API error: ${transRes.status}`);
         }
-      } catch (err) {
-        console.error(`[Enrich] Error fetching transcript:`, err);
+        if (foundTranscript) break;
+      }
+
+      // B. Fallback: Check Dialpad Call Details API: GET /api/v2/call/{candId} for transcription_text
+      if (!foundTranscript) {
+        for (const candId of candidateCallIds) {
+          for (const token of allTokens) {
+            try {
+              const callRes = await fetch(`https://dialpad.com/api/v2/call/${candId}`, {
+                method: 'GET',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Accept': 'application/json'
+                }
+              });
+
+              if (callRes.status === 200) {
+                const callDetails = await callRes.json();
+                if (callDetails?.transcription_text && callDetails.transcription_text.trim()) {
+                  foundTranscript = callDetails.transcription_text.trim();
+                  console.log(`[Enrich] Retrieved transcript via /call/${candId} transcription_text (${foundTranscript.length} chars)`);
+                  break;
+                }
+              }
+            } catch (err) {
+              console.error(`[Enrich] Error checking /call/${candId} for transcript:`, err.message);
+            }
+          }
+          if (foundTranscript) break;
+        }
+      }
+
+      if (foundTranscript) {
+        updates.transcript = foundTranscript;
+        updates.transcriptStatus = 'completed';
+        updates.transcriptFetchedAt = new Date().toISOString();
+        needsUpdate = true;
+      } else {
+        // Determine specific rationale for why transcript is absent
+        const duration = Number(callData.durationSeconds || callData.duration || 0);
+        const wasRecorded = callData.wasRecorded || !!callData.recordingUrl;
+        const connected = callData.connected !== false && duration > 0;
+
+        let explanation = '';
+        if (!connected) {
+          explanation = 'No transcript available: Call was not connected or answered.';
+        } else if (!wasRecorded) {
+          explanation = 'No transcript available: Call was not recorded.';
+        } else if (duration < 20) {
+          explanation = 'No transcript available: Call duration was too short (< 20s) for Dialpad AI transcription.';
+        } else {
+          explanation = 'No transcript generated by Dialpad AI for this call.';
+        }
+
+        updates.transcript = explanation;
+        updates.transcriptStatus = 'not_available';
+        updates.transcriptFetchedAt = new Date().toISOString();
+        needsUpdate = true;
       }
     }
 
     // 3. Resolve Public Recording Link if call was recorded but has no public link
-    // The adminRecordingUrls typically hold private links like https://dialpad.com/blob/adminrecording/5762892484714496.mp3
     let adminRecordingUrls = callData.adminRecordingUrls || [];
     if ((!adminRecordingUrls || adminRecordingUrls.length === 0) && !callData.recordingUrl) {
       console.log(`[Enrich] adminRecordingUrls missing from logical call. Checking dialpad_call_legs...`);
@@ -227,118 +379,134 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2.5. Fetch Call Details from Dialpad API to self-heal duration/recordings if they are zero or missing
+    // 4. Fetch Call Details from Dialpad API to self-heal duration/recordings/recap
     const needsDurationHeal = !callData.durationSeconds || callData.durationSeconds === 0;
     const isRecordedInDb = callData.wasRecorded || callData.hasRecording;
     const needsRecordingHeal = (!adminRecordingUrls || adminRecordingUrls.length === 0) && isRecordedInDb && !callData.recordingUrl;
+    const needsRecapHeal = !callData.recapSummary && !callData.recapOutcome;
 
-    if (needsDurationHeal || needsRecordingHeal) {
-      console.log(`[Enrich] Call needs enrichment/self-healing. durationSeconds: ${callData.durationSeconds || 0}, needsRecordingHeal: ${needsRecordingHeal}. Fetching call details from Dialpad API...`);
-      try {
-        const callDetailsRes = await fetch(`https://dialpad.com/api/v2/call/${primaryCallId}`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-          }
-        });
-
-        if (callDetailsRes.status === 200) {
-          const detailsData = await callDetailsRes.json();
-          if (detailsData) {
-            console.log(`[Enrich] Retrieved call details from Dialpad: state="${detailsData.state}", duration=${detailsData.duration}ms`);
-            
-            // Self-heal duration fields
-            const durationMs = Number(detailsData.duration || 0);
-            const durationSeconds = Math.round(durationMs / 1000);
-            const talkTimeMs = Number(detailsData.talk_time || 0);
-            const talkTimeSeconds = Math.round(talkTimeMs / 1000);
-            const totalDurationMs = Number(detailsData.total_duration || 0);
-
-            if (needsDurationHeal && durationSeconds > 0) {
-              updates.durationMs = durationMs;
-              updates.durationSeconds = durationSeconds;
-              updates.talkTimeMs = talkTimeMs;
-              updates.talkTimeSeconds = talkTimeSeconds;
-              updates.totalDurationMs = totalDurationMs;
-              
-              if (detailsData.date_ended) {
-                const epochEnded = Number(detailsData.date_ended);
-                updates.dateEnded = !isNaN(epochEnded) ? new Date(epochEnded).toISOString() : String(detailsData.date_ended);
+    if (needsDurationHeal || needsRecordingHeal || needsRecapHeal) {
+      for (const candId of candidateCallIds) {
+        for (const token of allTokens) {
+          try {
+            const callDetailsRes = await fetch(`https://dialpad.com/api/v2/call/${candId}`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
               }
-              if (detailsData.date_connected) {
-                const epochConn = Number(detailsData.date_connected);
-                updates.dateConnected = !isNaN(epochConn) ? new Date(epochConn).toISOString() : String(detailsData.date_connected);
-              }
-              updates.connected = detailsData.state === 'connected' || durationSeconds > 0;
-              needsUpdate = true;
-              console.log(`[Enrich] Self-healed call duration to ${durationSeconds}s, talkTime to ${talkTimeSeconds}s`);
-            }
+            });
 
-            // Self-heal recording URLs
-            let urls = detailsData.admin_recording_urls || [];
-            if ((!urls || urls.length === 0) && Array.isArray(detailsData.recording_details)) {
-              urls = detailsData.recording_details.filter(rec => rec.url).map(rec => rec.url);
+            if (callDetailsRes.status === 200) {
+              const detailsData = await callDetailsRes.json();
+              if (detailsData) {
+                // Self-heal duration fields
+                const durationMs = Number(detailsData.duration || 0);
+                const durationSeconds = Math.round(durationMs / 1000);
+                const talkTimeMs = Number(detailsData.talk_time || 0);
+                const talkTimeSeconds = Math.round(talkTimeMs / 1000);
+                const totalDurationMs = Number(detailsData.total_duration || 0);
+
+                if (needsDurationHeal && durationSeconds > 0) {
+                  updates.durationMs = durationMs;
+                  updates.durationSeconds = durationSeconds;
+                  updates.talkTimeMs = talkTimeMs;
+                  updates.talkTimeSeconds = talkTimeSeconds;
+                  updates.totalDurationMs = totalDurationMs;
+                  
+                  if (detailsData.date_ended) {
+                    const epochEnded = Number(detailsData.date_ended);
+                    updates.dateEnded = !isNaN(epochEnded) ? new Date(epochEnded).toISOString() : String(detailsData.date_ended);
+                  }
+                  if (detailsData.date_connected) {
+                    const epochConn = Number(detailsData.date_connected);
+                    updates.dateConnected = !isNaN(epochConn) ? new Date(epochConn).toISOString() : String(detailsData.date_connected);
+                  }
+                  updates.connected = detailsData.state === 'connected' || durationSeconds > 0;
+                  needsUpdate = true;
+                  console.log(`[Enrich] Self-healed call duration to ${durationSeconds}s, talkTime to ${talkTimeSeconds}s`);
+                }
+
+                // Self-heal AI Recap
+                if (detailsData.recap_summary && !callData.recapSummary) {
+                  updates.recapSummary = detailsData.recap_summary;
+                  needsUpdate = true;
+                }
+                if (detailsData.recap_outcome && !callData.recapOutcome) {
+                  updates.recapOutcome = detailsData.recap_outcome;
+                  needsUpdate = true;
+                }
+
+                // Self-heal recording URLs
+                let urls = detailsData.admin_recording_urls || [];
+                if ((!urls || urls.length === 0) && Array.isArray(detailsData.recording_details)) {
+                  urls = detailsData.recording_details.filter(rec => rec.url).map(rec => rec.url);
+                }
+                if (urls && urls.length > 0) {
+                  adminRecordingUrls = urls;
+                  updates.adminRecordingUrls = urls;
+                  updates.wasRecorded = true;
+                  needsUpdate = true;
+                  console.log(`[Enrich] Self-healed adminRecordingUrls:`, urls);
+                }
+                break;
+              }
             }
-            if (urls && urls.length > 0) {
-              adminRecordingUrls = urls;
-              updates.adminRecordingUrls = urls;
-              updates.wasRecorded = true;
-              needsUpdate = true;
-              console.log(`[Enrich] Self-healed adminRecordingUrls:`, urls);
-            }
+          } catch (err) {
+            console.error(`[Enrich] Error calling Dialpad call details API for ${candId}:`, err);
           }
-        } else {
-          console.error(`[Enrich] Dialpad call details API returned status ${callDetailsRes.status}`);
         }
-      } catch (err) {
-        console.error(`[Enrich] Error calling Dialpad call details API:`, err);
+        if (updates.durationSeconds || updates.adminRecordingUrls) break;
       }
     }
 
+    // 5. Generate Public Audio Link from Private Blob Recording
     const hasPrivateRecording = Array.isArray(adminRecordingUrls) && adminRecordingUrls.length > 0;
     const hasPublicRecordingUrl = callData.recordingUrl && callData.recordingUrl.startsWith('http') && !callData.recordingUrl.includes('dialpad.com/blob/');
 
     if (hasPrivateRecording && !hasPublicRecordingUrl) {
-      const privateUrl = adminRecordingUrls[0];
-      console.log(`[Enrich] Private recording URL found: ${privateUrl}. Fetching public share link...`);
-      
-      const match = privateUrl.match(/\/(\d+)\.mp3/);
-      if (match) {
-        const recordingId = match[1];
-        try {
-          const shareRes = await fetch('https://dialpad.com/api/v2/recordingsharelink', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            },
-            body: JSON.stringify({
-              privacy: 'public',
-              recording_type: 'admincallrecording',
-              recording_id: recordingId
-            })
-          });
+      for (const privateUrl of adminRecordingUrls) {
+        const match = privateUrl.match(/\/(\d+)\.mp3/);
+        if (match) {
+          const recordingId = match[1];
+          let shareSuccess = false;
+          for (const token of allTokens) {
+            try {
+              const shareRes = await fetch('https://dialpad.com/api/v2/recordingsharelink', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                  privacy: 'public',
+                  recording_type: 'admincallrecording',
+                  recording_id: recordingId
+                })
+              });
 
-          if (shareRes.status === 200) {
-            const shareData = await shareRes.json();
-            if (shareData.access_link) {
-              updates.recordingUrl = shareData.access_link;
-              updates.wasRecorded = true;
-              needsUpdate = true;
-              console.log(`[Enrich] Public recording access link generated successfully: ${shareData.access_link}`);
+              if (shareRes.status === 200) {
+                const shareData = await shareRes.json();
+                if (shareData.access_link) {
+                  updates.recordingUrl = shareData.access_link;
+                  updates.wasRecorded = true;
+                  needsUpdate = true;
+                  shareSuccess = true;
+                  console.log(`[Enrich] Public recording access link generated successfully: ${shareData.access_link}`);
+                  break;
+                }
+              }
+            } catch (err) {
+              console.error(`[Enrich] Error requesting recording share link:`, err);
             }
-          } else {
-            console.error(`[Enrich] recordingsharelink API returned ${shareRes.status}:`, await shareRes.text());
           }
-        } catch (err) {
-          console.error(`[Enrich] Error requesting recording share link:`, err);
+          if (shareSuccess) break;
         }
       }
     }
 
-    // 4. Classify Party Identity (Candidate ca- vs Client ct-/cy-, or AI Transcript classification)
+    // 6. Classify Party Identity (Candidate ca- vs Client ct-/cy-, or AI Transcript classification)
     const isAlreadyClassified = callData.classificationSource && callData.classificationSource !== 'default_heuristic';
     if (!isAlreadyClassified) {
       try {
@@ -368,10 +536,10 @@ export default async function handler(req, res) {
             updates.aiClassificationReason = classification.aiReason;
           }
           needsUpdate = true;
-          console.log(`[Enrich] Successfully classified call ${callId} as ${classification.targetType} (${classification.classificationSource})`);
+          console.log(`[Enrich] Successfully classified call ${callRef.id} as ${classification.targetType} (${classification.classificationSource})`);
         }
       } catch (classErr) {
-        console.warn(`[Enrich] Classification failed for call ${callId}:`, classErr.message);
+        console.warn(`[Enrich] Classification failed for call ${callRef.id}:`, classErr.message);
       }
     }
 
@@ -380,11 +548,32 @@ export default async function handler(req, res) {
     if (needsUpdate) {
       await callRef.update(updates);
       finalCallData = { ...callData, ...updates };
-      console.log(`[Enrich] Firestore document updated for conversationId ${conversationId}`);
+      console.log(`[Enrich] Firestore document updated for call ${callRef.id}`);
 
       // If call duration has been self-healed, trigger daily KPI recalculation
       if (updates.durationSeconds && finalCallData.handlerId && finalCallData.dateStarted) {
         await updateKpiDaily(firestore, finalCallData.handlerId, finalCallData.dateStarted);
+      }
+    }
+
+    // Auto-archive transcript to Paul Seth's OneDrive folder if applicable
+    const shouldUploadOneDrive = isPaulSethCall(finalCallData) || req.query.exportOneDrive === 'true';
+    if (shouldUploadOneDrive && finalCallData.transcript && !finalCallData.onedriveSynced) {
+      try {
+        console.log(`[Enrich] Triggering auto-upload to Paul Seth's OneDrive for call ${callRef.id}...`);
+        const oneDriveRes = await autoUploadTranscriptToOneDrive(finalCallData);
+        if (oneDriveRes.success) {
+          const syncUpdates = {
+            onedriveSynced: true,
+            onedriveFileName: oneDriveRes.fileName,
+            onedriveSyncedAt: oneDriveRes.deliveredAt
+          };
+          await callRef.update(syncUpdates);
+          finalCallData = { ...finalCallData, ...syncUpdates };
+          console.log(`[Enrich] Successfully archived transcript to OneDrive: ${oneDriveRes.fileName}`);
+        }
+      } catch (oneDriveErr) {
+        console.error('[Enrich] Error auto-archiving to OneDrive:', oneDriveErr);
       }
     }
 

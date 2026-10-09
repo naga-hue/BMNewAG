@@ -20,6 +20,12 @@
   "functions": {
     "api/qandle/sync.js": {
       "maxDuration": 60
+    },
+    "api/dialpad/export-paul-transcripts.js": {
+      "maxDuration": 60
+    },
+    "api/dialpad/enrich.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [

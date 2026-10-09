@@ -26,7 +26,8 @@ import {
   RefreshCw,
   Sparkles,
   AlertCircle,
-  Info
+  Info,
+  FolderDown
 } from 'lucide-react';
 
 const CA_FORMATTER = new Intl.DateTimeFormat('en-CA', {
@@ -71,8 +72,14 @@ const CRMContactLink = ({ phone, defaultName, companyId, crmId, crmName, crmType
         company: crmCompany || ''
       };
     }
+    const clean = (phone || '').replace(/[^0-9+]/g, '').trim();
+    if (clean && window._crmCache && window._crmCache[`${clean}_${companyId || ''}`]) {
+      return window._crmCache[`${clean}_${companyId || ''}`];
+    }
     return null;
   });
+
+  const [isLoadingLookup, setIsLoadingLookup] = useState(false);
 
   useEffect(() => {
     if (crmId && crmName) {
@@ -85,50 +92,43 @@ const CRMContactLink = ({ phone, defaultName, companyId, crmId, crmName, crmType
       });
       return;
     }
+    const clean = (phone || '').replace(/[^0-9+]/g, '').trim();
+    if (clean && window._crmCache && window._crmCache[`${clean}_${companyId || ''}`]) {
+      setCrmData(window._crmCache[`${clean}_${companyId || ''}`]);
+    }
+  }, [crmId, crmName, crmType, crmCompany, phone, companyId]);
 
-    if (!phone) return;
-    
+  const handleManualLookup = async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!phone || isLoadingLookup) return;
     const clean = phone.replace(/[^0-9+]/g, '').trim();
     if (clean.length < 6) return;
 
     const cacheKey = `${clean}_${companyId || ''}`;
-
     if (window._crmCache && window._crmCache[cacheKey]) {
       setCrmData(window._crmCache[cacheKey]);
       return;
     }
 
-    if (window._crmPending && window._crmPending[cacheKey]) {
-      const interval = setInterval(() => {
-        if (window._crmCache && window._crmCache[cacheKey]) {
-          setCrmData(window._crmCache[cacheKey]);
-          clearInterval(interval);
-        }
-      }, 500);
-      return () => clearInterval(interval);
+    setIsLoadingLookup(true);
+    try {
+      const res = await fetch(`/api/crm-lookup?phone=${encodeURIComponent(clean)}&companyId=${companyId || ''}`);
+      const d = await res.json();
+      if (!window._crmCache) window._crmCache = {};
+      if (d && d.matched) {
+        window._crmCache[cacheKey] = d;
+        setCrmData(d);
+      } else {
+        window._crmCache[cacheKey] = { matched: false };
+        setCrmData({ matched: false });
+      }
+    } catch (err) {
+      console.error('Manual CRM lookup failed:', err);
+    } finally {
+      setIsLoadingLookup(false);
     }
-
-    if (!window._crmCache) window._crmCache = {};
-    if (!window._crmPending) window._crmPending = {};
-
-    window._crmPending[cacheKey] = true;
-
-    fetch(`/api/crm-lookup?phone=${encodeURIComponent(clean)}&companyId=${companyId || ''}`)
-      .then(r => r.json())
-      .then(d => {
-        window._crmPending[cacheKey] = false;
-        if (d && d.matched) {
-          window._crmCache[cacheKey] = d;
-          setCrmData(d);
-        } else {
-          window._crmCache[cacheKey] = { matched: false };
-          setCrmData({ matched: false });
-        }
-      })
-      .catch(() => {
-        window._crmPending[cacheKey] = false;
-      });
-  }, [phone, companyId, crmId, crmName, crmType, crmCompany]);
+  };
 
   if (crmData && crmData.matched) {
     let linkPath = (crmData.type || '').toLowerCase();
@@ -156,7 +156,33 @@ const CRMContactLink = ({ phone, defaultName, companyId, crmId, crmName, crmType
   }
 
   const tooltipTitle = aiReason ? `AI Analyzed: ${aiReason}` : defaultName;
-  return <span title={tooltipTitle}>{defaultName}</span>;
+  const canLookup = Boolean(phone && phone.replace(/[^0-9+]/g, '').trim().length >= 6 && !crmData?.matched);
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+      <span title={tooltipTitle}>{defaultName}</span>
+      {canLookup && (
+        <button
+          onClick={handleManualLookup}
+          title="Lookup this number in Recruitly CRM"
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            fontSize: '11px',
+            opacity: isLoadingLookup ? 1 : 0.45,
+            transition: 'opacity 0.2s',
+            lineHeight: 1
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+          onMouseLeave={(e) => { if (!isLoadingLookup) e.currentTarget.style.opacity = '0.45'; }}
+        >
+          {isLoadingLookup ? '⏳' : '🔍'}
+        </button>
+      )}
+    </span>
+  );
 };
 
 // Formats candidate vs client party type badges with CRM/AI source cues
@@ -923,6 +949,45 @@ export default function KpisDashboard({
     }
   };
 
+  const [isExportingOneDrive, setIsExportingOneDrive] = useState(false);
+  const handleExportPaulTranscriptsToOneDrive = async () => {
+    setIsExportingOneDrive(true);
+    try {
+      onShowToast?.("Syncing Paul Seth's 10-day transcripts to OneDrive...", "info");
+      let offset = 0;
+      let totalUploaded = 0;
+      let totalProcessed = 0;
+      let hasMore = true;
+      let pass = 0;
+
+      while (hasMore && pass < 10) {
+        pass++;
+        const res = await fetch(`/api/dialpad/export-paul-transcripts?days=10&limit=25&offset=${offset}`);
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP error ${res.status}`);
+        }
+        const data = await res.json();
+        totalUploaded += (data.uploaded || 0);
+        totalProcessed += (data.processed || 0);
+
+        if (data.hasMore && data.nextOffset) {
+          offset = data.nextOffset;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      onShowToast?.(`Transcripts synced to Paul Seth's OneDrive! (${totalUploaded} files uploaded into /Transcripts)`, "success");
+      setPollTrigger(p => p + 1);
+    } catch (err) {
+      console.error("Export to OneDrive failed:", err);
+      onShowToast?.("OneDrive export error: " + (err.message || 'Unknown'), "error");
+    } finally {
+      setIsExportingOneDrive(false);
+    }
+  };
+
   const handleDrillDown = (staffId, category, isPerformance = false) => {
     // 1. Copy active date filter to call logs date filter
     if (isPerformance) {
@@ -967,66 +1032,106 @@ export default function KpisDashboard({
   };
 
   const handleCellClick = async (staffId, staffName, category, isPerformance = false) => {
-    let start = '';
-    let end = '';
-    let dateText = '';
-    
-    if (isPerformance) {
-      const today = new Date();
-      const todayStr = today.toISOString().substring(0, 10);
-      if (timeRange === 'today') {
-        start = todayStr;
-        end = todayStr;
-        dateText = 'Today';
-      } else if (timeRange === 'this_week') {
-        const day = today.getDay();
-        const diff = today.getDate() - day + (day === 0 ? -6 : 1);
-        const monday = new Date(today.setDate(diff));
-        start = monday.toISOString().substring(0, 10);
-        end = todayStr;
-        dateText = 'This Week';
-      } else if (timeRange === 'this_month') {
-        start = `${todayStr.substring(0, 7)}-01`;
-        end = todayStr;
-        dateText = 'This Month';
-      } else {
-        start = customStartDate || '2026-01-01';
-        end = customEndDate || todayStr;
-        dateText = `${start} to ${end}`;
-      }
-    } else {
-      const today = new Date();
-      const getLondonDateString = (d) => {
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-      };
-      const todayStr = getLondonDateString(today);
-      
+    // 1. Overview tab: Instant in-memory drill-down using displayCallsList
+    if (!isPerformance) {
+      let dateText = '';
       if (overviewTimeRange === 'today') {
-        start = todayStr;
-        end = todayStr;
         dateText = 'Today';
       } else if (overviewTimeRange === 'yesterday') {
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        start = getLondonDateString(yesterday);
-        end = start;
         dateText = 'Yesterday';
       } else if (overviewTimeRange === 'day_before') {
-        const dayBefore = new Date(today);
-        dayBefore.setDate(dayBefore.getDate() - 2);
-        start = getLondonDateString(dayBefore);
-        end = start;
         dateText = 'Day Before Yesterday';
+      } else if (overviewTimeRange === 'this_prediction_week') {
+        dateText = 'This Week (Fri-Thu)';
+      } else if (overviewTimeRange === 'prev_prediction_week') {
+        dateText = 'Prev Week (Fri-Thu)';
       } else if (overviewTimeRange === 'custom') {
-        start = overviewCustomStartDate || todayStr;
-        end = overviewCustomEndDate || todayStr;
-        dateText = `${start} to ${end}`;
+        dateText = `${overviewCustomStartDate || overviewDateRangeWindow.start} to ${overviewCustomEndDate || overviewDateRangeWindow.end}`;
+      } else {
+        dateText = `${overviewDateRangeWindow.start} to ${overviewDateRangeWindow.end}`;
       }
+
+      // Filter directly from displayCallsList (already grouped into conversations and filtered by active window)
+      const recruiterCalls = (displayCallsList || []).filter(call => call.staffId === staffId);
+
+      const filtered = recruiterCalls.filter(call => {
+        if (category === 'connected') {
+          if (call.duration <= 0) return false;
+        } else if (category === 'client') {
+          if (call.targetType !== 'Client') return false;
+        } else if (category === 'candidate') {
+          if (call.targetType !== 'Candidate') return false;
+        } else if (category === 'over5m') {
+          if (call.duration < 300) return false;
+        } else if (category === 'over10m') {
+          if (call.duration < 600) return false;
+        } else if (category === 'callback') {
+          const isCB = call.isCallback || 
+                       (call.disposition || '').toLowerCase().includes('callback') || 
+                       (call.disposition || '').toLowerCase().includes('cb');
+          if (!isCB) return false;
+        } else if (category === 'alpha') {
+          const isAlpha = call.isAlpha || 
+                          (call.disposition || '').toLowerCase().includes('alpha') || 
+                          (call.recapSummary || '').toLowerCase().includes('opportunity') || 
+                          (call.recapSummary || '').toLowerCase().includes('alpha');
+          if (!isAlpha) return false;
+        }
+        return true;
+      });
+
+      filtered.sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`));
+
+      setDrillDownModal({
+        staffName,
+        category,
+        dateText,
+        calls: filtered,
+        isLoading: false
+      });
+      return;
     }
 
+    // 2. Performance tab: Determine date window and retrieve calls
+    let start = dateRangeWindow?.start || new Date().toISOString().substring(0, 10);
+    let end = dateRangeWindow?.end || new Date().toISOString().substring(0, 10);
+    let dateText = '';
+    if (timeRange === 'today') {
+      dateText = 'Today';
+    } else if (timeRange === 'this_week') {
+      dateText = 'This Week';
+    } else if (timeRange === 'this_month') {
+      dateText = 'This Month';
+    } else if (timeRange === 'ytd') {
+      dateText = 'Year To Date';
+    } else {
+      dateText = `${start} to ${end}`;
+    }
+
+    // Fast-path: If displayCallsList already covers this date window
+    if (effectiveCallsWindow?.start <= start && effectiveCallsWindow?.end >= end && (displayCallsList || []).length > 0) {
+      const recruiterCalls = displayCallsList.filter(call => {
+        if (call.staffId !== staffId) return false;
+        if (call.date && (call.date < start || call.date > end)) return false;
+        if (category === 'connected') return call.duration > 0;
+        if (category === 'over5m') return call.duration >= 300;
+        if (category === 'over10m') return call.duration >= 600;
+        return true;
+      });
+
+      recruiterCalls.sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`));
+
+      setDrillDownModal({
+        staffName,
+        category,
+        dateText,
+        calls: recruiterCalls,
+        isLoading: false
+      });
+      return;
+    }
+
+    // Fallback: Query database with strict date boundaries
     setDrillDownModal({
       staffName,
       category,
@@ -1111,11 +1216,63 @@ export default function KpisDashboard({
           disposition: call.disposition || '',
           recapSummary: call.recapSummary || '',
           recapOutcome: call.recapOutcome || '',
-          externalNumber: call.externalNumber || ''
+          externalNumber: call.externalNumber || '',
+          masterCallId: call.masterCallId || '',
+          entryPointCallId: call.entryPointCallId || '',
+          conversationId: call.conversationId || ''
         };
       });
 
-      const filtered = formatted.filter(call => {
+      // Deduplicate call legs
+      const groups = [];
+      const idToGroupMap = new Map();
+      for (const call of formatted) {
+        let matchedGroup = null;
+        if (call.masterCallId && idToGroupMap.has(call.masterCallId)) {
+          matchedGroup = idToGroupMap.get(call.masterCallId);
+        } else if (call.entryPointCallId && idToGroupMap.has(call.entryPointCallId)) {
+          matchedGroup = idToGroupMap.get(call.entryPointCallId);
+        } else {
+          const cid = call.conversationId || call.id;
+          if (cid && idToGroupMap.has(cid)) {
+            matchedGroup = idToGroupMap.get(cid);
+          }
+        }
+
+        if (matchedGroup) {
+          const cid = call.conversationId || call.id;
+          if (cid) idToGroupMap.set(cid, matchedGroup);
+          if (call.masterCallId) idToGroupMap.set(call.masterCallId, matchedGroup);
+          if (call.entryPointCallId) idToGroupMap.set(call.entryPointCallId, matchedGroup);
+          matchedGroup.legs.push(call);
+        } else {
+          const cid = call.conversationId || call.id;
+          const newGroup = {
+            legs: [call]
+          };
+          if (cid) idToGroupMap.set(cid, newGroup);
+          if (call.masterCallId) idToGroupMap.set(call.masterCallId, newGroup);
+          if (call.entryPointCallId) idToGroupMap.set(call.entryPointCallId, newGroup);
+          groups.push(newGroup);
+        }
+      }
+
+      const deduplicated = groups.map(group => {
+        group.legs.sort((a, b) => {
+          const hasPhoneA = !!a.externalNumber;
+          const hasPhoneB = !!b.externalNumber;
+          if (hasPhoneA !== hasPhoneB) return hasPhoneA ? -1 : 1;
+          return Number(b.duration || 0) - Number(a.duration || 0);
+        });
+        const primary = group.legs[0];
+        const duration = Math.max(...group.legs.map(l => Number(l.duration || 0)));
+        return {
+          ...primary,
+          duration
+        };
+      });
+
+      const filtered = deduplicated.filter(call => {
         if (category === 'connected') {
           if (call.duration <= 0) return false;
         } else if (category === 'client') {
@@ -1206,20 +1363,88 @@ export default function KpisDashboard({
   const [playProgress, setPlayProgress] = useState(35); // mock percent
   const [isEnriching, setIsEnriching] = useState(false);
 
+  const handleManualEnrichTranscript = async (targetCall, force = true) => {
+    if (!targetCall || targetCall.id.startsWith('call-')) return;
+    setIsEnriching(true);
+    try {
+      const qParams = new URLSearchParams({
+        callId: targetCall.id,
+        conversationId: targetCall.conversationId || targetCall.id,
+        primaryCallId: targetCall.primaryCallId || '',
+        masterCallId: targetCall.masterCallId || '',
+        force: force ? 'true' : 'false'
+      });
+      const res = await fetch(`/api/dialpad/enrich?${qParams.toString()}`);
+      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+      const data = await res.json();
+
+      if (data && data.enriched) {
+        const updatedDetail = {
+          ...targetCall,
+          recordingUrl: data.recordingUrl || targetCall.recordingUrl,
+          hasRecording: data.wasRecorded ?? targetCall.hasRecording,
+          transcript: data.transcript || targetCall.transcript,
+          disposition: data.disposition || targetCall.disposition || '',
+          recapSummary: data.recapSummary || targetCall.recapSummary || '',
+          recapOutcome: data.recapOutcome || targetCall.recapOutcome || ''
+        };
+        setActiveCallDetail(updatedDetail);
+
+        // Update liveCalls list
+        setLiveCalls(prevCalls =>
+          prevCalls.map(c =>
+            (c.id === targetCall.id || c.conversationId === targetCall.id)
+              ? { ...c, ...data }
+              : c
+          )
+        );
+
+        // Update drillDownModal calls list if open
+        setDrillDownModal(prev => {
+          if (!prev || !prev.calls) return prev;
+          return {
+            ...prev,
+            calls: prev.calls.map(c =>
+              (c.id === targetCall.id || c.conversationId === targetCall.id)
+                ? { ...c, ...data }
+                : c
+            )
+          };
+        });
+      }
+    } catch (err) {
+      console.error("Failed to enrich call transcript:", err);
+      onShowToast?.("Unable to load transcript from Dialpad API", "error");
+    } finally {
+      setIsEnriching(false);
+    }
+  };
+
   useEffect(() => {
     if (!activeCallDetail || activeCallDetail.id.startsWith('call-')) return;
     
     // Check if it's already enriched
-    const hasTranscript = activeCallDetail.transcript && activeCallDetail.transcript !== 'No transcript generated yet.' && activeCallDetail.transcript !== 'Transcript is empty';
-    const hasPublicRecording = !activeCallDetail.hasRecording || (activeCallDetail.recordingUrl && activeCallDetail.recordingUrl.startsWith('http') && !activeCallDetail.recordingUrl.includes('dialpad.com/blob/'));
+    const hasValidTranscript = activeCallDetail.transcript && 
+      activeCallDetail.transcript !== 'No transcript generated yet.' && 
+      activeCallDetail.transcript !== 'Transcript is empty' &&
+      !activeCallDetail.transcript.startsWith('No transcript available');
+
+    const hasPublicRecording = !activeCallDetail.hasRecording || 
+      (activeCallDetail.recordingUrl && activeCallDetail.recordingUrl.startsWith('http') && !activeCallDetail.recordingUrl.includes('dialpad.com/blob/'));
     
-    if (hasTranscript && hasPublicRecording) return; // already enriched!
+    if (hasValidTranscript && hasPublicRecording) return; // already enriched!
 
     let isMounted = true;
     async function enrichCall() {
       setIsEnriching(true);
       try {
-        const res = await fetch(`/api/dialpad/enrich?conversationId=${activeCallDetail.id}`);
+        const qParams = new URLSearchParams({
+          callId: activeCallDetail.id,
+          conversationId: activeCallDetail.conversationId || activeCallDetail.id,
+          primaryCallId: activeCallDetail.primaryCallId || '',
+          masterCallId: activeCallDetail.masterCallId || ''
+        });
+        const res = await fetch(`/api/dialpad/enrich?${qParams.toString()}`);
         if (!res.ok) throw new Error(`HTTP error ${res.status}`);
         const data = await res.json();
         
@@ -1227,7 +1452,7 @@ export default function KpisDashboard({
           const updatedDetail = {
             ...activeCallDetail,
             recordingUrl: data.recordingUrl || activeCallDetail.recordingUrl,
-            hasRecording: data.wasRecorded || activeCallDetail.hasRecording,
+            hasRecording: data.wasRecorded ?? activeCallDetail.hasRecording,
             transcript: data.transcript || activeCallDetail.transcript,
             disposition: data.disposition || activeCallDetail.disposition || '',
             recapSummary: data.recapSummary || activeCallDetail.recapSummary || '',
@@ -1243,6 +1468,19 @@ export default function KpisDashboard({
                 : c
             )
           );
+
+          // Also update drillDownModal calls list if open
+          setDrillDownModal(prev => {
+            if (!prev || !prev.calls) return prev;
+            return {
+              ...prev,
+              calls: prev.calls.map(c => 
+                (c.id === activeCallDetail.id || c.conversationId === activeCallDetail.id)
+                  ? { ...c, ...data }
+                  : c
+              )
+            };
+          });
         }
       } catch (err) {
         console.error("Failed to enrich call:", err);
@@ -3292,6 +3530,31 @@ export default function KpisDashboard({
               >
                 <Sparkles size={11} style={{ animation: isClassifyingCalls ? 'spin 1s linear infinite' : 'none' }} />
                 <span>{isClassifyingCalls ? 'Classifying...' : 'Classify CRM & AI'}</span>
+              </button>
+
+              {/* Sync Paul Seth's 10-Day Transcripts to OneDrive */}
+              <button
+                onClick={handleExportPaulTranscriptsToOneDrive}
+                disabled={isExportingOneDrive}
+                className="btn-secondary"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '4px 8px',
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  borderRadius: '4px',
+                  cursor: isExportingOneDrive ? 'not-allowed' : 'pointer',
+                  opacity: isExportingOneDrive ? 0.7 : 1,
+                  color: 'rgb(2, 132, 199)',
+                  backgroundColor: 'rgba(2, 132, 199, 0.08)',
+                  borderColor: 'rgba(2, 132, 199, 0.25)'
+                }}
+                title="Download all Dialpad call transcripts for Paul Seth from the last 10 days and save to OneDrive (/Transcripts) for OpenAI Dot"
+              >
+                <FolderDown size={11} style={{ animation: isExportingOneDrive ? 'spin 1s linear infinite' : 'none' }} />
+                <span>{isExportingOneDrive ? 'Syncing...' : "📁 Paul's OneDrive Transcripts"}</span>
               </button>
 
               <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-secondary)', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
@@ -6742,9 +7005,21 @@ export default function KpisDashboard({
 
               {/* Call Transcript Box */}
               <div>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                  📝 Dialpad AI Call Transcript
-                </span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    📝 Dialpad AI Call Transcript
+                  </span>
+                  {!isEnriching && (
+                    <button
+                      onClick={() => handleManualEnrichTranscript(activeCallDetail, true)}
+                      className="btn-secondary"
+                      style={{ padding: '2px 8px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                      title="Force query Dialpad API to retrieve AI transcript"
+                    >
+                      🔄 Refresh
+                    </button>
+                  )}
+                </div>
                 <div style={{
                   padding: '12px',
                   borderRadius: '6px',
@@ -6761,11 +7036,30 @@ export default function KpisDashboard({
                   {isEnriching ? (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '16px', color: 'var(--text-secondary)' }}>
                       <span className="loading-spinner" style={{ display: 'inline-block', width: '14px', height: '14px', border: '2px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
-                      <span>Retrieving Dialpad transcript...</span>
+                      <span>Querying Dialpad API for transcript...</span>
                     </div>
-                  ) : (
-                    activeCallDetail.transcript.trim()
-                  )}
+                  ) : (() => {
+                    const rawTranscript = (activeCallDetail.transcript || '').trim();
+                    const isMissing = !rawTranscript || 
+                      rawTranscript === 'No transcript generated yet.' || 
+                      rawTranscript === 'Transcript is empty' ||
+                      rawTranscript.startsWith('No transcript available') ||
+                      rawTranscript.startsWith('No transcript generated');
+
+                    if (isMissing) {
+                      return (
+                        <div style={{ padding: '8px 4px', color: 'var(--text-secondary)', fontFamily: 'sans-serif' }}>
+                          <p style={{ margin: '0 0 6px 0', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            ℹ️ {rawTranscript || 'No transcript generated yet.'}
+                          </p>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: '1.4', display: 'block' }}>
+                            Transcripts are produced by Dialpad AI for connected calls where Dialpad AI is enabled on the recruiter's license and recording was active.
+                          </span>
+                        </div>
+                      );
+                    }
+                    return rawTranscript;
+                  })()}
                 </div>
               </div>
 

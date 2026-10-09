@@ -131,66 +131,136 @@ function getPhoneSearchVariants(rawPhone) {
 }
 
 /**
- * Resolve the Recruitly CRM API Key from the companies collection.
+ * Loads all company tenants and staff mapping to route each employee to their respective CRM API Key.
+ * Supports the 4 Recruitly tenants: Humres, Huntek, Totaco, and Strata.
  */
-async function getRecruitlyApiKey(firestoreDb, companyId) {
-  if (companyId) {
-    try {
-      const compDoc = await firestoreDb.collection('companies').doc(companyId).get();
-      if (compDoc.exists && compDoc.data().recruitlyApiKey) {
-        return compDoc.data().recruitlyApiKey.trim();
-      }
-    } catch (err) {
-      console.warn('[CRM Lookup] Error fetching company by ID:', err);
-    }
-  }
-
-  // Find Humres CRM API Key from companies collection
+async function getTenantContext(firestoreDb) {
   try {
-    const compSnap = await firestoreDb.collection('companies').get();
-    let apiKey = null;
-    compSnap.forEach((doc) => {
+    const [compSnap, staffSnap] = await Promise.all([
+      firestoreDb.collection('companies').get(),
+      firestoreDb.collection('staff').get()
+    ]);
+
+    const companyKeyMap = new Map(); // companyId -> recruitlyApiKey
+    const companyTenantMap = new Map(); // 'humres' | 'huntek' | 'totaco' | 'strata' -> recruitlyApiKey
+    const allApiKeys = [];
+
+    compSnap.forEach(doc => {
       const data = doc.data();
-      if (data.name && data.name.toLowerCase().includes('humres') && data.recruitlyApiKey) {
-        apiKey = data.recruitlyApiKey.trim();
+      if (data.recruitlyApiKey) {
+        const key = data.recruitlyApiKey.trim();
+        companyKeyMap.set(doc.id, key);
+        if (!allApiKeys.includes(key)) allApiKeys.push(key);
+        
+        const name = (data.name || '').toLowerCase().trim();
+        if (name.includes('humres')) companyTenantMap.set('humres', key);
+        else if (name.includes('huntek')) companyTenantMap.set('huntek', key);
+        else if (name.includes('totaco')) companyTenantMap.set('totaco', key);
+        else if (name.includes('strata')) companyTenantMap.set('strata', key);
       }
     });
 
-    if (!apiKey) {
-      compSnap.forEach((doc) => {
-        const data = doc.data();
-        if (data.recruitlyApiKey && !apiKey) {
-          apiKey = data.recruitlyApiKey.trim();
-        }
-      });
-    }
+    const staffToCompanyMap = new Map(); // staffId / normalized email -> companyId
+    staffSnap.forEach(doc => {
+      const data = doc.data();
+      const compId = data.companyId;
+      if (compId) {
+        staffToCompanyMap.set(doc.id, compId);
+        if (data.businessEmail) staffToCompanyMap.set(data.businessEmail.toLowerCase().trim(), compId);
+        if (data.dialpadEmail) staffToCompanyMap.set(data.dialpadEmail.toLowerCase().trim(), compId);
+        if (data.recruitlyEmail) staffToCompanyMap.set(data.recruitlyEmail.toLowerCase().trim(), compId);
+      }
+    });
 
-    return apiKey;
+    return { companyKeyMap, companyTenantMap, staffToCompanyMap, allApiKeys };
   } catch (err) {
-    console.error('[CRM Lookup] Error fetching companies collection:', err);
-    return null;
+    console.error('[CRM Lookup] Error loading tenant context:', err);
+    return { companyKeyMap: new Map(), companyTenantMap: new Map(), staffToCompanyMap: new Map(), allApiKeys: [] };
   }
+}
+
+/**
+ * Resolve the correct company tenant API key for a given call or recruiter.
+ * Routes Humres -> Humres, Huntek -> Huntek, Totaco -> Totaco, Strata -> Strata.
+ */
+function resolveTenantApiKey(callData, tenantContext, overrideCompanyId = null) {
+  if (!tenantContext) return null;
+  const { companyKeyMap, companyTenantMap, staffToCompanyMap, allApiKeys } = tenantContext;
+
+  // 1. Explicit override passed from caller/client
+  if (overrideCompanyId && companyKeyMap.has(overrideCompanyId)) {
+    return companyKeyMap.get(overrideCompanyId);
+  }
+
+  // 2. Direct companyId on call record
+  if (callData.companyId && companyKeyMap.has(callData.companyId)) {
+    return companyKeyMap.get(callData.companyId);
+  }
+
+  // 3. Staff ID or handlerId mapping
+  const staffId = callData.staffId || callData.handlerId;
+  if (staffId && staffToCompanyMap.has(staffId)) {
+    const compId = staffToCompanyMap.get(staffId);
+    if (companyKeyMap.has(compId)) return companyKeyMap.get(compId);
+  }
+
+  // 4. Handler Email mapping
+  const email = (callData.handlerEmail || '').toLowerCase().trim();
+  if (email && staffToCompanyMap.has(email)) {
+    const compId = staffToCompanyMap.get(email);
+    if (companyKeyMap.has(compId)) return companyKeyMap.get(compId);
+  }
+
+  // 5. Department / email domain heuristic for the 4 tenants
+  const dept = (callData.department || '').toLowerCase().trim();
+  if (email.includes('huntek') || dept.includes('huntek')) return companyTenantMap.get('huntek') || companyTenantMap.get('humres');
+  if (email.includes('totaco') || dept.includes('totaco')) return companyTenantMap.get('totaco') || companyTenantMap.get('humres');
+  if (email.includes('strata') || dept.includes('strata')) return companyTenantMap.get('strata') || companyTenantMap.get('humres');
+  if (email.includes('humres') || dept.includes('humres')) return companyTenantMap.get('humres');
+
+  // 6. Default to Humres or first available tenant key
+  return companyTenantMap.get('humres') || allApiKeys[0] || null;
 }
 
 /**
  * Search Recruitly CRM by phone variants across Candidates (ca-), Contacts (ct-), and Companies (cy-).
  */
+const crmServerPhoneCache = new Map();
+
+/**
+ * Search Recruitly CRM by phone variants across Candidates (ca-), Contacts (ct-), and Companies (cy-).
+ */
 async function searchRecruitlyByPhone(phone, apiKey) {
+  if (!phone || !apiKey) return null;
+  const cleanPhone = String(phone).replace(/[^0-9+]/g, '').trim();
+  if (crmServerPhoneCache.has(cleanPhone)) {
+    return crmServerPhoneCache.get(cleanPhone);
+  }
+
   const variants = getPhoneSearchVariants(phone);
   if (variants.length === 0) return null;
 
   for (const queryPhone of variants) {
-    // 1. Search Candidates (Recruitly IDs start with ca-)
+    const encoded = encodeURIComponent(queryPhone);
+    const candUrl = `https://api.recruitly.io/api/candidate/search?apiKey=${apiKey}&query=${encoded}`;
+    const contactUrl = `https://api.recruitly.io/api/contact/search?apiKey=${apiKey}&query=${encoded}`;
+    const companyUrl = `https://api.recruitly.io/api/company/search?apiKey=${apiKey}&query=${encoded}`;
+
     try {
-      const candUrl = `https://api.recruitly.io/api/candidate/search?apiKey=${apiKey}&query=${encodeURIComponent(queryPhone)}`;
-      const candRes = await fetchJson(candUrl);
+      // Execute all 3 search requests in parallel instead of sequentially
+      const [candRes, contactRes, compRes] = await Promise.all([
+        fetchJson(candUrl).catch(e => { console.error(`[CRM Lookup] Cand error: ${e.message}`); return null; }),
+        fetchJson(contactUrl).catch(e => { console.error(`[CRM Lookup] Contact error: ${e.message}`); return null; }),
+        fetchJson(companyUrl).catch(e => { console.error(`[CRM Lookup] Company error: ${e.message}`); return null; })
+      ]);
+
       if (candRes && Array.isArray(candRes.data) && candRes.data.length > 0) {
         const cand = candRes.data[0];
         const candId = cand.id || `ca-${cand._id || 'unknown'}`;
         const candCompany = typeof cand.company === 'object'
           ? (cand.company?.label || cand.company?.name || cand.companyName || '')
           : (cand.companyName || cand.company || '');
-        return {
+        const matched = {
           matched: true,
           type: 'CANDIDATE',
           targetType: 'Candidate',
@@ -200,22 +270,17 @@ async function searchRecruitlyByPhone(phone, apiKey) {
           company: candCompany,
           matchedQuery: queryPhone
         };
+        crmServerPhoneCache.set(cleanPhone, matched);
+        return matched;
       }
-    } catch (e) {
-      console.error(`[CRM Lookup] Candidate search error for ${queryPhone}:`, e.message);
-    }
 
-    // 2. Search Contacts (Client contacts; Recruitly IDs start with ct-)
-    try {
-      const contactUrl = `https://api.recruitly.io/api/contact/search?apiKey=${apiKey}&query=${encodeURIComponent(queryPhone)}`;
-      const contactRes = await fetchJson(contactUrl);
       if (contactRes && Array.isArray(contactRes.data) && contactRes.data.length > 0) {
         const contact = contactRes.data[0];
         const contactId = contact.id || `ct-${contact._id || 'unknown'}`;
         const contactCompany = typeof contact.company === 'object'
           ? (contact.company?.label || contact.company?.name || contact.companyName || '')
           : (contact.companyName || contact.company || '');
-        return {
+        const matched = {
           matched: true,
           type: 'CONTACT',
           targetType: 'Client',
@@ -225,20 +290,15 @@ async function searchRecruitlyByPhone(phone, apiKey) {
           company: contactCompany,
           matchedQuery: queryPhone
         };
+        crmServerPhoneCache.set(cleanPhone, matched);
+        return matched;
       }
-    } catch (e) {
-      console.error(`[CRM Lookup] Contact search error for ${queryPhone}:`, e.message);
-    }
 
-    // 3. Search Companies (Client company accounts; Recruitly IDs start with cy-)
-    try {
-      const companyUrl = `https://api.recruitly.io/api/company/search?apiKey=${apiKey}&query=${encodeURIComponent(queryPhone)}`;
-      const compRes = await fetchJson(companyUrl);
       if (compRes && Array.isArray(compRes.data) && compRes.data.length > 0) {
         const comp = compRes.data[0];
         const compId = comp.id || `cy-${comp._id || 'unknown'}`;
         const compName = comp.name || comp.label || 'Client Company';
-        return {
+        const matched = {
           matched: true,
           type: 'COMPANY',
           targetType: 'Client',
@@ -248,12 +308,15 @@ async function searchRecruitlyByPhone(phone, apiKey) {
           company: compName,
           matchedQuery: queryPhone
         };
+        crmServerPhoneCache.set(cleanPhone, matched);
+        return matched;
       }
     } catch (e) {
-      console.error(`[CRM Lookup] Company search error for ${queryPhone}:`, e.message);
+      console.error(`[CRM Lookup] Search error for ${queryPhone}:`, e.message);
     }
   }
 
+  crmServerPhoneCache.set(cleanPhone, null);
   return null;
 }
 
@@ -351,15 +414,26 @@ Respond ONLY with a valid JSON object in this format (no markdown fences, no exp
 /**
  * Classify a call by checking CRM first, then falling back to AI transcript analysis.
  */
-export async function classifyCallRecord(callData, apiKey, firestoreDb) {
+export async function classifyCallRecord(callData, apiKey, firestoreDb, fallbackApiKeys = []) {
   const phone = callData.externalNumber || callData.phoneNumber || callData.contact?.phone_number || '';
   const transcript = callData.transcript || '';
   const recapSummary = callData.recapSummary || '';
   const recapOutcome = callData.recapOutcome || '';
 
-  // 1. Try CRM lookup first (Candidate ca-, Contact ct-, Company cy-)
+  // 1. Try primary CRM tenant lookup first (Candidate ca-, Contact ct-, Company cy-)
   if (phone && apiKey) {
-    const crmMatch = await searchRecruitlyByPhone(phone, apiKey);
+    let crmMatch = await searchRecruitlyByPhone(phone, apiKey);
+
+    // If not found in primary tenant, search other company tenants as fallback
+    if ((!crmMatch || !crmMatch.matched) && fallbackApiKeys && fallbackApiKeys.length > 0) {
+      for (const fallbackKey of fallbackApiKeys) {
+        if (fallbackKey && fallbackKey !== apiKey) {
+          crmMatch = await searchRecruitlyByPhone(phone, fallbackKey);
+          if (crmMatch && crmMatch.matched) break;
+        }
+      }
+    }
+
     if (crmMatch && crmMatch.matched) {
       return {
         matched: true,
@@ -415,7 +489,7 @@ export default async function handler(req, res) {
 
   try {
     const firestoreDb = initFirestore();
-    const apiKey = await getRecruitlyApiKey(firestoreDb, companyId);
+    const tenantContext = await getTenantContext(firestoreDb);
 
     // ==========================================
     // ACTION: BATCH CLASSIFY CALLS
@@ -429,7 +503,7 @@ export default async function handler(req, res) {
       cutoffDate.setDate(cutoffDate.getDate() - days);
       const cutoffStr = cutoffDate.toISOString().substring(0, 10);
 
-      console.log(`[CRM Lookup] Running batch classification for last ${days} days (cutoff: ${cutoffStr}), limit ${limit}...`);
+      console.log(`[CRM Lookup] Running batch classification across 4 tenants for last ${days} days (cutoff: ${cutoffStr}), limit ${limit}...`);
 
       const callsSnap = await firestoreDb.collection('dialpad_calls')
         .where('dateStarted', '>=', cutoffStr)
@@ -464,7 +538,9 @@ export default async function handler(req, res) {
 
       for (const call of toProcess) {
         try {
-          const classification = await classifyCallRecord(call, apiKey, firestoreDb);
+          const callApiKey = resolveTenantApiKey(call, tenantContext, companyId);
+          const otherKeys = tenantContext.allApiKeys.filter(k => k !== callApiKey);
+          const classification = await classifyCallRecord(call, callApiKey, firestoreDb, otherKeys);
           const updates = {
             targetType: classification.targetType,
             classificationSource: classification.classificationSource,
@@ -514,7 +590,9 @@ export default async function handler(req, res) {
       }
 
       const callData = callDoc.data();
-      const classification = await classifyCallRecord(callData, apiKey, firestoreDb);
+      const callApiKey = resolveTenantApiKey(callData, tenantContext, companyId);
+      const otherKeys = tenantContext.allApiKeys.filter(k => k !== callApiKey);
+      const classification = await classifyCallRecord(callData, callApiKey, firestoreDb, otherKeys);
 
       const updates = {
         targetType: classification.targetType,
@@ -548,13 +626,29 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, matched: false, reason: 'Phone number too short' });
     }
 
-    if (!apiKey) {
-      console.warn('[CRM Lookup] No recruitlyApiKey found in companies collection.');
+    let targetApiKey = null;
+    if (companyId && tenantContext.companyKeyMap.has(companyId)) {
+      targetApiKey = tenantContext.companyKeyMap.get(companyId);
+    } else if (callId) {
+      const callDoc = await firestoreDb.collection('dialpad_calls').doc(String(callId)).get();
+      if (callDoc.exists) {
+        targetApiKey = resolveTenantApiKey(callDoc.data(), tenantContext);
+      }
+    }
+    if (!targetApiKey) {
+      targetApiKey = tenantContext.companyTenantMap.get('humres') || tenantContext.allApiKeys[0];
     }
 
+    const otherKeys = tenantContext.allApiKeys.filter(k => k !== targetApiKey);
     let result = null;
-    if (apiKey) {
-      result = await searchRecruitlyByPhone(cleanPhone, apiKey);
+    if (targetApiKey) {
+      result = await searchRecruitlyByPhone(cleanPhone, targetApiKey);
+      if ((!result || !result.matched) && otherKeys.length > 0) {
+        for (const fbKey of otherKeys) {
+          result = await searchRecruitlyByPhone(cleanPhone, fbKey);
+          if (result && result.matched) break;
+        }
+      }
     }
 
     // If matched in CRM (ca-, ct-, or cy-)

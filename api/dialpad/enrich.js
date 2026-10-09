@@ -138,6 +138,7 @@ export default async function handler(req, res) {
     }
 
     const callData = callSnap.data();
+    const conversationId = req.query.conversationId || callData.conversationId || callId;
     const updates = {};
     let needsUpdate = false;
 
@@ -156,7 +157,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ...callData, enriched: false, message: 'No Dialpad API token configured' });
     }
 
-    const primaryCallId = callData.primaryCallId || conversationId;
+    const primaryCallId = callData.primaryCallId || conversationId || callId;
 
     // 2. Fetch Transcript if empty/pending
     const isTranscriptEmpty = !callData.transcript || callData.transcriptStatus === 'pending' || callData.transcript === 'PENDING';
@@ -334,6 +335,43 @@ export default async function handler(req, res) {
         } catch (err) {
           console.error(`[Enrich] Error requesting recording share link:`, err);
         }
+      }
+    }
+
+    // 4. Classify Party Identity (Candidate ca- vs Client ct-/cy-, or AI Transcript classification)
+    const isAlreadyClassified = callData.classificationSource && callData.classificationSource !== 'default_heuristic';
+    if (!isAlreadyClassified) {
+      try {
+        const { classifyCallRecord } = await import('../crm-lookup.js');
+        const compSnap = await firestore.collection('companies').get();
+        let recruitlyApiKey = null;
+        compSnap.forEach(d => {
+          const cData = d.data();
+          if ((d.id === companyId || (cData.name && cData.name.toLowerCase().includes('humres'))) && cData.recruitlyApiKey && !recruitlyApiKey) {
+            recruitlyApiKey = cData.recruitlyApiKey.trim();
+          }
+        });
+
+        const mergedCallData = { ...callData, ...updates };
+        const classification = await classifyCallRecord(mergedCallData, recruitlyApiKey, firestore);
+        if (classification && classification.targetType) {
+          updates.targetType = classification.targetType;
+          updates.classificationSource = classification.classificationSource;
+          updates.classifiedAt = new Date().toISOString();
+          if (classification.matched) {
+            updates.crmId = classification.id || '';
+            updates.crmName = classification.name || '';
+            updates.crmType = classification.type || '';
+            updates.crmCompany = classification.company || '';
+          }
+          if (classification.aiReason) {
+            updates.aiClassificationReason = classification.aiReason;
+          }
+          needsUpdate = true;
+          console.log(`[Enrich] Successfully classified call ${callId} as ${classification.targetType} (${classification.classificationSource})`);
+        }
+      } catch (classErr) {
+        console.warn(`[Enrich] Classification failed for call ${callId}:`, classErr.message);
       }
     }
 

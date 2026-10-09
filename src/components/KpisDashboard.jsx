@@ -60,10 +60,32 @@ const formatDuration = (seconds) => {
   return `${secs}s`;
 };
 
-const CRMContactLink = ({ phone, defaultName, companyId }) => {
-  const [crmData, setCrmData] = useState(null);
+const CRMContactLink = ({ phone, defaultName, companyId, crmId, crmName, crmType, crmCompany, classificationSource, aiReason }) => {
+  const [crmData, setCrmData] = useState(() => {
+    if (crmId && crmName) {
+      return {
+        matched: true,
+        id: crmId,
+        name: crmName,
+        type: crmType || (crmId.startsWith('ca-') ? 'CANDIDATE' : crmId.startsWith('ct-') ? 'CONTACT' : crmId.startsWith('cy-') ? 'COMPANY' : 'CONTACT'),
+        company: crmCompany || ''
+      };
+    }
+    return null;
+  });
 
   useEffect(() => {
+    if (crmId && crmName) {
+      setCrmData({
+        matched: true,
+        id: crmId,
+        name: crmName,
+        type: crmType || (crmId.startsWith('ca-') ? 'CANDIDATE' : crmId.startsWith('ct-') ? 'CONTACT' : crmId.startsWith('cy-') ? 'COMPANY' : 'CONTACT'),
+        company: crmCompany || ''
+      });
+      return;
+    }
+
     if (!phone) return;
     
     const clean = phone.replace(/[^0-9+]/g, '').trim();
@@ -106,10 +128,14 @@ const CRMContactLink = ({ phone, defaultName, companyId }) => {
       .catch(() => {
         window._crmPending[cacheKey] = false;
       });
-  }, [phone, companyId]);
+  }, [phone, companyId, crmId, crmName, crmType, crmCompany]);
 
   if (crmData && crmData.matched) {
-    const linkPath = crmData.type.toLowerCase();
+    let linkPath = (crmData.type || '').toLowerCase();
+    if (linkPath.includes('cand') || (crmData.id && crmData.id.startsWith('ca-'))) linkPath = 'candidate';
+    else if (linkPath.includes('comp') || (crmData.id && crmData.id.startsWith('cy-'))) linkPath = 'company';
+    else linkPath = 'contact';
+
     const linkUrl = `https://secure.recruitly.io/${linkPath}?id=${crmData.id}`;
     return (
       <a 
@@ -129,7 +155,50 @@ const CRMContactLink = ({ phone, defaultName, companyId }) => {
     );
   }
 
-  return <span>{defaultName}</span>;
+  const tooltipTitle = aiReason ? `AI Analyzed: ${aiReason}` : defaultName;
+  return <span title={tooltipTitle}>{defaultName}</span>;
+};
+
+// Formats candidate vs client party type badges with CRM/AI source cues
+const PartyTypeBadge = ({ targetType, classificationSource, crmId, aiReason }) => {
+  const isCand = targetType === 'Candidate';
+  let badgePrefix = null;
+  let title = `${targetType || 'Client'}`;
+
+  if (classificationSource === 'crm_ca') {
+    badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '4px' }}>ca-</span>;
+    title = `Recruitly Candidate (${crmId || 'ca-'})`;
+  } else if (classificationSource === 'crm_ct') {
+    badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '4px' }}>ct-</span>;
+    title = `Recruitly Client Contact (${crmId || 'ct-'})`;
+  } else if (classificationSource === 'crm_cy') {
+    badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '4px' }}>cy-</span>;
+    title = `Recruitly Client Company (${crmId || 'cy-'})`;
+  } else if (classificationSource === 'ai_transcript') {
+    badgePrefix = <span style={{ fontSize: '11px', marginRight: '4px' }}>🤖</span>;
+    title = `AI Transcript Classified: ${aiReason || 'Analyzed conversation content'}`;
+  }
+
+  return (
+    <span
+      title={title}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '2px 7px',
+        borderRadius: '4px',
+        fontSize: '11px',
+        fontWeight: 600,
+        backgroundColor: isCand ? 'rgba(139, 92, 246, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+        color: isCand ? 'rgb(124, 58, 237)' : 'rgb(217, 119, 6)',
+        border: `1px solid ${isCand ? 'rgba(139, 92, 246, 0.25)' : 'rgba(245, 158, 11, 0.25)'}`,
+        whiteSpace: 'nowrap'
+      }}
+    >
+      {badgePrefix}
+      {targetType || 'Client'}
+    </span>
+  );
 };
 
 // Formats raw Dialpad dispositions (e.g. "Candidate~NoAnswer") into pretty styled pills
@@ -834,6 +903,26 @@ export default function KpisDashboard({
     }
   };
 
+  const [isClassifyingCalls, setIsClassifyingCalls] = useState(false);
+  const handleClassifyCalls = async () => {
+    setIsClassifyingCalls(true);
+    try {
+      const res = await fetch('/api/crm-lookup?action=batch_classify&limit=40', { method: 'POST' });
+      const data = await res.json();
+      if (data && data.success) {
+        onShowToast?.(`Classified ${data.processed} calls (${data.crmMatches} CRM matches [ca-/ct-/cy-], ${data.aiClassified} AI Transcripts)`, 'success');
+        setPollTrigger(p => p + 1);
+      } else {
+        onShowToast?.(data.error || 'Failed to classify calls', 'error');
+      }
+    } catch (err) {
+      console.error('Call classification failed:', err);
+      onShowToast?.('Classification failed: ' + (err.message || 'Unknown error'), 'error');
+    } finally {
+      setIsClassifyingCalls(false);
+    }
+  };
+
   const handleDrillDown = (staffId, category, isPerformance = false) => {
     // 1. Copy active date filter to call logs date filter
     if (isPerformance) {
@@ -995,9 +1084,9 @@ export default function KpisDashboard({
           }
         }
 
-        const targetTypeVal = (call.target?.type || 'external').toLowerCase().trim() === 'user' 
-          ? 'Candidate' 
-          : 'Client';
+        const targetTypeVal = call.targetType 
+          ? (call.targetType.toLowerCase().includes('cand') ? 'Candidate' : 'Client')
+          : ((call.target?.type || 'external').toLowerCase().trim() === 'user' ? 'Candidate' : 'Client');
 
         return {
           id: call.id || call.conversationId,
@@ -1007,8 +1096,14 @@ export default function KpisDashboard({
           direction: call.direction === 'inbound' ? 'Inbound' : 'Outbound',
           date: dateVal,
           time: timeVal,
-          targetName: call.externalName || call.externalNumber || 'Unknown',
+          targetName: call.crmName || call.externalName || call.externalNumber || 'Unknown',
           targetType: targetTypeVal,
+          classificationSource: call.classificationSource || '',
+          crmId: call.crmId || '',
+          crmName: call.crmName || '',
+          crmType: call.crmType || '',
+          crmCompany: call.crmCompany || '',
+          aiReason: call.aiClassificationReason || '',
           duration: call.durationSeconds || 0,
           hasRecording: call.wasRecorded,
           recordingUrl: call.recordingUrl,
@@ -2171,9 +2266,9 @@ export default function KpisDashboard({
           }
         }
 
-        const targetTypeVal = (call.target?.type || 'external').toLowerCase().trim() === 'user' 
-          ? 'Candidate' 
-          : 'Client';
+        const targetTypeVal = call.targetType 
+          ? (call.targetType.toLowerCase().includes('cand') ? 'Candidate' : 'Client')
+          : ((call.target?.type || 'external').toLowerCase().trim() === 'user' ? 'Candidate' : 'Client');
 
         return {
           id: call.id || call.conversationId,
@@ -2183,8 +2278,14 @@ export default function KpisDashboard({
           direction: call.direction === 'inbound' ? 'Inbound' : 'Outbound',
           date: dateVal,
           time: timeVal,
-          targetName: call.externalName || call.externalNumber || 'Unknown',
+          targetName: call.crmName || call.externalName || call.externalNumber || 'Unknown',
           targetType: targetTypeVal,
+          classificationSource: call.classificationSource || '',
+          crmId: call.crmId || '',
+          crmName: call.crmName || '',
+          crmType: call.crmType || '',
+          crmCompany: call.crmCompany || '',
+          aiReason: call.aiClassificationReason || '',
           duration: call.durationSeconds || 0,
           connected: call.connected !== false,
           hasRecording: call.wasRecorded,
@@ -3166,6 +3267,31 @@ export default function KpisDashboard({
               >
                 <RefreshCw size={11} style={{ animation: isSyncingAll ? 'spin 1s linear infinite' : 'none' }} />
                 <span>{isSyncingAll ? 'Syncing...' : 'Sync Now'}</span>
+              </button>
+
+              {/* Classify Calls Button (CRM ca-/ct-/cy- & AI Transcript) */}
+              <button
+                onClick={handleClassifyCalls}
+                disabled={isClassifyingCalls}
+                className="btn-secondary"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '4px 8px',
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  borderRadius: '4px',
+                  cursor: isClassifyingCalls ? 'not-allowed' : 'pointer',
+                  opacity: isClassifyingCalls ? 0.7 : 1,
+                  color: 'rgb(124, 58, 237)',
+                  backgroundColor: 'rgba(139, 92, 246, 0.08)',
+                  borderColor: 'rgba(139, 92, 246, 0.25)'
+                }}
+                title="Check call numbers in CRM (Candidate ca-, Contact ct-, Company cy-) & AI transcripts for unmatched numbers"
+              >
+                <Sparkles size={11} style={{ animation: isClassifyingCalls ? 'spin 1s linear infinite' : 'none' }} />
+                <span>{isClassifyingCalls ? 'Classifying...' : 'Classify CRM & AI'}</span>
               </button>
 
               <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-secondary)', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
@@ -4557,19 +4683,25 @@ export default function KpisDashboard({
                               </span>
                             </td>
                             <td style={{ fontSize: '12px', fontWeight: 600 }}>
-                              📞 <CRMContactLink phone={call.externalNumber} defaultName={call.targetName} companyId={staffMap.get(call.staffId)?.companyId || currentUser?.companyId} />
+                              📞 <CRMContactLink 
+                                phone={call.externalNumber} 
+                                defaultName={call.targetName} 
+                                companyId={staffMap.get(call.staffId)?.companyId || currentUser?.companyId}
+                                crmId={call.crmId}
+                                crmName={call.crmName}
+                                crmType={call.crmType}
+                                crmCompany={call.crmCompany}
+                                classificationSource={call.classificationSource}
+                                aiReason={call.aiReason}
+                              />
                             </td>
                             <td>
-                              <span style={{
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                fontSize: '10px',
-                                fontWeight: 600,
-                                backgroundColor: call.targetType === 'Candidate' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                                color: call.targetType === 'Candidate' ? 'rgb(139, 92, 246)' : 'rgb(245, 158, 11)'
-                              }}>
-                                {call.targetType}
-                              </span>
+                              <PartyTypeBadge 
+                                targetType={call.targetType} 
+                                classificationSource={call.classificationSource} 
+                                crmId={call.crmId} 
+                                aiReason={call.aiReason} 
+                              />
                             </td>
                             <td style={{ textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>{formatDuration(call.duration)}</td>
                             <td style={{ textAlign: 'center' }}>
@@ -6759,19 +6891,25 @@ export default function KpisDashboard({
                             </span>
                           </td>
                           <td style={{ padding: '10px 8px', fontWeight: 600 }}>
-                            <CRMContactLink phone={call.externalNumber} defaultName={call.targetName} companyId={staffMap.get(call.staffId)?.companyId || currentUser?.companyId} />
+                            <CRMContactLink 
+                              phone={call.externalNumber} 
+                              defaultName={call.targetName} 
+                              companyId={staffMap.get(call.staffId)?.companyId || currentUser?.companyId}
+                              crmId={call.crmId}
+                              crmName={call.crmName}
+                              crmType={call.crmType}
+                              crmCompany={call.crmCompany}
+                              classificationSource={call.classificationSource}
+                              aiReason={call.aiReason}
+                            />
                           </td>
                           <td style={{ padding: '10px 8px' }}>
-                            <span style={{
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              backgroundColor: call.targetType === 'Candidate' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                              color: call.targetType === 'Candidate' ? 'var(--purple)' : 'var(--warning)'
-                            }}>
-                              {call.targetType}
-                            </span>
+                            <PartyTypeBadge 
+                              targetType={call.targetType} 
+                              classificationSource={call.classificationSource} 
+                              crmId={call.crmId} 
+                              aiReason={call.aiReason} 
+                            />
                           </td>
                           <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 600 }}>
                             {formatDuration(call.duration)}

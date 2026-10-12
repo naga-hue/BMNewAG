@@ -98,6 +98,56 @@ const CRMContactLink = ({ phone, defaultName, companyId, crmId, crmName, crmType
     }
   }, [crmId, crmName, crmType, crmCompany, phone, companyId]);
 
+  // Automatic background lookup for unclassified phone numbers
+  useEffect(() => {
+    if (crmData && crmData.matched) return;
+    if (!phone) return;
+    const clean = phone.replace(/[^0-9+]/g, '').trim();
+    if (clean.length < 6) return;
+
+    const cacheKey = `${clean}_${companyId || ''}`;
+    if (window._crmCache && window._crmCache[cacheKey]) {
+      if (window._crmCache[cacheKey].matched) {
+        setCrmData(window._crmCache[cacheKey]);
+      }
+      return;
+    }
+
+    if (!window._crmInFlight) window._crmInFlight = {};
+    if (window._crmInFlight[cacheKey]) {
+      window._crmInFlight[cacheKey].then(d => {
+        if (d && d.matched) setCrmData(d);
+      });
+      return;
+    }
+
+    let active = true;
+    window._crmInFlight[cacheKey] = fetch(`/api/crm-lookup?phone=${encodeURIComponent(clean)}&companyId=${companyId || ''}`)
+      .then(r => r.json())
+      .then(d => {
+        if (!window._crmCache) window._crmCache = {};
+        window._crmCache[cacheKey] = d;
+        if (active && d && d.matched) {
+          setCrmData(d);
+          try {
+            window.dispatchEvent(new CustomEvent('crm-cache-updated', { detail: { cacheKey, data: d, phone: clean } }));
+          } catch (e) {}
+        }
+        return d;
+      })
+      .catch(err => {
+        console.warn('Auto CRM lookup failed for', clean, err.message);
+        return { matched: false };
+      })
+      .finally(() => {
+        delete window._crmInFlight[cacheKey];
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [phone, companyId, crmData]);
+
   const handleManualLookup = async (e) => {
     e.stopPropagation();
     e.preventDefault();
@@ -199,8 +249,8 @@ const PartyTypeBadge = ({ targetType, classificationSource, crmId, aiReason, pho
   });
 
   useEffect(() => {
+    const clean = (phone || '').replace(/[^0-9+]/g, '').trim();
     const handleCacheUpdate = (e) => {
-      const clean = (phone || '').replace(/[^0-9+]/g, '').trim();
       if (clean && (e.detail?.phone === clean || e.detail?.cacheKey === `${clean}_${companyId || ''}`)) {
         setCachedCrm(e.detail.data);
       }
@@ -210,8 +260,34 @@ const PartyTypeBadge = ({ targetType, classificationSource, crmId, aiReason, pho
   }, [phone, companyId]);
 
   const effectiveCrmId = crmId || (cachedCrm && cachedCrm.matched ? cachedCrm.id : '');
-  const effectiveType = targetType || (cachedCrm && cachedCrm.matched ? (cachedCrm.type?.toLowerCase().includes('cand') ? 'Candidate' : 'Client') : 'Client');
+  const matchedType = cachedCrm && cachedCrm.matched
+    ? (cachedCrm.targetType || (cachedCrm.type?.toLowerCase().includes('cand') ? 'Candidate' : 'Client'))
+    : targetType;
+  const effectiveType = matchedType || '';
   const isCand = effectiveType === 'Candidate';
+
+  // If completely unclassified (no CRM match and no AI classification)
+  if (!effectiveType && !effectiveCrmId) {
+    return (
+      <span
+        title="Unclassified: Checking Recruitly CRM..."
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          padding: '2px 7px',
+          borderRadius: '4px',
+          fontSize: '10px',
+          fontWeight: 600,
+          backgroundColor: 'var(--bg-secondary)',
+          color: 'var(--text-muted)',
+          border: '1px dashed var(--border-color)',
+          whiteSpace: 'nowrap'
+        }}
+      >
+        Unclassified
+      </span>
+    );
+  }
 
   let badgePrefix = null;
   let title = `${effectiveType || 'Client'}`;
@@ -225,10 +301,10 @@ const PartyTypeBadge = ({ targetType, classificationSource, crmId, aiReason, pho
     else linkPath = 'contact';
   }
 
-  if (classificationSource === 'crm_ca' || (effectiveCrmId && effectiveCrmId.startsWith('ca-'))) {
+  if (classificationSource === 'crm_ca' || (effectiveCrmId && effectiveCrmId.startsWith('ca-')) || (isCand && effectiveCrmId)) {
     badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '3px' }}>ca-</span>;
     title = `Recruitly Candidate (${effectiveCrmId || 'ca-'})`;
-  } else if (classificationSource === 'crm_ct' || (effectiveCrmId && effectiveCrmId.startsWith('ct-'))) {
+  } else if (classificationSource === 'crm_ct' || (effectiveCrmId && effectiveCrmId.startsWith('ct-')) || (!isCand && effectiveCrmId)) {
     badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '3px' }}>ct-</span>;
     title = `Recruitly Client Contact (${effectiveCrmId || 'ct-'})`;
   } else if (classificationSource === 'crm_cy' || (effectiveCrmId && effectiveCrmId.startsWith('cy-'))) {
@@ -240,6 +316,9 @@ const PartyTypeBadge = ({ targetType, classificationSource, crmId, aiReason, pho
   }
 
   const linkUrl = effectiveCrmId ? `https://secure.recruitly.io/${linkPath}?id=${effectiveCrmId}` : null;
+  const displayId = effectiveCrmId 
+    ? (effectiveCrmId.length > 14 ? `${effectiveCrmId.substring(0, 11)}…` : effectiveCrmId)
+    : '';
 
   return (
     <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
@@ -283,7 +362,7 @@ const PartyTypeBadge = ({ targetType, classificationSource, crmId, aiReason, pho
             lineHeight: 1.1
           }}
         >
-          <span>🔗 {effectiveCrmId}</span>
+          <span>🔗 {displayId}</span>
         </a>
       ) : null}
     </div>
@@ -1254,7 +1333,7 @@ export default function KpisDashboard({
 
         const targetTypeVal = call.targetType 
           ? (call.targetType.toLowerCase().includes('cand') ? 'Candidate' : 'Client')
-          : ((call.target?.type || 'external').toLowerCase().trim() === 'user' ? 'Candidate' : 'Client');
+          : '';
 
         return {
           id: call.id || call.conversationId,
@@ -2569,7 +2648,7 @@ export default function KpisDashboard({
 
         const targetTypeVal = call.targetType 
           ? (call.targetType.toLowerCase().includes('cand') ? 'Candidate' : 'Client')
-          : ((call.target?.type || 'external').toLowerCase().trim() === 'user' ? 'Candidate' : 'Client');
+          : '';
 
         return {
           id: call.id || call.conversationId,

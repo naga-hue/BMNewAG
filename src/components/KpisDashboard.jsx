@@ -119,6 +119,9 @@ const CRMContactLink = ({ phone, defaultName, companyId, crmId, crmName, crmType
       if (d && d.matched) {
         window._crmCache[cacheKey] = d;
         setCrmData(d);
+        try {
+          window.dispatchEvent(new CustomEvent('crm-cache-updated', { detail: { cacheKey, data: d, phone: clean } }));
+        } catch (e) {}
       } else {
         window._crmCache[cacheKey] = { matched: false };
         setCrmData({ matched: false });
@@ -185,45 +188,105 @@ const CRMContactLink = ({ phone, defaultName, companyId, crmId, crmName, crmType
   );
 };
 
-// Formats candidate vs client party type badges with CRM/AI source cues
-const PartyTypeBadge = ({ targetType, classificationSource, crmId, aiReason }) => {
-  const isCand = targetType === 'Candidate';
-  let badgePrefix = null;
-  let title = `${targetType || 'Client'}`;
+// Formats candidate vs client party type badges with direct CRM ID link and CRM/AI source cues
+const PartyTypeBadge = ({ targetType, classificationSource, crmId, aiReason, phone, companyId }) => {
+  const [cachedCrm, setCachedCrm] = useState(() => {
+    const clean = (phone || '').replace(/[^0-9+]/g, '').trim();
+    if (clean && window._crmCache && window._crmCache[`${clean}_${companyId || ''}`]) {
+      return window._crmCache[`${clean}_${companyId || ''}`];
+    }
+    return null;
+  });
 
-  if (classificationSource === 'crm_ca') {
-    badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '4px' }}>ca-</span>;
-    title = `Recruitly Candidate (${crmId || 'ca-'})`;
-  } else if (classificationSource === 'crm_ct') {
-    badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '4px' }}>ct-</span>;
-    title = `Recruitly Client Contact (${crmId || 'ct-'})`;
-  } else if (classificationSource === 'crm_cy') {
-    badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '4px' }}>cy-</span>;
-    title = `Recruitly Client Company (${crmId || 'cy-'})`;
+  useEffect(() => {
+    const handleCacheUpdate = (e) => {
+      const clean = (phone || '').replace(/[^0-9+]/g, '').trim();
+      if (clean && (e.detail?.phone === clean || e.detail?.cacheKey === `${clean}_${companyId || ''}`)) {
+        setCachedCrm(e.detail.data);
+      }
+    };
+    window.addEventListener('crm-cache-updated', handleCacheUpdate);
+    return () => window.removeEventListener('crm-cache-updated', handleCacheUpdate);
+  }, [phone, companyId]);
+
+  const effectiveCrmId = crmId || (cachedCrm && cachedCrm.matched ? cachedCrm.id : '');
+  const effectiveType = targetType || (cachedCrm && cachedCrm.matched ? (cachedCrm.type?.toLowerCase().includes('cand') ? 'Candidate' : 'Client') : 'Client');
+  const isCand = effectiveType === 'Candidate';
+
+  let badgePrefix = null;
+  let title = `${effectiveType || 'Client'}`;
+
+  let linkPath = 'candidate';
+  if (effectiveCrmId) {
+    if (effectiveCrmId.startsWith('ca-')) linkPath = 'candidate';
+    else if (effectiveCrmId.startsWith('cy-')) linkPath = 'company';
+    else if (effectiveCrmId.startsWith('ct-')) linkPath = 'contact';
+    else if (isCand) linkPath = 'candidate';
+    else linkPath = 'contact';
+  }
+
+  if (classificationSource === 'crm_ca' || (effectiveCrmId && effectiveCrmId.startsWith('ca-'))) {
+    badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '3px' }}>ca-</span>;
+    title = `Recruitly Candidate (${effectiveCrmId || 'ca-'})`;
+  } else if (classificationSource === 'crm_ct' || (effectiveCrmId && effectiveCrmId.startsWith('ct-'))) {
+    badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '3px' }}>ct-</span>;
+    title = `Recruitly Client Contact (${effectiveCrmId || 'ct-'})`;
+  } else if (classificationSource === 'crm_cy' || (effectiveCrmId && effectiveCrmId.startsWith('cy-'))) {
+    badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '3px' }}>cy-</span>;
+    title = `Recruitly Client Company (${effectiveCrmId || 'cy-'})`;
   } else if (classificationSource === 'ai_transcript') {
-    badgePrefix = <span style={{ fontSize: '11px', marginRight: '4px' }}>🤖</span>;
+    badgePrefix = <span style={{ fontSize: '11px', marginRight: '3px' }}>🤖</span>;
     title = `AI Transcript Classified: ${aiReason || 'Analyzed conversation content'}`;
   }
 
+  const linkUrl = effectiveCrmId ? `https://secure.recruitly.io/${linkPath}?id=${effectiveCrmId}` : null;
+
   return (
-    <span
-      title={title}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        padding: '2px 7px',
-        borderRadius: '4px',
-        fontSize: '11px',
-        fontWeight: 600,
-        backgroundColor: isCand ? 'rgba(139, 92, 246, 0.12)' : 'rgba(245, 158, 11, 0.12)',
-        color: isCand ? 'rgb(124, 58, 237)' : 'rgb(217, 119, 6)',
-        border: `1px solid ${isCand ? 'rgba(139, 92, 246, 0.25)' : 'rgba(245, 158, 11, 0.25)'}`,
-        whiteSpace: 'nowrap'
-      }}
-    >
-      {badgePrefix}
-      {targetType || 'Client'}
-    </span>
+    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
+      <span
+        title={title}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          padding: '2px 7px',
+          borderRadius: '4px',
+          fontSize: '11px',
+          fontWeight: 600,
+          backgroundColor: isCand ? 'rgba(139, 92, 246, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+          color: isCand ? 'rgb(124, 58, 237)' : 'rgb(217, 119, 6)',
+          border: `1px solid ${isCand ? 'rgba(139, 92, 246, 0.25)' : 'rgba(245, 158, 11, 0.25)'}`,
+          whiteSpace: 'nowrap'
+        }}
+      >
+        {badgePrefix}
+        {effectiveType}
+      </span>
+
+      {effectiveCrmId ? (
+        <a
+          href={linkUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`Open in Recruitly CRM (${effectiveCrmId})`}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '2px',
+            fontSize: '10px',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontWeight: 700,
+            color: '#E8611A',
+            textDecoration: 'underline',
+            cursor: 'pointer',
+            paddingLeft: '2px',
+            lineHeight: 1.1
+          }}
+        >
+          <span>🔗 {effectiveCrmId}</span>
+        </a>
+      ) : null}
+    </div>
   );
 };
 
@@ -4964,6 +5027,8 @@ export default function KpisDashboard({
                                 classificationSource={call.classificationSource} 
                                 crmId={call.crmId} 
                                 aiReason={call.aiReason} 
+                                phone={call.externalNumber}
+                                companyId={staffMap.get(call.staffId)?.companyId || currentUser?.companyId}
                               />
                             </td>
                             <td style={{ textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>{formatDuration(call.duration)}</td>
@@ -6964,6 +7029,19 @@ export default function KpisDashboard({
                 </div>
               )}
 
+              {/* Party Type & CRM ID Badge */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>👤 Classification:</span>
+                <PartyTypeBadge 
+                  targetType={activeCallDetail.targetType} 
+                  classificationSource={activeCallDetail.classificationSource} 
+                  crmId={activeCallDetail.crmId} 
+                  aiReason={activeCallDetail.aiReason} 
+                  phone={activeCallDetail.externalNumber}
+                  companyId={staffMap.get(activeCallDetail.staffId)?.companyId || currentUser?.companyId}
+                />
+              </div>
+
               {/* Disposition Badge */}
               {activeCallDetail.disposition && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -7203,6 +7281,8 @@ export default function KpisDashboard({
                               classificationSource={call.classificationSource} 
                               crmId={call.crmId} 
                               aiReason={call.aiReason} 
+                              phone={call.externalNumber}
+                              companyId={staffMap.get(call.staffId)?.companyId || currentUser?.companyId}
                             />
                           </td>
                           <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 600 }}>

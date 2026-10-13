@@ -222,6 +222,15 @@ function resolveTenantApiKey(callData, tenantContext, overrideCompanyId = null) 
   return companyTenantMap.get('humres') || allApiKeys[0] || null;
 }
 
+function formatCrmReference(rawRef, type) {
+  if (!rawRef) return '';
+  const ref = String(rawRef).trim();
+  if (!ref) return '';
+  if (/^[A-Za-z]{2,3}-/i.test(ref)) return ref.toUpperCase();
+  const prefix = type === 'CANDIDATE' ? 'CA-' : type === 'COMPANY' ? 'CY-' : 'CT-';
+  return `${prefix}${ref}`;
+}
+
 /**
  * Search Recruitly CRM by phone variants across Candidates (ca-), Contacts (ct-), and Companies (cy-).
  */
@@ -260,12 +269,15 @@ async function searchRecruitlyByPhone(phone, apiKey) {
         const candCompany = typeof cand.company === 'object'
           ? (cand.company?.label || cand.company?.name || cand.companyName || '')
           : (cand.companyName || cand.company || '');
+        const candRef = formatCrmReference(cand.reference || cand.refNumber || cand.refCode || cand.ref || cand.code || '', 'CANDIDATE');
         const matched = {
           matched: true,
           type: 'CANDIDATE',
           targetType: 'Candidate',
           classificationSource: 'crm_ca',
           id: candId,
+          referenceNumber: candRef,
+          crmRef: candRef,
           name: cand.fullName || cand.name || 'Candidate',
           company: candCompany,
           matchedQuery: queryPhone
@@ -280,12 +292,15 @@ async function searchRecruitlyByPhone(phone, apiKey) {
         const contactCompany = typeof contact.company === 'object'
           ? (contact.company?.label || contact.company?.name || contact.companyName || '')
           : (contact.companyName || contact.company || '');
+        const contactRef = formatCrmReference(contact.reference || contact.refNumber || contact.refCode || contact.ref || contact.code || '', 'CONTACT');
         const matched = {
           matched: true,
           type: 'CONTACT',
           targetType: 'Client',
           classificationSource: 'crm_ct',
           id: contactId,
+          referenceNumber: contactRef,
+          crmRef: contactRef,
           name: contact.fullName || contact.name || 'Client Contact',
           company: contactCompany,
           matchedQuery: queryPhone
@@ -298,12 +313,15 @@ async function searchRecruitlyByPhone(phone, apiKey) {
         const comp = compRes.data[0];
         const compId = comp.id || `cy-${comp._id || 'unknown'}`;
         const compName = comp.name || comp.label || 'Client Company';
+        const compRef = formatCrmReference(comp.reference || comp.refNumber || comp.refCode || comp.ref || comp.code || '', 'COMPANY');
         const matched = {
           matched: true,
           type: 'COMPANY',
           targetType: 'Client',
           classificationSource: 'crm_cy',
           id: compId,
+          referenceNumber: compRef,
+          crmRef: compRef,
           name: compName,
           company: compName,
           matchedQuery: queryPhone
@@ -441,6 +459,8 @@ export async function classifyCallRecord(callData, apiKey, firestoreDb, fallback
         targetType: crmMatch.targetType,
         classificationSource: crmMatch.classificationSource,
         id: crmMatch.id,
+        referenceNumber: crmMatch.referenceNumber || crmMatch.crmRef || '',
+        crmRef: crmMatch.crmRef || crmMatch.referenceNumber || '',
         name: crmMatch.name,
         company: crmMatch.company
       };
@@ -550,6 +570,7 @@ export default async function handler(req, res) {
           if (classification.matched) {
             crmCount++;
             updates.crmId = classification.id || '';
+            updates.crmRef = classification.referenceNumber || classification.crmRef || '';
             updates.crmName = classification.name || '';
             updates.crmType = classification.type || '';
             updates.crmCompany = classification.company || '';
@@ -602,6 +623,7 @@ export default async function handler(req, res) {
 
       if (classification.matched) {
         updates.crmId = classification.id || '';
+        updates.crmRef = classification.referenceNumber || classification.crmRef || '';
         updates.crmName = classification.name || '';
         updates.crmType = classification.type || '';
         updates.crmCompany = classification.company || '';
@@ -660,6 +682,7 @@ export default async function handler(req, res) {
             targetType: result.targetType,
             classificationSource: result.classificationSource,
             crmId: result.id,
+            crmRef: result.referenceNumber || result.crmRef || '',
             crmName: result.name,
             crmType: result.type,
             crmCompany: result.company || '',

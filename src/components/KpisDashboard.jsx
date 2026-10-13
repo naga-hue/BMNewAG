@@ -61,12 +61,13 @@ const formatDuration = (seconds) => {
   return `${secs}s`;
 };
 
-const CRMContactLink = ({ phone, defaultName, companyId, crmId, crmName, crmType, crmCompany, classificationSource, aiReason }) => {
+const CRMContactLink = ({ phone, defaultName, companyId, crmId, crmRef, crmName, crmType, crmCompany, classificationSource, aiReason }) => {
   const [crmData, setCrmData] = useState(() => {
     if (crmId && crmName) {
       return {
         matched: true,
         id: crmId,
+        crmRef: crmRef || '',
         name: crmName,
         type: crmType || (crmId.startsWith('ca-') ? 'CANDIDATE' : crmId.startsWith('ct-') ? 'CONTACT' : crmId.startsWith('cy-') ? 'COMPANY' : 'CONTACT'),
         company: crmCompany || ''
@@ -86,6 +87,7 @@ const CRMContactLink = ({ phone, defaultName, companyId, crmId, crmName, crmType
       setCrmData({
         matched: true,
         id: crmId,
+        crmRef: crmRef || '',
         name: crmName,
         type: crmType || (crmId.startsWith('ca-') ? 'CANDIDATE' : crmId.startsWith('ct-') ? 'CONTACT' : crmId.startsWith('cy-') ? 'COMPANY' : 'CONTACT'),
         company: crmCompany || ''
@@ -96,11 +98,11 @@ const CRMContactLink = ({ phone, defaultName, companyId, crmId, crmName, crmType
     if (clean && window._crmCache && window._crmCache[`${clean}_${companyId || ''}`]) {
       setCrmData(window._crmCache[`${clean}_${companyId || ''}`]);
     }
-  }, [crmId, crmName, crmType, crmCompany, phone, companyId]);
+  }, [crmId, crmRef, crmName, crmType, crmCompany, phone, companyId]);
 
-  // Automatic background lookup for unclassified phone numbers
+  // Automatic background lookup for unclassified phone numbers or missing reference numbers
   useEffect(() => {
-    if (crmData && crmData.matched) return;
+    if (crmData && crmData.matched && (crmData.crmRef || !phone)) return;
     if (!phone) return;
     const clean = phone.replace(/[^0-9+]/g, '').trim();
     if (clean.length < 6) return;
@@ -239,7 +241,7 @@ const CRMContactLink = ({ phone, defaultName, companyId, crmId, crmName, crmType
 };
 
 // Formats candidate vs client party type badges with direct CRM ID link and CRM/AI source cues
-const PartyTypeBadge = ({ targetType, classificationSource, crmId, aiReason, phone, companyId }) => {
+const PartyTypeBadge = ({ targetType, classificationSource, crmId, crmRef, aiReason, phone, companyId }) => {
   const [cachedCrm, setCachedCrm] = useState(() => {
     const clean = (phone || '').replace(/[^0-9+]/g, '').trim();
     if (clean && window._crmCache && window._crmCache[`${clean}_${companyId || ''}`]) {
@@ -260,6 +262,7 @@ const PartyTypeBadge = ({ targetType, classificationSource, crmId, aiReason, pho
   }, [phone, companyId]);
 
   const effectiveCrmId = crmId || (cachedCrm && cachedCrm.matched ? cachedCrm.id : '');
+  const effectiveRef = crmRef || (cachedCrm && cachedCrm.matched ? (cachedCrm.crmRef || cachedCrm.referenceNumber) : '') || '';
   const matchedType = cachedCrm && cachedCrm.matched
     ? (cachedCrm.targetType || (cachedCrm.type?.toLowerCase().includes('cand') ? 'Candidate' : 'Client'))
     : targetType;
@@ -294,31 +297,31 @@ const PartyTypeBadge = ({ targetType, classificationSource, crmId, aiReason, pho
 
   let linkPath = 'candidate';
   if (effectiveCrmId) {
-    if (effectiveCrmId.startsWith('ca-')) linkPath = 'candidate';
-    else if (effectiveCrmId.startsWith('cy-')) linkPath = 'company';
-    else if (effectiveCrmId.startsWith('ct-')) linkPath = 'contact';
+    if (effectiveCrmId.startsWith('ca-') || (effectiveRef && effectiveRef.startsWith('CA-'))) linkPath = 'candidate';
+    else if (effectiveCrmId.startsWith('cy-') || (effectiveRef && effectiveRef.startsWith('CY-'))) linkPath = 'company';
+    else if (effectiveCrmId.startsWith('ct-') || (effectiveRef && effectiveRef.startsWith('CT-'))) linkPath = 'contact';
     else if (isCand) linkPath = 'candidate';
     else linkPath = 'contact';
   }
 
-  if (classificationSource === 'crm_ca' || (effectiveCrmId && effectiveCrmId.startsWith('ca-')) || (isCand && effectiveCrmId)) {
+  if (classificationSource === 'crm_ca' || (effectiveCrmId && effectiveCrmId.startsWith('ca-')) || (effectiveRef && effectiveRef.startsWith('CA-')) || (isCand && effectiveCrmId)) {
     badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '3px' }}>ca-</span>;
-    title = `Recruitly Candidate (${effectiveCrmId || 'ca-'})`;
-  } else if (classificationSource === 'crm_ct' || (effectiveCrmId && effectiveCrmId.startsWith('ct-')) || (!isCand && effectiveCrmId)) {
+    title = `Recruitly Candidate (${effectiveRef || effectiveCrmId || 'ca-'})`;
+  } else if (classificationSource === 'crm_ct' || (effectiveCrmId && effectiveCrmId.startsWith('ct-')) || (effectiveRef && effectiveRef.startsWith('CT-')) || (!isCand && effectiveCrmId)) {
     badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '3px' }}>ct-</span>;
-    title = `Recruitly Client Contact (${effectiveCrmId || 'ct-'})`;
-  } else if (classificationSource === 'crm_cy' || (effectiveCrmId && effectiveCrmId.startsWith('cy-'))) {
+    title = `Recruitly Client Contact (${effectiveRef || effectiveCrmId || 'ct-'})`;
+  } else if (classificationSource === 'crm_cy' || (effectiveCrmId && effectiveCrmId.startsWith('cy-')) || (effectiveRef && effectiveRef.startsWith('CY-'))) {
     badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '3px' }}>cy-</span>;
-    title = `Recruitly Client Company (${effectiveCrmId || 'cy-'})`;
+    title = `Recruitly Client Company (${effectiveRef || effectiveCrmId || 'cy-'})`;
   } else if (classificationSource === 'ai_transcript') {
     badgePrefix = <span style={{ fontSize: '11px', marginRight: '3px' }}>🤖</span>;
     title = `AI Transcript Classified: ${aiReason || 'Analyzed conversation content'}`;
   }
 
   const linkUrl = effectiveCrmId ? `https://secure.recruitly.io/${linkPath}?id=${effectiveCrmId}` : null;
-  const displayId = effectiveCrmId 
-    ? (effectiveCrmId.length > 14 ? `${effectiveCrmId.substring(0, 11)}…` : effectiveCrmId)
-    : '';
+  const displayId = effectiveRef 
+    ? effectiveRef 
+    : (effectiveCrmId ? (effectiveCrmId.length > 14 ? `${effectiveCrmId.substring(0, 11)}…` : effectiveCrmId) : '');
 
   return (
     <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
@@ -346,7 +349,7 @@ const PartyTypeBadge = ({ targetType, classificationSource, crmId, aiReason, pho
           href={linkUrl}
           target="_blank"
           rel="noopener noreferrer"
-          title={`Open in Recruitly CRM (${effectiveCrmId})`}
+          title={`Open in Recruitly CRM (${effectiveRef || effectiveCrmId})`}
           onClick={(e) => e.stopPropagation()}
           style={{
             display: 'inline-flex',
@@ -5093,6 +5096,7 @@ export default function KpisDashboard({
                                 defaultName={call.targetName} 
                                 companyId={staffMap.get(call.staffId)?.companyId || currentUser?.companyId}
                                 crmId={call.crmId}
+                                crmRef={call.crmRef}
                                 crmName={call.crmName}
                                 crmType={call.crmType}
                                 crmCompany={call.crmCompany}
@@ -5105,6 +5109,7 @@ export default function KpisDashboard({
                                 targetType={call.targetType} 
                                 classificationSource={call.classificationSource} 
                                 crmId={call.crmId} 
+                                crmRef={call.crmRef}
                                 aiReason={call.aiReason} 
                                 phone={call.externalNumber}
                                 companyId={staffMap.get(call.staffId)?.companyId || currentUser?.companyId}
@@ -7058,7 +7063,7 @@ export default function KpisDashboard({
             }}>
               <div>
                 <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>
-                  📞 Call Logs Audit: {activeCallDetail.staffName} ↔ <CRMContactLink phone={activeCallDetail.externalNumber} defaultName={activeCallDetail.targetName} companyId={staffMap.get(activeCallDetail.staffId)?.companyId || currentUser?.companyId} />
+                  📞 Call Logs Audit: {activeCallDetail.staffName} ↔ <CRMContactLink phone={activeCallDetail.externalNumber} defaultName={activeCallDetail.targetName} companyId={staffMap.get(activeCallDetail.staffId)?.companyId || currentUser?.companyId} crmId={activeCallDetail.crmId} crmRef={activeCallDetail.crmRef} crmName={activeCallDetail.crmName} crmType={activeCallDetail.crmType} crmCompany={activeCallDetail.crmCompany} classificationSource={activeCallDetail.classificationSource} aiReason={activeCallDetail.aiReason} />
                 </h4>
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                   {activeCallDetail.date} @ {activeCallDetail.time} ({formatDuration(activeCallDetail.duration)})
@@ -7115,6 +7120,7 @@ export default function KpisDashboard({
                   targetType={activeCallDetail.targetType} 
                   classificationSource={activeCallDetail.classificationSource} 
                   crmId={activeCallDetail.crmId} 
+                  crmRef={activeCallDetail.crmRef}
                   aiReason={activeCallDetail.aiReason} 
                   phone={activeCallDetail.externalNumber}
                   companyId={staffMap.get(activeCallDetail.staffId)?.companyId || currentUser?.companyId}
@@ -7347,6 +7353,7 @@ export default function KpisDashboard({
                               defaultName={call.targetName} 
                               companyId={staffMap.get(call.staffId)?.companyId || currentUser?.companyId}
                               crmId={call.crmId}
+                              crmRef={call.crmRef}
                               crmName={call.crmName}
                               crmType={call.crmType}
                               crmCompany={call.crmCompany}
@@ -7359,6 +7366,7 @@ export default function KpisDashboard({
                               targetType={call.targetType} 
                               classificationSource={call.classificationSource} 
                               crmId={call.crmId} 
+                              crmRef={call.crmRef}
                               aiReason={call.aiReason} 
                               phone={call.externalNumber}
                               companyId={staffMap.get(call.staffId)?.companyId || currentUser?.companyId}

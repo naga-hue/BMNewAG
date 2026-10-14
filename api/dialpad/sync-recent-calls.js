@@ -1,5 +1,6 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getTenantContext, resolveTenantApiKey, classifyCallRecord } from '../crm-lookup.js';
 
 // Normalize email local-part by removing dots
 function normalizeEmail(emailStr) {
@@ -340,6 +341,7 @@ export default async function handler(req, res) {
     });
 
     console.log(`[Sync Calls] Loaded ${staffList.length} active staff profiles.`);
+    const tenantContext = await getTenantContext(firestore);
 
     // 3. Fetch trailing concluded calls from Dialpad API with a reconciliation window
     let allDialpadCalls = [];
@@ -515,6 +517,31 @@ export default async function handler(req, res) {
           matchedRecruitlyIds: [],
           numberOfRecruitlyMatches: 0
         };
+
+        if (!callData.targetType) {
+          try {
+            const callApiKey = resolveTenantApiKey(callData, tenantContext);
+            const otherKeys = (tenantContext?.allApiKeys || []).filter(k => k !== callApiKey);
+            const classification = await classifyCallRecord(callData, callApiKey, firestore, otherKeys);
+            if (classification) {
+              callData.targetType = classification.targetType;
+              callData.classificationSource = classification.classificationSource;
+              callData.classifiedAt = new Date().toISOString();
+              if (classification.matched) {
+                callData.crmId = classification.id || '';
+                callData.crmRef = classification.referenceNumber || classification.crmRef || '';
+                callData.crmName = classification.name || '';
+                callData.crmType = classification.type || '';
+                callData.crmCompany = classification.company || '';
+              }
+              if (classification.aiReason) {
+                callData.aiClassificationReason = classification.aiReason;
+              }
+            }
+          } catch (cErr) {
+            console.warn(`[Sync Calls] Classification failed for ${callId}:`, cErr.message);
+          }
+        }
 
         await callRef.set(callData, { merge: true });
         healedCount++;

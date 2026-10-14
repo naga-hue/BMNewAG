@@ -100,7 +100,7 @@ function fetchJson(url) {
 /**
  * Generate phone variants for CRM lookup (e.g. +447123456789, 07123456789, 7123456789)
  */
-function getPhoneSearchVariants(rawPhone) {
+export function getPhoneSearchVariants(rawPhone) {
   if (!rawPhone) return [];
   const clean = String(rawPhone).replace(/[^0-9+]/g, '').trim();
   if (clean.length < 6) return [];
@@ -116,15 +116,22 @@ function getPhoneSearchVariants(rawPhone) {
     const rest = clean.substring(3);
     variants.add(`0${rest}`);
     variants.add(rest);
+    variants.add(`44${rest}`);
   } else if (clean.startsWith('44') && clean.length >= 11) {
     const rest = clean.substring(2);
     variants.add(`+44${rest}`);
     variants.add(`0${rest}`);
     variants.add(rest);
+    variants.add(`44${rest}`);
   } else if (clean.startsWith('0') && clean.length >= 10) {
     const rest = clean.substring(1);
     variants.add(`+44${rest}`);
+    variants.add(`44${rest}`);
     variants.add(rest);
+  } else if (clean.length >= 9 && !clean.startsWith('+')) {
+    variants.add(`+44${clean}`);
+    variants.add(`0${clean}`);
+    variants.add(`44${clean}`);
   }
 
   return Array.from(variants);
@@ -134,7 +141,7 @@ function getPhoneSearchVariants(rawPhone) {
  * Loads all company tenants and staff mapping to route each employee to their respective CRM API Key.
  * Supports the 4 Recruitly tenants: Humres, Huntek, Totaco, and Strata.
  */
-async function getTenantContext(firestoreDb) {
+export async function getTenantContext(firestoreDb) {
   try {
     const [compSnap, staffSnap] = await Promise.all([
       firestoreDb.collection('companies').get(),
@@ -183,7 +190,7 @@ async function getTenantContext(firestoreDb) {
  * Resolve the correct company tenant API key for a given call or recruiter.
  * Routes Humres -> Humres, Huntek -> Huntek, Totaco -> Totaco, Strata -> Strata.
  */
-function resolveTenantApiKey(callData, tenantContext, overrideCompanyId = null) {
+export function resolveTenantApiKey(callData, tenantContext, overrideCompanyId = null) {
   if (!tenantContext) return null;
   const { companyKeyMap, companyTenantMap, staffToCompanyMap, allApiKeys } = tenantContext;
 
@@ -239,7 +246,7 @@ const crmServerPhoneCache = new Map();
 /**
  * Search Recruitly CRM by phone variants across Candidates (ca-), Contacts (ct-), and Companies (cy-).
  */
-async function searchRecruitlyByPhone(phone, apiKey) {
+export async function searchRecruitlyByPhone(phone, apiKey) {
   if (!phone || !apiKey) return null;
   const cleanPhone = String(phone).replace(/[^0-9+]/g, '').trim();
   if (crmServerPhoneCache.has(cleanPhone)) {
@@ -482,9 +489,9 @@ export async function classifyCallRecord(callData, apiKey, firestoreDb, fallback
   }
 
   // 3. Fallback to default heuristic if neither CRM nor AI was conclusive
-  const defaultTargetType = (callData.target?.type || 'external').toLowerCase().trim() === 'user'
-    ? 'Candidate'
-    : 'Client';
+  // Recruiter outbound calls default to Candidate, inbound calls default to Client
+  const isOutbound = (callData.direction || '').toLowerCase() === 'outbound';
+  const defaultTargetType = isOutbound ? 'Candidate' : 'Client';
 
   return {
     matched: false,
@@ -515,7 +522,7 @@ export default async function handler(req, res) {
     // ACTION: BATCH CLASSIFY CALLS
     // ==========================================
     if (action === 'batch_classify') {
-      const limit = Math.min(Number(queryLimit || 15), 50);
+      const limit = Math.min(Number(queryLimit || 50), 100);
       const days = Number(query.days || 10);
       const forceAll = query.force === 'true' || query.force === true;
 
@@ -528,7 +535,7 @@ export default async function handler(req, res) {
       const callsSnap = await firestoreDb.collection('dialpad_calls')
         .where('dateStarted', '>=', cutoffStr)
         .orderBy('dateStarted', 'desc')
-        .limit(100)
+        .limit(500)
         .get();
 
       const toProcess = [];

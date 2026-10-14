@@ -1078,7 +1078,7 @@ export default function KpisDashboard({
   const handleClassifyCalls = async () => {
     setIsClassifyingCalls(true);
     try {
-      const res = await fetch('/api/crm-lookup?action=batch_classify&limit=40', { method: 'POST' });
+      const res = await fetch('/api/crm-lookup?action=batch_classify&limit=50', { method: 'POST' });
       const data = await res.json();
       if (data && data.success) {
         onShowToast?.(`Classified ${data.processed} calls (${data.crmMatches} CRM matches [ca-/ct-/cy-], ${data.aiClassified} AI Transcripts)`, 'success');
@@ -1093,6 +1093,44 @@ export default function KpisDashboard({
       setIsClassifyingCalls(false);
     }
   };
+
+  // Continuous Automatic Background Classifier (Ongoing without requiring manual button clicks)
+  const isAutoClassifyingRef = useRef(false);
+  const lastAutoClassifyTimeRef = useRef(0);
+
+  useEffect(() => {
+    if (!hasRealCalls || !liveCalls || liveCalls.length === 0) return;
+    
+    // Detect calls in the current window that lack targetType or classificationSource
+    const unclassified = liveCalls.filter(c => !c.targetType || !c.classificationSource);
+    if (unclassified.length === 0) return;
+
+    const now = Date.now();
+    // Throttle to at most once every 15 seconds to avoid flooding
+    if (now - lastAutoClassifyTimeRef.current < 15000 || isAutoClassifyingRef.current) return;
+
+    isAutoClassifyingRef.current = true;
+    lastAutoClassifyTimeRef.current = now;
+
+    console.log(`[Auto-Classifier] Detected ${unclassified.length} unclassified calls. Auto-classifying behind the scenes...`);
+    
+    fetch('/api/crm-lookup?action=batch_classify&limit=50', { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.success && data.processed > 0) {
+          console.log(`[Auto-Classifier] Successfully classified ${data.processed} calls behind scenes.`);
+          setTimeout(() => {
+            setPollTrigger(p => p + 1);
+          }, 1500);
+        }
+      })
+      .catch(err => {
+        console.warn('[Auto-Classifier] Background classify error:', err);
+      })
+      .finally(() => {
+        isAutoClassifyingRef.current = false;
+      });
+  }, [liveCalls, hasRealCalls]);
 
   const [isExportingOneDrive, setIsExportingOneDrive] = useState(false);
   const handleExportPaulTranscriptsToOneDrive = async () => {
@@ -1201,11 +1239,15 @@ export default function KpisDashboard({
 
       const filtered = recruiterCalls.filter(call => {
         if (category === 'connected') {
-          if (call.duration <= 0) return false;
+          if (call.duration <= 0 && !call.connected) return false;
         } else if (category === 'client') {
-          if (call.targetType !== 'Client') return false;
+          if (call.duration <= 0 && !call.connected) return false;
+          const target = call.targetType || (call.crmType === 'CANDIDATE' ? 'Candidate' : (call.crmType ? 'Client' : (call.direction === 'Inbound' ? 'Client' : 'Candidate')));
+          if (target !== 'Client') return false;
         } else if (category === 'candidate') {
-          if (call.targetType !== 'Candidate') return false;
+          if (call.duration <= 0 && !call.connected) return false;
+          const target = call.targetType || (call.crmType === 'CANDIDATE' ? 'Candidate' : (call.crmType ? 'Client' : (call.direction === 'Inbound' ? 'Client' : 'Candidate')));
+          if (target !== 'Candidate') return false;
         } else if (category === 'over5m') {
           if (call.duration < 300) return false;
         } else if (category === 'over10m') {
@@ -1257,8 +1299,17 @@ export default function KpisDashboard({
     if (effectiveCallsWindow?.start <= start && effectiveCallsWindow?.end >= end && (displayCallsList || []).length > 0) {
       const recruiterCalls = displayCallsList.filter(call => {
         if (call.staffId !== staffId) return false;
-        if (call.date && (call.date < start || call.date > end)) return false;
-        if (category === 'connected') return call.duration > 0;
+        if (category === 'connected') return call.duration > 0 || call.connected === true;
+        if (category === 'client') {
+          if (call.duration <= 0 && !call.connected) return false;
+          const target = call.targetType || (call.crmType === 'CANDIDATE' ? 'Candidate' : (call.crmType ? 'Client' : (call.direction === 'Inbound' ? 'Client' : 'Candidate')));
+          return target === 'Client';
+        }
+        if (category === 'candidate') {
+          if (call.duration <= 0 && !call.connected) return false;
+          const target = call.targetType || (call.crmType === 'CANDIDATE' ? 'Candidate' : (call.crmType ? 'Client' : (call.direction === 'Inbound' ? 'Client' : 'Candidate')));
+          return target === 'Candidate';
+        }
         if (category === 'over5m') return call.duration >= 300;
         if (category === 'over10m') return call.duration >= 600;
         return true;
@@ -1419,11 +1470,15 @@ export default function KpisDashboard({
 
       const filtered = deduplicated.filter(call => {
         if (category === 'connected') {
-          if (call.duration <= 0) return false;
+          if (call.duration <= 0 && !call.connected) return false;
         } else if (category === 'client') {
-          if (call.targetType !== 'Client') return false;
+          if (call.duration <= 0 && !call.connected) return false;
+          const target = call.targetType || (call.crmType === 'CANDIDATE' ? 'Candidate' : (call.crmType ? 'Client' : (call.direction === 'Inbound' ? 'Client' : 'Candidate')));
+          if (target !== 'Client') return false;
         } else if (category === 'candidate') {
-          if (call.targetType !== 'Candidate') return false;
+          if (call.duration <= 0 && !call.connected) return false;
+          const target = call.targetType || (call.crmType === 'CANDIDATE' ? 'Candidate' : (call.crmType ? 'Client' : (call.direction === 'Inbound' ? 'Client' : 'Candidate')));
+          if (target !== 'Candidate') return false;
         } else if (category === 'over5m') {
           if (call.duration < 300) return false;
         } else if (category === 'over10m') {
@@ -2907,18 +2962,35 @@ export default function KpisDashboard({
       const status = call.disposition || 'Unknown';
       callStatusCounts[status] = (callStatusCounts[status] || 0) + 1;
 
-      const isConnected = call.duration > 0;
+      const isConnected = call.duration > 0 || call.connected === true;
       if (isConnected) {
         stats.connected++;
         totalConnected++;
         stats.talkTimeSeconds += call.duration;
         totalTalkTimeSeconds += call.duration;
-      }
 
-      if (call.targetType === 'Client') {
-        stats.clientCalls++;
-      } else if (call.targetType === 'Candidate') {
-        stats.candidateCalls++;
+        let target = call.targetType;
+        if (!target) {
+          if (call.crmType === 'CANDIDATE') {
+            target = 'Candidate';
+          } else if (call.crmType === 'CONTACT' || call.crmType === 'COMPANY') {
+            target = 'Client';
+          } else {
+            const cleanPhone = (call.externalNumber || '').replace(/[^0-9+]/g, '').trim();
+            const cached = cleanPhone && window._crmCache && window._crmCache[`${cleanPhone}_`];
+            if (cached && cached.matched) {
+              target = cached.type === 'CANDIDATE' ? 'Candidate' : 'Client';
+            } else {
+              target = (call.direction === 'Inbound') ? 'Client' : 'Candidate';
+            }
+          }
+        }
+
+        if (target === 'Client') {
+          stats.clientCalls++;
+        } else {
+          stats.candidateCalls++;
+        }
       }
 
       if (call.duration >= 300) {

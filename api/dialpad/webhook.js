@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { isPaulSethCall, autoUploadTranscriptToOneDrive } from '../utils/onedrive-export.js';
+import { getTenantContext, resolveTenantApiKey, classifyCallRecord } from '../crm-lookup.js';
 
 // Disable default Vercel body-parser so we can retrieve the raw string body for JWT validation
 export const config = {
@@ -694,11 +695,52 @@ export default async function handler(req, res) {
     console.log(`[Webhook] Call saved successfully under transaction: ${callId}`);
     await writeWebhookLog(firestore, callId, state, payload, 200, `Call saved successfully. Database ID: ${callId}`);
 
-    // Update daily recruiter KPIs in real time ONLY on terminal/completed states
-    // Do NOT re-aggregate on intermediate events (calling, ringing, connected, call_moments)
-    const terminalStates = ['hangup', 'disconnected', 'ended', 'closed', 'missed', 'rejected', 'abandoned', 'transcription'];
-    if (resolvedKPI && resolvedKPI.handlerId && terminalStates.includes(state)) {
-      await updateKpiDaily(firestore, resolvedKPI.handlerId, resolvedKPI.dateStarted);
+    // Automatic CRM & AI Classification and Daily KPI aggregation on terminal/completed states
+    const terminalStates = ['hangup', 'disconnected', 'ended', 'closed', 'missed', 'rejected', 'abandoned', 'transcription', 'concluded'];
+    if (terminalStates.includes(state)) {
+      try {
+        const tenantContext = await getTenantContext(firestore);
+        const callDocSnap = await firestore.collection('dialpad_calls').doc(callId).get();
+        const callRecord = callDocSnap.data() || finalCallData;
+
+        // Classify if not yet classified, or if new transcript arrived
+        const needsClassification = !callRecord.targetType || 
+                                     !callRecord.classificationSource || 
+                                     callRecord.classificationSource === 'unmatched_default' ||
+                                     (state === 'transcription' && !['crm_ca', 'crm_ct', 'crm_cy'].includes(callRecord.classificationSource));
+
+        if (needsClassification) {
+          const callApiKey = resolveTenantApiKey(callRecord, tenantContext);
+          const otherKeys = (tenantContext?.allApiKeys || []).filter(k => k !== callApiKey);
+          const classification = await classifyCallRecord(callRecord, callApiKey, firestore, otherKeys);
+
+          if (classification) {
+            const updates = {
+              targetType: classification.targetType,
+              classificationSource: classification.classificationSource,
+              classifiedAt: new Date().toISOString()
+            };
+            if (classification.matched) {
+              updates.crmId = classification.id || '';
+              updates.crmRef = classification.referenceNumber || classification.crmRef || '';
+              updates.crmName = classification.name || '';
+              updates.crmType = classification.type || '';
+              updates.crmCompany = classification.company || '';
+            }
+            if (classification.aiReason) {
+              updates.aiClassificationReason = classification.aiReason;
+            }
+            await firestore.collection('dialpad_calls').doc(callId).update(updates);
+            console.log(`[Webhook] Auto-classified call ${callId} as ${classification.targetType} via ${classification.classificationSource}`);
+          }
+        }
+      } catch (classErr) {
+        console.warn(`[Webhook] Auto-classification failed for call ${callId}:`, classErr.message);
+      }
+
+      if (resolvedKPI && resolvedKPI.handlerId) {
+        await updateKpiDaily(firestore, resolvedKPI.handlerId, resolvedKPI.dateStarted);
+      }
     }
 
     // Auto-archive transcript to Paul Seth's OneDrive folder if completed
@@ -834,6 +876,9 @@ async function updateKpiDaily(firestore, handlerId, dateStarted) {
     let callsInbound = 0;
     let callsOutbound = 0;
     let callsTotal = 0;
+    let callsConnected = 0;
+    let clientCalls = 0;
+    let candidateCalls = 0;
     let totalTalkTimeSeconds = 0;
     let callsOver5Min = 0;
     let callsOver10Min = 0;
@@ -857,7 +902,19 @@ async function updateKpiDaily(firestore, handlerId, dateStarted) {
       }
       
       const duration = Number(call.durationSeconds || 0);
-      totalTalkTimeSeconds += duration;
+      const isConnected = duration > 0 || call.connected === true;
+      if (isConnected) {
+        callsConnected++;
+        totalTalkTimeSeconds += duration;
+
+        const target = call.targetType || (call.crmType === 'CANDIDATE' ? 'Candidate' : (call.direction === 'inbound' ? 'Client' : 'Candidate'));
+        if (target === 'Client') {
+          clientCalls++;
+        } else {
+          candidateCalls++;
+        }
+      }
+
       if (duration >= 300) {
         callsOver5Min++;
       }
@@ -875,6 +932,9 @@ async function updateKpiDaily(firestore, handlerId, dateStarted) {
       callsInbound,
       callsOutbound,
       callsTotal,
+      callsConnected,
+      clientCalls,
+      candidateCalls,
       totalTalkTimeSeconds,
       callsOver5Min,
       callsOver10Min,

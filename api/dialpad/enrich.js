@@ -507,8 +507,14 @@ export default async function handler(req, res) {
     }
 
     // 6. Classify Party Identity (Candidate ca- vs Client ct-/cy-, or AI Transcript classification)
-    const isAlreadyClassified = callData.classificationSource && callData.classificationSource !== 'default_heuristic';
-    if (!isAlreadyClassified) {
+    const hasNewTranscript = Boolean(updates.transcript || updates.recapSummary || updates.recapOutcome);
+    const needsClassification = !callData.targetType || 
+                                !callData.classificationSource || 
+                                callData.classificationSource === 'default_heuristic' || 
+                                callData.classificationSource === 'unmatched_default' ||
+                                (hasNewTranscript && callData.isAlpha === undefined);
+
+    if (needsClassification) {
       try {
         const { classifyCallRecord } = await import('../crm-lookup.js');
         const compSnap = await firestore.collection('companies').get();
@@ -526,8 +532,16 @@ export default async function handler(req, res) {
           updates.targetType = classification.targetType;
           updates.classificationSource = classification.classificationSource;
           updates.classifiedAt = new Date().toISOString();
+          updates.isAlpha = Boolean(classification.isAlpha);
+          updates.alphaType = classification.alphaType || null;
+          updates.alphaDetails = classification.alphaDetails || null;
+          updates.isCallback = Boolean(classification.isCallback);
+          updates.callbackTimeframe = classification.callbackTimeframe || null;
+          updates.callbackDetails = classification.callbackDetails || null;
+
           if (classification.matched) {
             updates.crmId = classification.id || '';
+            updates.crmRef = classification.referenceNumber || classification.crmRef || '';
             updates.crmName = classification.name || '';
             updates.crmType = classification.type || '';
             updates.crmCompany = classification.company || '';
@@ -536,7 +550,7 @@ export default async function handler(req, res) {
             updates.aiClassificationReason = classification.aiReason;
           }
           needsUpdate = true;
-          console.log(`[Enrich] Successfully classified call ${callRef.id} as ${classification.targetType} (${classification.classificationSource})`);
+          console.log(`[Enrich] Successfully classified call ${callRef.id} as ${classification.targetType} (Alpha: ${updates.isAlpha}, CB: ${updates.isCallback})`);
         }
       } catch (classErr) {
         console.warn(`[Enrich] Classification failed for call ${callRef.id}:`, classErr.message);

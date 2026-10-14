@@ -703,11 +703,13 @@ export default async function handler(req, res) {
         const callDocSnap = await firestore.collection('dialpad_calls').doc(callId).get();
         const callRecord = callDocSnap.data() || finalCallData;
 
-        // Classify if not yet classified, or if new transcript arrived
+        // Classify if not yet classified, or if new transcript/recap arrived, or if alpha/callback not yet evaluated
+        const hasTranscriptOrRecap = Boolean(callRecord.transcript || callRecord.recapSummary || callRecord.recapOutcome);
         const needsClassification = !callRecord.targetType || 
                                      !callRecord.classificationSource || 
                                      callRecord.classificationSource === 'unmatched_default' ||
-                                     (state === 'transcription' && !['crm_ca', 'crm_ct', 'crm_cy'].includes(callRecord.classificationSource));
+                                     (hasTranscriptOrRecap && callRecord.isAlpha === undefined) ||
+                                     ['transcription', 'call_transcription', 'recap_summary', 'recap_outcome'].includes(state);
 
         if (needsClassification) {
           const callApiKey = resolveTenantApiKey(callRecord, tenantContext);
@@ -718,7 +720,13 @@ export default async function handler(req, res) {
             const updates = {
               targetType: classification.targetType,
               classificationSource: classification.classificationSource,
-              classifiedAt: new Date().toISOString()
+              classifiedAt: new Date().toISOString(),
+              isAlpha: Boolean(classification.isAlpha),
+              alphaType: classification.alphaType || null,
+              alphaDetails: classification.alphaDetails || null,
+              isCallback: Boolean(classification.isCallback),
+              callbackTimeframe: classification.callbackTimeframe || null,
+              callbackDetails: classification.callbackDetails || null
             };
             if (classification.matched) {
               updates.crmId = classification.id || '';
@@ -731,7 +739,7 @@ export default async function handler(req, res) {
               updates.aiClassificationReason = classification.aiReason;
             }
             await firestore.collection('dialpad_calls').doc(callId).update(updates);
-            console.log(`[Webhook] Auto-classified call ${callId} as ${classification.targetType} via ${classification.classificationSource}`);
+            console.log(`[Webhook] Auto-classified call ${callId} as ${classification.targetType} (Alpha: ${updates.isAlpha}, CB: ${updates.isCallback}) via ${classification.classificationSource}`);
           }
         }
       } catch (classErr) {
@@ -882,6 +890,8 @@ async function updateKpiDaily(firestore, handlerId, dateStarted) {
     let totalTalkTimeSeconds = 0;
     let callsOver5Min = 0;
     let callsOver10Min = 0;
+    let callsCallback = 0;
+    let callsAlpha = 0;
 
     const rawCalls = [];
     dayCallsSnap.forEach(docSnap => {
@@ -921,6 +931,21 @@ async function updateKpiDaily(firestore, handlerId, dateStarted) {
       if (duration >= 600) {
         callsOver10Min++;
       }
+
+      const isCB = call.isCallback || 
+                   (call.disposition || '').toLowerCase().includes('callback') || 
+                   (call.disposition || '').toLowerCase().includes('cb');
+      if (isCB) {
+        callsCallback++;
+      }
+
+      const isAlpha = call.isAlpha || 
+                      (call.disposition || '').toLowerCase().includes('alpha') || 
+                      (call.recapSummary || '').toLowerCase().includes('opportunity') || 
+                      (call.recapSummary || '').toLowerCase().includes('alpha');
+      if (isAlpha) {
+        callsAlpha++;
+      }
     });
 
     const kpiData = {
@@ -938,6 +963,8 @@ async function updateKpiDaily(firestore, handlerId, dateStarted) {
       totalTalkTimeSeconds,
       callsOver5Min,
       callsOver10Min,
+      callsCallback,
+      callsAlpha,
       lastUpdated: new Date().toISOString()
     };
 

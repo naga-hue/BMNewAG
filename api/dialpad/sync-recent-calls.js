@@ -244,6 +244,8 @@ async function batchUpdateRecruiterKpis(firestore, affectedRecruiters, staffList
         let totalTalkTimeSeconds = 0;
         let callsOver5Min = 0;
         let callsOver10Min = 0;
+        let callsCallback = 0;
+        let callsAlpha = 0;
 
         consolidated.forEach(call => {
           callsTotal++;
@@ -257,6 +259,17 @@ async function batchUpdateRecruiterKpis(firestore, affectedRecruiters, staffList
           totalTalkTimeSeconds += duration;
           if (duration >= 300) callsOver5Min++;
           if (duration >= 600) callsOver10Min++;
+
+          const isCB = call.isCallback || 
+                       (call.disposition || '').toLowerCase().includes('callback') || 
+                       (call.disposition || '').toLowerCase().includes('cb');
+          if (isCB) callsCallback++;
+
+          const isAlpha = call.isAlpha || 
+                          (call.disposition || '').toLowerCase().includes('alpha') || 
+                          (call.recapSummary || '').toLowerCase().includes('opportunity') || 
+                          (call.recapSummary || '').toLowerCase().includes('alpha');
+          if (isAlpha) callsAlpha++;
         });
 
         const docId = `${handlerId}_${dateStr}`;
@@ -272,11 +285,13 @@ async function batchUpdateRecruiterKpis(firestore, affectedRecruiters, staffList
           totalTalkTimeSeconds,
           callsOver5Min,
           callsOver10Min,
+          callsCallback,
+          callsAlpha,
           lastUpdated: new Date().toISOString()
         };
 
         await firestore.collection('kpiDaily').doc(docId).set(kpiData, { merge: true });
-        console.log(`[KPI Batch] Saved doc ${docId}: talkTime=${totalTalkTimeSeconds}s, calls=${callsTotal}`);
+        console.log(`[KPI Batch] Saved doc ${docId}: talkTime=${totalTalkTimeSeconds}s, calls=${callsTotal}, Alpha=${callsAlpha}, CB=${callsCallback}`);
       }
     } catch (err) {
       if (err?.code === 8 || String(err?.message || '').includes('RESOURCE_EXHAUSTED')) {
@@ -527,6 +542,13 @@ export default async function handler(req, res) {
               callData.targetType = classification.targetType;
               callData.classificationSource = classification.classificationSource;
               callData.classifiedAt = new Date().toISOString();
+              callData.isAlpha = Boolean(classification.isAlpha);
+              callData.alphaType = classification.alphaType || null;
+              callData.alphaDetails = classification.alphaDetails || null;
+              callData.isCallback = Boolean(classification.isCallback);
+              callData.callbackTimeframe = classification.callbackTimeframe || null;
+              callData.callbackDetails = classification.callbackDetails || null;
+
               if (classification.matched) {
                 callData.crmId = classification.id || '';
                 callData.crmRef = classification.referenceNumber || classification.crmRef || '';

@@ -1415,7 +1415,13 @@ export default function KpisDashboard({
           externalNumber: call.externalNumber || '',
           masterCallId: call.masterCallId || '',
           entryPointCallId: call.entryPointCallId || '',
-          conversationId: call.conversationId || ''
+          conversationId: call.conversationId || '',
+          isAlpha: Boolean(call.isAlpha),
+          alphaType: call.alphaType || '',
+          alphaDetails: call.alphaDetails || '',
+          isCallback: Boolean(call.isCallback),
+          callbackTimeframe: call.callbackTimeframe || '',
+          callbackDetails: call.callbackDetails || ''
         };
       });
 
@@ -1462,9 +1468,21 @@ export default function KpisDashboard({
         });
         const primary = group.legs[0];
         const duration = Math.max(...group.legs.map(l => Number(l.duration || 0)));
+        const connected = group.legs.some(l => l.connected === true);
+        const isAlpha = group.legs.some(l => l.isAlpha);
+        const alphaLeg = group.legs.find(l => l.isAlpha);
+        const isCallback = group.legs.some(l => l.isCallback);
+        const cbLeg = group.legs.find(l => l.isCallback);
         return {
           ...primary,
-          duration
+          duration,
+          connected,
+          isAlpha,
+          alphaType: alphaLeg ? alphaLeg.alphaType : primary.alphaType,
+          alphaDetails: alphaLeg ? alphaLeg.alphaDetails : primary.alphaDetails,
+          isCallback,
+          callbackTimeframe: cbLeg ? cbLeg.callbackTimeframe : primary.callbackTimeframe,
+          callbackDetails: cbLeg ? cbLeg.callbackDetails : primary.callbackDetails
         };
       });
 
@@ -1484,11 +1502,13 @@ export default function KpisDashboard({
         } else if (category === 'over10m') {
           if (call.duration < 600) return false;
         } else if (category === 'callback') {
-          const isCB = (call.disposition || '').toLowerCase().includes('callback') || 
+          const isCB = call.isCallback || 
+                       (call.disposition || '').toLowerCase().includes('callback') || 
                        (call.disposition || '').toLowerCase().includes('cb');
           if (!isCB) return false;
         } else if (category === 'alpha') {
-          const isAlpha = (call.disposition || '').toLowerCase().includes('alpha') || 
+          const isAlpha = call.isAlpha || 
+                          (call.disposition || '').toLowerCase().includes('alpha') || 
                           (call.recapSummary || '').toLowerCase().includes('opportunity') || 
                           (call.recapSummary || '').toLowerCase().includes('alpha');
           if (!isAlpha) return false;
@@ -1586,7 +1606,13 @@ export default function KpisDashboard({
           transcript: data.transcript || targetCall.transcript,
           disposition: data.disposition || targetCall.disposition || '',
           recapSummary: data.recapSummary || targetCall.recapSummary || '',
-          recapOutcome: data.recapOutcome || targetCall.recapOutcome || ''
+          recapOutcome: data.recapOutcome || targetCall.recapOutcome || '',
+          isAlpha: data.isAlpha ?? targetCall.isAlpha,
+          alphaType: data.alphaType || targetCall.alphaType || '',
+          alphaDetails: data.alphaDetails || targetCall.alphaDetails || '',
+          isCallback: data.isCallback ?? targetCall.isCallback,
+          callbackTimeframe: data.callbackTimeframe || targetCall.callbackTimeframe || '',
+          callbackDetails: data.callbackDetails || targetCall.callbackDetails || ''
         };
         setActiveCallDetail(updatedDetail);
 
@@ -1656,7 +1682,13 @@ export default function KpisDashboard({
             transcript: data.transcript || activeCallDetail.transcript,
             disposition: data.disposition || activeCallDetail.disposition || '',
             recapSummary: data.recapSummary || activeCallDetail.recapSummary || '',
-            recapOutcome: data.recapOutcome || activeCallDetail.recapOutcome || ''
+            recapOutcome: data.recapOutcome || activeCallDetail.recapOutcome || '',
+            isAlpha: data.isAlpha ?? activeCallDetail.isAlpha,
+            alphaType: data.alphaType || activeCallDetail.alphaType || '',
+            alphaDetails: data.alphaDetails || activeCallDetail.alphaDetails || '',
+            isCallback: data.isCallback ?? activeCallDetail.isCallback,
+            callbackTimeframe: data.callbackTimeframe || activeCallDetail.callbackTimeframe || '',
+            callbackDetails: data.callbackDetails || activeCallDetail.callbackDetails || ''
           };
           setActiveCallDetail(updatedDetail);
           
@@ -2737,7 +2769,13 @@ export default function KpisDashboard({
           entryPointCallId: call.entryPointCallId || '',
           conversationId: call.conversationId || '',
           dateStarted: call.dateStarted || '',
-          timestamp: call.dateStarted ? new Date(call.dateStarted).getTime() : 0
+          timestamp: call.dateStarted ? new Date(call.dateStarted).getTime() : 0,
+          isAlpha: Boolean(call.isAlpha),
+          alphaType: call.alphaType || '',
+          alphaDetails: call.alphaDetails || '',
+          isCallback: Boolean(call.isCallback),
+          callbackTimeframe: call.callbackTimeframe || '',
+          callbackDetails: call.callbackDetails || ''
         };
       })
       .filter(call => {
@@ -2826,11 +2864,21 @@ export default function KpisDashboard({
       const primary = group.legs[0];
       const duration = Math.max(...group.legs.map(l => Number(l.duration || 0)));
       const connected = group.legs.some(l => l.connected === true);
-      
+      const isAlpha = group.legs.some(l => l.isAlpha);
+      const alphaLeg = group.legs.find(l => l.isAlpha);
+      const isCallback = group.legs.some(l => l.isCallback);
+      const cbLeg = group.legs.find(l => l.isCallback);
+
       return {
         ...primary,
         duration,
-        connected
+        connected,
+        isAlpha,
+        alphaType: alphaLeg ? alphaLeg.alphaType : primary.alphaType,
+        alphaDetails: alphaLeg ? alphaLeg.alphaDetails : primary.alphaDetails,
+        isCallback,
+        callbackTimeframe: cbLeg ? cbLeg.callbackTimeframe : primary.callbackTimeframe,
+        callbackDetails: cbLeg ? cbLeg.callbackDetails : primary.callbackDetails
       };
     });
   }, [hasRealCalls, formattedLiveCalls, mockCallsList]);
@@ -3307,11 +3355,13 @@ export default function KpisDashboard({
       } else if (callLogsSubFilter === 'over10m') {
         if (call.duration < 600) return false;
       } else if (callLogsSubFilter === 'callback') {
-        const isCB = (call.disposition || '').toLowerCase().includes('callback') || 
+        const isCB = call.isCallback || 
+                     (call.disposition || '').toLowerCase().includes('callback') || 
                      (call.disposition || '').toLowerCase().includes('cb');
         if (!isCB) return false;
       } else if (callLogsSubFilter === 'alpha') {
-        const isAlpha = (call.disposition || '').toLowerCase().includes('alpha') || 
+        const isAlpha = call.isAlpha || 
+                        (call.disposition || '').toLowerCase().includes('alpha') || 
                         (call.recapSummary || '').toLowerCase().includes('opportunity') || 
                         (call.recapSummary || '').toLowerCase().includes('alpha');
         if (!isAlpha) return false;
@@ -5190,6 +5240,50 @@ export default function KpisDashboard({
                             <td style={{ textAlign: 'center', fontWeight: 600, fontSize: '12px' }}>{formatDuration(call.duration)}</td>
                             <td style={{ textAlign: 'center' }}>
                               {renderDispositionBadges(call.disposition, call.connected)}
+                              {call.isAlpha && (
+                                <div style={{ marginTop: '4px' }}>
+                                  <span 
+                                    title={call.alphaDetails || 'Commercial Alpha detected by AI'}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      fontSize: '9px',
+                                      fontWeight: 700,
+                                      backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                                      color: '#d97706',
+                                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                                      cursor: 'help'
+                                    }}
+                                  >
+                                    ⚡ {call.alphaType || 'Alpha'}
+                                  </span>
+                                </div>
+                              )}
+                              {call.isCallback && (
+                                <div style={{ marginTop: '4px' }}>
+                                  <span 
+                                    title={call.callbackDetails || 'Agreed callback detected by AI'}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      fontSize: '9px',
+                                      fontWeight: 700,
+                                      backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                                      color: 'var(--primary)',
+                                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                                      cursor: 'help'
+                                    }}
+                                  >
+                                    📅 {call.callbackTimeframe || 'Callback'}
+                                  </span>
+                                </div>
+                              )}
                             </td>
                             <td style={{ textAlign: 'center' }}>
                               {call.duration >= 600 ? (
@@ -7209,6 +7303,80 @@ export default function KpisDashboard({
                 </div>
               )}
 
+              {/* AI Market Alpha Intelligence Card */}
+              {activeCallDetail.isAlpha && (
+                <div style={{
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#d97706', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      ⚡ AI Market Alpha Detected
+                    </span>
+                    {activeCallDetail.alphaType && (
+                      <span style={{
+                        backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                        color: '#b45309',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        border: '1px solid rgba(245, 158, 11, 0.3)'
+                      }}>
+                        {activeCallDetail.alphaType}
+                      </span>
+                    )}
+                  </div>
+                  {activeCallDetail.alphaDetails && (
+                    <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-primary)', lineHeight: '1.5', fontWeight: 500 }}>
+                      {activeCallDetail.alphaDetails}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* AI Agreed Callback / Follow-Up Card */}
+              {activeCallDetail.isCallback && (
+                <div style={{
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                  border: '1px solid rgba(59, 130, 246, 0.35)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      📅 AI Agreed Callback / Follow-Up
+                    </span>
+                    {activeCallDetail.callbackTimeframe && (
+                      <span style={{
+                        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                        color: 'var(--primary)',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        border: '1px solid rgba(59, 130, 246, 0.3)'
+                      }}>
+                        ⏱️ {activeCallDetail.callbackTimeframe}
+                      </span>
+                    )}
+                  </div>
+                  {activeCallDetail.callbackDetails && (
+                    <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-primary)', lineHeight: '1.5', fontWeight: 500 }}>
+                      {activeCallDetail.callbackDetails}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* AI Call Recap */}
               {(activeCallDetail.recapSummary || activeCallDetail.recapOutcome) && (
                 <div style={{
@@ -7449,6 +7617,50 @@ export default function KpisDashboard({
                           </td>
                           <td style={{ padding: '10px 8px', color: 'var(--text-secondary)' }}>
                             {call.disposition || <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>None</span>}
+                            {call.isAlpha && (
+                              <div style={{ marginTop: '4px' }}>
+                                <span 
+                                  title={call.alphaDetails || 'Commercial Alpha detected by AI'}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    fontSize: '9px',
+                                    fontWeight: 700,
+                                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                                    color: '#d97706',
+                                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                                    cursor: 'help'
+                                  }}
+                                >
+                                  ⚡ {call.alphaType || 'Alpha'}
+                                </span>
+                              </div>
+                            )}
+                            {call.isCallback && (
+                              <div style={{ marginTop: '4px' }}>
+                                <span 
+                                  title={call.callbackDetails || 'Agreed callback detected by AI'}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    fontSize: '9px',
+                                    fontWeight: 700,
+                                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                                    color: 'var(--primary)',
+                                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                                    cursor: 'help'
+                                  }}
+                                >
+                                  📅 {call.callbackTimeframe || 'Callback'}
+                                </span>
+                              </div>
+                            )}
                           </td>
                           <td style={{ padding: '10px 8px', textAlign: 'center' }}>
                             <button

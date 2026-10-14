@@ -346,20 +346,28 @@ export async function searchRecruitlyByPhone(phone, apiKey) {
 }
 
 /**
- * Classify a call's conversation via DeepSeek AI when external phone is not found in CRM.
+ * Classify a call's conversation via DeepSeek AI:
+ * 1. Party classification: Candidate vs Client
+ * 2. Commercial Market Alpha intelligence (upcoming vacancies, contract ends, competitor interviews, resignations, won projects)
+ * 3. Agreed callbacks / follow-ups (dates, times, timeframes, context)
  */
 async function classifyTranscriptWithAi(transcript, recapSummary = '', recapOutcome = '') {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+  const deepseekKey = (process.env.DEEPSEEK_API_KEY && !process.env.DEEPSEEK_API_KEY.includes('SENSITIVE')) ? process.env.DEEPSEEK_API_KEY.trim() : null;
+  const openaiKey = (process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.includes('SENSITIVE')) ? process.env.OPENAI_API_KEY.trim() : null;
+  const apiKey = deepseekKey || openaiKey;
   if (!apiKey) {
-    console.warn('[AI Classifier] DEEPSEEK_API_KEY not configured.');
+    console.warn('[AI Classifier] Neither DEEPSEEK_API_KEY nor OPENAI_API_KEY configured.');
     return null;
   }
+  const isDeepSeek = Boolean(deepseekKey);
+  const hostname = isDeepSeek ? 'api.deepseek.com' : 'api.openai.com';
+  const model = isDeepSeek ? 'deepseek-chat' : 'gpt-4o-mini';
 
   const textToAnalyze = [
     recapSummary ? `Recap Summary: ${recapSummary}` : '',
     recapOutcome ? `Recap Outcome: ${recapOutcome}` : '',
     transcript && transcript !== 'No transcript generated yet.' && transcript !== 'Transcript is empty' 
-      ? `Call Transcript:\n${transcript.slice(0, 3000)}` 
+      ? `Call Transcript:\n${transcript.slice(0, 4000)}` 
       : ''
   ].filter(Boolean).join('\n\n');
 
@@ -367,26 +375,53 @@ async function classifyTranscriptWithAi(transcript, recapSummary = '', recapOutc
     return null;
   }
 
-  const prompt = `You are an expert recruitment operations auditor for Humres Technical Recruitment.
+  const prompt = `You are an expert commercial recruitment operations auditor for Humres Technical Recruitment.
 Analyze the following phone conversation between a recruitment consultant and an external caller/callee.
-Determine whether the external party is a:
-1. "Candidate": Job seeker, interviewee, contractor looking for placements, candidate discussing qualifications, CV, pay rate, notice period, or job openings.
-2. "Client": Hiring manager, HR manager, commercial business partner, client company representative, procurement, or business development lead discussing company vacancies, hiring requirements, terms of business, or commercial projects.
 
-Respond ONLY with a valid JSON object in this format (no markdown fences, no explanatory text):
-{"type": "Candidate" | "Client", "reason": "1-sentence concise reason", "confidence": 0.8}`;
+You must extract three key intelligence dimensions:
+1. Party Classification:
+   - "Candidate": Job seeker, interviewee, contractor looking for placements, candidate discussing qualifications, CV, pay rate, notice period, or job openings.
+   - "Client": Hiring manager, HR manager, commercial business partner, client company representative, procurement, or business development lead discussing company vacancies, hiring requirements, terms of business, or commercial projects.
+
+2. Market Alpha (Commercial Intelligence):
+   Identify if genuine, commercially actionable recruitment intelligence ("Market Alpha") was revealed during the call. Examples:
+   - Upcoming vacancies or headcount growth / new roles opening up at any company
+   - Candidate contract end dates (e.g. "my current contract finishes Nov 15th") or notice periods
+   - Competitor interview intelligence (e.g. candidate revealing who else they are interviewing with, which companies are actively hiring right now)
+   - Commercial projects, tenders, or frameworks won by contractors/clients
+   - Key staff resignations or management changes creating hiring needs
+   - Salary or day-rate benchmarks and budget shifts
+   If Alpha is found: set "isAlpha": true, "alphaType" (e.g. "Hiring Lead", "Contract End Date", "Competitor Intel", "Key Resignation", "Project Awarded", "Rate Intel"), and "alphaDetails" (crisp 1-2 sentence commercial summary). Otherwise: "isAlpha": false, "alphaType": null, "alphaDetails": null.
+
+3. Callbacks / Follow-Ups:
+   Identify if an agreed follow-up or callback was scheduled or requested by either party.
+   - Look for specific times, days, or timeframes (e.g. "call me tomorrow at 2pm", "let's speak Friday morning", "call back in 2 weeks", "contact me when the spec is ready").
+   If an agreed callback/follow-up exists: set "isCallback": true, "callbackTimeframe" (e.g. "Tomorrow 2:00 PM", "Friday morning", "Next Tuesday", "In 2 weeks"), and "callbackDetails" (1-sentence context of the agreed callback). Otherwise: "isCallback": false, "callbackTimeframe": null, "callbackDetails": null.
+
+Respond ONLY with a valid JSON object in this format (no markdown code fences, no explanatory text):
+{
+  "type": "Candidate" | "Client",
+  "reason": "1-sentence concise reason",
+  "confidence": 0.85,
+  "isAlpha": true | false,
+  "alphaType": "Hiring Lead" | "Contract End Date" | "Competitor Intel" | "Key Resignation" | "Project Awarded" | "Rate Intel" | null,
+  "alphaDetails": "Crisp 1-2 sentence commercial brief, or null",
+  "isCallback": true | false,
+  "callbackTimeframe": "Specific agreed timeframe or null",
+  "callbackDetails": "1-sentence context of agreed callback or null"
+}`;
 
   const payload = JSON.stringify({
-    model: 'deepseek-chat',
+    model,
     messages: [
-      { role: 'system', content: 'You classify recruitment call transcripts as Candidate or Client. Output pure JSON only.' },
+      { role: 'system', content: 'You are an AI recruitment intelligence analyst. Extract party type, market alpha, and callbacks. Output pure JSON only.' },
       { role: 'user', content: `${prompt}\n\nCall Content:\n${textToAnalyze}` }
     ],
     temperature: 0.1
   });
 
   const options = {
-    hostname: 'api.deepseek.com',
+    hostname,
     port: 443,
     path: '/v1/chat/completions',
     method: 'POST',
@@ -428,7 +463,13 @@ Respond ONLY with a valid JSON object in this format (no markdown fences, no exp
     return {
       type: isCandidate ? 'Candidate' : 'Client',
       reason: resultObj.reason || '',
-      confidence: typeof resultObj.confidence === 'number' ? resultObj.confidence : 0.85
+      confidence: typeof resultObj.confidence === 'number' ? resultObj.confidence : 0.85,
+      isAlpha: Boolean(resultObj.isAlpha),
+      alphaType: resultObj.alphaType || null,
+      alphaDetails: resultObj.alphaDetails || null,
+      isCallback: Boolean(resultObj.isCallback),
+      callbackTimeframe: resultObj.callbackTimeframe || null,
+      callbackDetails: resultObj.callbackDetails || null
     };
   } catch (err) {
     console.error('[AI Classifier] DeepSeek classification failed:', err.message);
@@ -438,6 +479,7 @@ Respond ONLY with a valid JSON object in this format (no markdown fences, no exp
 
 /**
  * Classify a call by checking CRM first, then falling back to AI transcript analysis.
+ * Also extracts Market Alpha and Agreed Callbacks from transcript/recap for ALL calls.
  */
 export async function classifyCallRecord(callData, apiKey, firestoreDb, fallbackApiKeys = []) {
   const phone = callData.externalNumber || callData.phoneNumber || callData.contact?.phone_number || '';
@@ -445,9 +487,11 @@ export async function classifyCallRecord(callData, apiKey, firestoreDb, fallback
   const recapSummary = callData.recapSummary || '';
   const recapOutcome = callData.recapOutcome || '';
 
+  let crmMatch = null;
+
   // 1. Try primary CRM tenant lookup first (Candidate ca-, Contact ct-, Company cy-)
   if (phone && apiKey) {
-    let crmMatch = await searchRecruitlyByPhone(phone, apiKey);
+    crmMatch = await searchRecruitlyByPhone(phone, apiKey);
 
     // If not found in primary tenant, search other company tenants as fallback
     if ((!crmMatch || !crmMatch.matched) && fallbackApiKeys && fallbackApiKeys.length > 0) {
@@ -458,45 +502,80 @@ export async function classifyCallRecord(callData, apiKey, firestoreDb, fallback
         }
       }
     }
-
-    if (crmMatch && crmMatch.matched) {
-      return {
-        matched: true,
-        type: crmMatch.type,
-        targetType: crmMatch.targetType,
-        classificationSource: crmMatch.classificationSource,
-        id: crmMatch.id,
-        referenceNumber: crmMatch.referenceNumber || crmMatch.crmRef || '',
-        crmRef: crmMatch.crmRef || crmMatch.referenceNumber || '',
-        name: crmMatch.name,
-        company: crmMatch.company
-      };
-    }
   }
 
-  // 2. Unmatched in CRM -> Analyze transcript/recap with DeepSeek AI
+  // 2. Run AI transcript analysis for Alpha, Callbacks, and (if unmatched) Party Classification
+  let aiResult = null;
   if (transcript || recapSummary || recapOutcome) {
-    const aiResult = await classifyTranscriptWithAi(transcript, recapSummary, recapOutcome);
-    if (aiResult && aiResult.type) {
-      return {
-        matched: false,
-        targetType: aiResult.type,
-        classificationSource: 'ai_transcript',
-        aiReason: aiResult.reason,
-        confidence: aiResult.confidence
-      };
-    }
+    aiResult = await classifyTranscriptWithAi(transcript, recapSummary, recapOutcome);
+  }
+
+  // Check manual/disposition flags for Alpha and Callback as baseline
+  const disp = (callData.disposition || '').toLowerCase();
+  const recapLower = (recapSummary || '').toLowerCase();
+  const manualAlpha = disp.includes('alpha') || recapLower.includes('opportunity') || recapLower.includes('alpha');
+  const manualCB = disp.includes('callback') || disp.includes('cb');
+
+  const finalIsAlpha = Boolean(aiResult?.isAlpha || manualAlpha || callData.isAlpha);
+  const finalAlphaType = aiResult?.alphaType || (manualAlpha ? 'Recruiter Tagged' : (callData.alphaType || null));
+  const finalAlphaDetails = aiResult?.alphaDetails || (callData.alphaDetails || null);
+
+  const finalIsCallback = Boolean(aiResult?.isCallback || manualCB || callData.isCallback);
+  const finalCallbackTimeframe = aiResult?.callbackTimeframe || (callData.callbackTimeframe || null);
+  const finalCallbackDetails = aiResult?.callbackDetails || (callData.callbackDetails || null);
+
+  if (crmMatch && crmMatch.matched) {
+    return {
+      matched: true,
+      type: crmMatch.type,
+      targetType: crmMatch.targetType,
+      classificationSource: crmMatch.classificationSource,
+      id: crmMatch.id,
+      referenceNumber: crmMatch.referenceNumber || crmMatch.crmRef || '',
+      crmRef: crmMatch.crmRef || crmMatch.referenceNumber || '',
+      name: crmMatch.name,
+      company: crmMatch.company,
+      isAlpha: finalIsAlpha,
+      alphaType: finalAlphaType,
+      alphaDetails: finalAlphaDetails,
+      isCallback: finalIsCallback,
+      callbackTimeframe: finalCallbackTimeframe,
+      callbackDetails: finalCallbackDetails,
+      aiReason: aiResult?.reason || ''
+    };
+  }
+
+  // Unmatched in CRM -> Use AI targetType if available
+  if (aiResult && aiResult.type) {
+    return {
+      matched: false,
+      targetType: aiResult.type,
+      classificationSource: 'ai_transcript',
+      aiReason: aiResult.reason,
+      confidence: aiResult.confidence,
+      isAlpha: finalIsAlpha,
+      alphaType: finalAlphaType,
+      alphaDetails: finalAlphaDetails,
+      isCallback: finalIsCallback,
+      callbackTimeframe: finalCallbackTimeframe,
+      callbackDetails: finalCallbackDetails
+    };
   }
 
   // 3. Fallback to default heuristic if neither CRM nor AI was conclusive
-  // Recruiter outbound calls default to Candidate, inbound calls default to Client
   const isOutbound = (callData.direction || '').toLowerCase() === 'outbound';
   const defaultTargetType = isOutbound ? 'Candidate' : 'Client';
 
   return {
     matched: false,
     targetType: defaultTargetType,
-    classificationSource: 'unmatched_default'
+    classificationSource: 'unmatched_default',
+    isAlpha: finalIsAlpha,
+    alphaType: finalAlphaType,
+    alphaDetails: finalAlphaDetails,
+    isCallback: finalIsCallback,
+    callbackTimeframe: finalCallbackTimeframe,
+    callbackDetails: finalCallbackDetails
   };
 }
 
@@ -571,7 +650,13 @@ export default async function handler(req, res) {
           const updates = {
             targetType: classification.targetType,
             classificationSource: classification.classificationSource,
-            classifiedAt: new Date().toISOString()
+            classifiedAt: new Date().toISOString(),
+            isAlpha: Boolean(classification.isAlpha),
+            alphaType: classification.alphaType || null,
+            alphaDetails: classification.alphaDetails || null,
+            isCallback: Boolean(classification.isCallback),
+            callbackTimeframe: classification.callbackTimeframe || null,
+            callbackDetails: classification.callbackDetails || null
           };
 
           if (classification.matched) {
@@ -586,6 +671,10 @@ export default async function handler(req, res) {
             updates.aiClassificationReason = classification.aiReason || '';
           } else {
             defaultCount++;
+          }
+
+          if (classification.aiReason && !updates.aiClassificationReason) {
+            updates.aiClassificationReason = classification.aiReason;
           }
 
           await firestoreDb.collection('dialpad_calls').doc(call.id).update(updates);
@@ -625,7 +714,13 @@ export default async function handler(req, res) {
       const updates = {
         targetType: classification.targetType,
         classificationSource: classification.classificationSource,
-        classifiedAt: new Date().toISOString()
+        classifiedAt: new Date().toISOString(),
+        isAlpha: Boolean(classification.isAlpha),
+        alphaType: classification.alphaType || null,
+        alphaDetails: classification.alphaDetails || null,
+        isCallback: Boolean(classification.isCallback),
+        callbackTimeframe: classification.callbackTimeframe || null,
+        callbackDetails: classification.callbackDetails || null
       };
 
       if (classification.matched) {

@@ -240,7 +240,18 @@ const CRMContactLink = ({ phone, defaultName, companyId, crmId, crmRef, crmName,
   );
 };
 
-// Formats candidate vs client party type badges with direct CRM ID link and CRM/AI source cues
+// Helper to ensure reference is cleanly formatted as CA-XXXXX, CT-XXXXX, or CY-XXXXX
+const formatPartyReference = (rawRef, type) => {
+  if (!rawRef) return '';
+  const s = String(rawRef).trim();
+  if (!s) return '';
+  if (/^[A-Za-z]{2,3}-/i.test(s)) return s.toUpperCase();
+  const lower = (type || '').toLowerCase();
+  const prefix = lower.includes('cand') ? 'CA-' : lower.includes('comp') ? 'CY-' : 'CT-';
+  return `${prefix}${s}`;
+};
+
+// Formats candidate vs client party type badges with direct CRM Reference (CA-XXXXX, CT-XXXXX, CY-XXXXX) link
 const PartyTypeBadge = ({ targetType, classificationSource, crmId, crmRef, aiReason, phone, companyId }) => {
   const [cachedCrm, setCachedCrm] = useState(() => {
     const clean = (phone || '').replace(/[^0-9+]/g, '').trim();
@@ -261,16 +272,62 @@ const PartyTypeBadge = ({ targetType, classificationSource, crmId, crmRef, aiRea
     return () => window.removeEventListener('crm-cache-updated', handleCacheUpdate);
   }, [phone, companyId]);
 
+  // Background lookup if reference is not yet known but phone is present
+  useEffect(() => {
+    if (crmRef || cachedCrm?.crmRef || cachedCrm?.referenceNumber) return;
+    if (!phone) return;
+    const clean = phone.replace(/[^0-9+]/g, '').trim();
+    if (clean.length < 6) return;
+
+    const cacheKey = `${clean}_${companyId || ''}`;
+    if (window._crmCache && window._crmCache[cacheKey]) {
+      if (window._crmCache[cacheKey].matched) {
+        setCachedCrm(window._crmCache[cacheKey]);
+      }
+      return;
+    }
+
+    if (!window._crmInFlight) window._crmInFlight = {};
+    if (window._crmInFlight[cacheKey]) {
+      window._crmInFlight[cacheKey].then(d => {
+        if (d && d.matched) setCachedCrm(d);
+      });
+      return;
+    }
+
+    let active = true;
+    window._crmInFlight[cacheKey] = fetch(`/api/crm-lookup?phone=${encodeURIComponent(clean)}&companyId=${companyId || ''}`)
+      .then(r => r.json())
+      .then(d => {
+        if (!window._crmCache) window._crmCache = {};
+        window._crmCache[cacheKey] = d;
+        if (active && d && d.matched) {
+          setCachedCrm(d);
+          try {
+            window.dispatchEvent(new CustomEvent('crm-cache-updated', { detail: { cacheKey, data: d, phone: clean } }));
+          } catch (e) {}
+        }
+        return d;
+      })
+      .catch(() => ({ matched: false }))
+      .finally(() => {
+        delete window._crmInFlight[cacheKey];
+      });
+
+    return () => { active = false; };
+  }, [phone, companyId, crmRef, cachedCrm]);
+
   const effectiveCrmId = crmId || (cachedCrm && cachedCrm.matched ? cachedCrm.id : '');
-  const effectiveRef = crmRef || (cachedCrm && cachedCrm.matched ? (cachedCrm.crmRef || cachedCrm.referenceNumber) : '') || '';
+  const rawRef = crmRef || (cachedCrm && cachedCrm.matched ? (cachedCrm.crmRef || cachedCrm.referenceNumber) : '') || '';
   const matchedType = cachedCrm && cachedCrm.matched
     ? (cachedCrm.targetType || (cachedCrm.type?.toLowerCase().includes('cand') ? 'Candidate' : 'Client'))
     : targetType;
   const effectiveType = matchedType || '';
   const isCand = effectiveType === 'Candidate';
+  const effectiveRef = formatPartyReference(rawRef, effectiveType);
 
   // If completely unclassified (no CRM match and no AI classification)
-  if (!effectiveType && !effectiveCrmId) {
+  if (!effectiveType && !effectiveCrmId && !effectiveRef) {
     return (
       <span
         title="Unclassified: Checking Recruitly CRM..."
@@ -292,36 +349,31 @@ const PartyTypeBadge = ({ targetType, classificationSource, crmId, crmRef, aiRea
     );
   }
 
-  let badgePrefix = null;
   let title = `${effectiveType || 'Client'}`;
-
-  let linkPath = 'candidate';
-  if (effectiveCrmId) {
-    if (effectiveCrmId.startsWith('ca-') || (effectiveRef && effectiveRef.startsWith('CA-'))) linkPath = 'candidate';
-    else if (effectiveCrmId.startsWith('cy-') || (effectiveRef && effectiveRef.startsWith('CY-'))) linkPath = 'company';
-    else if (effectiveCrmId.startsWith('ct-') || (effectiveRef && effectiveRef.startsWith('CT-'))) linkPath = 'contact';
-    else if (isCand) linkPath = 'candidate';
-    else linkPath = 'contact';
-  }
-
-  if (classificationSource === 'crm_ca' || (effectiveCrmId && effectiveCrmId.startsWith('ca-')) || (effectiveRef && effectiveRef.startsWith('CA-')) || (isCand && effectiveCrmId)) {
-    badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '3px' }}>ca-</span>;
-    title = `Recruitly Candidate (${effectiveRef || effectiveCrmId || 'ca-'})`;
-  } else if (classificationSource === 'crm_ct' || (effectiveCrmId && effectiveCrmId.startsWith('ct-')) || (effectiveRef && effectiveRef.startsWith('CT-')) || (!isCand && effectiveCrmId)) {
-    badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '3px' }}>ct-</span>;
-    title = `Recruitly Client Contact (${effectiveRef || effectiveCrmId || 'ct-'})`;
-  } else if (classificationSource === 'crm_cy' || (effectiveCrmId && effectiveCrmId.startsWith('cy-')) || (effectiveRef && effectiveRef.startsWith('CY-'))) {
-    badgePrefix = <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.85, marginRight: '3px' }}>cy-</span>;
-    title = `Recruitly Client Company (${effectiveRef || effectiveCrmId || 'cy-'})`;
-  } else if (classificationSource === 'ai_transcript') {
-    badgePrefix = <span style={{ fontSize: '11px', marginRight: '3px' }}>🤖</span>;
+  const isAi = classificationSource === 'ai_transcript';
+  if (effectiveRef) {
+    title = `Recruitly ${effectiveType || 'Record'} (${effectiveRef})`;
+  } else if (isAi) {
     title = `AI Transcript Classified: ${aiReason || 'Analyzed conversation content'}`;
   }
 
-  const linkUrl = effectiveCrmId ? `https://secure.recruitly.io/${linkPath}?id=${effectiveCrmId}` : null;
-  const displayId = effectiveRef 
+  let linkPath = 'candidate';
+  if (effectiveType === 'Candidate' || effectiveRef.startsWith('CA-') || (effectiveCrmId && effectiveCrmId.startsWith('ca-'))) {
+    linkPath = 'candidate';
+  } else if (effectiveRef.startsWith('CY-') || (effectiveCrmId && effectiveCrmId.startsWith('cy-'))) {
+    linkPath = 'company';
+  } else {
+    linkPath = 'contact';
+  }
+
+  const linkUrl = effectiveCrmId 
+    ? `https://secure.recruitly.io/${linkPath}?id=${effectiveCrmId}` 
+    : (effectiveRef ? `https://secure.recruitly.io/${linkPath}?ref=${encodeURIComponent(effectiveRef)}` : null);
+
+  // Reference is displayed. Never display raw internal CRM database ID/hex hash.
+  const displayLabel = effectiveRef 
     ? effectiveRef 
-    : (effectiveCrmId ? (effectiveCrmId.length > 14 ? `${effectiveCrmId.substring(0, 11)}…` : effectiveCrmId) : '');
+    : (effectiveCrmId ? (isCand ? 'CA-Ref' : 'CT-Ref') : '');
 
   return (
     <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
@@ -340,17 +392,20 @@ const PartyTypeBadge = ({ targetType, classificationSource, crmId, crmRef, aiRea
           whiteSpace: 'nowrap'
         }}
       >
-        {badgePrefix}
-        {effectiveType}
+        {isAi && <span style={{ fontSize: '11px', marginRight: '3px' }}>🤖</span>}
+        {effectiveType || (effectiveRef.startsWith('CA-') ? 'Candidate' : 'Client')}
       </span>
 
-      {effectiveCrmId ? (
+      {(effectiveRef || effectiveCrmId) ? (
         <a
-          href={linkUrl}
+          href={linkUrl || '#'}
           target="_blank"
           rel="noopener noreferrer"
-          title={`Open in Recruitly CRM (${effectiveRef || effectiveCrmId})`}
-          onClick={(e) => e.stopPropagation()}
+          title={`Open in Recruitly CRM (${effectiveRef || 'Profile'})`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!linkUrl) e.preventDefault();
+          }}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -365,7 +420,7 @@ const PartyTypeBadge = ({ targetType, classificationSource, crmId, crmRef, aiRea
             lineHeight: 1.1
           }}
         >
-          <span>🔗 {displayId}</span>
+          <span>🔗 {displayLabel}</span>
         </a>
       ) : null}
     </div>
@@ -1401,6 +1456,7 @@ export default function KpisDashboard({
           targetType: targetTypeVal,
           classificationSource: call.classificationSource || '',
           crmId: call.crmId || '',
+          crmRef: call.crmRef || '',
           crmName: call.crmName || '',
           crmType: call.crmType || '',
           crmCompany: call.crmCompany || '',
@@ -1688,7 +1744,14 @@ export default function KpisDashboard({
             alphaDetails: data.alphaDetails || activeCallDetail.alphaDetails || '',
             isCallback: data.isCallback ?? activeCallDetail.isCallback,
             callbackTimeframe: data.callbackTimeframe || activeCallDetail.callbackTimeframe || '',
-            callbackDetails: data.callbackDetails || activeCallDetail.callbackDetails || ''
+            callbackDetails: data.callbackDetails || activeCallDetail.callbackDetails || '',
+            targetType: data.targetType || activeCallDetail.targetType,
+            classificationSource: data.classificationSource || activeCallDetail.classificationSource,
+            crmId: data.crmId || activeCallDetail.crmId,
+            crmRef: data.crmRef || activeCallDetail.crmRef,
+            crmName: data.crmName || activeCallDetail.crmName,
+            crmType: data.crmType || activeCallDetail.crmType,
+            crmCompany: data.crmCompany || activeCallDetail.crmCompany
           };
           setActiveCallDetail(updatedDetail);
           
@@ -2752,6 +2815,7 @@ export default function KpisDashboard({
           targetType: targetTypeVal,
           classificationSource: call.classificationSource || '',
           crmId: call.crmId || '',
+          crmRef: call.crmRef || '',
           crmName: call.crmName || '',
           crmType: call.crmType || '',
           crmCompany: call.crmCompany || '',

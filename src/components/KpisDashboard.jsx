@@ -2278,7 +2278,7 @@ export default function KpisDashboard({
           where('dateStarted', '>=', start),
           where('dateStarted', '<=', end + 'T23:59:59Z'),
           orderBy('dateStarted', 'desc'),
-          limit(2000)
+          limit(10000)
         );
 
         // Try Cache first (instant response)
@@ -2301,7 +2301,7 @@ export default function KpisDashboard({
               collection(db, 'dialpad_calls'),
               where('dateStarted', '>=', start),
               where('dateStarted', '<=', end + 'T23:59:59Z'),
-              limit(2000)
+              limit(10000)
             );
             const cacheFallbackSnapshot = await getDocsFromCache(callsQueryFallback);
             if (cacheFallbackSnapshot && !cacheFallbackSnapshot.empty) {
@@ -2339,7 +2339,7 @@ export default function KpisDashboard({
             collection(db, 'dialpad_calls'),
             where('dateStarted', '>=', start),
             where('dateStarted', '<=', end + 'T23:59:59Z'),
-            limit(2000)
+            limit(10000)
           );
           
           const fallbackSnapshot = await getDocsFromServer(callsQueryFallback);

@@ -3310,12 +3310,6 @@ export default function KpisDashboard({
       } else if (overviewSortField === 'over10m') {
         valA = a.over10m;
         valB = b.over10m;
-      } else if (overviewSortField === 'cb') {
-        valA = a.callbacks;
-        valB = b.callbacks;
-      } else if (overviewSortField === 'a') {
-        valA = a.alpha;
-        valB = b.alpha;
       } else if (overviewSortField === 'cvsSent') {
         valA = a.cvsSent;
         valB = b.cvsSent;
@@ -4032,16 +4026,6 @@ export default function KpisDashboard({
             </div>
 
             <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Callbacks (CB)</span>
-              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--warning)', marginTop: '2px' }}>{overviewStats.totalCallbacks}</div>
-            </div>
-
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Alpha (A)</span>
-              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--primary)', marginTop: '2px' }}>{overviewStats.totalAlpha}</div>
-            </div>
-
-            <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
               <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Avg Talk Time</span>
               <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>{Math.floor(overviewStats.avgTalkTime / 60)}m {overviewStats.avgTalkTime % 60}s</div>
             </div>
@@ -4097,8 +4081,6 @@ export default function KpisDashboard({
                       { id: 'lastCall', label: 'Last Call' },
                       { id: 'over5m', label: '5m+' },
                       { id: 'over10m', label: '10m+' },
-                      { id: 'cb', label: 'CB' },
-                      { id: 'a', label: 'A' },
                       { id: 'cvsSent', label: 'CVs Shared' },
                       { id: 'speculativeCvs', label: 'Spec CVs' },
                       { id: 'interviews', label: 'Interviews' },
@@ -4132,7 +4114,7 @@ export default function KpisDashboard({
                 <tbody>
                   {sortedRecruiterRows.length === 0 ? (
                     <tr>
-                      <td colSpan={20} style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
+                      <td colSpan={18} style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>
                         No recruiters match the filter criteria or date range.
                       </td>
                     </tr>
@@ -4168,12 +4150,6 @@ export default function KpisDashboard({
                         </td>
                         <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                           {renderClickableCount(row.over10m, row.staff.id, row.staff.fullName || row.staff.full_name, 'over10m', 'var(--text-primary)')}
-                        </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                          {renderClickableCount(row.callbacks, row.staff.id, row.staff.fullName || row.staff.full_name, 'callback', 'var(--warning)')}
-                        </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                          {renderClickableCount(row.alpha, row.staff.id, row.staff.fullName || row.staff.full_name, 'alpha', 'var(--primary)')}
                         </td>
                         <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--text-primary)' }}>
                           {row.cvsSent}
@@ -4312,18 +4288,6 @@ export default function KpisDashboard({
                     {Math.floor(overviewStats.avgTalkTime / 60)}m {overviewStats.avgTalkTime % 60}s
                   </div>
                   <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Per successful call</div>
-                </div>
-
-                <div style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>CALLBACKS (CB)</div>
-                  <div style={{ fontSize: '18px', fontWeight: 700, margin: '4px 0', color: 'var(--warning)' }}>{overviewStats.totalCallbacks}</div>
-                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>AI Flagged</div>
-                </div>
-
-                <div style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>ALPHA SIGNALS (A)</div>
-                  <div style={{ fontSize: '18px', fontWeight: 700, margin: '4px 0', color: 'var(--primary)' }}>{overviewStats.totalAlpha}</div>
-                  <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Captured signals</div>
                 </div>
 
                 <div style={{ padding: '10px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>

@@ -2456,21 +2456,34 @@ export default function DepartmentTeamCostTab({
           MAIN P&L MATRIX TABLE
           ============================================================== */}
       <div className="table-container" style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
-        <table className="entity-table dense" style={{ width: '100%', minWidth: '1050px', borderCollapse: 'collapse', textAlign: 'left' }}>
+        <table className="entity-table dense" style={{ width: '100%', minWidth: '1535px', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left' }}>
           <thead>
             <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
-              <th style={{ padding: '8px 12px', fontWeight: 700, fontSize: '11.5px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 3, minWidth: '220px', width: '22%' }}>
+              <th style={{ 
+                padding: '8px 12px', 
+                fontWeight: 700, 
+                fontSize: '11.5px', 
+                position: 'sticky', 
+                left: 0, 
+                backgroundColor: 'var(--bg-secondary)', 
+                zIndex: 4, 
+                width: '320px', 
+                minWidth: '320px', 
+                maxWidth: '320px', 
+                boxSizing: 'border-box',
+                borderRight: '2px solid var(--border-color)'
+              }}>
                 Department Account Line Item (GBP)
               </th>
               {monthsList.map(m => (
-                <th key={m} style={{ padding: '8px 4px', textAlign: 'right', fontWeight: 700, fontSize: '11px', minWidth: '65px' }}>
+                <th key={m} style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, fontSize: '11px', width: '85px', minWidth: '85px', boxSizing: 'border-box' }}>
                   {formatMonthLabel(m)}
                 </th>
               ))}
-              <th style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, fontSize: '11px', backgroundColor: 'rgba(99, 102, 241, 0.08)', minWidth: '85px' }}>
+              <th style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 700, fontSize: '11px', backgroundColor: 'rgba(99, 102, 241, 0.08)', width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                 YTV
               </th>
-              <th style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, fontSize: '11px', backgroundColor: 'var(--bg-secondary)', minWidth: '88px' }}>
+              <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, fontSize: '11px', backgroundColor: 'var(--bg-secondary)', width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                 Period Total
               </th>
             </tr>
@@ -2493,7 +2506,9 @@ export default function DepartmentTeamCostTab({
                   backgroundColor: 'rgba(16, 185, 129, 0.08)'
                 }}
               >
-                0. Team Sales & Placements Billings (Revenue)
+                <div style={{ position: 'sticky', left: '14px', display: 'inline-flex', alignItems: 'center' }}>
+                  0. Team Sales & Placements Billings (Revenue)
+                </div>
               </td>
             </tr>
 
@@ -2501,38 +2516,44 @@ export default function DepartmentTeamCostTab({
             <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'rgba(16, 185, 129, 0.03)' }}>
               <td 
                 style={{ 
-                  padding: '10px 14px', 
+                  padding: '8px 12px', 
                   position: 'sticky', 
                   left: 0, 
                   backgroundColor: 'var(--bg-primary)', 
                   zIndex: 2, 
                   cursor: 'pointer',
                   userSelect: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
+                  width: '320px',
+                  minWidth: '320px',
+                  maxWidth: '320px',
+                  boxSizing: 'border-box',
+                  borderRight: '2px solid var(--border-color)'
                 }}
                 onClick={() => setExpandedSales(!expandedSales)}
               >
-                <span style={{ fontSize: '11px', color: 'var(--success)' }}>
-                  {expandedSales ? '▼' : '▶'}
-                </span>
-                <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--success)' }}>
-                  Team Placements Billings (Sales Revenue)
-                </span>
-                <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                  ({salesStaff.length} consultants • Click to {expandedSales ? 'collapse' : 'expand'})
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--success)', flexShrink: 0 }}>
+                    {expandedSales ? '▼' : '▶'}
+                  </span>
+                  <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                    <div style={{ fontWeight: 700, fontSize: '12.5px', color: 'var(--success)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      Team Placements Billings (Sales Revenue)
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {salesStaff.length} consultants • Click to {expandedSales ? 'collapse' : 'expand'}
+                    </div>
+                  </div>
+                </div>
               </td>
               {monthsList.map(m => (
-                <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--success)' }}>
+                <td key={m} style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--success)', width: '85px', minWidth: '85px', boxSizing: 'border-box' }}>
                   {formatGBP(teamSalesTotals.monthlySum[m] || 0)}
                 </td>
               ))}
-              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--success)', backgroundColor: 'rgba(16, 185, 129, 0.1)' }}>
+              <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--success)', backgroundColor: 'rgba(16, 185, 129, 0.1)', width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                 {formatGBP(teamSalesTotals.ytvTotal)}
               </td>
-              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, color: 'var(--success)', fontSize: '13px' }}>
+              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, color: 'var(--success)', fontSize: '13px', width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                 {formatGBP(teamSalesTotals.grandTotal)}
               </td>
             </tr>
@@ -2551,31 +2572,42 @@ export default function DepartmentTeamCostTab({
                     const sSales = consultantSalesData[s.id] || { monthlySales: {}, grandTotal: 0, ytvTotal: 0, placementCount: 0 };
                     return (
                       <tr key={`sales-${s.id}`} style={{ fontSize: '12px', borderBottom: '1px solid var(--border-color)', opacity: sSales.grandTotal === 0 ? 0.6 : 1 }}>
-                        <td style={{ padding: '8px 14px 8px 32px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.fullName}</span>
-                            <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>({s.jobTitle || 'Recruiter'})</span>
+                        <td style={{ 
+                          padding: '6px 12px 6px 28px', 
+                          position: 'sticky', 
+                          left: 0, 
+                          backgroundColor: 'var(--bg-primary)', 
+                          zIndex: 1,
+                          width: '320px',
+                          minWidth: '320px',
+                          maxWidth: '320px',
+                          boxSizing: 'border-box',
+                          borderRight: '2px solid var(--border-color)'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.fullName}</span>
+                            <span style={{ fontSize: '10px', color: 'var(--text-secondary)', flexShrink: 0 }}>({s.jobTitle || 'Recruiter'})</span>
                             {!deptFilter.includes('all') && !deptFilter.includes(s.department || '') && (
-                              <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(99, 102, 241, 0.15)', color: '#6366f1', fontWeight: 600 }}>
-                                🔀 Apportioned ({s.department})
+                              <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(99, 102, 241, 0.15)', color: '#6366f1', fontWeight: 600, flexShrink: 0 }}>
+                                🔀 Apportioned
                               </span>
                             )}
                             {sSales.placementCount > 0 && (
-                              <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--success)', fontWeight: 600 }}>
+                              <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--success)', fontWeight: 600, flexShrink: 0 }}>
                                 {sSales.placementCount} deals
                               </span>
                             )}
                           </div>
                         </td>
                         {monthsList.map(m => (
-                          <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace', color: (sSales.monthlySales[m] || 0) > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                          <td key={m} style={{ padding: '6px 6px', textAlign: 'right', fontFamily: 'monospace', color: (sSales.monthlySales[m] || 0) > 0 ? 'var(--text-primary)' : 'var(--text-muted)', width: '85px', minWidth: '85px', boxSizing: 'border-box' }}>
                             {formatGBP(sSales.monthlySales[m] || 0)}
                           </td>
                         ))}
-                        <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(16, 185, 129, 0.05)', fontWeight: 600 }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(16, 185, 129, 0.05)', fontWeight: 600, width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                           {formatGBP(sSales.ytvTotal)}
                         </td>
-                        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: sSales.grandTotal > 0 ? 'var(--success)' : 'inherit' }}>
+                        <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: sSales.grandTotal > 0 ? 'var(--success)' : 'inherit', width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                           {formatGBP(sSales.grandTotal)}
                         </td>
                       </tr>
@@ -2600,7 +2632,9 @@ export default function DepartmentTeamCostTab({
                   letterSpacing: '0.05em'
                 }}
               >
-                1. Team Remuneration (Salaries, Freelance & Commissions)
+                <div style={{ position: 'sticky', left: '14px', display: 'inline-flex', alignItems: 'center' }}>
+                  1. Team Remuneration (Salaries, Freelance & Commissions)
+                </div>
               </td>
             </tr>
 
@@ -2608,38 +2642,44 @@ export default function DepartmentTeamCostTab({
             <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-primary)' }}>
               <td 
                 style={{ 
-                  padding: '10px 14px', 
+                  padding: '8px 12px', 
                   position: 'sticky', 
                   left: 0, 
                   backgroundColor: 'var(--bg-primary)', 
                   zIndex: 2, 
                   cursor: 'pointer',
                   userSelect: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
+                  width: '320px',
+                  minWidth: '320px',
+                  maxWidth: '320px',
+                  boxSizing: 'border-box',
+                  borderRight: '2px solid var(--border-color)'
                 }}
                 onClick={() => setExpandedTeam(!expandedTeam)}
               >
-                <span style={{ fontSize: '11px', color: 'var(--accent)' }}>
-                  {expandedTeam ? '▼' : '▶'}
-                </span>
-                <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
-                  Apportioned Team Remuneration
-                </span>
-                <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                  ({filteredStaff.length} direct team members{relevantSharedStaff.length > 0 ? ` + ${relevantSharedStaff.length} apportioned shared roles` : ''} • Ex-Reimbursements)
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--accent)', flexShrink: 0 }}>
+                    {expandedTeam ? '▼' : '▶'}
+                  </span>
+                  <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                    <div style={{ fontWeight: 700, fontSize: '12.5px', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      Apportioned Team Remuneration
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {filteredStaff.length} direct{relevantSharedStaff.length > 0 ? ` + ${relevantSharedStaff.length} shared` : ''} • Ex-Reimbursements
+                    </div>
+                  </div>
+                </div>
               </td>
               {monthsList.map(m => (
-                <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: 'var(--success)' }}>
+                <td key={m} style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: 'var(--success)', width: '85px', minWidth: '85px', boxSizing: 'border-box' }}>
                   {formatGBP(staffRemunerationTotals.monthlySum[m] || 0)}
                 </td>
               ))}
-              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, backgroundColor: 'rgba(99, 102, 241, 0.04)', color: 'var(--success)' }}>
+              <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, backgroundColor: 'rgba(99, 102, 241, 0.04)', color: 'var(--success)', width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                 {formatGBP(staffRemunerationTotals.ytvTotal)}
               </td>
-              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--success)', fontSize: '13px' }}>
+              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--success)', fontSize: '13px', width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                 {formatGBP(staffRemunerationTotals.grandTotal)}
               </td>
             </tr>
@@ -2668,16 +2708,21 @@ export default function DepartmentTeamCostTab({
                         }}
                       >
                         <td style={{ 
-                          paddingLeft: '36px', 
+                          padding: '6px 12px 6px 28px', 
                           position: 'sticky', 
                           left: 0, 
                           backgroundColor: 'var(--bg-primary)', 
-                          zIndex: 1 
+                          zIndex: 1,
+                          width: '320px',
+                          minWidth: '320px',
+                          maxWidth: '320px',
+                          boxSizing: 'border-box',
+                          borderRight: '2px solid var(--border-color)'
                         }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ color: 'var(--text-muted)' }}>↳</span>
-                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.fullName}</span>
-                            <span style={{ color: 'var(--text-secondary)' }}>— {s.jobTitle || 'Recruiter'}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                            <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>↳</span>
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.fullName}</span>
+                            <span style={{ color: 'var(--text-secondary)', flexShrink: 0 }}>— {s.jobTitle || 'Recruiter'}</span>
                             {!deptFilter.includes('all') && !deptFilter.includes(s.department || '') && (
                               <span style={{ 
                                 fontSize: '9px', 
@@ -2685,7 +2730,8 @@ export default function DepartmentTeamCostTab({
                                 color: '#6366f1', 
                                 padding: '1px 6px', 
                                 borderRadius: '4px',
-                                fontWeight: 600
+                                fontWeight: 600,
+                                flexShrink: 0
                               }}>
                                 🔀 Apportioned ({s.department})
                               </span>
@@ -2697,7 +2743,8 @@ export default function DepartmentTeamCostTab({
                                 color: 'var(--danger)', 
                                 padding: '1px 4px', 
                                 borderRadius: '3px',
-                                fontWeight: 700
+                                fontWeight: 700,
+                                flexShrink: 0
                               }}>
                                 Exited
                               </span>
@@ -2714,9 +2761,13 @@ export default function DepartmentTeamCostTab({
                             <td 
                               key={m} 
                               style={{ 
+                                padding: '6px 6px',
                                 textAlign: 'right', 
                                 fontFamily: 'monospace', 
-                                opacity: val > 0 ? 1 : 0.4 
+                                opacity: val > 0 ? 1 : 0.4,
+                                width: '85px',
+                                minWidth: '85px',
+                                boxSizing: 'border-box'
                               }}
                               title={`Staff: ${s.fullName}\nMonth: ${m}\n• Basic: ${formatGBPExact(cell?.basic || 0)}\n• Commission: ${formatGBPExact(cell?.commission || 0)}\n• Bonus: ${formatGBPExact(cell?.bonus || 0)}\n• NI/Pension: ${formatGBPExact((cell?.employerNi || 0) + (cell?.employerPension || 0))}\n• Excluded Expenses Reimbursed: ${formatGBPExact(cell?.reimbursements || 0)}`}
                             >
@@ -2724,10 +2775,10 @@ export default function DepartmentTeamCostTab({
                             </td>
                           );
                         })}
-                        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, backgroundColor: 'rgba(99, 102, 241, 0.04)' }}>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, backgroundColor: 'rgba(99, 102, 241, 0.04)', width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                           {staffYtvTotal > 0 ? formatGBP(staffYtvTotal) : '—'}
                         </td>
-                        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)', width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                           {formatGBP(staffRowTotal)}
                         </td>
                       </tr>
@@ -2740,7 +2791,9 @@ export default function DepartmentTeamCostTab({
                   <>
                     <tr style={{ backgroundColor: 'rgba(99, 102, 241, 0.05)', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)' }}>
                       <td colSpan={monthsList.length + 3} style={{ padding: '6px 20px', fontSize: '10px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Apportioned SA Shared Costs &amp; Shared Roles (Headcount Split)
+                        <div style={{ position: 'sticky', left: '14px', display: 'inline-flex', alignItems: 'center' }}>
+                          Apportioned SA Shared Costs &amp; Shared Roles (Headcount Split)
+                        </div>
                       </td>
                     </tr>
 
@@ -2759,26 +2812,32 @@ export default function DepartmentTeamCostTab({
                           }}
                         >
                           <td style={{ 
-                            paddingLeft: '36px', 
+                            padding: '6px 12px 6px 28px', 
                             position: 'sticky', 
                             left: 0, 
                             backgroundColor: 'var(--bg-primary)', 
-                            zIndex: 1 
+                            zIndex: 1,
+                            width: '320px',
+                            minWidth: '320px',
+                            maxWidth: '320px',
+                            boxSizing: 'border-box',
+                            borderRight: '2px solid var(--border-color)'
                           }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                              <span style={{ color: 'var(--accent)' }}>↳</span>
-                              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.fullName}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                              <span style={{ color: 'var(--accent)', flexShrink: 0 }}>↳</span>
+                              <span style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.fullName}</span>
                               <span style={{
                                 fontSize: '9px',
                                 backgroundColor: s.companyId === 'comp-1782789370085' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(99, 102, 241, 0.12)',
                                 color: s.companyId === 'comp-1782789370085' ? 'var(--success)' : 'var(--accent)',
                                 padding: '1px 5px',
                                 borderRadius: '4px',
-                                fontWeight: 600
+                                fontWeight: 600,
+                                flexShrink: 0
                               }}>
-                                {s.companyId === 'comp-1782789370085' ? '🌍 SA Shared' : (s.jobTitle?.toLowerCase().includes('director') || s.jobTitle?.toLowerCase().includes('consulting')) ? '👑 Consulting Director' : '🤝 Shared Salary'}
+                                {s.companyId === 'comp-1782789370085' ? '🌍 SA' : (s.jobTitle?.toLowerCase().includes('director') || s.jobTitle?.toLowerCase().includes('consulting')) ? '👑 Dir' : '🤝 Shared'}
                               </span>
-                              <span style={{ color: 'var(--text-secondary)', fontSize: '10px' }}>
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '10px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 — {s.jobTitle || 'Shared Cost'}
                               </span>
                             </div>
@@ -2793,9 +2852,13 @@ export default function DepartmentTeamCostTab({
                               <td 
                                 key={m} 
                                 style={{ 
+                                  padding: '6px 6px',
                                   textAlign: 'right', 
                                   fontFamily: 'monospace', 
-                                  opacity: val > 0 ? 1 : 0.4 
+                                  opacity: val > 0 ? 1 : 0.4,
+                                  width: '85px',
+                                  minWidth: '85px',
+                                  boxSizing: 'border-box'
                                 }}
                                 title={`Shared Role: ${s.fullName}\nMonth: ${m}\n• Full Monthly Cost: ${formatGBPExact(d?.fullCost || 0)}\n• Team Apportionment: ${d?.subtext || '—'}\n• Apportioned Cost to Dept: ${formatGBPExact(val)}`}
                               >
@@ -2808,10 +2871,10 @@ export default function DepartmentTeamCostTab({
                               </td>
                             );
                           })}
-                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, backgroundColor: 'rgba(99, 102, 241, 0.04)' }}>
+                          <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, backgroundColor: 'rgba(99, 102, 241, 0.04)', width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                             {sharedYtvTotal > 0 ? formatGBP(sharedYtvTotal) : '—'}
                           </td>
-                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)', width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                             {formatGBP(sharedRowTotal)}
                           </td>
                         </tr>
@@ -2822,18 +2885,31 @@ export default function DepartmentTeamCostTab({
 
                 {/* Active Headcount row */}
                 <tr style={{ backgroundColor: 'var(--bg-secondary)', fontSize: '11px', borderBottom: '1px solid var(--border-color)' }}>
-                  <td style={{ paddingLeft: '36px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1, color: 'var(--text-secondary)' }}>
+                  <td style={{ 
+                    padding: '6px 12px 6px 28px', 
+                    position: 'sticky', 
+                    left: 0, 
+                    backgroundColor: 'var(--bg-secondary)', 
+                    zIndex: 1, 
+                    color: 'var(--text-secondary)',
+                    fontWeight: 600,
+                    width: '320px',
+                    minWidth: '320px',
+                    maxWidth: '320px',
+                    boxSizing: 'border-box',
+                    borderRight: '2px solid var(--border-color)'
+                  }}>
                     Active Team Headcount
                   </td>
                   {monthsList.map(m => (
-                    <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+                    <td key={m} style={{ padding: '6px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, width: '85px', minWidth: '85px', boxSizing: 'border-box' }}>
                       {monthlyHeadcount[m] || 0} active
                     </td>
                   ))}
-                  <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', color: 'var(--text-muted)' }}>
+                  <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', color: 'var(--text-muted)', width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                     —
                   </td>
-                  <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>
+                  <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                     {Math.round(combinedDepartmentTotals.avgHeadcount)} (Avg)
                   </td>
                 </tr>
@@ -2855,7 +2931,9 @@ export default function DepartmentTeamCostTab({
                   letterSpacing: '0.05em'
                 }}
               >
-                2. Software Licenses & CRM Systems (Contract Ratchet Engine) Overheads
+                <div style={{ position: 'sticky', left: '14px', display: 'inline-flex', alignItems: 'center' }}>
+                  2. Software Licenses & CRM Systems (Contract Ratchet Engine) Overheads
+                </div>
               </td>
             </tr>
 
@@ -2863,62 +2941,68 @@ export default function DepartmentTeamCostTab({
             <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-primary)' }}>
               <td 
                 style={{ 
-                  padding: '10px 14px', 
+                  padding: '8px 12px', 
                   position: 'sticky', 
                   left: 0, 
                   backgroundColor: 'var(--bg-primary)', 
                   zIndex: 2, 
                   cursor: 'pointer',
                   userSelect: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
+                  width: '320px',
+                  minWidth: '320px',
+                  maxWidth: '320px',
+                  boxSizing: 'border-box',
+                  borderRight: '2px solid var(--border-color)'
                 }}
                 onClick={() => setExpandedTools(!expandedTools)}
               >
-                <span style={{ fontSize: '11px', color: 'var(--accent)' }}>
-                  {expandedTools ? '▼' : '▶'}
-                </span>
-                <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
-                  Contracted Software & Tool Licenses
-                </span>
-                <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                  ({relevantTools.length} tools • Ratchet rules active)
-                </span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setToolSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-                  }}
-                  style={{
-                    marginLeft: 'auto',
-                    fontSize: '10px',
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: 'var(--bg-secondary)',
-                    color: 'var(--accent)',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontWeight: 600
-                  }}
-                  title="Click to toggle alphabetical sort order (A-Z / Z-A)"
-                >
-                  🔤 {toolSortOrder === 'asc' ? 'Sort: A → Z' : 'Sort: Z → A'}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--accent)', flexShrink: 0 }}>
+                    {expandedTools ? '▼' : '▶'}
+                  </span>
+                  <div style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
+                    <div style={{ fontWeight: 700, fontSize: '12.5px', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      Contracted Software & Tool Licenses
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {relevantTools.length} tools • Ratchet rules active
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setToolSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                    }}
+                    style={{
+                      flexShrink: 0,
+                      fontSize: '10px',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-secondary)',
+                      color: 'var(--accent)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      fontWeight: 600
+                    }}
+                    title="Click to toggle alphabetical sort order (A-Z / Z-A)"
+                  >
+                    🔤 {toolSortOrder === 'asc' ? 'A→Z' : 'Z→A'}
+                  </button>
+                </div>
               </td>
               {monthsList.map(m => (
-                <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#8b5cf6' }}>
+                <td key={m} style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#8b5cf6', width: '85px', minWidth: '85px', boxSizing: 'border-box' }}>
                   {formatGBP(toolTotals.monthlySum[m] || 0)}
                 </td>
               ))}
-              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, backgroundColor: 'rgba(99, 102, 241, 0.04)', color: '#8b5cf6' }}>
+              <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, backgroundColor: 'rgba(99, 102, 241, 0.04)', color: '#8b5cf6', width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                 {formatGBP(toolTotals.ytvTotal)}
               </td>
-              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#8b5cf6', fontSize: '13px' }}>
+              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#8b5cf6', fontSize: '13px', width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                 {formatGBP(toolTotals.grandTotal)}
               </td>
             </tr>
@@ -2945,16 +3029,21 @@ export default function DepartmentTeamCostTab({
                       }}
                     >
                       <td style={{ 
-                        paddingLeft: '36px', 
+                        padding: '6px 10px 6px 28px', 
                         position: 'sticky', 
                         left: 0, 
                         backgroundColor: 'var(--bg-primary)', 
-                        zIndex: 1 
+                        zIndex: 1,
+                        width: '320px',
+                        minWidth: '320px',
+                        maxWidth: '320px',
+                        boxSizing: 'border-box',
+                        borderRight: '2px solid var(--border-color)'
                       }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                            <span style={{ color: 'var(--text-muted)' }}>↳</span>
-                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{tool.name}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', width: '100%' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', minWidth: 0, overflow: 'hidden' }}>
+                            <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>↳</span>
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tool.name}</span>
 
                             {/* Cost Basis Badge */}
                             {effectiveBasis === 'per_seat' && (
@@ -2962,11 +3051,12 @@ export default function DepartmentTeamCostTab({
                                 fontSize: '9px',
                                 backgroundColor: 'rgba(99, 102, 241, 0.12)',
                                 color: 'var(--accent)',
-                                padding: '1px 5px',
+                                padding: '1px 4px',
                                 borderRadius: '4px',
-                                fontWeight: 600
+                                fontWeight: 600,
+                                flexShrink: 0
                               }}>
-                                👤 Per Seat
+                                👤 Seat
                               </span>
                             )}
                             {effectiveBasis === 'per_company' && (
@@ -2974,11 +3064,12 @@ export default function DepartmentTeamCostTab({
                                 fontSize: '9px',
                                 backgroundColor: 'rgba(16, 185, 129, 0.12)',
                                 color: 'var(--success)',
-                                padding: '1px 5px',
+                                padding: '1px 4px',
                                 borderRadius: '4px',
-                                fontWeight: 600
+                                fontWeight: 600,
+                                flexShrink: 0
                               }}>
-                                🏢 Per Company
+                                🏢 Comp
                               </span>
                             )}
                             {effectiveBasis === 'per_department' && (
@@ -2986,11 +3077,12 @@ export default function DepartmentTeamCostTab({
                                 fontSize: '9px',
                                 backgroundColor: 'rgba(79, 70, 229, 0.12)',
                                 color: '#4f46e5',
-                                padding: '1px 5px',
+                                padding: '1px 4px',
                                 borderRadius: '4px',
-                                fontWeight: 600
+                                fontWeight: 600,
+                                flexShrink: 0
                               }}>
-                                📁 Per Dept
+                                📁 Dept
                               </span>
                             )}
                             {effectiveBasis === 'fixed_total' && (
@@ -2998,63 +3090,24 @@ export default function DepartmentTeamCostTab({
                                 fontSize: '9px',
                                 backgroundColor: 'rgba(245, 158, 11, 0.15)',
                                 color: '#d97706',
-                                padding: '1px 5px',
+                                padding: '1px 4px',
                                 borderRadius: '4px',
-                                fontWeight: 600
+                                fontWeight: 600,
+                                flexShrink: 0
                               }}>
-                                ⚖️ Fixed Total ({splitMethod === 'pro_rata_headcount' ? 'Headcount Pro-Rata' : 'Equal Split'})
+                                ⚖️ Fixed
                               </span>
                             )}
 
-                            {/* Department Scope Badge */}
-                            <span style={{
-                              fontSize: '9px',
-                              backgroundColor: 'rgba(107, 114, 128, 0.12)',
-                              color: 'var(--text-secondary)',
-                              padding: '1px 5px',
-                              borderRadius: '4px',
-                              fontWeight: 600
-                            }}>
-                              {toolDepts.includes('all')
-                                ? 'All Depts'
-                                : (() => {
-                                    let totalDepts = 0;
-                                    const targetComps = toolComps.includes('all') ? companies.map(c => c.id) : toolComps;
-                                    targetComps.forEach(compId => {
-                                      const compDepts = companyDepartmentsMap[compId] || [];
-                                      const compEff = toolDepts.includes('all') ? compDepts : compDepts.filter(d => toolDepts.includes(d));
-                                      totalDepts += compEff.length;
-                                    });
-                                    const count = totalDepts || toolDepts.length;
-                                    return count === 1 ? toolDepts[0] : `${count} depts (${toolDepts.join(', ')})`;
-                                  })()}
-                            </span>
-
-                            {/* Company Scope Badge */}
-                            <span style={{
-                              fontSize: '9px',
-                              backgroundColor: 'rgba(107, 114, 128, 0.12)',
-                              color: 'var(--text-secondary)',
-                              padding: '1px 5px',
-                              borderRadius: '4px',
-                              fontWeight: 600
-                            }}>
-                              {toolComps.includes('all')
-                                ? 'All Companies'
-                                : (toolComps.length === 1
-                                    ? (companies.find(c => c.id === toolComps[0])?.name || toolComps[0])
-                                    : `${companies.find(c => c.id === toolComps[0])?.name || toolComps[0]} +${toolComps.length - 1}`)}
-                            </span>
-
                             {/* Rate Subtitle */}
-                            <span style={{ color: 'var(--text-secondary)', fontSize: '10px' }}>
-                              {effectiveBasis === 'per_seat' && `(${tool.baselineCommittedSeats || 0} seats baseline @ ${formatGBPExact(unitCostGBP)}/seat)`}
-                              {effectiveBasis === 'per_company' && `(${formatGBPExact(unitCostGBP)}/company/mo)`}
-                              {effectiveBasis === 'per_department' && `(${formatGBPExact(unitCostGBP)}/dept/mo)`}
-                              {effectiveBasis === 'fixed_total' && `(${formatGBPExact(unitCostGBP)}/mo fixed)`}
+                            <span style={{ color: 'var(--text-secondary)', fontSize: '9px', whiteSpace: 'nowrap' }}>
+                              {effectiveBasis === 'per_seat' && `(${formatGBPExact(unitCostGBP)}/seat)`}
+                              {effectiveBasis === 'per_company' && `(${formatGBPExact(unitCostGBP)}/co)`}
+                              {effectiveBasis === 'per_department' && `(${formatGBPExact(unitCostGBP)}/dept)`}
+                              {effectiveBasis === 'fixed_total' && `(${formatGBPExact(unitCostGBP)}/mo)`}
                             </span>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
                             <button
                               onClick={() => handleOpenEditTool(tool)}
                               style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '2px' }}
@@ -3074,7 +3127,7 @@ export default function DepartmentTeamCostTab({
                       </td>
                       {monthsList.map(m => {
                         const d = monthlyDetails[m];
-                        if (!d) return <td key={m} style={{ textAlign: 'right' }}>—</td>;
+                        if (!d) return <td key={m} style={{ padding: '6px 6px', textAlign: 'right', width: '85px', minWidth: '85px', boxSizing: 'border-box' }}>—</td>;
 
                         const hasUnutilized = effectiveBasis === 'per_seat' && d.unutilizedSeats > 0;
                         return (
@@ -3083,7 +3136,10 @@ export default function DepartmentTeamCostTab({
                             style={{ 
                               textAlign: 'right', 
                               fontFamily: 'monospace',
-                              padding: '8px 8px'
+                              padding: '6px 6px',
+                              width: '85px',
+                              minWidth: '85px',
+                              boxSizing: 'border-box'
                             }}
                             title={`Tool: ${tool.name}\nMonth: ${m}\n• Pricing Basis: ${effectiveBasis}\n• Monthly Cost: ${formatGBPExact(d.costGBP)}${effectiveBasis === 'per_seat' ? `\n• Committed: ${d.committedSeats} seats\n• Active: ${d.activeSeats}\n• Unutilized: ${d.unutilizedSeats} spare seats` : ''}`}
                           >
@@ -3098,10 +3154,10 @@ export default function DepartmentTeamCostTab({
                           </td>
                         );
                       })}
-                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, backgroundColor: 'rgba(99, 102, 241, 0.04)' }}>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, backgroundColor: 'rgba(99, 102, 241, 0.04)', width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                         {formatGBP(ytvCost)}
                       </td>
-                      <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#8b5cf6' }}>
+                      <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#8b5cf6', width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                         {formatGBP(periodTotalCost)}
                       </td>
                     </tr>
@@ -3126,78 +3182,137 @@ export default function DepartmentTeamCostTab({
                   letterSpacing: '0.05em'
                 }}
               >
-                3. Consolidated Department Summary & Team P&L Statement
+                <div style={{ position: 'sticky', left: '14px', display: 'inline-flex', alignItems: 'center' }}>
+                  3. Consolidated Department Summary & Team P&L Statement
+                </div>
               </td>
             </tr>
 
             {/* Row: Team Sales / Billings Revenue */}
             <tr style={{ fontSize: '12px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'rgba(16, 185, 129, 0.04)' }}>
-              <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1, fontWeight: 700, color: 'var(--success)' }}>
-                ➕ Team Sales & Placements Billings (Revenue)
+              <td style={{ 
+                padding: '8px 12px', 
+                position: 'sticky', 
+                left: 0, 
+                backgroundColor: 'var(--bg-primary)', 
+                zIndex: 2, 
+                fontWeight: 700, 
+                color: 'var(--success)',
+                width: '320px',
+                minWidth: '320px',
+                maxWidth: '320px',
+                boxSizing: 'border-box',
+                borderRight: '2px solid var(--border-color)'
+              }}>
+                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  ➕ Team Sales & Placements Billings
+                </div>
               </td>
               {monthsList.map(m => (
-                <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--success)' }}>
+                <td key={m} style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: 'var(--success)', width: '85px', minWidth: '85px', boxSizing: 'border-box' }}>
                   {formatGBP(teamSalesTotals.monthlySum[m] || 0)}
                 </td>
               ))}
-              <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(16, 185, 129, 0.1)', fontWeight: 700, color: 'var(--success)' }}>
+              <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(16, 185, 129, 0.1)', fontWeight: 700, color: 'var(--success)', width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                 {formatGBP(teamSalesTotals.ytvTotal)}
               </td>
-              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, color: 'var(--success)' }}>
+              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, color: 'var(--success)', width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                 {formatGBP(teamSalesTotals.grandTotal)}
               </td>
             </tr>
 
             {/* Row: Team Remuneration Summary */}
             <tr style={{ fontSize: '12px', borderBottom: '1px solid var(--border-color)' }}>
-              <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1, fontWeight: 600 }}>
-                ➖ 1. Team Remuneration (Salaries, Freelance & Commissions)
+              <td style={{ 
+                padding: '8px 12px', 
+                position: 'sticky', 
+                left: 0, 
+                backgroundColor: 'var(--bg-primary)', 
+                zIndex: 2, 
+                fontWeight: 600,
+                width: '320px',
+                minWidth: '320px',
+                maxWidth: '320px',
+                boxSizing: 'border-box',
+                borderRight: '2px solid var(--border-color)'
+              }}>
+                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  ➖ 1. Team Remuneration (Salaries & Comm)
+                </div>
               </td>
               {monthsList.map(m => (
-                <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                <td key={m} style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', width: '85px', minWidth: '85px', boxSizing: 'border-box' }}>
                   {formatGBP(staffRemunerationTotals.monthlySum[m] || 0)}
                 </td>
               ))}
-              <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', fontWeight: 600 }}>
+              <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', fontWeight: 600, width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                 {formatGBP(staffRemunerationTotals.ytvTotal)}
               </td>
-              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                 {formatGBP(staffRemunerationTotals.grandTotal)}
               </td>
             </tr>
 
             {/* Row: Software Tools Summary */}
             <tr style={{ fontSize: '12px', borderBottom: '1px solid var(--border-color)' }}>
-              <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-primary)', zIndex: 1, fontWeight: 600 }}>
-                ➖ 2. Contracted Software & Tool Licenses
+              <td style={{ 
+                padding: '8px 12px', 
+                position: 'sticky', 
+                left: 0, 
+                backgroundColor: 'var(--bg-primary)', 
+                zIndex: 2, 
+                fontWeight: 600,
+                width: '320px',
+                minWidth: '320px',
+                maxWidth: '320px',
+                boxSizing: 'border-box',
+                borderRight: '2px solid var(--border-color)'
+              }}>
+                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  ➖ 2. Contracted Software & Tool Licenses
+                </div>
               </td>
               {monthsList.map(m => (
-                <td key={m} style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                <td key={m} style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', width: '85px', minWidth: '85px', boxSizing: 'border-box' }}>
                   {formatGBP(toolTotals.monthlySum[m] || 0)}
                 </td>
               ))}
-              <td style={{ textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', fontWeight: 600 }}>
+              <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', backgroundColor: 'rgba(99, 102, 241, 0.04)', fontWeight: 600, width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                 {formatGBP(toolTotals.ytvTotal)}
               </td>
-              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                 {formatGBP(toolTotals.grandTotal)}
               </td>
             </tr>
 
             {/* Grand Total Operating Cost Row */}
             <tr style={{ backgroundColor: 'var(--bg-secondary)', fontWeight: 800, borderTop: '2px solid var(--border-color)', borderBottom: '1px solid var(--border-color)', fontSize: '13px' }}>
-              <td style={{ padding: '10px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 2, color: 'var(--text-primary)' }}>
-                TOTAL DEPARTMENT OPERATING COSTS (Team + Tools)
+              <td style={{ 
+                padding: '10px 12px', 
+                position: 'sticky', 
+                left: 0, 
+                backgroundColor: 'var(--bg-secondary)', 
+                zIndex: 3, 
+                color: 'var(--text-primary)',
+                width: '320px',
+                minWidth: '320px',
+                maxWidth: '320px',
+                boxSizing: 'border-box',
+                borderRight: '2px solid var(--border-color)'
+              }}>
+                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  TOTAL OPERATING COSTS (Team + Tools)
+                </div>
               </td>
               {monthsList.map(m => (
-                <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+                <td key={m} style={{ padding: '10px 6px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-primary)', width: '85px', minWidth: '85px', boxSizing: 'border-box' }}>
                   {formatGBP(combinedDepartmentTotals.monthlySum[m] || 0)}
                 </td>
               ))}
-              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-primary)', backgroundColor: 'rgba(99, 102, 241, 0.1)' }}>
+              <td style={{ padding: '10px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-primary)', backgroundColor: 'rgba(99, 102, 241, 0.1)', width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                 {formatGBP(combinedDepartmentTotals.ytvTotal)}
               </td>
-              <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-primary)', fontSize: '14px' }}>
+              <td style={{ padding: '10px 10px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-primary)', fontSize: '14px', width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                 {formatGBP(combinedDepartmentTotals.grandTotal)}
               </td>
             </tr>
@@ -3210,48 +3325,62 @@ export default function DepartmentTeamCostTab({
               fontSize: '13px' 
             }}>
               <td style={{ 
-                padding: '12px 14px', 
+                padding: '10px 12px', 
                 position: 'sticky', 
                 left: 0, 
-                backgroundColor: departmentPnlTotals.grandNetProfit >= 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', 
-                zIndex: 2, 
-                color: departmentPnlTotals.grandNetProfit >= 0 ? 'var(--success)' : '#ef4444' 
+                backgroundColor: 'var(--bg-secondary)', 
+                zIndex: 3, 
+                color: departmentPnlTotals.grandNetProfit >= 0 ? 'var(--success)' : '#ef4444',
+                width: '320px',
+                minWidth: '320px',
+                maxWidth: '320px',
+                boxSizing: 'border-box',
+                borderRight: '2px solid var(--border-color)'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>🏆 DEPARTMENT NET PROFIT / CONTRIBUTION (P&L)</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <span>🏆 NET PROFIT / CONTRIBUTION (P&L)</span>
                 </div>
               </td>
               {monthsList.map(m => {
                 const profit = departmentPnlTotals.monthlyNetProfit[m] || 0;
                 return (
                   <td key={m} style={{ 
-                    padding: '12px 8px', 
+                    padding: '10px 6px', 
                     textAlign: 'right', 
                     fontFamily: 'monospace', 
                     color: profit >= 0 ? 'var(--success)' : '#ef4444',
-                    fontWeight: 800 
+                    fontWeight: 800,
+                    width: '85px',
+                    minWidth: '85px',
+                    boxSizing: 'border-box'
                   }}>
                     {profit >= 0 ? '+' : ''}{formatGBP(profit)}
                   </td>
                 );
               })}
               <td style={{ 
-                padding: '12px 12px', 
+                padding: '10px 8px', 
                 textAlign: 'right', 
                 fontFamily: 'monospace', 
                 color: departmentPnlTotals.ytvNetProfit >= 0 ? 'var(--success)' : '#ef4444', 
                 fontWeight: 800,
-                backgroundColor: departmentPnlTotals.ytvNetProfit >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)' 
+                backgroundColor: departmentPnlTotals.ytvNetProfit >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                width: '95px',
+                minWidth: '95px',
+                boxSizing: 'border-box'
               }}>
                 {departmentPnlTotals.ytvNetProfit >= 0 ? '+' : ''}{formatGBP(departmentPnlTotals.ytvNetProfit)}
               </td>
               <td style={{ 
-                padding: '12px 12px', 
+                padding: '10px 10px', 
                 textAlign: 'right', 
                 fontFamily: 'monospace', 
                 color: departmentPnlTotals.grandNetProfit >= 0 ? 'var(--success)' : '#ef4444', 
                 fontSize: '15px',
-                fontWeight: 900 
+                fontWeight: 900,
+                width: '105px',
+                minWidth: '105px',
+                boxSizing: 'border-box'
               }}>
                 {departmentPnlTotals.grandNetProfit >= 0 ? '+' : ''}{formatGBP(departmentPnlTotals.grandNetProfit)}
               </td>
@@ -3259,57 +3388,101 @@ export default function DepartmentTeamCostTab({
 
             {/* Net Margin % Row */}
             <tr style={{ backgroundColor: 'rgba(99, 102, 241, 0.04)', fontSize: '11px', borderBottom: '1px solid var(--border-color)' }}>
-              <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1, color: 'var(--text-secondary)', fontWeight: 600 }}>
-                Net Margin % (Profit ÷ Sales)
+              <td style={{ 
+                padding: '8px 12px', 
+                position: 'sticky', 
+                left: 0, 
+                backgroundColor: 'var(--bg-secondary)', 
+                zIndex: 2, 
+                color: 'var(--text-secondary)', 
+                fontWeight: 600,
+                width: '320px',
+                minWidth: '320px',
+                maxWidth: '320px',
+                boxSizing: 'border-box',
+                borderRight: '2px solid var(--border-color)'
+              }}>
+                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Net Margin % (Profit ÷ Sales)
+                </div>
               </td>
               {monthsList.map(m => {
                 const margin = departmentPnlTotals.monthlyMarginPct[m] || 0;
                 return (
-                  <td key={m} style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', color: margin >= 0 ? 'var(--success)' : '#ef4444', fontWeight: 600 }}>
+                  <td key={m} style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', color: margin >= 0 ? 'var(--success)' : '#ef4444', fontWeight: 600, width: '85px', minWidth: '85px', boxSizing: 'border-box' }}>
                     {margin !== 0 ? `${margin.toFixed(1)}%` : '—'}
                   </td>
                 );
               })}
-              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
+              <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)', width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                 —
               </td>
-              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', color: departmentPnlTotals.overallMarginPct >= 0 ? 'var(--success)' : '#ef4444', fontWeight: 700 }}>
+              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', color: departmentPnlTotals.overallMarginPct >= 0 ? 'var(--success)' : '#ef4444', fontWeight: 700, width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                 {departmentPnlTotals.overallMarginPct.toFixed(1)}%
               </td>
             </tr>
 
             {/* Average Net Contribution Per Head Row */}
             <tr style={{ backgroundColor: 'rgba(16, 185, 129, 0.04)', fontSize: '11px', borderBottom: '1px solid var(--border-color)' }}>
-              <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1, color: 'var(--text-secondary)', fontWeight: 600 }}>
-                Average Net Contribution per Consultant
+              <td style={{ 
+                padding: '8px 12px', 
+                position: 'sticky', 
+                left: 0, 
+                backgroundColor: 'var(--bg-secondary)', 
+                zIndex: 2, 
+                color: 'var(--text-secondary)', 
+                fontWeight: 600,
+                width: '320px',
+                minWidth: '320px',
+                maxWidth: '320px',
+                boxSizing: 'border-box',
+                borderRight: '2px solid var(--border-color)'
+              }}>
+                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Average Net Contribution / Consultant
+                </div>
               </td>
               {monthsList.map(m => (
-                <td key={m} style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', color: (departmentPnlTotals.monthlyNetContributionPerHead[m] || 0) >= 0 ? 'var(--success)' : '#ef4444' }}>
+                <td key={m} style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', color: (departmentPnlTotals.monthlyNetContributionPerHead[m] || 0) >= 0 ? 'var(--success)' : '#ef4444', width: '85px', minWidth: '85px', boxSizing: 'border-box' }}>
                   {formatGBP(departmentPnlTotals.monthlyNetContributionPerHead[m] || 0)}
                 </td>
               ))}
-              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
+              <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)', width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                 —
               </td>
-              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', color: departmentPnlTotals.overallContributionPerHead >= 0 ? 'var(--success)' : '#ef4444', fontWeight: 700 }}>
+              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', color: departmentPnlTotals.overallContributionPerHead >= 0 ? 'var(--success)' : '#ef4444', fontWeight: 700, width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                 {formatGBP(departmentPnlTotals.overallContributionPerHead)}
               </td>
             </tr>
 
             {/* Average Cost Per Head Row */}
             <tr style={{ backgroundColor: 'rgba(59, 130, 246, 0.04)', fontSize: '11px', borderBottom: '1px solid var(--border-color)' }}>
-              <td style={{ padding: '8px 14px', position: 'sticky', left: 0, backgroundColor: 'var(--bg-secondary)', zIndex: 1, color: 'var(--text-secondary)' }}>
-                Average Operating Cost per Recruiter / Head
+              <td style={{ 
+                padding: '8px 12px', 
+                position: 'sticky', 
+                left: 0, 
+                backgroundColor: 'var(--bg-secondary)', 
+                zIndex: 2, 
+                color: 'var(--text-secondary)',
+                width: '320px',
+                minWidth: '320px',
+                maxWidth: '320px',
+                boxSizing: 'border-box',
+                borderRight: '2px solid var(--border-color)'
+              }}>
+                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Average Operating Cost / Head
+                </div>
               </td>
               {monthsList.map(m => (
-                <td key={m} style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                <td key={m} style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-secondary)', width: '85px', minWidth: '85px', boxSizing: 'border-box' }}>
                   {formatGBP(combinedDepartmentTotals.avgCostPerHead[m] || 0)}
                 </td>
               ))}
-              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
+              <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)', width: '95px', minWidth: '95px', boxSizing: 'border-box' }}>
                 —
               </td>
-              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-secondary)', fontWeight: 700 }}>
+              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-secondary)', fontWeight: 700, width: '105px', minWidth: '105px', boxSizing: 'border-box' }}>
                 {formatGBP(combinedDepartmentTotals.overallAvgCostPerHead)}
               </td>
             </tr>
@@ -3323,14 +3496,19 @@ export default function DepartmentTeamCostTab({
               fontSize: '13px' 
             }}>
               <td style={{ 
-                padding: '12px 14px', 
+                padding: '10px 12px', 
                 position: 'sticky', 
                 left: 0, 
-                backgroundColor: 'rgba(99, 102, 241, 0.18)', 
-                zIndex: 2, 
-                color: 'var(--accent)' 
+                backgroundColor: 'var(--bg-secondary)', 
+                zIndex: 3, 
+                color: 'var(--accent)',
+                width: '320px',
+                minWidth: '320px',
+                maxWidth: '320px',
+                boxSizing: 'border-box',
+                borderRight: '2px solid var(--border-color)'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   <span>📈 CUMULATIVE RUNNING BALANCE (P&L)</span>
                 </div>
               </td>
@@ -3338,34 +3516,43 @@ export default function DepartmentTeamCostTab({
                 const bal = departmentPnlTotals.monthlyRunningBalance[m] || 0;
                 return (
                   <td key={m} style={{ 
-                    padding: '12px 8px', 
+                    padding: '10px 6px', 
                     textAlign: 'right', 
                     fontFamily: 'monospace', 
                     color: bal >= 0 ? 'var(--success)' : '#ef4444',
-                    fontWeight: 800 
+                    fontWeight: 800,
+                    width: '85px',
+                    minWidth: '85px',
+                    boxSizing: 'border-box'
                   }}>
                     {bal >= 0 ? '+' : ''}{formatGBP(bal)}
                   </td>
                 );
               })}
               <td style={{ 
-                padding: '12px 12px', 
+                padding: '10px 8px', 
                 textAlign: 'right', 
                 fontFamily: 'monospace', 
                 color: (departmentPnlTotals.monthlyRunningBalance[reconciledCutoffMonth] ?? departmentPnlTotals.ytvNetProfit) >= 0 ? 'var(--success)' : '#ef4444', 
                 fontWeight: 800,
-                backgroundColor: 'rgba(99, 102, 241, 0.22)' 
+                backgroundColor: 'rgba(99, 102, 241, 0.22)',
+                width: '95px',
+                minWidth: '95px',
+                boxSizing: 'border-box'
               }}>
                 {(departmentPnlTotals.monthlyRunningBalance[reconciledCutoffMonth] ?? departmentPnlTotals.ytvNetProfit) >= 0 ? '+' : ''}
                 {formatGBP(departmentPnlTotals.monthlyRunningBalance[reconciledCutoffMonth] ?? departmentPnlTotals.ytvNetProfit)}
               </td>
               <td style={{ 
-                padding: '12px 12px', 
+                padding: '10px 10px', 
                 textAlign: 'right', 
                 fontFamily: 'monospace', 
                 color: departmentPnlTotals.grandNetProfit >= 0 ? 'var(--success)' : '#ef4444', 
                 fontSize: '15px',
-                fontWeight: 900 
+                fontWeight: 900,
+                width: '105px',
+                minWidth: '105px',
+                boxSizing: 'border-box'
               }}>
                 {departmentPnlTotals.grandNetProfit >= 0 ? '+' : ''}{formatGBP(departmentPnlTotals.grandNetProfit)}
               </td>

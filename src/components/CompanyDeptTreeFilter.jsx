@@ -9,7 +9,8 @@ export default function CompanyDeptTreeFilter({
   onChange,
   placeholder = "Select Entity / Department",
   style = {},
-  dropdownWidth = '380px'
+  dropdownWidth = '380px',
+  compact = false
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -247,27 +248,29 @@ export default function CompanyDeptTreeFilter({
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         style={{
-          width: '100%',
-          padding: '8px 12px',
-          backgroundColor: 'var(--bg-primary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-md)',
-          color: 'var(--text-primary)',
-          fontSize: '12px',
-          display: 'flex',
-          justify: 'space-between',
-          alignItems: 'center',
-          cursor: 'pointer',
-          boxShadow: 'var(--shadow-sm)'
+          width: "100%",
+          padding: compact ? "2px 8px" : "8px 12px",
+          backgroundColor: "var(--bg-primary)",
+          border: "1px solid var(--border-color)",
+          borderRadius: compact ? "4px" : "var(--radius-md)",
+          color: "var(--text-primary)",
+          fontSize: compact ? "11px" : "12px",
+          height: compact ? "24px" : "auto",
+          minHeight: compact ? "24px" : "36px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          cursor: "pointer",
+          boxShadow: "var(--shadow-sm)"
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-          <Building2 size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-          <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div style={{ display: "flex", alignItems: "center", gap: compact ? "4px" : "8px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+          <Building2 size={compact ? 12 : 14} style={{ color: "var(--primary)", flexShrink: 0 }} />
+          <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", fontSize: compact ? "11px" : "12px" }}>
             {getButtonLabel()}
           </span>
         </div>
-        <ChevronDown size={14} style={{ color: 'var(--text-muted)', flexShrink: 0, transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+        <ChevronDown size={compact ? 12 : 14} style={{ color: "var(--text-muted)", flexShrink: 0, transform: isOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
       </button>
 
       {/* Dropdown Content */}

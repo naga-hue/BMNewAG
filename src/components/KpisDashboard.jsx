@@ -5,6 +5,7 @@ import { useBoundStore } from '../store/useBoundStore';
 import WebhookLogsTab from './WebhookLogsTab';
 import CRMImporterTab from './CRMImporterTab';
 import MultiSelectFilter from './MultiSelectFilter';
+import CompanyDeptTreeFilter from './CompanyDeptTreeFilter';
 import { 
   Phone, 
   PhoneIncoming, 
@@ -1100,7 +1101,17 @@ export default function KpisDashboard({
   const [selectedStaffId, setSelectedStaffId] = useState(
     userRole === 'recruiter' ? currentUser.id : 'all'
   );
-  const [selectedCompanyId, setSelectedCompanyId] = useState('all');
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState(['all']);
+
+  const isAllCompanies = useMemo(() => {
+    return !selectedCompanyIds || selectedCompanyIds.length === 0 || selectedCompanyIds.includes('all');
+  }, [selectedCompanyIds]);
+
+  const selectedCompanyId = useMemo(() => {
+    if (isAllCompanies) return 'all';
+    if (selectedCompanyIds.length === 1) return selectedCompanyIds[0];
+    return 'multiple';
+  }, [isAllCompanies, selectedCompanyIds]);
 
   // Overview / Daily Activity tab date range states
   const [overviewTimeRange, setOverviewTimeRange] = useState('today');
@@ -1822,12 +1833,12 @@ export default function KpisDashboard({
       if (!isAllDepts) {
         list = staff.filter(s => s.department && selectedDepts.includes(s.department));
       }
-      if (selectedCompanyId !== 'all') {
-        list = list.filter(s => s.companyId === selectedCompanyId);
+      if (!isAllCompanies) {
+        list = list.filter(s => s.companyId && selectedCompanyIds.includes(s.companyId));
       }
     }
     return list.filter(isStaffDialpadTracked);
-  }, [staff, selectedDepts, isAllDepts, selectedCompanyId, userRole, userDept, currentUser.id]);
+  }, [staff, selectedDepts, isAllDepts, selectedCompanyIds, isAllCompanies, userRole, userDept, currentUser.id]);
 
   // Calculate daily activity date range window for Overview sub-tab (Today, Yesterday, Day Before Yesterday, Custom)
   const overviewDateRangeWindow = useMemo(() => {
@@ -2723,7 +2734,7 @@ export default function KpisDashboard({
         // Apply filters
         if (selectedStaffId !== 'all' && doc.staffId !== selectedStaffId) return;
         if (!isAllDepts && (!staffMember.department || !selectedDepts.includes(staffMember.department))) return;
-        if (selectedCompanyId !== 'all' && staffMember.companyId !== selectedCompanyId) return;
+        if (!isAllCompanies && (!staffMember.companyId || !selectedCompanyIds.includes(staffMember.companyId))) return;
 
         const countOver5 = doc.callsOver5Min || 0;
         const totalCalls = doc.callsTotal || 0;
@@ -2769,7 +2780,7 @@ export default function KpisDashboard({
     });
 
     return list.sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
-  }, [kpiDocs, effectiveCallsWindow, staff, selectedStaffId, selectedDepts, isAllDepts, selectedCompanyId]);
+  }, [kpiDocs, effectiveCallsWindow, staff, selectedStaffId, selectedDepts, isAllDepts, selectedCompanyIds, isAllCompanies]);
 
   // Format the raw live calls from the webhook database
   const formattedLiveCalls = useMemo(() => {
@@ -2860,13 +2871,13 @@ export default function KpisDashboard({
         if (call.date && (call.date < start || call.date > end)) return false;
         if (selectedStaffId !== 'all' && call.staffId !== selectedStaffId) return false;
         if (!isAllDepts && (!call.department || !selectedDepts.includes(call.department))) return false;
-        if (selectedCompanyId !== 'all') {
+        if (!isAllCompanies) {
           const staffMember = staffMap.get(call.staffId);
-          if (!staffMember || staffMember.companyId !== selectedCompanyId) return false;
+          if (!staffMember || !staffMember.companyId || !selectedCompanyIds.includes(staffMember.companyId)) return false;
         }
         return true;
       });
-  }, [liveCalls, effectiveCallsWindow, selectedStaffId, selectedDepts, isAllDepts, selectedCompanyId, staff]);
+  }, [liveCalls, effectiveCallsWindow, selectedStaffId, selectedDepts, isAllDepts, selectedCompanyIds, isAllCompanies, staff]);
 
   const displayCallsList = useMemo(() => {
     const rawList = hasRealCalls ? formattedLiveCalls : mockCallsList;
@@ -3500,9 +3511,13 @@ export default function KpisDashboard({
         if (!doc.staffId) return false;
         if (selectedStaffId !== 'all' && doc.staffId !== selectedStaffId) return false;
         if (!isAllDepts && (!doc.department || !selectedDepts.includes(doc.department))) return false;
+        if (!isAllCompanies) {
+          const matchedStaff = staff.find(s => s.id === doc.staffId);
+          if (!matchedStaff || !matchedStaff.companyId || !selectedCompanyIds.includes(matchedStaff.companyId)) return false;
+        }
         return true;
       });
-  }, [qandleDocs, staff, selectedStaffId, selectedDepts, isAllDepts]);
+  }, [qandleDocs, staff, selectedStaffId, selectedDepts, isAllDepts, selectedCompanyIds, isAllCompanies]);
 
   // Filter, search, and sort Qandle activities
   const filteredAndSearchedQandle = useMemo(() => {
@@ -3578,9 +3593,13 @@ export default function KpisDashboard({
         if (crmActivityFilter !== 'all' && doc.activityType !== crmActivityFilter) return false;
         if (selectedStaffId !== 'all' && doc.recruiterId !== selectedStaffId) return false;
         if (!isAllDepts && (!doc.department || !selectedDepts.includes(doc.department))) return false;
+        if (!isAllCompanies) {
+          const matchedRecruiter = staffMap.get(doc.recruiterId);
+          if (!matchedRecruiter || !matchedRecruiter.companyId || !selectedCompanyIds.includes(matchedRecruiter.companyId)) return false;
+        }
         return true;
       });
-  }, [crmDocs, staff, crmActivityFilter, selectedStaffId, selectedDepts, isAllDepts, activeSubTab]);
+  }, [crmDocs, staff, crmActivityFilter, selectedStaffId, selectedDepts, isAllDepts, selectedCompanyIds, isAllCompanies, activeSubTab]);
 
   const filteredAndSearchedCrm = useMemo(() => {
     const list = displayCrmList;
@@ -3735,23 +3754,24 @@ export default function KpisDashboard({
             </div>
 
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-              {/* Department Multi-Select Filter */}
+              {/* Entity / Department Tree Filter */}
               {(userRole === 'admin' || userRole === 'director' || currentUser?.permissions?.dataScope === 'team') && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Dept:</span>
-                  <MultiSelectFilter
-                    options={[
-                      { value: 'all', label: 'All Departments' },
-                      ...departments.map(d => ({ value: d, label: d }))
-                    ]}
-                    selectedValues={selectedDepts}
-                    onChange={(newDepts) => {
-                      setSelectedDepts(newDepts);
-                      setSelectedStaffId('all'); // reset staff filter when depts change
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Entity / Dept:</span>
+                  <CompanyDeptTreeFilter
+                    companies={companies}
+                    staff={staff}
+                    selectedCompanyIds={selectedCompanyIds}
+                    selectedDepartments={selectedDepts}
+                    onChange={({ companyIds, departments }) => {
+                      setSelectedCompanyIds(companyIds);
+                      setSelectedDepts(departments);
+                      setSelectedStaffId('all'); // reset staff filter when tree selection changes
                     }}
-                    placeholder="All Departments"
+                    placeholder="All Companies & Departments (Consolidated)"
                     compact={true}
-                    style={{ minWidth: '140px', maxWidth: '200px' }}
+                    style={{ width: '280px' }}
+                    dropdownWidth="380px"
                   />
                 </div>
               )}
@@ -3767,9 +3787,9 @@ export default function KpisDashboard({
                     style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', height: '24px' }}
                   >
                     <option value="all">
-                      {isAllDepts 
+                      {isAllDepts && isAllCompanies
                         ? 'All Personnel' 
-                        : (selectedDepts.length === 1 ? `All in ${selectedDepts[0]}` : `All in ${selectedDepts.length} Selected Departments`)}
+                        : (selectedDepts.length === 1 && isAllCompanies ? `All in ${selectedDepts[0]}` : `All in Filtered Selection (${filteredStaffList.length})`)}
                     </option>
                     {filteredStaffList.map(s => (
                       <option key={s.id} value={s.id}>{s.fullName}</option>
@@ -3777,25 +3797,6 @@ export default function KpisDashboard({
                   </select>
                 </div>
               )}
-
-              {/* Company Filter */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Company:</span>
-                <select
-                  value={selectedCompanyId}
-                  onChange={(e) => {
-                    setSelectedCompanyId(e.target.value);
-                    setSelectedStaffId('all'); // Reset individual staff select when company changes
-                  }}
-                  className="select-filter"
-                  style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', height: '24px' }}
-                >
-                  <option value="all">All Companies</option>
-                  {Array.isArray(companies) && companies.map(c => (
-                    <option key={c.id} value={c.id}>{c.name || c.legalName || 'Unnamed Company'}</option>
-                  ))}
-                </select>
-              </div>
             </div>
           </div>
           

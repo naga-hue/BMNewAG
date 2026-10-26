@@ -1445,45 +1445,63 @@ Yours sincerely,
                     <div className="detail-section" style={{ gridColumn: 'span 2', padding: '16px', marginTop: '16px', borderLeft: '4px solid var(--primary)', backgroundColor: 'rgba(99, 102, 241, 0.03)' }}>
                       <div className="section-title" style={{ color: 'var(--primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <ArrowRightLeft size={16} /> Inter-Company Transfer History ({staffMember.companyTransfers.length})
+                          <ArrowRightLeft size={16} /> Staff Transfer History ({staffMember.companyTransfers.length})
                         </span>
                       </div>
                       
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {staffMember.companyTransfers.map((t, idx) => (
-                          <div 
-                            key={t.id || idx}
-                            style={{
-                              padding: '12px',
-                              borderRadius: '6px',
-                              backgroundColor: 'var(--bg-secondary)',
-                              border: '1px solid var(--border-color)',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '6px'
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                {t.fromCompanyName} ➔ {t.toCompanyName}
-                              </span>
-                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                Transferred: {new Date(t.transferredAt || t.effectiveStartDate).toLocaleDateString()}
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', gap: '16px', fontSize: '11px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
-                              <span>Exit from Old Entity: <strong>{t.exitDateFromPreviousCompany}</strong></span>
-                              <span>Effective in New Entity: <strong>{t.effectiveStartDate}</strong></span>
-                              {t.toDepartment && <span>Dept: <strong>{t.toDepartment}</strong></span>}
-                            </div>
+                        {staffMember.companyTransfers.map((t, idx) => {
+                          const isDeptTransfer = t.transferType === 'department' || (t.fromCompanyId && t.toCompanyId && t.fromCompanyId === t.toCompanyId);
+                          return (
+                            <div 
+                              key={t.id || idx}
+                              style={{
+                                padding: '12px',
+                                borderRadius: '6px',
+                                backgroundColor: 'var(--bg-secondary)',
+                                border: '1px solid var(--border-color)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '6px'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    backgroundColor: isDeptTransfer ? 'rgba(59, 130, 246, 0.15)' : 'rgba(168, 85, 247, 0.15)',
+                                    color: isDeptTransfer ? '#3b82f6' : '#a855f7'
+                                  }}>
+                                    {isDeptTransfer ? 'Inter-Departmental' : 'Inter-Company'}
+                                  </span>
+                                  <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {isDeptTransfer 
+                                      ? `${t.fromDepartment || 'General'} ➔ ${t.toDepartment} (${t.toCompanyName || t.fromCompanyName})`
+                                      : `${t.fromCompanyName} ➔ ${t.toCompanyName}${t.toDepartment ? ` (${t.toDepartment})` : ''}`
+                                    }
+                                  </span>
+                                </div>
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                  Transferred: {new Date(t.transferredAt || t.effectiveStartDate).toLocaleDateString()}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', gap: '16px', fontSize: '11px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                                <span>{isDeptTransfer ? 'Last Day in Old Dept:' : 'Exit from Old Entity:'} <strong>{t.exitDateFromPreviousCompany}</strong></span>
+                                <span>{isDeptTransfer ? 'Effective in New Dept:' : 'Effective in New Entity:'} <strong>{t.effectiveStartDate}</strong></span>
+                                {t.toDepartment && <span>New Department: <strong>{t.toDepartment}</strong></span>}
+                              </div>
                             {t.notes && (
                               <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '2px' }}>
                                 &ldquo;{t.notes}&rdquo;
                               </div>
                             )}
                           </div>
-                        ))}
-                      </div>
+                        );
+                      })}
+                    </div>
                     </div>
                   )}
                 </div>

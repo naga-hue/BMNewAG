@@ -3537,7 +3537,7 @@ export default function App() {
                             {s.status !== 'exited' && (
                               <button 
                                 className="btn-icon" 
-                                title="Transfer to another company" 
+                                title="Transfer Staff (Inter-Company / Inter-Departmental)" 
                                 onClick={(e) => handleOpenStaffTransfer(s, e)}
                                 style={{ color: 'var(--primary)' }}
                               >
@@ -3666,7 +3666,7 @@ export default function App() {
                                 {s.status !== 'exited' && (
                                   <button 
                                     className="btn-icon" 
-                                    title="Transfer to another company" 
+                                    title="Transfer Staff (Inter-Company / Inter-Departmental)" 
                                     onClick={(e) => handleOpenStaffTransfer(s, e)}
                                     style={{ color: 'var(--primary)' }}
                                   >
@@ -4031,6 +4031,7 @@ export default function App() {
         }}
         staffMember={transferModalStaff}
         companies={companies}
+        staff={staff}
         payrollPolicies={payrollPolicies}
         leavePolicies={leavePolicies}
         commissionPolicies={commissionPolicies}

@@ -4,6 +4,7 @@ import { collection, getDocs, query, where, limit, orderBy, onSnapshot, getDocsF
 import { useBoundStore } from '../store/useBoundStore';
 import WebhookLogsTab from './WebhookLogsTab';
 import CRMImporterTab from './CRMImporterTab';
+import MultiSelectFilter from './MultiSelectFilter';
 import { 
   Phone, 
   PhoneIncoming, 
@@ -1080,10 +1081,22 @@ export default function KpisDashboard({
   const userRole = currentUser?.permissions?.role || 'recruiter';
   const userDept = currentUser?.department || '';
   
-  // Set default view depending on permissions
-  const [selectedDept, setSelectedDept] = useState(
-    (userRole === 'admin' || currentUser?.permissions?.dataScope === 'all') ? 'all' : userDept
+  // Set default view depending on permissions (supports multi-select of departments)
+  const [selectedDepts, setSelectedDepts] = useState(
+    (userRole === 'admin' || currentUser?.permissions?.dataScope === 'all') 
+      ? ['all'] 
+      : (userDept ? [userDept] : ['all'])
   );
+
+  const isAllDepts = useMemo(() => {
+    return !selectedDepts || selectedDepts.length === 0 || selectedDepts.includes('all');
+  }, [selectedDepts]);
+
+  const selectedDept = useMemo(() => {
+    if (isAllDepts) return 'all';
+    if (selectedDepts.length === 1) return selectedDepts[0];
+    return 'multiple';
+  }, [isAllDepts, selectedDepts]);
   const [selectedStaffId, setSelectedStaffId] = useState(
     userRole === 'recruiter' ? currentUser.id : 'all'
   );
@@ -1806,15 +1819,15 @@ export default function KpisDashboard({
     if (userRole === 'recruiter') {
       list = staff.filter(s => s.id === currentUser.id);
     } else {
-      if (selectedDept !== 'all') {
-        list = staff.filter(s => s.department === selectedDept);
+      if (!isAllDepts) {
+        list = staff.filter(s => s.department && selectedDepts.includes(s.department));
       }
       if (selectedCompanyId !== 'all') {
         list = list.filter(s => s.companyId === selectedCompanyId);
       }
     }
     return list.filter(isStaffDialpadTracked);
-  }, [staff, selectedDept, selectedCompanyId, userRole, userDept, currentUser.id]);
+  }, [staff, selectedDepts, isAllDepts, selectedCompanyId, userRole, userDept, currentUser.id]);
 
   // Calculate daily activity date range window for Overview sub-tab (Today, Yesterday, Day Before Yesterday, Custom)
   const overviewDateRangeWindow = useMemo(() => {
@@ -2709,7 +2722,7 @@ export default function KpisDashboard({
 
         // Apply filters
         if (selectedStaffId !== 'all' && doc.staffId !== selectedStaffId) return;
-        if (selectedDept !== 'all' && staffMember.department !== selectedDept) return;
+        if (!isAllDepts && (!staffMember.department || !selectedDepts.includes(staffMember.department))) return;
         if (selectedCompanyId !== 'all' && staffMember.companyId !== selectedCompanyId) return;
 
         const countOver5 = doc.callsOver5Min || 0;
@@ -2756,7 +2769,7 @@ export default function KpisDashboard({
     });
 
     return list.sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
-  }, [kpiDocs, effectiveCallsWindow, staff, selectedStaffId, selectedDept, selectedCompanyId]);
+  }, [kpiDocs, effectiveCallsWindow, staff, selectedStaffId, selectedDepts, isAllDepts, selectedCompanyId]);
 
   // Format the raw live calls from the webhook database
   const formattedLiveCalls = useMemo(() => {
@@ -2846,14 +2859,14 @@ export default function KpisDashboard({
         if (!call.staffId) return false; // Filter out system/routing/unmapped call legs
         if (call.date && (call.date < start || call.date > end)) return false;
         if (selectedStaffId !== 'all' && call.staffId !== selectedStaffId) return false;
-        if (selectedDept !== 'all' && call.department !== selectedDept) return false;
+        if (!isAllDepts && (!call.department || !selectedDepts.includes(call.department))) return false;
         if (selectedCompanyId !== 'all') {
           const staffMember = staffMap.get(call.staffId);
           if (!staffMember || staffMember.companyId !== selectedCompanyId) return false;
         }
         return true;
       });
-  }, [liveCalls, effectiveCallsWindow, selectedStaffId, selectedDept, selectedCompanyId, staff]);
+  }, [liveCalls, effectiveCallsWindow, selectedStaffId, selectedDepts, isAllDepts, selectedCompanyId, staff]);
 
   const displayCallsList = useMemo(() => {
     const rawList = hasRealCalls ? formattedLiveCalls : mockCallsList;
@@ -3486,10 +3499,10 @@ export default function KpisDashboard({
       .filter(doc => {
         if (!doc.staffId) return false;
         if (selectedStaffId !== 'all' && doc.staffId !== selectedStaffId) return false;
-        if (selectedDept !== 'all' && doc.department !== selectedDept) return false;
+        if (!isAllDepts && (!doc.department || !selectedDepts.includes(doc.department))) return false;
         return true;
       });
-  }, [qandleDocs, staff, selectedStaffId, selectedDept]);
+  }, [qandleDocs, staff, selectedStaffId, selectedDepts, isAllDepts]);
 
   // Filter, search, and sort Qandle activities
   const filteredAndSearchedQandle = useMemo(() => {
@@ -3547,7 +3560,7 @@ export default function KpisDashboard({
   // Reset Qandle page on search/filter change
   useEffect(() => {
     setQandlePage(1);
-  }, [qandleSearch, selectedDept, selectedStaffId, qandleTimeRange]);
+  }, [qandleSearch, selectedDepts, selectedStaffId, qandleTimeRange]);
 
   // Format and filter CRM activities
   const displayCrmList = useMemo(() => {
@@ -3564,10 +3577,10 @@ export default function KpisDashboard({
       .filter(doc => {
         if (crmActivityFilter !== 'all' && doc.activityType !== crmActivityFilter) return false;
         if (selectedStaffId !== 'all' && doc.recruiterId !== selectedStaffId) return false;
-        if (selectedDept !== 'all' && doc.department !== selectedDept) return false;
+        if (!isAllDepts && (!doc.department || !selectedDepts.includes(doc.department))) return false;
         return true;
       });
-  }, [crmDocs, staff, crmActivityFilter, selectedStaffId, selectedDept, activeSubTab]);
+  }, [crmDocs, staff, crmActivityFilter, selectedStaffId, selectedDepts, isAllDepts, activeSubTab]);
 
   const filteredAndSearchedCrm = useMemo(() => {
     const list = displayCrmList;
@@ -3625,7 +3638,7 @@ export default function KpisDashboard({
   // Reset CRM page on search/filter change
   useEffect(() => {
     setCrmPage(1);
-  }, [crmSearch, selectedDept, selectedStaffId, crmTimeRange, crmActivityFilter]);
+  }, [crmSearch, selectedDepts, selectedStaffId, crmTimeRange, crmActivityFilter]);
 
   // Aggregate stats based on selection
   const aggregatedStats = useMemo(() => {
@@ -3680,11 +3693,14 @@ export default function KpisDashboard({
       const u = staff.find(s => s.id === selectedStaffId);
       return `${prefix} KPIs for ${u?.fullName || 'User'}`;
     }
-    if (selectedDept !== 'all') {
-      return `${prefix} KPIs for ${selectedDept} Division`;
+    if (!isAllDepts) {
+      if (selectedDepts.length === 1) {
+        return `${prefix} KPIs for ${selectedDepts[0]} Division`;
+      }
+      return `${prefix} KPIs for ${selectedDepts.length} Selected Departments`;
     }
     return `${prefix} Group Performance Dashboard`;
-  }, [timeRange, selectedStaffId, selectedDept, staff]);
+  }, [timeRange, selectedStaffId, selectedDepts, isAllDepts, staff]);
 
 
 
@@ -3719,24 +3735,24 @@ export default function KpisDashboard({
             </div>
 
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-              {/* Department Selector */}
+              {/* Department Multi-Select Filter */}
               {(userRole === 'admin' || userRole === 'director' || currentUser?.permissions?.dataScope === 'team') && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600 }}>Dept:</span>
-                  <select
-                    value={selectedDept}
-                    onChange={(e) => {
-                      setSelectedDept(e.target.value);
-                      setSelectedStaffId('all'); // reset staff filter when dept changes
+                  <MultiSelectFilter
+                    options={[
+                      { value: 'all', label: 'All Departments' },
+                      ...departments.map(d => ({ value: d, label: d }))
+                    ]}
+                    selectedValues={selectedDepts}
+                    onChange={(newDepts) => {
+                      setSelectedDepts(newDepts);
+                      setSelectedStaffId('all'); // reset staff filter when depts change
                     }}
-                    className="select-filter"
-                    style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', height: '24px' }}
-                  >
-                    <option value="all">All Departments</option>
-                    {departments.map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
+                    placeholder="All Departments"
+                    compact={true}
+                    style={{ minWidth: '140px', maxWidth: '200px' }}
+                  />
                 </div>
               )}
 
@@ -3751,7 +3767,9 @@ export default function KpisDashboard({
                     style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', height: '24px' }}
                   >
                     <option value="all">
-                      {selectedDept === 'all' ? 'All Personnel' : `All in ${selectedDept}`}
+                      {isAllDepts 
+                        ? 'All Personnel' 
+                        : (selectedDepts.length === 1 ? `All in ${selectedDepts[0]}` : `All in ${selectedDepts.length} Selected Departments`)}
                     </option>
                     {filteredStaffList.map(s => (
                       <option key={s.id} value={s.id}>{s.fullName}</option>

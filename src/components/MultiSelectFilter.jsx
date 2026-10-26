@@ -6,7 +6,9 @@ export default function MultiSelectFilter({
   selectedValues = ['all'],
   onChange,
   placeholder = 'Select options...',
-  style = {}
+  style = {},
+  compact = false,
+  buttonStyle = {}
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -105,13 +107,13 @@ export default function MultiSelectFilter({
         onClick={() => setIsOpen(!isOpen)}
         style={{
           width: '100%',
-          padding: '8px 12px',
+          padding: compact ? '2px 8px' : '8px 12px',
           backgroundColor: 'var(--bg-card)',
           border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-md)',
+          borderRadius: compact ? '4px' : 'var(--radius-md)',
           color: 'var(--text-primary)',
-          fontSize: '13px',
-          fontWeight: 500,
+          fontSize: compact ? '11px' : '13px',
+          fontWeight: compact ? 600 : 500,
           textAlign: 'left',
           display: 'flex',
           justifyContent: 'space-between',
@@ -119,7 +121,9 @@ export default function MultiSelectFilter({
           cursor: 'pointer',
           boxShadow: 'var(--shadow-sm)',
           transition: 'all 0.2s',
-          minHeight: '36px'
+          minHeight: compact ? '24px' : '36px',
+          height: compact ? '24px' : 'auto',
+          ...buttonStyle
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.borderColor = 'var(--accent)';

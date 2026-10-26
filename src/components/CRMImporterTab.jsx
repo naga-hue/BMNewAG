@@ -175,7 +175,18 @@ export default function CRMImporterTab({ onShowToast, staff = [], companies = []
         return aliases.some(alias => (alias || '').toLowerCase().trim() === cleanVal);
       } else {
         const fullName = (s.fullName || '').toLowerCase().trim();
-        return fullName && fullName === cleanVal;
+        if (fullName && fullName === cleanVal) return true;
+        
+        // Check name aliases (e.g. "Candyce Dawes" for "Candyce Dawes Celene")
+        const aliases = Array.isArray(s.aliases) ? s.aliases : [];
+        const nameAliases = Array.isArray(s.nameAliases) ? s.nameAliases : [];
+        const allAliases = [...aliases, ...nameAliases].map(a => (a || '').toLowerCase().trim());
+        if (allAliases.includes(cleanVal)) return true;
+
+        // Substring / partial match fallback
+        if (fullName && (fullName.includes(cleanVal) || cleanVal.includes(fullName))) return true;
+
+        return false;
       }
     }) || null;
   };

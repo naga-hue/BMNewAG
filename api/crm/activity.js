@@ -479,12 +479,30 @@ export default async function handler(req, res) {
         aliases.includes(normRecruiterEmail)
       ) {
         matchedStaff = { id: docSnap.id, ...data };
+        return;
+      }
+
+      // Name & Alias fallback matching (e.g. from Google Sheet column D "Candyce Dawes")
+      const cleanInput = (recruiterEmail || '').toLowerCase().trim();
+      const staffFullName = (data.fullName || data.name || '').toLowerCase().trim();
+      const staffAliases = Array.isArray(data.aliases) ? data.aliases.map(a => (a || '').toLowerCase().trim()) : [];
+      const staffNameAliases = Array.isArray(data.nameAliases) ? data.nameAliases.map(a => (a || '').toLowerCase().trim()) : [];
+      const allNameAliases = [...staffAliases, ...staffNameAliases];
+
+      if (
+        cleanInput &&
+        (cleanInput === staffFullName ||
+         allNameAliases.includes(cleanInput) ||
+         staffFullName.includes(cleanInput) ||
+         cleanInput.includes(staffFullName))
+      ) {
+        matchedStaff = { id: docSnap.id, ...data };
       }
     });
 
     if (!matchedStaff) {
-      console.warn(`[CRM Ingest] Recruiter email not found in staff: ${recruiterEmail}`);
-      return res.status(404).json({ error: `Recruiter email not found in staff database: ${recruiterEmail}` });
+      console.warn(`[CRM Ingest] Recruiter email or name not found in staff: ${recruiterEmail}`);
+      return res.status(404).json({ error: `Recruiter email or name not found in staff database: ${recruiterEmail}` });
     }
 
     // 2. Format dates & times

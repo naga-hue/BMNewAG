@@ -547,7 +547,7 @@ export default function KpisDashboard({
     if (s.dialpadTracked === false) return false;
     if (s.dialpadTracked === true) return true;
     const email = (s.businessEmail || s.personalEmail || '').toLowerCase();
-    if (email.includes('@talent-h.com') || email.includes('@totaco.net')) {
+    if (email.includes('@talent-h.com')) {
       return false;
     }
     return true;

@@ -108,7 +108,8 @@ export default function PayrollRegisterTable({
   }, [splitFromTotalPaid, basicSalaryOverride, commissionOverride, bonusOverride, totalReimbursementsGBP, employeeTaxNic, employeePension]);
 
   const handleAddReimbursementItem = () => {
-    const defaultReimburseNominal = nominalCodes.find(c => c.code?.toLowerCase().includes('travel') || c.code?.toLowerCase().includes('expense') || c.code?.toLowerCase().includes('reimburse'))?.code || (nominalCodes[0]?.code || '7400 - Travel & Entertaining');
+    const defaultReimburseNominal = nominalCodes.find(c => c.code?.toLowerCase().includes('reimburse'))?.code 
+      || '7450 - Staff Expense Reimbursements';
     const defaultDept = selectedCell?.staffMember?.department || (allAvailableDepts[0] || 'Operations');
     setReimbursementItems(prev => [
       ...prev,
@@ -406,7 +407,9 @@ export default function PayrollRegisterTable({
     setReimbursementsCurrency(record?.reimbursementsCurrency || 'GBP');
     setReimbursementsAmountInput((record?.reimbursementsAmountEntered !== undefined ? record.reimbursementsAmountEntered : (cell.reimbursements || 0)).toFixed(2));
     
-    const defaultReimburseNominal = record?.reimbursementNominalCode || nominalCodes.find(c => c.code?.toLowerCase().includes('travel') || c.code?.toLowerCase().includes('expense') || c.code?.toLowerCase().includes('reimburse'))?.code || (nominalCodes[0]?.code || '7400 - Travel & Entertaining');
+    const defaultReimburseNominal = record?.reimbursementNominalCode 
+      || nominalCodes.find(c => c.code?.toLowerCase().includes('reimburse'))?.code 
+      || '7450 - Staff Expense Reimbursements';
     const defaultReimburseDept = (record as any)?.reimbursementDepartment || staffMember.department || (allAvailableDepts[0] || 'Operations');
     setReimbursementNominalCode(defaultReimburseNominal);
     setReimbursementAllocation((record?.reimbursementAllocation as 'company' | 'department' | 'staff') || 'company');
@@ -717,7 +720,10 @@ export default function PayrollRegisterTable({
             const itemAmt = Number(item.amount) || 0;
             if (itemAmt <= 0) continue;
 
-            const targetReimburseNominal = item.nominalCode || reimbursementNominalCode || nominalCodes.find(c => c.code?.toLowerCase().includes('travel') || c.code?.toLowerCase().includes('expense') || c.code?.toLowerCase().includes('reimburse'))?.code || '7400 - Travel & Entertaining';
+            const targetReimburseNominal = item.nominalCode 
+              || reimbursementNominalCode 
+              || nominalCodes.find(c => c.code?.toLowerCase().includes('reimburse'))?.code 
+              || '7450 - Staff Expense Reimbursements';
             const itemDesc = item.description?.trim() ? `: ${item.description.trim()}` : '';
 
             let allocationType: 'company' | 'department' | 'staff' = 'company';
@@ -2220,6 +2226,9 @@ ${cell.bonus > 0 ? `Bonus: £${Math.round(cell.bonus).toLocaleString()}\n` : ''}
                                 disabled={isRecruiter}
                                 style={{ width: '100%', padding: '6px 8px', fontSize: '11px' }}
                               >
+                                {!nominalCodes.some(nc => nc.code?.toLowerCase().includes('reimburse')) && (
+                                  <option value="7450 - Staff Expense Reimbursements">7450 - Staff Expense Reimbursements</option>
+                                )}
                                 {nominalCodes.map(nc => (
                                   <option key={nc.id} value={nc.code}>{nc.code}</option>
                                 ))}

@@ -397,7 +397,8 @@ export default function NominalCodesSetup({ onShowToast }: NominalCodesSetupProp
     let created = 0;
     const presets = [
       { id: '1100', code: '1100 - Bank Transfer / Contra Account', type: 'direct', includeInOverheads: false },
-      { id: '1200', code: '1200 - Intercompany Transfer / Recharge', type: 'direct', includeInOverheads: false }
+      { id: '1200', code: '1200 - Intercompany Transfer / Recharge', type: 'direct', includeInOverheads: false },
+      { id: '7450', code: '7450 - Staff Expense Reimbursements', type: 'indirect', includeInOverheads: true }
     ];
 
     for (const preset of presets) {

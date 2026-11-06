@@ -17,6 +17,7 @@ import {
   Save,
   X
 } from 'lucide-react';
+import { isCompanyConsolidated } from '../utils/consolidation';
 
 const CURRENCY_SYMBOLS = {
   GBP: '£',
@@ -136,7 +137,7 @@ export default function CashflowDashboard({
     if (selectedCompanyId === 'all') {
       const allAccs = [];
       companies.forEach(c => {
-        if (c.includeInConsolidation === false) return;
+        if (!isCompanyConsolidated(c)) return;
         (c.bankAccounts || []).forEach(acc => {
           allAccs.push({ ...acc, companyName: c.name });
         });
@@ -173,7 +174,7 @@ export default function CashflowDashboard({
     let total = 0;
     companies.forEach(c => {
       if (selectedCompanyId === 'all') {
-        if (c.includeInConsolidation === false) return;
+        if (!isCompanyConsolidated(c)) return;
       } else if (c.id !== selectedCompanyId) {
         return;
       }
@@ -358,7 +359,7 @@ export default function CashflowDashboard({
       if (inv.outstanding <= 0 || ['paid', 'written-off', 'dns-rebate'].includes(inv.status)) return false;
       if (selectedCompanyId === 'all') {
         const comp = companies.find(c => c.id === inv.companyId);
-        if (comp && comp.includeInConsolidation === false) return false;
+        if (!isCompanyConsolidated(comp)) return false;
       } else if (inv.companyId !== selectedCompanyId) {
         return false;
       }
@@ -563,7 +564,7 @@ export default function CashflowDashboard({
       if (!out.dueDate) return false;
       if (selectedCompanyId === 'all') {
         const comp = companies.find(c => c.id === out.companyId);
-        if (comp && comp.includeInConsolidation === false) return false;
+        if (!isCompanyConsolidated(comp)) return false;
       } else if (out.companyId !== selectedCompanyId) {
         return false;
       }

@@ -23,6 +23,7 @@ import { Company, Staff, Placement, PayrollRecord, DepartmentTool, NominalCode, 
 import { useBoundStore } from '../../store/useBoundStore';
 import { getCellData } from '../payroll/utils';
 import { toGBP } from '../../utils/currency';
+import { isCompanyConsolidated, isOperatingStaffMember } from '../../utils/consolidation';
 import CompanyDeptTreeFilter from '../CompanyDeptTreeFilter';
 
 interface DepartmentTeamCostTabProps {
@@ -49,6 +50,7 @@ interface DepartmentTeamCostTabProps {
   reconciledCutoffDate?: string;
   currentUser?: any;
   onShowToast?: (msg: string, type?: string) => void;
+  includePaulSeth?: boolean;
 }
 
 const formatGBP = (val: number): string => {
@@ -146,7 +148,8 @@ export default function DepartmentTeamCostTab({
   reconciledCutoffMonth = '2026-08',
   reconciledCutoffDate = '2026-08-31',
   currentUser,
-  onShowToast
+  onShowToast,
+  includePaulSeth = false
 }: DepartmentTeamCostTabProps) {
   const { departmentTools, saveDepartmentTool, deleteDepartmentTool } = useBoundStore();
 
@@ -177,7 +180,9 @@ export default function DepartmentTeamCostTab({
     const parsedM = parseMonthFromDateStr(dateStr);
     const monthKey = parsedM || (startMonth || '2026-01');
     return staff.filter(s => {
-      const compMatch = compIds.includes('all') || compIds.includes(s.companyId);
+      if (!isOperatingStaffMember(s, includePaulSeth)) return false;
+      const comp = companies.find(c => c.id === s.companyId);
+      const compMatch = compIds.includes('all') ? isCompanyConsolidated(comp) : compIds.includes(s.companyId);
       const deptMatch = deptNames.includes('all') || deptNames.includes(s.department);
       if (!compMatch || !deptMatch) return false;
 
@@ -297,7 +302,12 @@ export default function DepartmentTeamCostTab({
       const fn = (s.fullName || '').toLowerCase().trim();
       if (fn === 'paul seth' || fn.includes('paul seth')) return false;
 
-      if (!companyFilter.includes('all') && !companyFilter.includes(s.companyId)) return false;
+      if (companyFilter.includes('all')) {
+        const comp = companies.find(c => c.id === s.companyId);
+        if (!isCompanyConsolidated(comp)) return false;
+      } else if (!companyFilter.includes(s.companyId)) {
+        return false;
+      }
       if (!deptFilter.includes('all') && !deptFilter.includes(s.department)) {
         const hasDeptAlloc = Array.isArray(s.departmentAllocations) && s.departmentAllocations.some(a => deptFilter.includes(a.department));
         if (!hasDeptAlloc) return false;
@@ -310,7 +320,7 @@ export default function DepartmentTeamCostTab({
       }
       return true;
     });
-  }, [staff, companyFilter, deptFilter, searchTerm]);
+  }, [staff, companies, companyFilter, deptFilter, searchTerm]);
 
   // Calculate monthly staff remuneration cells (ex-reimbursements)
   // Maps staffId -> monthKey -> cellData
@@ -341,8 +351,8 @@ export default function DepartmentTeamCostTab({
           if (e.id && (e.id.startsWith('payroll-') || e.id.startsWith('exp-overhead-'))) return false;
 
           const nom = (e.nominalCode || '').toLowerCase();
-          // Strictly exclude 1003.1 (Director) and 1003.2 (House) from Team & Tool costs
-          if (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house')) return false;
+          // Exclude 1003.1 (Director) and 1003.2 (House) unless includePaulSeth is true
+          if (!includePaulSeth && (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house'))) return false;
 
           const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
           if (eMonth !== m) return false;
@@ -353,11 +363,13 @@ export default function DepartmentTeamCostTab({
           const fn = (s.fullName || '').toLowerCase().trim();
           const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
 
-          const isRemunNominal = (nom.includes('1003') && !nom.includes('1003.1') && !nom.includes('1003.2')) ||
-                                 nom.includes('consulting') ||
-                                 nom.includes('1001') ||
-                                 nom.includes('freelanc') ||
-                                 nom.includes('salary');
+          const isRemunNominal = (!includePaulSeth
+            ? (nom.includes('1003') && !nom.includes('1003.1') && !nom.includes('1003.2'))
+            : nom.includes('1003')) ||
+            nom.includes('consulting') ||
+            nom.includes('1001') ||
+            nom.includes('freelanc') ||
+            nom.includes('salary');
 
           return (isTargetStaff || isPayeeMatch) && isRemunNominal;
         });
@@ -492,14 +504,19 @@ export default function DepartmentTeamCostTab({
       // Exclude if already in filteredStaff (already shown as a direct team member)
       if (filteredStaff.some(fs => fs.id === s.id)) return false;
 
+      // If viewing all companies, exclude shared staff whose employer company is not consolidated
+      const staffComp = companies.find(c => c.id === s.companyId);
+      if (companyFilter.includes('all') && !isCompanyConsolidated(staffComp)) {
+        return false;
+      }
+
       const policy = payrollPolicies.find(p => p.id === s.payrollPolicyId);
       const policyNom = (policy?.nominalCode || '').toLowerCase();
       const jobLower = (s.jobTitle || '').toLowerCase();
 
       // Only staff whose nominal is specifically 1004 (SA Shared) or who belong to SA Shared operations
-      const isSaShared = (s.companyId === 'comp-1782789370085' && (policyNom.includes('1004') || policyNom.includes('sa-shared') || policyNom.includes('sa shared') || jobLower.includes('sa shared'))) ||
-                         policyNom.includes('1004') ||
-                         policyNom.includes('sa-shared');
+      const isSaShared = (isCompanyConsolidated(staffComp) && s.companyId === 'comp-1782789370085' && (policyNom.includes('1004') || policyNom.includes('sa-shared') || policyNom.includes('sa shared') || jobLower.includes('sa shared'))) ||
+                         (isCompanyConsolidated(staffComp) && (policyNom.includes('1004') || policyNom.includes('sa-shared')));
 
       // Staff explicitly configured with cross-company allocation targets
       const hasCompanyAllocations = Array.isArray(s.allocatedCompanyIds) && s.allocatedCompanyIds.length > 0;
@@ -507,7 +524,7 @@ export default function DepartmentTeamCostTab({
 
       return isSaShared || hasCompanyAllocations || isSharedMode;
     });
-  }, [staff, filteredStaff, payrollPolicies]);
+  }, [staff, companies, companyFilter, filteredStaff, payrollPolicies]);
 
   // Calculate monthly apportioned share for each shared staff member based on active team headcount
   const sharedStaffMonthlyData = useMemo(() => {
@@ -553,8 +570,8 @@ export default function DepartmentTeamCostTab({
           if (e.status === 'dns' || e.status === 'cancelled') return false;
           if (e.id && (e.id.startsWith('payroll-') || e.id.startsWith('exp-overhead-'))) return false;
           const nom = (e.nominalCode || '').toLowerCase();
-          // Strictly exclude 1003.1 (Director) and 1003.2 (House) from Team & Tool costs
-          if (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house')) return false;
+          // Exclude 1003.1 (Director) and 1003.2 (House) unless includePaulSeth is true
+          if (!includePaulSeth && (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house'))) return false;
 
           const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
           if (eMonth !== m) return false;
@@ -565,11 +582,13 @@ export default function DepartmentTeamCostTab({
           const fn = (s.fullName || '').toLowerCase().trim();
           const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
 
-          const isRemunNominal = (nom.includes('1003') && !nom.includes('1003.1') && !nom.includes('1003.2')) ||
-                                 nom.includes('consulting') ||
-                                 nom.includes('1001') ||
-                                 nom.includes('freelanc') ||
-                                 nom.includes('salary');
+          const isRemunNominal = (!includePaulSeth
+            ? (nom.includes('1003') && !nom.includes('1003.1') && !nom.includes('1003.2'))
+            : nom.includes('1003')) ||
+            nom.includes('consulting') ||
+            nom.includes('1001') ||
+            nom.includes('freelanc') ||
+            nom.includes('salary');
 
           return (isTargetStaff || isPayeeMatch) && isRemunNominal;
         });
@@ -597,7 +616,7 @@ export default function DepartmentTeamCostTab({
         // Group active staff across target companies
         const eligibleGroupStaff = staff.filter(os => {
           const comp = companies.find(c => c.id === os.companyId);
-          if (!comp || comp.includeInConsolidation === false) return false;
+          if (!isCompanyConsolidated(comp)) return false;
           if (targetCompanyIds) {
             if (!targetCompanyIds.includes(os.companyId)) return false;
           } else {
@@ -696,7 +715,8 @@ export default function DepartmentTeamCostTab({
       let ytvCost = 0;
 
       // Effective companies and departments
-      const effectiveComps = toolComps.includes('all') ? companies.map(c => c.id) : toolComps;
+      const consolidatedCompIds = companies.filter(c => isCompanyConsolidated(c)).map(c => c.id);
+      const effectiveComps = toolComps.includes('all') ? consolidatedCompIds : toolComps;
       const matchingComps = companyFilter.includes('all') ? effectiveComps : effectiveComps.filter(c => companyFilter.includes(c));
 
       const effectiveDepts = toolDepts.includes('all') ? allDepartments : toolDepts;
@@ -712,9 +732,11 @@ export default function DepartmentTeamCostTab({
       // Calculate initial active headcount in the viewed scope at the start of the period
       const initialMonth = monthsList[0] || '2026-01';
       const initialScopeActive = staff.filter(s => {
-        const inViewComp = companyFilter.includes('all') || companyFilter.includes(s.companyId);
+        if (!isOperatingStaffMember(s, includePaulSeth)) return false;
+        const comp = companies.find(c => c.id === s.companyId);
+        const inViewComp = companyFilter.includes('all') ? isCompanyConsolidated(comp) : companyFilter.includes(s.companyId);
         const inViewDept = deptFilter.includes('all') || deptFilter.includes(s.department);
-        const toolCompMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
+        const toolCompMatch = toolComps.includes('all') ? isCompanyConsolidated(comp) : toolComps.includes(s.companyId);
         const toolDeptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
         if (!inViewComp || !inViewDept || !toolCompMatch || !toolDeptMatch) return false;
 
@@ -839,7 +861,9 @@ export default function DepartmentTeamCostTab({
             subtext = 'Fixed total';
           } else if (splitMethod === 'pro_rata_headcount') {
             const totalStaffAllAssigned = staff.filter(s => {
-              const compMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
+              if (!isOperatingStaffMember(s, includePaulSeth)) return false;
+              const comp = companies.find(c => c.id === s.companyId);
+              const compMatch = toolComps.includes('all') ? isCompanyConsolidated(comp) : toolComps.includes(s.companyId);
               const deptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
               if (!compMatch || !deptMatch) return false;
               const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
@@ -847,9 +871,11 @@ export default function DepartmentTeamCostTab({
             }).length;
 
             const staffInFilteredView = staff.filter(s => {
-              const inViewComp = companyFilter.includes('all') || companyFilter.includes(s.companyId);
+              if (!isOperatingStaffMember(s, includePaulSeth)) return false;
+              const comp = companies.find(c => c.id === s.companyId);
+              const inViewComp = companyFilter.includes('all') ? isCompanyConsolidated(comp) : companyFilter.includes(s.companyId);
               const inViewDept = deptFilter.includes('all') || deptFilter.includes(s.department);
-              const toolCompMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
+              const toolCompMatch = toolComps.includes('all') ? isCompanyConsolidated(comp) : toolComps.includes(s.companyId);
               const toolDeptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
               if (!inViewComp || !inViewDept || !toolCompMatch || !toolDeptMatch) return false;
               const cell = getCellData(s, m, payrollRecords, payrollPolicies, leaveRequests, holidays, staff, companies, placements, commissionPolicies);
@@ -887,7 +913,9 @@ export default function DepartmentTeamCostTab({
           if (isFullScope) {
             // Full group scope: track company-wide active headcount and contract baseline
             const totalActiveStaffForTool = staff.filter(s => {
-              const compMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
+              if (!isOperatingStaffMember(s, includePaulSeth)) return false;
+              const comp = companies.find(c => c.id === s.companyId);
+              const compMatch = toolComps.includes('all') ? isCompanyConsolidated(comp) : toolComps.includes(s.companyId);
               const deptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
               if (!compMatch || !deptMatch) return false;
 
@@ -912,9 +940,11 @@ export default function DepartmentTeamCostTab({
           } else {
             // Filtered department / company scope (e.g. Civils department selected)
             const viewActiveStaffForTool = staff.filter(s => {
-              const inViewComp = companyFilter.includes('all') || companyFilter.includes(s.companyId);
+              if (!isOperatingStaffMember(s, includePaulSeth)) return false;
+              const comp = companies.find(c => c.id === s.companyId);
+              const inViewComp = companyFilter.includes('all') ? isCompanyConsolidated(comp) : companyFilter.includes(s.companyId);
               const inViewDept = deptFilter.includes('all') || deptFilter.includes(s.department);
-              const toolCompMatch = toolComps.includes('all') || toolComps.includes(s.companyId);
+              const toolCompMatch = toolComps.includes('all') ? isCompanyConsolidated(comp) : toolComps.includes(s.companyId);
               const toolDeptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
               if (!inViewComp || !inViewDept || !toolCompMatch || !toolDeptMatch) return false;
 

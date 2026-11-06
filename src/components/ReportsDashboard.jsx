@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import MultiSelectFilter from './MultiSelectFilter';
 import CompanyDeptTreeFilter from './CompanyDeptTreeFilter';
 import { toGBP, FX_RATES } from '../utils/currency';
+import { isCompanyConsolidated, isOperatingStaffMember, isPaulSethOrDrawings } from '../utils/consolidation';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -180,9 +181,13 @@ export default function ReportsDashboard({
       const saved = localStorage.getItem('bm-reports-excluded-nominals');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
-    return (nominalCodes || [])
+    const initial = (nominalCodes || [])
       .filter(c => c && c.includeInOverheads === false)
       .map(c => c.code || c.id);
+    ['1003.1', '1003.2', '1003.1 - Director', '1003.2 - House'].forEach(c => {
+      if (!initial.some(item => matchesNominal(item, c))) initial.push(c);
+    });
+    return initial;
   });
 
   const matchesNominal = (a, b) => {
@@ -195,6 +200,40 @@ export default function ReportsDashboard({
     const idB = sB.split(' - ')[0]?.trim();
     if (idA && idB && idA === idB) return true;
     return false;
+  };
+
+  const [includePaulSeth, setIncludePaulSeth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bm-reports-include-paul-seth');
+      if (saved !== null) return JSON.parse(saved);
+    } catch (e) {}
+    return false;
+  });
+
+  const handleToggleIncludePaulSeth = (checked) => {
+    setIncludePaulSeth(checked);
+    try {
+      localStorage.setItem('bm-reports-include-paul-seth', JSON.stringify(checked));
+    } catch (e) {}
+
+    // Synchronize excluded nominal codes (1003.1 / 1003.2)
+    setExcludedNominalCodes(prev => {
+      let updated;
+      if (checked) {
+        // If enabling Paul Seth, un-exclude 1003.1 and 1003.2 so their overhead expenses show in P&L
+        updated = prev.filter(c => !matchesNominal(c, '1003.1') && !matchesNominal(c, '1003.2'));
+      } else {
+        // If excluding Paul Seth, ensure 1003.1 and 1003.2 are excluded
+        updated = [...prev];
+        ['1003.1', '1003.2', '1003.1 - Director', '1003.2 - House'].forEach(c => {
+          if (!updated.some(item => matchesNominal(item, c))) updated.push(c);
+        });
+      }
+      try {
+        localStorage.setItem('bm-reports-excluded-nominals', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
   };
 
   const isNominalExcluded = (code) => {
@@ -308,7 +347,7 @@ export default function ReportsDashboard({
       return false;
     }
     if (companyFilter.includes('all')) {
-      return c.includeInConsolidation !== false;
+      return isCompanyConsolidated(c);
     }
     return companyFilter.includes(c.id);
   });
@@ -325,7 +364,7 @@ export default function ReportsDashboard({
     if (c.useHeadcountSplit) {
       if (splits.length === 0) {
         // Global headcount split across all consolidated companies
-        const consolidatedComps = companies.filter(co => co.includeInConsolidation !== false).map(co => co.id);
+        const consolidatedComps = companies.filter(co => isCompanyConsolidated(co)).map(co => co.id);
         const eligibleStaff = activeStaff.filter(s => consolidatedComps.includes(s.companyId));
         const total = eligibleStaff.length;
         if (total === 0) return 0;
@@ -1027,6 +1066,7 @@ export default function ReportsDashboard({
     });
 
     const activeStaff = staff.filter(s => {
+      if (!isOperatingStaffMember(s, includePaulSeth)) return false;
       const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
       if (daysWorked < 10) return false;
       if (overrideCompanyId) {
@@ -1040,6 +1080,7 @@ export default function ReportsDashboard({
     const activeStaffIds = activeStaff.map(s => s.id);
 
     const groupActiveStaff = staff.filter(s => {
+      if (!isOperatingStaffMember(s, includePaulSeth)) return false;
       const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
       return daysWorked >= 10;
     });
@@ -1161,8 +1202,8 @@ export default function ReportsDashboard({
       }
     };
 
-    // 1. Regular actual non-amortized expenses for this month
-    const monthExpenses = (expenses || []).filter(e => e.plMonth === monthKey && e.amortize !== true && !e.nominalCode?.trim().startsWith('9') && e.status !== 'dns' && e.status !== 'cancelled' && !isExpenseSupersededByPayroll(e));
+    // 1. Regular actual non-amortized expenses for this month (strictly excluding non-P&L balance sheet items and Paul Seth director/house drawings unless enabled)
+    const monthExpenses = (expenses || []).filter(e => e.plMonth === monthKey && e.amortize !== true && !e.nominalCode?.trim().startsWith('9') && !isPaulSethOrDrawings(e, includePaulSeth) && e.status !== 'dns' && e.status !== 'cancelled' && !isExpenseSupersededByPayroll(e));
     monthExpenses.forEach(exp => {
       currentExpenseContext = exp;
       allocateExpenseToMap(exp, paidBreakdown);
@@ -1393,7 +1434,10 @@ export default function ReportsDashboard({
         // Apportionment check for 1004 - SA-Shared costs vs direct routing for active P&L
         if (!isReconciledMonth && !hasActualPayment && !isSuppressed) {
           if (targetNominal.includes('1004')) {
-            if (s.companyId && s.companyId !== 'comp-1782789370085') {
+            const empComp = companies.find(c => c.id === s.companyId);
+            const isEmpConsolidated = isCompanyConsolidated(empComp);
+
+            if (!isEmpConsolidated || (s.companyId && s.companyId !== 'comp-1782789370085')) {
               if (isTargetComp && isMatchingDept) {
                 breakdown[matchedKey] = (breakdown[matchedKey] || 0) + staffCostForDept;
               }
@@ -1402,7 +1446,7 @@ export default function ReportsDashboard({
               const otherStaff = groupActiveStaff.filter(os => {
                 const comp = companies.find(c => c.id === os.companyId);
                 const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== s.companyId;
-                return comp && comp.includeInConsolidation !== false && compMatch;
+                return isCompanyConsolidated(comp) && compMatch;
               });
               if (otherStaff.length > 0) {
                 const perStaffShare = staffCostForDept / otherStaff.length;
@@ -1597,6 +1641,7 @@ export default function ReportsDashboard({
     const targetCompIds = overrideCompanyId ? [overrideCompanyId] : activeCompanyIds;
 
     const activeStaff = staff.filter(s => {
+      if (!isOperatingStaffMember(s, includePaulSeth)) return false;
       const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
       if (daysWorked < 10) return false;
       if (!targetCompIds.includes(s.companyId)) return false;
@@ -1607,13 +1652,13 @@ export default function ReportsDashboard({
     const activeStaffIds = activeStaff.map(s => s.id);
 
     const groupActiveStaff = staff.filter(s => {
+      if (!isOperatingStaffMember(s, includePaulSeth)) return false;
       const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
       return daysWorked >= 10;
     });
     const groupActiveStaffIds = groupActiveStaff.map(s => s.id);
 
-    if (monthKey < '2026-07') {
-      const monthExpenses = expenses.filter(e => e.plMonth === monthKey && e.nominalCode?.trim().startsWith('9'));
+    const monthExpenses = expenses.filter(e => e.plMonth === monthKey && (e.nominalCode?.trim().startsWith('9') || isPaulSethOrDrawings(e, includePaulSeth)) && e.status !== 'dns' && e.status !== 'cancelled');
       monthExpenses.forEach(exp => {
         const gbpAmt = toGBP(exp.amount, exp.currency);
         let allocatedGbp = 0;
@@ -1708,15 +1753,15 @@ export default function ReportsDashboard({
         const matchedKey = Object.keys(breakdown).find(k => k.startsWith(exp.nominalCode) || k === exp.nominalCode) || exp.nominalCode;
         breakdown[matchedKey] = (breakdown[matchedKey] || 0) + allocatedGbp;
       });
-    }
 
     return breakdown;
   };
 
   // Filtered monthly calculations row generator
   const getFilteredMonthlyData = (monthKey) => {
-    // 1. Active staff members matching company & department
+    // 1. Active staff members matching company & department (excluding non-operating director Paul Seth unless enabled)
     const activeStaff = staff.filter(s => {
+      if (!isOperatingStaffMember(s, includePaulSeth)) return false;
       const daysWorked = getDaysWorkedInMonth(s.startDate, s.exitDate, monthKey);
       if (daysWorked < 10) return false;
       
@@ -1964,6 +2009,37 @@ export default function ReportsDashboard({
             </div>
           )}
 
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', justifyContent: 'flex-end' }}>
+            <label 
+              style={{ 
+                display: 'inline-flex', 
+                alignItems: 'center', 
+                gap: '8px', 
+                fontSize: '12px', 
+                fontWeight: 600, 
+                color: includePaulSeth ? 'var(--primary, #2563eb)' : 'var(--text-secondary, #64748b)',
+                cursor: 'pointer',
+                background: includePaulSeth ? 'rgba(37, 99, 235, 0.08)' : 'var(--bg-card, #ffffff)',
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: `1px solid ${includePaulSeth ? 'var(--primary, #2563eb)' : 'var(--border-color, #e2e8f0)'}`,
+                transition: 'all 0.15s ease',
+                userSelect: 'none',
+                height: '34px',
+                boxSizing: 'border-box'
+              }}
+              title="Toggle whether Paul Seth (Director salary & drawings) is included in P&L and Team Costs"
+            >
+              <input 
+                type="checkbox" 
+                checked={includePaulSeth}
+                onChange={(e) => handleToggleIncludePaulSeth(e.target.checked)}
+                style={{ cursor: 'pointer', accentColor: 'var(--primary, #2563eb)' }}
+              />
+              <span>Include Paul Seth</span>
+            </label>
+          </div>
+
         </div>
       </div>
 
@@ -1995,6 +2071,7 @@ export default function ReportsDashboard({
           reconciledCutoffDate={reconciledCutoffDate}
           currentUser={currentUser}
           onShowToast={onShowToast}
+          includePaulSeth={includePaulSeth}
         />
       )}
 
@@ -2666,16 +2743,27 @@ export default function ReportsDashboard({
             }
 
             if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
-              const groupActiveStaff = staff.filter(st => {
-                const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
-                return daysWorked >= 10;
-              });
-              const targetCompanyIds = (rec.allocatedCompanyIds && rec.allocatedCompanyIds.length > 0) ? rec.allocatedCompanyIds : null;
-              const otherStaff = groupActiveStaff.filter(os => {
-                const comp = companies.find(c => c.id === os.companyId);
-                const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== rec.companyId;
-                return comp && comp.includeInConsolidation !== false && compMatch;
-              });
+              const recComp = companies.find(c => c.id === rec.companyId);
+              const isRecConsolidated = isCompanyConsolidated(recComp);
+
+              if (!isRecConsolidated) {
+                const isComp = activeCompanyIds.includes(rec.companyId);
+                const isDept = deptFilter.includes('all') || deptFilter.includes(rec.department);
+                if (isComp && isDept) {
+                  wagesPaid += pay.salaries;
+                  commissionsPaid += pay.commissions;
+                }
+              } else {
+                const groupActiveStaff = staff.filter(st => {
+                  const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
+                  return daysWorked >= 10;
+                });
+                const targetCompanyIds = (rec.allocatedCompanyIds && rec.allocatedCompanyIds.length > 0) ? rec.allocatedCompanyIds : null;
+                const otherStaff = groupActiveStaff.filter(os => {
+                  const comp = companies.find(c => c.id === os.companyId);
+                  const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== rec.companyId;
+                  return isCompanyConsolidated(comp) && compMatch;
+                });
 
               if (otherStaff.length > 0) {
                 let activeOtherStaffCount = 0;
@@ -2697,14 +2785,15 @@ export default function ReportsDashboard({
                   commissionsPaid += pay.commissions;
                 }
               }
-            } else {
-              const isComp = activeCompanyIds.includes(rec.companyId);
-              const isDept = deptFilter.includes('all') || deptFilter.includes(rec.department);
-              if (isComp && isDept) {
-                wagesPaid += pay.salaries;
-                commissionsPaid += pay.commissions;
-              }
             }
+          } else {
+            const isComp = activeCompanyIds.includes(rec.companyId);
+            const isDept = deptFilter.includes('all') || deptFilter.includes(rec.department);
+            if (isComp && isDept) {
+              wagesPaid += pay.salaries;
+              commissionsPaid += pay.commissions;
+            }
+          }
           });
 
           const totalPaid = wagesPaid + commissionsPaid;
@@ -4157,7 +4246,10 @@ export default function ReportsDashboard({
                       }
 
                       if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
-                        if (s.companyId && s.companyId !== 'comp-1782789370085') {
+                        const empComp = companies.find(c => c.id === s.companyId);
+                        const isEmpConsolidated = isCompanyConsolidated(empComp);
+
+                        if (!isEmpConsolidated || (s.companyId && s.companyId !== 'comp-1782789370085')) {
                           if (companyDataMap[s.companyId] && (deptFilter.includes('all') || deptFilter.includes(s.department))) {
                             companyDataMap[s.companyId].salaries += pay.salaries;
                             companyDataMap[s.companyId].commissions += pay.commissions;
@@ -4171,7 +4263,7 @@ export default function ReportsDashboard({
                           const otherStaff = activeStaffInMonth.filter(os => {
                             const comp = companies.find(c => c.id === os.companyId);
                             const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== s.companyId;
-                            return comp && comp.includeInConsolidation !== false && compMatch;
+                            return isCompanyConsolidated(comp) && compMatch;
                           });
 
                           if (otherStaff.length > 0) {
@@ -4469,7 +4561,10 @@ export default function ReportsDashboard({
                       }
 
                       if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
-                        if (s.companyId && s.companyId !== 'comp-1782789370085') {
+                        const empComp = companies.find(c => c.id === s.companyId);
+                        const isEmpConsolidated = isCompanyConsolidated(empComp);
+
+                        if (!isEmpConsolidated || (s.companyId && s.companyId !== 'comp-1782789370085')) {
                           if (deptDataMap[s.department] && activeCompanyIds.includes(s.companyId)) {
                             deptDataMap[s.department].salaries += pay.salaries;
                             deptDataMap[s.department].commissions += pay.commissions;
@@ -4483,7 +4578,7 @@ export default function ReportsDashboard({
                           const otherStaff = activeStaffInMonth.filter(os => {
                             const comp = companies.find(c => c.id === os.companyId);
                             const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== s.companyId;
-                            return comp && comp.includeInConsolidation !== false && compMatch;
+                            return isCompanyConsolidated(comp) && compMatch;
                           });
 
                           if (otherStaff.length > 0) {
@@ -4820,33 +4915,45 @@ export default function ReportsDashboard({
                     }
 
                     if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
-                      const groupActiveStaff = staff.filter(st => {
-                        const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
-                        return daysWorked >= 10;
-                      });
-                      const otherStaff = groupActiveStaff.filter(os => {
-                        const comp = companies.find(c => c.id === os.companyId);
-                        return comp && comp.includeInConsolidation !== false && os.companyId !== rec.companyId;
-                      });
+                      const recComp = companies.find(c => c.id === rec.companyId);
+                      const isRecConsolidated = isCompanyConsolidated(recComp);
 
-                      if (otherStaff.length > 0) {
-                        let activeOtherStaffCount = 0;
-                        otherStaff.forEach(os => {
-                          const isComp = activeCompanyIds.includes(os.companyId);
-                          const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
-                          if (isComp && isDept) {
-                            activeOtherStaffCount++;
-                          }
-                        });
-                        const shareFactor = activeOtherStaffCount / otherStaff.length;
-                        wagesPaid += pay.salaries * shareFactor;
-                        commissionsPaid += pay.commissions * shareFactor;
-                      } else {
+                      if (!isRecConsolidated) {
                         const isComp = activeCompanyIds.includes(rec.companyId);
                         const isDept = deptFilter.includes('all') || deptFilter.includes(rec.department);
                         if (isComp && isDept) {
                           wagesPaid += pay.salaries;
                           commissionsPaid += pay.commissions;
+                        }
+                      } else {
+                        const groupActiveStaff = staff.filter(st => {
+                          const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
+                          return daysWorked >= 10;
+                        });
+                        const otherStaff = groupActiveStaff.filter(os => {
+                          const comp = companies.find(c => c.id === os.companyId);
+                          return isCompanyConsolidated(comp) && os.companyId !== rec.companyId;
+                        });
+
+                        if (otherStaff.length > 0) {
+                          let activeOtherStaffCount = 0;
+                          otherStaff.forEach(os => {
+                            const isComp = activeCompanyIds.includes(os.companyId);
+                            const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
+                            if (isComp && isDept) {
+                              activeOtherStaffCount++;
+                            }
+                          });
+                          const shareFactor = activeOtherStaffCount / otherStaff.length;
+                          wagesPaid += pay.salaries * shareFactor;
+                          commissionsPaid += pay.commissions * shareFactor;
+                        } else {
+                          const isComp = activeCompanyIds.includes(rec.companyId);
+                          const isDept = deptFilter.includes('all') || deptFilter.includes(rec.department);
+                          if (isComp && isDept) {
+                            wagesPaid += pay.salaries;
+                            commissionsPaid += pay.commissions;
+                          }
                         }
                       }
                     } else {
@@ -5742,28 +5849,31 @@ export default function ReportsDashboard({
               let isShared = false;
 
               if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
-                const groupActiveStaff = staff.filter(st => {
-                  const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
-                  return daysWorked >= 10;
-                });
-                const targetCompanyIds = (sObj.allocatedCompanyIds && sObj.allocatedCompanyIds.length > 0) ? sObj.allocatedCompanyIds : null;
-                const otherStaff = groupActiveStaff.filter(os => {
-                  const comp = companies.find(c => c.id === os.companyId);
-                  const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== sObj.companyId;
-                  return comp && comp.includeInConsolidation !== false && compMatch;
-                });
-
-                if (otherStaff.length > 0) {
-                  let activeOtherStaffCount = 0;
-                  otherStaff.forEach(os => {
-                    const isComp = activeCompanyIds.includes(os.companyId);
-                    const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
-                    if (isComp && isDept) {
-                      activeOtherStaffCount++;
-                    }
+                const sComp = companies.find(c => c.id === sObj.companyId);
+                if (isCompanyConsolidated(sComp)) {
+                  const groupActiveStaff = staff.filter(st => {
+                    const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
+                    return daysWorked >= 10;
                   });
-                  shareFactor = activeOtherStaffCount / otherStaff.length;
-                  isShared = true;
+                  const targetCompanyIds = (sObj.allocatedCompanyIds && sObj.allocatedCompanyIds.length > 0) ? sObj.allocatedCompanyIds : null;
+                  const otherStaff = groupActiveStaff.filter(os => {
+                    const comp = companies.find(c => c.id === os.companyId);
+                    const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== sObj.companyId;
+                    return isCompanyConsolidated(comp) && compMatch;
+                  });
+
+                  if (otherStaff.length > 0) {
+                    let activeOtherStaffCount = 0;
+                    otherStaff.forEach(os => {
+                      const isComp = activeCompanyIds.includes(os.companyId);
+                      const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
+                      if (isComp && isDept) {
+                        activeOtherStaffCount++;
+                      }
+                    });
+                    shareFactor = activeOtherStaffCount / otherStaff.length;
+                    isShared = true;
+                  }
                 }
               }
 
@@ -5811,28 +5921,31 @@ export default function ReportsDashboard({
               let isShared = false;
 
               if (targetNominal && (targetNominal.startsWith('1004') || targetNominal.toLowerCase().includes('shared'))) {
-                const groupActiveStaff = staff.filter(st => {
-                  const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
-                  return daysWorked >= 10;
-                });
-                const targetCompanyIds = (sObj.allocatedCompanyIds && sObj.allocatedCompanyIds.length > 0) ? sObj.allocatedCompanyIds : null;
-                const otherStaff = groupActiveStaff.filter(os => {
-                  const comp = companies.find(c => c.id === os.companyId);
-                  const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== sObj.companyId;
-                  return comp && comp.includeInConsolidation !== false && compMatch;
-                });
-
-                if (otherStaff.length > 0) {
-                  let activeOtherStaffCount = 0;
-                  otherStaff.forEach(os => {
-                    const isComp = activeCompanyIds.includes(os.companyId);
-                    const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
-                    if (isComp && isDept) {
-                      activeOtherStaffCount++;
-                    }
+                const sComp = companies.find(c => c.id === sObj.companyId);
+                if (isCompanyConsolidated(sComp)) {
+                  const groupActiveStaff = staff.filter(st => {
+                    const daysWorked = getDaysWorkedInMonth(st.startDate, st.exitDate, m);
+                    return daysWorked >= 10;
                   });
-                  shareFactor = activeOtherStaffCount / otherStaff.length;
-                  isShared = true;
+                  const targetCompanyIds = (sObj.allocatedCompanyIds && sObj.allocatedCompanyIds.length > 0) ? sObj.allocatedCompanyIds : null;
+                  const otherStaff = groupActiveStaff.filter(os => {
+                    const comp = companies.find(c => c.id === os.companyId);
+                    const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== sObj.companyId;
+                    return isCompanyConsolidated(comp) && compMatch;
+                  });
+
+                  if (otherStaff.length > 0) {
+                    let activeOtherStaffCount = 0;
+                    otherStaff.forEach(os => {
+                      const isComp = activeCompanyIds.includes(os.companyId);
+                      const isDept = deptFilter.includes('all') || deptFilter.includes(os.department);
+                      if (isComp && isDept) {
+                        activeOtherStaffCount++;
+                      }
+                    });
+                    shareFactor = activeOtherStaffCount / otherStaff.length;
+                    isShared = true;
+                  }
                 }
               }
 
@@ -6780,7 +6893,10 @@ export default function ReportsDashboard({
 
                 // Apply company & department matches
                 if (routedNominal.startsWith('1004') || routedNominal.toLowerCase().includes('shared')) {
-                  if (s.companyId && s.companyId !== 'comp-1782789370085') {
+                  const empComp = companies.find(c => c.id === s.companyId);
+                  const isEmpConsolidated = isCompanyConsolidated(empComp);
+
+                  if (!isEmpConsolidated || (s.companyId && s.companyId !== 'comp-1782789370085')) {
                     if (isCompanyMatch(s.companyId) && isDeptMatch(s.department)) {
                       if (!nominalCode || routedNominal === nominalCode || routedNominal.startsWith(nominalCode)) {
                         projectedItems.push({
@@ -6804,7 +6920,7 @@ export default function ReportsDashboard({
                     const otherStaff = groupActiveStaff.filter(os => {
                       const comp = companies.find(c => c.id === os.companyId);
                       const compMatch = targetCompanyIds ? targetCompanyIds.includes(os.companyId) : os.companyId !== s.companyId;
-                      return comp && comp.includeInConsolidation !== false && compMatch;
+                      return isCompanyConsolidated(comp) && compMatch;
                     });
 
                     if (otherStaff.length > 0) {

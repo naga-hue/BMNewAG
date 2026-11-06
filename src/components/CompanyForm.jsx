@@ -14,6 +14,7 @@ import {
   Sparkles,
   HelpCircle
 } from 'lucide-react';
+import { isCompanyConsolidated } from '../utils/consolidation';
 
 const COUNTRIES = [
   { name: "United Kingdom", currency: "GBP", taxLabel: "VAT Registration Number", placeholder: "e.g. GB123456789" },
@@ -71,7 +72,7 @@ export default function CompanyForm({ company, isOpen, onClose, onSave, onShowTo
       setRegistrationDate(company.registrationDate || '');
       setVatNumber(company.vatNumber || '');
       setNotes(company.notes || '');
-      setIncludeInConsolidation(company.includeInConsolidation !== false);
+      setIncludeInConsolidation(isCompanyConsolidated(company));
       setVatFrequency(company.vatFrequency || 'none');
       setVatStartMonth(String(company.vatStartMonth || '1'));
       setVatDueDateDays(String(company.vatDueDateDays || '37'));

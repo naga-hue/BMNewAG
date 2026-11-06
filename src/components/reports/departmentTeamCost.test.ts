@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { DepartmentTool } from '../../types';
+import { isCompanyConsolidated } from '../../utils/consolidation';
 
 describe('Department Team & Tool Costs - Contract Ratchet Engine', () => {
 
@@ -629,6 +630,36 @@ describe('Department Team & Tool Costs - Contract Ratchet Engine', () => {
 
     // View 3: Total across Civils + WC-UK equals 100% of payment
     expect(civilsBasic + homeBasic).toBeCloseTo(bankPayment, 2);
+  });
+
+  it('excludes staff and tool seats of excluded companies (TalentHatch, TalentVerse, Global Recruiters) in group view', () => {
+    const companies = [
+      { id: 'c1', name: 'Humres Recruitment Ltd', includeInConsolidation: true },
+      { id: 'c2', name: 'TalentHatch Intelligence Services', includeInConsolidation: true }, // name matches excluded entity
+      { id: 'c3', name: 'TalentVerse AI Private Limited', includeInConsolidation: false },
+      { id: 'c4', name: 'Global Recruiters LLC FC', includeInConsolidation: true }
+    ];
+
+    const staffList = [
+      { id: 's1', fullName: 'Alice', companyId: 'c1', department: 'Civils' },
+      { id: 's2', fullName: 'Bob', companyId: 'c2', department: 'Civils' },
+      { id: 's3', fullName: 'Charlie', companyId: 'c3', department: 'Civils' },
+      { id: 's4', fullName: 'David', companyId: 'c4', department: 'Civils' }
+    ];
+
+    const companyFilter = ['all'];
+
+    // Filter staff for group view
+    const filteredGroupStaff = staffList.filter(s => {
+      if (companyFilter.includes('all')) {
+        const comp = companies.find(c => c.id === s.companyId);
+        if (!isCompanyConsolidated(comp)) return false;
+      }
+      return true;
+    });
+
+    // Only Alice from Humres should remain
+    expect(filteredGroupStaff.map(s => s.fullName)).toEqual(['Alice']);
   });
 });
 

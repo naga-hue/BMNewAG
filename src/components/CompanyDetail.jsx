@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { firebaseService } from '../services/firebase';
 import MergeDepartmentsModal from './MergeDepartmentsModal';
+import { isCompanyConsolidated } from '../utils/consolidation';
 
 export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompany, onShowToast, staff = [], placements = [], expenses = [] }) {
   const [activeTab, setActiveTab] = useState('profile'); // profile or compliance
@@ -895,9 +896,9 @@ export default function CompanyDetail({ company, isOpen, onClose, onUpdateCompan
                     <span className="detail-label">Consolidation Status</span>
                     <span className="detail-value" style={{ 
                       fontWeight: 600, 
-                      color: company.includeInConsolidation !== false ? 'var(--success)' : 'var(--warning)' 
+                      color: isCompanyConsolidated(company) ? 'var(--success)' : 'var(--warning)' 
                     }}>
-                      {company.includeInConsolidation !== false ? 'Included in Group Reports' : 'Excluded from Group Reports'}
+                      {isCompanyConsolidated(company) ? 'Included in Group Reports' : 'Excluded from Group Reports'}
                     </span>
                   </div>
                 </div>

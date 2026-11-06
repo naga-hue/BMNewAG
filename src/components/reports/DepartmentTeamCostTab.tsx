@@ -383,9 +383,9 @@ export default function DepartmentTeamCostTab({
         if (staffDirectExpenses.length > 0) {
           const bankPaidTotal = staffDirectExpenses.reduce((sum, e) => sum + toGBP(Number(e.amount || 0), e.currency || 'GBP'), 0);
           if (bankPaidTotal > 0) {
-            const basicAmount = (cell.reimbursements && cell.reimbursements > 0)
-              ? Math.max(0, bankPaidTotal - cell.reimbursements)
-              : bankPaidTotal;
+            // When actual bank disbursements exist under remuneration nominals (e.g. 1001),
+            // align directly with whatever was paid from the bank (matching Group P&L 100%)
+            const paidAmount = bankPaidTotal;
 
             if (isAllocOnly) {
               const alloc = (s.departmentAllocations || []).find(a => deptFilter.includes(a.department));
@@ -407,12 +407,12 @@ export default function DepartmentTeamCostTab({
 
             if (hasAllocAway) {
               const totalAllocAway = (s.departmentAllocations || []).reduce((acc, a) => acc + Number(a.amount || 0), 0);
-              const retainedBasic = Math.max(0, basicAmount - totalAllocAway);
+              const retainedBasic = Math.max(0, paidAmount - totalAllocAway);
               matrix[s.id][m] = {
                 ...cell,
                 basic: retainedBasic,
-                total: retainedBasic + (cell.commission || 0),
-                totalWithReimbursements: retainedBasic + (cell.reimbursements || 0) + (cell.commission || 0),
+                total: retainedBasic,
+                totalWithReimbursements: paidAmount,
                 isReconciled: true,
                 notes: `Home Dept Balance: £${retainedBasic.toLocaleString()} (after £${totalAllocAway.toLocaleString()} split to ${(s.departmentAllocations || []).map(a => a.department).join(', ')})`
               };
@@ -421,11 +421,11 @@ export default function DepartmentTeamCostTab({
 
             matrix[s.id][m] = {
               ...cell,
-              basic: basicAmount,
-              total: basicAmount + (cell.commission || 0),
-              totalWithReimbursements: bankPaidTotal + (cell.commission || 0),
+              basic: paidAmount,
+              total: paidAmount,
+              totalWithReimbursements: paidAmount,
               isReconciled: true,
-              notes: `Bank Statement Paid (Group P&L Aligned): £${bankPaidTotal.toLocaleString()} across ${staffDirectExpenses.length} transactions`
+              notes: `Bank Statement Paid (Group P&L Aligned): £${paidAmount.toLocaleString()} across ${staffDirectExpenses.length} transactions`
             };
             return;
           }

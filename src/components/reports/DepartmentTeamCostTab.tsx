@@ -179,8 +179,9 @@ export default function DepartmentTeamCostTab({
   const calculateStaffCountAtDate = useCallback((dateStr: string, compIds: string[], deptNames: string[]) => {
     const parsedM = parseMonthFromDateStr(dateStr);
     const monthKey = parsedM || (startMonth || '2026-01');
+    const allowPaulSeth = includePaulSeth || !companyFilter.includes('all');
     return staff.filter(s => {
-      if (!isOperatingStaffMember(s, includePaulSeth)) return false;
+      if (!isOperatingStaffMember(s, allowPaulSeth)) return false;
       const comp = companies.find(c => c.id === s.companyId);
       const compMatch = compIds.includes('all') ? isCompanyConsolidated(comp) : compIds.includes(s.companyId);
       const deptMatch = deptNames.includes('all') || deptNames.includes(s.department);
@@ -297,10 +298,11 @@ export default function DepartmentTeamCostTab({
 
   // Filter staff by company and department filters
   const filteredStaff = useMemo(() => {
+    // When a specific company is selected, or when includePaulSeth is enabled, include Paul Seth
+    const allowPaulSeth = includePaulSeth || !companyFilter.includes('all');
+
     return staff.filter(s => {
-      // Exclude central corporate owner / Managing Director (Paul Seth) from departmental team costs
-      const fn = (s.fullName || '').toLowerCase().trim();
-      if (fn === 'paul seth' || fn.includes('paul seth')) return false;
+      if (!isOperatingStaffMember(s, allowPaulSeth)) return false;
 
       if (companyFilter.includes('all')) {
         const comp = companies.find(c => c.id === s.companyId);
@@ -320,7 +322,7 @@ export default function DepartmentTeamCostTab({
       }
       return true;
     });
-  }, [staff, companies, companyFilter, deptFilter, searchTerm]);
+  }, [staff, companies, companyFilter, deptFilter, searchTerm, includePaulSeth]);
 
   // Calculate monthly staff remuneration cells (ex-reimbursements)
   // Maps staffId -> monthKey -> cellData
@@ -351,8 +353,9 @@ export default function DepartmentTeamCostTab({
           if (e.id && (e.id.startsWith('payroll-') || e.id.startsWith('exp-overhead-'))) return false;
 
           const nom = (e.nominalCode || '').toLowerCase();
-          // Exclude 1003.1 (Director) and 1003.2 (House) unless includePaulSeth is true
-          if (!includePaulSeth && (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house'))) return false;
+          const allowPaulSeth = includePaulSeth || !companyFilter.includes('all');
+          // Exclude 1003.1 (Director) and 1003.2 (House) unless allowPaulSeth is true
+          if (!allowPaulSeth && (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house'))) return false;
 
           const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
           if (eMonth !== m) return false;
@@ -363,7 +366,7 @@ export default function DepartmentTeamCostTab({
           const fn = (s.fullName || '').toLowerCase().trim();
           const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
 
-          const isRemunNominal = (!includePaulSeth
+          const isRemunNominal = (!allowPaulSeth
             ? (nom.includes('1003') && !nom.includes('1003.1') && !nom.includes('1003.2'))
             : nom.includes('1003')) ||
             nom.includes('consulting') ||
@@ -496,10 +499,10 @@ export default function DepartmentTeamCostTab({
   // Sebastian Bacon in Totaco) belong directly to their own company & department and stay there.
   // Their costs are direct team remuneration in their own department, NOT apportioned to other departments like Civils.
   const sharedStaffList = useMemo(() => {
+    const allowPaulSeth = includePaulSeth || !companyFilter.includes('all');
     return staff.filter(s => {
-      // Exclude Paul Seth (Managing Director / Corporate Owner)
-      const fn = (s.fullName || '').toLowerCase().trim();
-      if (fn === 'paul seth' || fn.includes('paul seth')) return false;
+      // Exclude Paul Seth (Managing Director / Corporate Owner) unless allowed
+      if (!isOperatingStaffMember(s, allowPaulSeth)) return false;
 
       // Exclude if already in filteredStaff (already shown as a direct team member)
       if (filteredStaff.some(fs => fs.id === s.id)) return false;
@@ -570,8 +573,9 @@ export default function DepartmentTeamCostTab({
           if (e.status === 'dns' || e.status === 'cancelled') return false;
           if (e.id && (e.id.startsWith('payroll-') || e.id.startsWith('exp-overhead-'))) return false;
           const nom = (e.nominalCode || '').toLowerCase();
-          // Exclude 1003.1 (Director) and 1003.2 (House) unless includePaulSeth is true
-          if (!includePaulSeth && (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house'))) return false;
+          const allowPaulSeth = includePaulSeth || !companyFilter.includes('all');
+          // Exclude 1003.1 (Director) and 1003.2 (House) unless allowPaulSeth is true
+          if (!allowPaulSeth && (nom.includes('1003.1') || nom.includes('1003.2') || nom.includes('house'))) return false;
 
           const eMonth = e.plMonth || (e.date ? e.date.substring(0, 7) : '');
           if (eMonth !== m) return false;
@@ -582,7 +586,7 @@ export default function DepartmentTeamCostTab({
           const fn = (s.fullName || '').toLowerCase().trim();
           const isPayeeMatch = fn && (p === fn || p.includes(fn) || fn.includes(p));
 
-          const isRemunNominal = (!includePaulSeth
+          const isRemunNominal = (!allowPaulSeth
             ? (nom.includes('1003') && !nom.includes('1003.1') && !nom.includes('1003.2'))
             : nom.includes('1003')) ||
             nom.includes('consulting') ||
@@ -731,8 +735,9 @@ export default function DepartmentTeamCostTab({
 
       // Calculate initial active headcount in the viewed scope at the start of the period
       const initialMonth = monthsList[0] || '2026-01';
+      const allowPaulSeth = includePaulSeth || !companyFilter.includes('all');
       const initialScopeActive = staff.filter(s => {
-        if (!isOperatingStaffMember(s, includePaulSeth)) return false;
+        if (!isOperatingStaffMember(s, allowPaulSeth)) return false;
         const comp = companies.find(c => c.id === s.companyId);
         const inViewComp = companyFilter.includes('all') ? isCompanyConsolidated(comp) : companyFilter.includes(s.companyId);
         const inViewDept = deptFilter.includes('all') || deptFilter.includes(s.department);
@@ -861,7 +866,7 @@ export default function DepartmentTeamCostTab({
             subtext = 'Fixed total';
           } else if (splitMethod === 'pro_rata_headcount') {
             const totalStaffAllAssigned = staff.filter(s => {
-              if (!isOperatingStaffMember(s, includePaulSeth)) return false;
+              if (!isOperatingStaffMember(s, allowPaulSeth)) return false;
               const comp = companies.find(c => c.id === s.companyId);
               const compMatch = toolComps.includes('all') ? isCompanyConsolidated(comp) : toolComps.includes(s.companyId);
               const deptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
@@ -871,7 +876,7 @@ export default function DepartmentTeamCostTab({
             }).length;
 
             const staffInFilteredView = staff.filter(s => {
-              if (!isOperatingStaffMember(s, includePaulSeth)) return false;
+              if (!isOperatingStaffMember(s, allowPaulSeth)) return false;
               const comp = companies.find(c => c.id === s.companyId);
               const inViewComp = companyFilter.includes('all') ? isCompanyConsolidated(comp) : companyFilter.includes(s.companyId);
               const inViewDept = deptFilter.includes('all') || deptFilter.includes(s.department);
@@ -913,7 +918,7 @@ export default function DepartmentTeamCostTab({
           if (isFullScope) {
             // Full group scope: track company-wide active headcount and contract baseline
             const totalActiveStaffForTool = staff.filter(s => {
-              if (!isOperatingStaffMember(s, includePaulSeth)) return false;
+              if (!isOperatingStaffMember(s, allowPaulSeth)) return false;
               const comp = companies.find(c => c.id === s.companyId);
               const compMatch = toolComps.includes('all') ? isCompanyConsolidated(comp) : toolComps.includes(s.companyId);
               const deptMatch = toolDepts.includes('all') || toolDepts.includes(s.department);
@@ -940,7 +945,7 @@ export default function DepartmentTeamCostTab({
           } else {
             // Filtered department / company scope (e.g. Civils department selected)
             const viewActiveStaffForTool = staff.filter(s => {
-              if (!isOperatingStaffMember(s, includePaulSeth)) return false;
+              if (!isOperatingStaffMember(s, allowPaulSeth)) return false;
               const comp = companies.find(c => c.id === s.companyId);
               const inViewComp = companyFilter.includes('all') ? isCompanyConsolidated(comp) : companyFilter.includes(s.companyId);
               const inViewDept = deptFilter.includes('all') || deptFilter.includes(s.department);
@@ -1097,24 +1102,40 @@ export default function DepartmentTeamCostTab({
 
       if (p.splits && p.splits.length > 0) {
         p.splits.forEach(sp => {
-          if (matrix[sp.staffId]) {
+          let targetStaffId = sp.staffId;
+          if (!matrix[targetStaffId] && (sp.staffName || (sp as any).name)) {
+            const splitName = (sp.staffName || (sp as any).name || '').toLowerCase().trim();
+            const found = salesStaff.find(s => (s.fullName || '').toLowerCase().trim() === splitName || (s.name || '').toLowerCase().trim() === splitName);
+            if (found) targetStaffId = found.id;
+          }
+
+          if (matrix[targetStaffId]) {
             const splitVal = toGBP((pVal * (Number(sp.percentage) || 0)) / 100, pCurr);
-            matrix[sp.staffId].monthlySales[pMonth] += splitVal;
-            matrix[sp.staffId].grandTotal += splitVal;
+            matrix[targetStaffId].monthlySales[pMonth] += splitVal;
+            matrix[targetStaffId].grandTotal += splitVal;
             if (pMonth <= reconciledCutoffMonth) {
-              matrix[sp.staffId].ytvTotal += splitVal;
+              matrix[targetStaffId].ytvTotal += splitVal;
             }
-            matrix[sp.staffId].placementCount += 1;
+            matrix[targetStaffId].placementCount += 1;
           }
         });
-      } else if (p.recruiterId && matrix[p.recruiterId]) {
-        const fullVal = toGBP(pVal, pCurr);
-        matrix[p.recruiterId].monthlySales[pMonth] += fullVal;
-        matrix[p.recruiterId].grandTotal += fullVal;
-        if (pMonth <= reconciledCutoffMonth) {
-          matrix[p.recruiterId].ytvTotal += fullVal;
+      } else if (p.recruiterId || (p as any).consultant) {
+        let targetStaffId = p.recruiterId;
+        if (!matrix[targetStaffId] && (p as any).consultant) {
+          const cName = ((p as any).consultant || '').toLowerCase().trim();
+          const found = salesStaff.find(s => (s.fullName || '').toLowerCase().trim() === cName || (s.name || '').toLowerCase().trim() === cName);
+          if (found) targetStaffId = found.id;
         }
-        matrix[p.recruiterId].placementCount += 1;
+
+        if (matrix[targetStaffId]) {
+          const fullVal = toGBP(pVal, pCurr);
+          matrix[targetStaffId].monthlySales[pMonth] += fullVal;
+          matrix[targetStaffId].grandTotal += fullVal;
+          if (pMonth <= reconciledCutoffMonth) {
+            matrix[targetStaffId].ytvTotal += fullVal;
+          }
+          matrix[targetStaffId].placementCount += 1;
+        }
       }
     });
 
